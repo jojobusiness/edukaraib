@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { auth, db } from '../firebase';
+import { auth, db } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
 export default function StudentRoute({ children }) {
