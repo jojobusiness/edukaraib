@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { db } from '../firebase';
+import { db } from '../lib/firebase';
 import { addDoc, collection } from 'firebase/firestore';
 
 export default function ReviewForm({ lessonId, teacherId, studentId, onReviewSent }) {
