@@ -7,8 +7,8 @@ import Profile from './pages/Profile';
 import StudentDashboard from './pages/StudentDashboard';
 import Search from './pages/Search';
 import MyCourses from './pages/MyCourses';
-import ReviewFrom from './pages/ReviewFrom';
 
+import ReviewForm from './components/ReviewForm';
 import PrivateRoute from './components/PrivateRoute';
 import StudentRoute from './components/StudentRoute';
 
@@ -25,7 +25,7 @@ function App() {
         <Route path="/profile"element={<PrivateRoute><Profile /></PrivateRoute>}/>
         <Route path="/search"element={<StudentRoute><Search /></StudentRoute>}/>
         <Route path= "/my-courses" element={<StudentRoute><MyCourses /></StudentRoute>}/>
-        <Route path= "/reviewfrom" element={<StudentRoute><ReviewFrom /></StudentRoute>}/>
+        <Route path= "/reviewform" element={<StudentRoute><ReviewForm /></StudentRoute>}/>
       </Routes>
     </Router>
   );

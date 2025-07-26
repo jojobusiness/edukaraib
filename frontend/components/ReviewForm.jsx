@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { db } from '../lib/firebase';
+import { db } from '../firebase';
 import { addDoc, collection } from 'firebase/firestore';
 
-export default function ReviewForm({ lessonId, teacherId, studentId }) {
+export default function ReviewForm({ lessonId, teacherId, studentId, onReviewSent }) {
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
 
@@ -17,16 +17,21 @@ export default function ReviewForm({ lessonId, teacherId, studentId }) {
       created_at: new Date()
     });
     alert('Merci pour votre avis !');
+    onReviewSent();
   };
 
   return (
     <form onSubmit={handleSubmit}>
-      <select value={rating} onChange={(e) => setRating(Number(e.target.value))}>
-        {[5, 4, 3, 2, 1].map(r => (
-          <option key={r} value={r}>{r} étoile(s)</option>
-        ))}
-      </select>
-      <textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Votre avis..." />
+      <label>Note :
+        <select value={rating} onChange={(e) => setRating(Number(e.target.value))}>
+          {[5, 4, 3, 2, 1].map(r => (
+            <option key={r} value={r}>{r} étoile(s)</option>
+          ))}
+        </select>
+      </label>
+      <br />
+      <textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Votre avis..." required />
+      <br />
       <button type="submit">Envoyer</button>
     </form>
   );
