@@ -25,7 +25,8 @@ function App() {
         <Route path="/profile"element={<PrivateRoute><Profile /></PrivateRoute>}/>
         <Route path="/search"element={<StudentRoute><Search /></StudentRoute>}/>
         <Route path= "/my-courses" element={<StudentRoute><MyCourses /></StudentRoute>}/>
-        <Route path= "/reviewfrom" element={<StudentRoute><ReviewFrom /></StudentRoute>}/></Routes>
+        <Route path= "/reviewfrom" element={<StudentRoute><ReviewFrom /></StudentRoute>}/>
+      </Routes>
     </Router>
   );
 }
