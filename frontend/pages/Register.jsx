@@ -25,7 +25,22 @@ export default function Register() {
         createdAt: new Date()
       });
 
-      navigate('/');
+      const role = userDoc.data().role;
+
+      // Redirection en fonction du rôle
+      switch (role) {
+        case 'student':
+          navigate('/dashboard-eleve');
+          break;
+        case 'parent':
+          navigate('/parent/dashboard');
+          break;
+        case 'teacher':
+          navigate('/prof/dashboard');
+          break;
+        default:
+          alert("Rôle inconnu !");
+      }
     } catch (error) {
       alert('Erreur: ' + error.message);
     }

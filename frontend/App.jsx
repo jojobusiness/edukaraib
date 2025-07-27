@@ -10,7 +10,12 @@ import MyCourses from './pages/MyCourses';
 import ParentDashboard from './pages/ParentDashboard';
 import ParentChildren from './pages/ParentChildren';
 import ParentCourses from './pages/ParentCourses';
+import TeacherDashboard from './pages/TeacherDashboard';
+import TeacherProfile from './pages/TeacherProfile';
+import TeacherLessons from './pages/TeacherLessons';
+import TeacherEarnings from './pages/TeacherEarnings';
 
+import TeacherRoute from './components/TeacherRoute';
 import ParentRoute from './components/ParentRoute';
 import ReviewForm from './components/ReviewForm';
 import PrivateRoute from './components/PrivateRoute';
@@ -35,6 +40,11 @@ function App() {
         <Route path="/parent/dashboard" element={<ParentRoute><ParentDashboard /></ParentRoute>}/>
         <Route path="/parent/children" element={<ParentRoute><ParentChildren /></ParentRoute>}/>
         <Route path="/parent/courses" element={<ParentRoute><ParentCourses /></ParentRoute>}/>
+        
+        <Route path="/prof/dashboard" element={<TeacherRoute><TeacherDashboard /></TeacherRoute>}/>
+        <Route path="/prof/profile"element={<TeacherRoute><TeacherProfile /></TeacherRoute>}/>
+        <Route path="/prof/lessons" element={<TeacherRoute><TeacherLessons /></TeacherRoute>}/>
+        <Route path="/prof/earnings"element={<TeacherRoute><TeacherEarnings /></TeacherRoute>}/>
       </Routes>
     </Router>
   );
