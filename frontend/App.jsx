@@ -14,6 +14,14 @@ import TeacherDashboard from './pages/TeacherDashboard';
 import TeacherProfile from './pages/TeacherProfile';
 import TeacherLessons from './pages/TeacherLessons';
 import TeacherEarnings from './pages/TeacherEarnings';
+import StudentCalendar from './pages/StudentCalendar';
+import TeacherCalendar from './pages/TeacherCalendar';
+import Messages from './pages/Messages';
+import BookLessonEleve from './pages/BookLessonEleve';
+import ChatList from './pages/ChatList';
+import NotFound from './pages/NotFound';
+import Unauthorized from './pages/Unauthorized';
+import Settings from './pages/Settings';
 
 import TeacherRoute from './components/TeacherRoute';
 import ParentRoute from './components/ParentRoute';
@@ -29,22 +37,32 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/unauthorized" element={<Unauthorized />} />
+        <Route path="*" element={<NotFound />} />
 
         {/* Routes protégées */}
-        <Route path="/dashboard-eleve"element={<StudentRoute><StudentDashboard /></StudentRoute>}/>
-        <Route path="/profile"element={<PrivateRoute><Profile /></PrivateRoute>}/>
-        <Route path="/search"element={<StudentRoute><Search /></StudentRoute>}/>
+        <Route path="/dashboard-eleve" element={<StudentRoute><StudentDashboard /></StudentRoute>}/>
+        <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>}/>
+        <Route path="/chat/:receiverId" element={<PrivateRoute><MessagesWrapper /></PrivateRoute>}/>
+        <Route path="/chat" element={<PrivateRoute><Messages /></PrivateRoute>}/>
+        <Route path="/chat-list" element={<PrivateRoute><ChatList /></PrivateRoute>}/>
+        <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
+
+        <Route path="/search" element={<StudentRoute><Search /></StudentRoute>}/>
         <Route path= "/my-courses" element={<StudentRoute><MyCourses /></StudentRoute>}/>
         <Route path= "/reviewform" element={<StudentRoute><ReviewForm /></StudentRoute>}/>
+        <Route path="/dashboard-eleve/planning" element={<StudentRoute><StudentCalendar /></StudentRoute>}/>
+        <Route path="/book-lesson-eleve" element={<StudentRoute><BookLessonEleve teacherId="TEACHER_ID" subjectId="SUBJECT_ID" /></StudentRoute>}/>
 
         <Route path="/parent/dashboard" element={<ParentRoute><ParentDashboard /></ParentRoute>}/>
         <Route path="/parent/children" element={<ParentRoute><ParentChildren /></ParentRoute>}/>
         <Route path="/parent/courses" element={<ParentRoute><ParentCourses /></ParentRoute>}/>
-        
+
         <Route path="/prof/dashboard" element={<TeacherRoute><TeacherDashboard /></TeacherRoute>}/>
-        <Route path="/prof/profile"element={<TeacherRoute><TeacherProfile /></TeacherRoute>}/>
+        <Route path="/prof/profile" element={<TeacherRoute><TeacherProfile /></TeacherRoute>}/>
         <Route path="/prof/lessons" element={<TeacherRoute><TeacherLessons /></TeacherRoute>}/>
-        <Route path="/prof/earnings"element={<TeacherRoute><TeacherEarnings /></TeacherRoute>}/>
+        <Route path="/prof/earnings" element={<TeacherRoute><TeacherEarnings /></TeacherRoute>}/>
+        <Route path="/prof/planning" element={<TeacherRoute><TeacherCalendar /></TeacherRoute>}/>
       </Routes>
     </Router>
   );

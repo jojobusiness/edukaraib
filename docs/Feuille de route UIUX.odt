@@ -1,0 +1,62 @@
+## 🎨 Feuille de route UI/UX – Refonte du design EduKaraib
+
+**Inspiration : Superprof.fr**
+
+---
+
+### ✅ Phase 1 — Fondations visuelles globales
+
+| Élément              | Action à faire                                       |
+| -------------------- | ---------------------------------------------------- |
+| 🎨 Couleurs          | Palette inspirée Guyane + lisibilité web             |
+| 🔠 Typographie       | Moderne et accessible (ex : Inter, Poppins)          |
+| 🖼 Logo & favicon    | Déjà prêt ✅ (à intégrer)                             |
+| 📱 Responsive design | Mobile-first pour accessibilité locale               |
+| 🔘 Boutons           | Uniformes, arrondis, lisibles (CTA verts ou oranges) |
+
+---
+
+### ✅ Phase 2 — Composants de navigation
+
+| Composant        | Détails à appliquer                                                                            |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| 🔝 Navbar        | Logo à gauche, liens principaux à droite : Accueil, Trouver un prof, Se connecter / S'inscrire |
+| 📍 Footer        | Infos légales, contact, liens rapides                                                          |
+| 📲 Menu mobile   | Burger menu clair                                                                              |
+| 🔒 Barre de rôle | (après login) Dashboard + menu déroulant                                                       |
+
+---
+
+### ✅ Phase 3 — Pages principales à styliser
+
+| Page                     | Objectif visuel                                       |
+| ------------------------ | ----------------------------------------------------- |
+| 🏠 Accueil (`/`)         | Grande bannière CTA, accroche locale, slider profs    |
+| 🔎 Recherche (`/search`) | Filtres fixes à gauche, profs en cartes à droite      |
+| 👤 Profils profs         | Image, bio, matière, bouton “Réserver” ou “Contacter” |
+| 📝 Login / Register      | Pages propres, centrées, pas trop chargées            |
+| 🧑‍🎓 Dashboards         | Dashboard cartes (élève/parent/prof) cliquables       |
+| 📅 Planning (élève/prof) | Liste ou petit calendrier, couleurs selon statut      |
+| 💬 Messagerie            | Style WhatsApp/Slack basique, bulles simples          |
+
+---
+
+### ✅ Phase 4 — Petits + UX (à intégrer après MVP)
+
+| Élément               | Pour quoi faire ?                                |
+| --------------------- | ------------------------------------------------ |
+| ✅ Toasts/Alerts       | Confirmer actions (ex : “Réservation confirmée”) |
+| ✅ Hover / transitions | Fluidifier les interactions                      |
+| ✅ Skeleton loading    | Pour le chargement des données Firestore         |
+| ✅ Accessibilité       | Contrastes AA, taille de texte min, tabIndex     |
+
+---
+
+### ✳️ Identité EduKaraib (vs Superprof)
+
+| Élément  | Superprof.fr            | EduKaraib (à cibler)                |
+| -------- | ----------------------- | ----------------------------------- |
+| Couleurs | Bleu, blanc, gris       | Vert forêt, jaune soleil, blanc     |
+| Ton      | Académique / urbain     | Chaleureux / local / pratique       |
+| Ciblage  | Métropole, tous niveaux | Guyane, accès égal, langues locales |
+
