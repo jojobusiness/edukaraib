@@ -17,6 +17,7 @@ import TeacherEarnings from './pages/TeacherEarnings';
 import StudentCalendar from './pages/StudentCalendar';
 import TeacherCalendar from './pages/TeacherCalendar';
 import Messages from './pages/Messages';
+import MessagesWrapper from './pages/MessagesWrapper';
 import BookLessonEleve from './pages/BookLessonEleve';
 import ChatList from './pages/ChatList';
 import NotFound from './pages/NotFound';
