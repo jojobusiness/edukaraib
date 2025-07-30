@@ -23,6 +23,9 @@ import ChatList from './pages/ChatList';
 import NotFound from './pages/NotFound';
 import Unauthorized from './pages/Unauthorized';
 import Settings from './pages/Settings';
+import Contact from './pages/Contact';
+import CGU from './pages/CGU';
+import Privacy from './pages/Privacy';
 
 import TeacherRoute from './components/TeacherRoute';
 import ParentRoute from './components/ParentRoute';
@@ -39,6 +42,9 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/unauthorized" element={<Unauthorized />} />
+        <Route path="/contact" element={<Contact />} />
+        <Route path="/cgu" element={<CGU />} />
+        <Route path="/privacy" element={<Privacy />} />
         <Route path="*" element={<NotFound />} />
 
         {/* Routes protégées */}

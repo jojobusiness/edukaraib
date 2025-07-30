@@ -1,64 +1,53 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { auth, db } from '../lib/firebase';
-import { signOut } from 'firebase/auth';
-import { collection, getDocs } from 'firebase/firestore';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
+import { db } from '../lib/firebase';
+import { collection, getDocs } from 'firebase/firestore';
 
 export default function Home() {
-  const user = auth.currentUser;
   const [featuredProfs, setFeaturedProfs] = useState([]);
 
-  // Chargement des professeurs en vedette
   useEffect(() => {
     const fetchProfs = async () => {
       const querySnap = await getDocs(collection(db, 'teachers'));
       const profs = querySnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setFeaturedProfs(profs.slice(0, 3)); // Affiche 3 profs
+      setFeaturedProfs(profs.slice(0, 3));
     };
     fetchProfs();
   }, []);
-
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      window.location.reload();
-    } catch (error) {
-      alert('Erreur de déconnexion : ' + error.message);
-    }
-  };
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-white to-gray-50">
       <Navbar />
 
-      {/* Hero Section */}
-      <header className="flex-1 flex flex-col justify-center items-center py-16 px-4">
-        <h1 className="text-4xl md:text-5xl font-bold text-primary mb-4">
+      {/* Illustration + Hero */}
+      <header className="flex-1 flex flex-col items-center justify-center py-8 px-4">
+        <img
+          src="/accueil.jpg"
+          alt="Professeur et élève - EduKaraib"
+          className="w-full max-w-md mx-auto mb-6 rounded-lg shadow"
+        />
+        <h1 className="text-4xl md:text-5xl font-bold text-primary mb-4 text-center">
           Bienvenue sur <span className="text-secondary">EduKaraib</span>
         </h1>
         <p className="text-lg text-gray-700 max-w-xl text-center mb-8">
-          Plateforme guyanaise de soutien scolaire et de mise en relation entre élèves, parents et professeurs particuliers. <br />
+          Plateforme guyanaise de soutien scolaire et de mise en relation entre élèves, parents et professeurs particuliers.<br />
           Simple, locale, adaptée à tous les besoins.
         </p>
 
-        {user ? (
-          <div className="mt-4">
-            <p className="text-gray-800 mb-2">Connecté en tant que : <strong>{user.email}</strong></p>
-            <button onClick={handleLogout} className="btn-primary">
-              Se déconnecter
-            </button>
-          </div>
-        ) : (
-          <div className="flex gap-4 mt-4">
-            <Link to="/login" className="btn-primary">Se connecter</Link>
-            <Link to="/register" className="btn-primary bg-secondary text-white hover:bg-yellow-500">S'inscrire</Link>
-          </div>
-        )}
+        {/* Boutons d'action */}
+        <div className="flex gap-4 mt-2">
+          <Link to="/login" className="bg-primary text-white px-6 py-3 rounded shadow hover:bg-primary-dark text-lg font-medium transition">
+            Se connecter
+          </Link>
+          <Link to="/register" className="bg-secondary text-white px-6 py-3 rounded shadow hover:bg-yellow-500 text-lg font-medium transition">
+            S'inscrire
+          </Link>
+        </div>
       </header>
 
-      {/* CTA Section */}
+      {/* Section CTA */}
       <section className="bg-white py-12 text-center px-4 border-t shadow-sm">
         <h2 className="text-2xl font-semibold mb-4 text-primary">Commencez à apprendre dès maintenant</h2>
         <Link
@@ -69,7 +58,7 @@ export default function Home() {
         </Link>
       </section>
 
-      {/* Profs en vedette */}
+      {/* Professeurs en vedette */}
       <section className="py-12 px-6 bg-white border-t">
         <h2 className="text-2xl font-semibold text-center mb-6">👩‍🏫 Professeurs en vedette</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 max-w-6xl mx-auto">
