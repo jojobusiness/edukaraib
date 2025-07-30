@@ -26,7 +26,6 @@ export default function Home() {
         <img
           src="/page-daccueil.jpg"
           alt="Professeur et élève - EduKaraib"
-          className="w-full max-w-md mx-auto mb-6 rounded-lg shadow"
         />
         <h1 className="text-4xl md:text-5xl font-bold text-primary mb-4 text-center">
           Bienvenue sur <span className="text-secondary">EduKaraib</span>
