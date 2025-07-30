@@ -24,8 +24,9 @@ export default function Home() {
       {/* Illustration + Hero */}
       <header className="flex-1 flex flex-col items-center justify-center py-8 px-4">
         <img
-          src="/page-daccueil.jpg"
+          src="/edukaraib_logo.png"
           alt="Professeur et élève - EduKaraib"
+          className="w-full max-w-md mx-auto mb-6 rounded-lg shadow"
         />
         <h1 className="text-4xl md:text-5xl font-bold text-primary mb-4 text-center">
           Bienvenue sur <span className="text-secondary">EduKaraib</span>
