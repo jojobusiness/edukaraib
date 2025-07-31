@@ -1,10 +1,12 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import DashboardLayout from '../components/DashboardLayout';
 
 export default function StudentDashboard() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-white via-gray-50 to-primary/5 px-4 py-10">
       <div className="w-full max-w-3xl">
+        <DashboardLayout role="student">
         <h2 className="text-3xl font-bold text-primary mb-8 text-center font-sans tracking-tight">
           👋 Bienvenue sur ton espace élève
         </h2>
@@ -40,6 +42,7 @@ export default function StudentDashboard() {
             <span className="text-xs text-gray-500 mt-1 text-center">Voir mes réservations et planning</span>
           </Link>
         </div>
+        </DashboardLayout>
       </div>
     </div>
   );
