@@ -12,31 +12,45 @@ function formatHour(dateStr) {
   return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 
-export default function TeacherCalendar() {
+export default function ParentCalendar() {
   const [lessons, setLessons] = useState([]);
 
   useEffect(() => {
     const fetchLessons = async () => {
-      const q = query(collection(db, 'lessons'), where('teacher_id', '==', auth.currentUser.uid));
-      const snapshot = await getDocs(q);
-      // Enrichit avec le nom de l'élève
-      const data = await Promise.all(
-        snapshot.docs.map(async docSnap => {
-          const l = { id: docSnap.id, ...docSnap.data() };
-          let studentName = l.student_id;
+      // Récupérer tous les enfants du parent
+      const kidsSnap = await getDocs(query(collection(db, 'students'), where('parent_id', '==', auth.currentUser.uid)));
+      const kids = kidsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const kidIds = kids.map(k => k.id);
+
+      // Récupérer tous les cours liés à ces enfants
+      const lessonSnap = await getDocs(collection(db, 'lessons'));
+      const allLessons = lessonSnap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(l => kidIds.includes(l.student_id));
+
+      // Ajoute info enfant/prof
+      const enriched = await Promise.all(
+        allLessons.map(async l => {
+          let childName = l.student_id;
+          let teacherName = l.teacher_id;
           try {
-            const sSnap = await getDoc(doc(db, 'users', l.student_id));
-            if (sSnap.exists()) studentName = sSnap.data().fullName || studentName;
+            const sSnap = await getDoc(doc(db, 'students', l.student_id));
+            if (sSnap.exists()) childName = sSnap.data().full_name || childName;
           } catch {}
-          return { ...l, studentName };
+          try {
+            const tSnap = await getDoc(doc(db, 'users', l.teacher_id));
+            if (tSnap.exists()) teacherName = tSnap.data().fullName || teacherName;
+          } catch {}
+          return { ...l, childName, teacherName };
         })
       );
-      setLessons(data);
+
+      setLessons(enriched);
     };
     fetchLessons();
   }, []);
 
-  // Vue hebdo
+  // Vue hebdo (lundi-dimanche)
   const now = new Date();
   const week = Array.from({ length: 7 }, (_, i) => {
     const d = new Date();
@@ -60,9 +74,9 @@ export default function TeacherCalendar() {
   };
 
   return (
-    <DashboardLayout role="teacher">
+    <DashboardLayout role="parent">
       <div className="max-w-2xl mx-auto">
-        <h2 className="text-2xl font-bold text-primary mb-6">🗓️ Mon agenda de la semaine</h2>
+        <h2 className="text-2xl font-bold text-primary mb-6">🗓️ Planning hebdo des enfants</h2>
         <div className="bg-white p-6 rounded-xl shadow border">
           {week.map(dayStr => (
             <div key={dayStr} className="mb-5">
@@ -90,8 +104,9 @@ export default function TeacherCalendar() {
                             ? 'Terminé'
                             : l.status}
                         </span>
-                        <span className="font-bold text-primary">{l.subject_id || "Matière"}</span>
-                        <span className="text-xs text-gray-600">{l.studentName}</span>
+                        <span className="font-bold text-primary">{l.childName || "Enfant"}</span>
+                        <span className="font-bold text-secondary">{l.subject_id || "Matière"}</span>
+                        <span className="text-xs text-gray-600">{l.teacherName || "Prof"}</span>
                         <span className="text-xs text-gray-500 ml-auto">{formatHour(l.start_datetime.seconds * 1000)}</span>
                       </li>
                     ))}

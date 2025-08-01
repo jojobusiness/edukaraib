@@ -15,6 +15,7 @@ const menusByRole = {
     { label: 'Tableau de bord', path: '/parent/dashboard', icon: '📊' },
     { label: 'Mes enfants', path: '/parent/children', icon: '👧' },
     { label: 'Cours réservés', path: '/parent/courses', icon: '📚' },
+    { label: 'Planning', path: '/parent/planning', icon: '🗓️' },
     { label: 'Paiements', path: '/parent/payments', icon: '💳' },
     { label: 'Messagerie', path: '/chat-list', icon: '💬' },
     { label: 'Mon profil', path: '/profile', icon: '👤' },

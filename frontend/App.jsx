@@ -23,6 +23,7 @@ import ChatList from './pages/ChatList';
 import NotFound from './pages/NotFound';
 import Unauthorized from './pages/Unauthorized';
 import ParentPayments from './pages/ParentPayments';
+import ParentCalendar from './pages/ParentCalendar';
 import Settings from './pages/Settings';
 import Contact from './pages/Contact';
 import CGU from './pages/CGU';
@@ -69,6 +70,7 @@ function App() {
         <Route path="/parent/courses" element={<ParentRoute><ParentCourses /></ParentRoute>}/>
         <Route path="/parent/children/:childId" element={<ParentRoute><ChildDetails /></ParentRoute>} />
         <Route path="/parent/payments" element={<ParentRoute><ParentPayments /></ParentRoute>} />
+        <Route path="/parent/planning" element={<ParentRoute><ParentCalendar /></ParentRoute>} />
 
         <Route path="/prof/dashboard" element={<TeacherRoute><TeacherDashboard /></TeacherRoute>}/>
         <Route path="/prof/profile" element={<TeacherRoute><Profile /></TeacherRoute>}/>
