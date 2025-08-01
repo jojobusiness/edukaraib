@@ -1,49 +1,109 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
+import { auth, db } from '../lib/firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 
 export default function TeacherDashboard() {
+  const [nextCourses, setNextCourses] = useState([]);
+  const [revenues, setRevenues] = useState(0);
+  const [pending, setPending] = useState(0);
+  const [reviews, setReviews] = useState([]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      // Cours où teacher_id == user.uid
+      const lessonsSnap = await getDocs(query(
+        collection(db, 'lessons'),
+        where('teacher_id', '==', auth.currentUser.uid)
+      ));
+      const allLessons = lessonsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // Prochains cours (statut confirmé, date future)
+      const futureLessons = allLessons
+        .filter(l => l.status === 'confirmed' && l.start_datetime && new Date(l.start_datetime.seconds * 1000) > new Date())
+        .sort((a, b) => a.start_datetime.seconds - b.start_datetime.seconds)
+        .slice(0, 3);
+      setNextCourses(futureLessons);
+
+      // Revenus du mois
+      const thisMonth = new Date().getMonth();
+      const earned = allLessons
+        .filter(l => l.is_paid && new Date(l.start_datetime.seconds * 1000).getMonth() === thisMonth)
+        .reduce((sum, l) => sum + (l.price_per_hour || 0), 0);
+      setRevenues(earned);
+
+      // Demandes en attente
+      const pendingCount = allLessons.filter(l => l.status === 'booked').length;
+      setPending(pendingCount);
+
+      // Avis reçus (collection "reviews", où teacher_id == user.uid)
+      const reviewsSnap = await getDocs(query(
+        collection(db, 'reviews'),
+        where('teacher_id', '==', auth.currentUser.uid)
+      ));
+      const reviewsList = reviewsSnap.docs.map(doc => doc.data()).slice(0, 3);
+      setReviews(reviewsList);
+    };
+
+    if (auth.currentUser) fetchData();
+  }, []);
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-white via-gray-50 to-primary/5 px-4 py-10">
-      <div className="w-full max-w-3xl">
-        <DashboardLayout role="teacher">
-        <h2 className="text-3xl font-bold text-primary mb-8 text-center font-sans tracking-tight">
-          🎓 Espace Professeur
+    <DashboardLayout role="teacher">
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold text-primary mb-2 flex items-center gap-2">
+          <span role="img" aria-label="Prof">🎓</span>
+          Tableau de bord Professeur
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <Link
-            to="/prof/profile"
-            className="flex flex-col items-center bg-white border border-primary/20 rounded-2xl shadow-lg p-8 hover:scale-105 transition group"
-          >
-            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition">
-              <span className="text-3xl text-primary">📝</span>
-            </div>
-            <span className="font-bold text-primary text-lg">Profil</span>
-            <span className="text-xs text-gray-500 mt-1 text-center">Compléter/modifier mon profil</span>
-          </Link>
-          <Link
-            to="/prof/lessons"
-            className="flex flex-col items-center bg-white border border-secondary/20 rounded-2xl shadow-lg p-8 hover:scale-105 transition group"
-          >
-            <div className="w-16 h-16 rounded-full bg-secondary/10 flex items-center justify-center mb-4 group-hover:bg-secondary/20 transition">
-              <span className="text-3xl text-secondary">📚</span>
-            </div>
-            <span className="font-bold text-primary text-lg">Cours</span>
-            <span className="text-xs text-gray-500 mt-1 text-center">Gérer mes demandes de cours</span>
-          </Link>
-          <Link
-            to="/prof/earnings"
-            className="flex flex-col items-center bg-white border border-yellow-400/20 rounded-2xl shadow-lg p-8 hover:scale-105 transition group"
-          >
-            <div className="w-16 h-16 rounded-full bg-yellow-400/10 flex items-center justify-center mb-4 group-hover:bg-yellow-400/20 transition">
-              <span className="text-3xl text-yellow-500">💰</span>
-            </div>
-            <span className="font-bold text-primary text-lg">Revenus</span>
-            <span className="text-xs text-gray-500 mt-1 text-center">Voir mes revenus</span>
-          </Link>
-        </div>
-        </DashboardLayout>
+        <p className="text-gray-600">Bienvenue sur votre espace professeur, retrouvez ici vos infos clés.</p>
       </div>
-    </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+        <div className="bg-white rounded-xl shadow p-6 border-l-4 border-primary flex flex-col items-start">
+          <span className="text-3xl mb-2">📅</span>
+          <span className="text-xl font-bold text-primary">Prochain cours</span>
+          <span className="text-gray-700 mt-1">
+            {nextCourses[0]
+              ? `${nextCourses[0].subject_id || 'Cours'} - ${new Date(nextCourses[0].start_datetime.seconds * 1000).toLocaleString()} avec ${nextCourses[0].student_id}`
+              : 'Aucun cours à venir'}
+          </span>
+        </div>
+        <div className="bg-white rounded-xl shadow p-6 border-l-4 border-yellow-400 flex flex-col items-start">
+          <span className="text-3xl mb-2">💰</span>
+          <span className="text-xl font-bold text-yellow-600">Revenus ce mois</span>
+          <span className="text-gray-700 mt-1">{revenues.toFixed(2)} €</span>
+        </div>
+        <div className="bg-white rounded-xl shadow p-6 border-l-4 border-secondary flex flex-col items-start">
+          <span className="text-3xl mb-2">📝</span>
+          <span className="text-xl font-bold text-secondary">Demandes en attente</span>
+          <span className="text-gray-700 mt-1">{pending} cours à valider</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white rounded-xl shadow p-5">
+          <h3 className="font-bold text-primary mb-3">Cours à venir</h3>
+          <ul className="text-gray-700 space-y-2">
+            {nextCourses.map((c, idx) => (
+              <li key={idx}>
+                📅 {new Date(c.start_datetime.seconds * 1000).toLocaleString()} : {c.subject_id || 'Cours'} avec {c.student_id}
+              </li>
+            ))}
+            {nextCourses.length === 0 && <li>Aucun cours à venir.</li>}
+          </ul>
+        </div>
+        <div className="bg-white rounded-xl shadow p-5">
+          <h3 className="font-bold text-primary mb-3">Derniers avis reçus</h3>
+          <ul className="text-gray-700 space-y-2">
+            {reviews.map((r, idx) => (
+              <li key={idx}>
+                {"🌟".repeat(r.stars || 5)} “{r.comment || 'Pas d\'avis.'}”
+              </li>
+            ))}
+            {reviews.length === 0 && <li>Aucun avis pour le moment.</li>}
+          </ul>
+        </div>
+      </div>
+    </DashboardLayout>
   );
 }

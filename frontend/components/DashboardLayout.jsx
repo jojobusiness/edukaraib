@@ -5,21 +5,28 @@ import { Menu, X } from 'lucide-react';
 const menusByRole = {
   student: [
     { label: 'Tableau de bord', path: '/dashboard-eleve', icon: '📊' },
-    { label: 'Mon profil', path: '/profile', icon: '👤' },
     { label: 'Trouver un prof', path: '/search', icon: '🔎' },
     { label: 'Mes cours', path: '/my-courses', icon: '📚' },
+    { label: 'Planning', path: '/dashboard-eleve/planning', icon: '🗓️' },
+    { label: 'Messagerie', path: '/chat-list', icon: '💬' },
+    { label: 'Mon profil', path: '/profile', icon: '👤' },
   ],
   parent: [
     { label: 'Tableau de bord', path: '/parent/dashboard', icon: '📊' },
     { label: 'Mes enfants', path: '/parent/children', icon: '👧' },
     { label: 'Cours réservés', path: '/parent/courses', icon: '📚' },
     { label: 'Paiements', path: '/parent/payments', icon: '💳' },
+    { label: 'Messagerie', path: '/chat-list', icon: '💬' },
+    { label: 'Mon profil', path: '/profile', icon: '👤' },
   ],
   teacher: [
     { label: 'Tableau de bord', path: '/prof/dashboard', icon: '📊' },
-    { label: 'Profil', path: '/prof/profile', icon: '📝' },
     { label: 'Demandes de cours', path: '/prof/lessons', icon: '📚' },
+    { label: 'Planning', path: '/prof/planning', icon: '🗓️' },
     { label: 'Revenus', path: '/prof/earnings', icon: '💰' },
+    { label: 'Mes avis', path: '/prof/reviews', icon: '🌟' },
+    { label: 'Messagerie', path: '/chat-list', icon: '💬' },
+    { label: 'Profil', path: '/prof/profile', icon: '👤' },
   ]
 };
 
