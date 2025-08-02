@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import { auth, db } from '../lib/firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 
 export default function TeacherDashboard() {
   const [nextCourses, setNextCourses] = useState([]);
@@ -19,16 +19,28 @@ export default function TeacherDashboard() {
       const allLessons = lessonsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       // Prochains cours (statut confirmé, date future)
-      const futureLessons = allLessons
-        .filter(l => l.status === 'confirmed' && l.start_datetime && new Date(l.start_datetime.seconds * 1000) > new Date())
-        .sort((a, b) => a.start_datetime.seconds - b.start_datetime.seconds)
-        .slice(0, 3);
+      const now = Date.now();
+      const futureLessons = await Promise.all(
+        allLessons
+          .filter(l => l.status === 'confirmed' && l.start_datetime && (l.start_datetime.seconds * 1000) > now)
+          .sort((a, b) => a.start_datetime.seconds - b.start_datetime.seconds)
+          .slice(0, 3)
+          .map(async l => {
+            // Récupère le nom de l'élève
+            let studentName = l.student_id;
+            try {
+              const sSnap = await getDoc(doc(db, 'users', l.student_id));
+              if (sSnap.exists()) studentName = sSnap.data().fullName || studentName;
+            } catch {}
+            return { ...l, studentName };
+          })
+      );
       setNextCourses(futureLessons);
 
-      // Revenus du mois
+      // Revenus du mois (paiements confirmés)
       const thisMonth = new Date().getMonth();
       const earned = allLessons
-        .filter(l => l.is_paid && new Date(l.start_datetime.seconds * 1000).getMonth() === thisMonth)
+        .filter(l => l.is_paid && l.start_datetime && new Date(l.start_datetime.seconds * 1000).getMonth() === thisMonth)
         .reduce((sum, l) => sum + (l.price_per_hour || 0), 0);
       setRevenues(earned);
 
@@ -64,7 +76,7 @@ export default function TeacherDashboard() {
           <span className="text-xl font-bold text-primary">Prochain cours</span>
           <span className="text-gray-700 mt-1">
             {nextCourses[0]
-              ? `${nextCourses[0].subject_id || 'Cours'} - ${new Date(nextCourses[0].start_datetime.seconds * 1000).toLocaleString()} avec ${nextCourses[0].student_id}`
+              ? `${nextCourses[0].subject_id || 'Cours'} - ${new Date(nextCourses[0].start_datetime.seconds * 1000).toLocaleString()} avec ${nextCourses[0].studentName}`
               : 'Aucun cours à venir'}
           </span>
         </div>
@@ -86,7 +98,7 @@ export default function TeacherDashboard() {
           <ul className="text-gray-700 space-y-2">
             {nextCourses.map((c, idx) => (
               <li key={idx}>
-                📅 {new Date(c.start_datetime.seconds * 1000).toLocaleString()} : {c.subject_id || 'Cours'} avec {c.student_id}
+                📅 {new Date(c.start_datetime.seconds * 1000).toLocaleString()} : {c.subject_id || 'Cours'} avec {c.studentName}
               </li>
             ))}
             {nextCourses.length === 0 && <li>Aucun cours à venir.</li>}
@@ -97,7 +109,7 @@ export default function TeacherDashboard() {
           <ul className="text-gray-700 space-y-2">
             {reviews.map((r, idx) => (
               <li key={idx}>
-                {"🌟".repeat(r.stars || 5)} “{r.comment || 'Pas d\'avis.'}”
+                {"🌟".repeat(r.stars || r.rating || 5)} “{r.comment || 'Pas d\'avis.'}”
               </li>
             ))}
             {reviews.length === 0 && <li>Aucun avis pour le moment.</li>}

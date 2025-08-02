@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { Link } from 'react-router-dom';
+import { collection, getDocs, query, where, addDoc } from 'firebase/firestore';
+import { db, auth } from '../lib/firebase';
+import { Link, useNavigate } from 'react-router-dom';
 
 export default function Search() {
   const [teachers, setTeachers] = useState([]);
   const [search, setSearch] = useState('');
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchTeachers = async () => {
@@ -58,7 +59,7 @@ export default function Search() {
                 <p className="text-center text-gray-400">Aucun professeur trouvé pour cette recherche.</p>
               ) : (
                 filtered.map((teacher) => (
-                  <TeacherCard key={teacher.id} teacher={teacher} />
+                  <TeacherCard key={teacher.id} teacher={teacher} navigate={navigate} />
                 ))
               )}
             </div>
@@ -73,7 +74,7 @@ export default function Search() {
               <p className="text-center text-gray-400">Aucun professeur disponible.</p>
             ) : (
               displayedTeachers.map((teacher) => (
-                <TeacherCard key={teacher.id} teacher={teacher} />
+                <TeacherCard key={teacher.id} teacher={teacher} navigate={navigate} />
               ))
             )}
           </div>
@@ -84,7 +85,43 @@ export default function Search() {
 }
 
 // Carte stylée pour un prof
-function TeacherCard({ teacher }) {
+function TeacherCard({ teacher, navigate }) {
+  // Fonction pour contacter le prof
+  const handleContact = async () => {
+    if (!auth.currentUser) {
+      navigate('/login');
+      return;
+    }
+
+    const userId = auth.currentUser.uid;
+    const teacherId = teacher.id;
+
+    // Vérifie s'il existe déjà une conversation (participants = [userId, teacherId] OU [teacherId, userId])
+    const convRef = collection(db, 'conversations');
+    // Recherche toutes les convos où les participants incluent l'utilisateur connecté
+    const q = query(convRef, where('participants', 'array-contains', userId));
+    const snap = await getDocs(q);
+    // On cherche si une des conversations a aussi le prof comme participant
+    let existing = snap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .find(conv =>
+        conv.participants.includes(teacherId)
+      );
+    let convId = null;
+    if (existing) {
+      convId = existing.id;
+    } else {
+      // Sinon on crée une nouvelle conversation
+      const convDoc = await addDoc(convRef, {
+        participants: [userId, teacherId],
+        created_at: new Date()
+      });
+      convId = convDoc.id;
+    }
+    // Redirige vers la conversation
+    navigate(`/chat/${convId}`);
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-md border p-5 flex flex-col md:flex-row items-center gap-4">
       <img
@@ -108,7 +145,10 @@ function TeacherCard({ teacher }) {
         >
           Voir profil
         </Link>
-        <button className="bg-secondary text-white px-4 py-2 rounded-lg font-semibold shadow hover:bg-yellow-500 transition">
+        <button
+          className="bg-secondary text-white px-4 py-2 rounded-lg font-semibold shadow hover:bg-yellow-500 transition"
+          onClick={handleContact}
+        >
           Contacter
         </button>
       </div>

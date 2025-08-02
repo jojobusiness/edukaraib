@@ -1,13 +1,29 @@
 import React, { useEffect, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import { auth, db } from '../lib/firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
+import NotifList from '../components/NotifList';
 
 export default function ParentDashboard() {
   const [children, setChildren] = useState([]);
   const [upcoming, setUpcoming] = useState([]);
   const [unpaid, setUnpaid] = useState(0);
   const [notifications, setNotifications] = useState([]);
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+
+    // 🔵 Notifications dynamiques Firestore (parent)
+    const notifQ = query(
+      collection(db, 'notifications'),
+      where('user_id', '==', auth.currentUser.uid)
+    );
+    const unsubscribe = onSnapshot(notifQ, (snapshot) => {
+      setNotifications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -34,12 +50,6 @@ export default function ParentDashboard() {
 
       // Paiements en attente
       setUnpaid(courses.filter(c => !c.is_paid).length);
-
-      // Notifications (simu)
-      setNotifications([
-        { text: "Le cours de Sara est confirmé pour vendredi." },
-        { text: "Un paiement est en attente." }
-      ]);
     };
 
     if (auth.currentUser) fetchData();
@@ -85,12 +95,7 @@ export default function ParentDashboard() {
 
       <div className="bg-white rounded-xl shadow p-5">
         <h3 className="font-bold text-primary mb-3">Notifications</h3>
-        <ul className="text-gray-700 space-y-2">
-          {notifications.length === 0 && <li>Pas de notifications récentes.</li>}
-          {notifications.map((n, idx) => (
-            <li key={idx}>📢 {n.text}</li>
-          ))}
-        </ul>
+        <NotifList notifications={notifications} />
       </div>
     </DashboardLayout>
   );

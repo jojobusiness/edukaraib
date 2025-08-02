@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { auth, db } from '../lib/firebase';
-import { collection, getDocs, query, where, updateDoc, doc, getDoc } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
+import { auth, db } from '../lib/firebase';
+import { collection, getDocs, query, where, updateDoc, doc, getDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 
 export default function TeacherLessons() {
   const [lessons, setLessons] = useState([]);
@@ -13,7 +13,7 @@ export default function TeacherLessons() {
       // On enrichit avec les infos élèves
       const data = await Promise.all(snapshot.docs.map(async d => {
         const lesson = { id: d.id, ...d.data() };
-        // Optionnel : aller chercher le nom de l'élève
+        // Aller chercher le nom de l'élève
         let studentName = lesson.student_id;
         try {
           const studentSnap = await getDoc(doc(db, 'users', lesson.student_id));
@@ -27,8 +27,42 @@ export default function TeacherLessons() {
   }, []);
 
   const handleStatus = async (id, status) => {
+    // Mets à jour le statut
     await updateDoc(doc(db, 'lessons', id), { status });
     setLessons(prev => prev.map(l => l.id === id ? { ...l, status } : l));
+
+    // Cherche la leçon et infos élève pour notification
+    const lesson = lessons.find(l => l.id === id);
+    if (!lesson) return;
+    let profName = "Votre professeur";
+    try {
+      const profSnap = await getDoc(doc(db, 'users', auth.currentUser.uid));
+      if (profSnap.exists()) profName = profSnap.data().fullName || profName;
+    } catch {}
+
+    // Texte et type de notif selon le statut
+    let notifText = "";
+    let notifType = "";
+    if (status === "confirmed") {
+      notifText = `Votre cours avec ${profName} a été accepté !`;
+      notifType = "cours_accepted";
+    } else if (status === "rejected") {
+      notifText = `Votre cours avec ${profName} a été refusé.`;
+      notifType = "cours_rejected";
+    } else {
+      return;
+    }
+
+    // Création de la notification côté élève
+    await addDoc(collection(db, 'notifications'), {
+      user_id: lesson.student_id,
+      type: 'cours_accepted',
+      with_id: auth.currentUser.uid, // UID du prof
+      withName: profName,
+      created_at: serverTimestamp(),
+      read: false
+    });
+
   };
 
   const statusColors = {
