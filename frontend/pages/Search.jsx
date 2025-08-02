@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { Link } from 'react-router-dom';
 
 export default function Search() {
   const [teachers, setTeachers] = useState([]);
-  const [query, setQuery] = useState('');
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     const fetchTeachers = async () => {
-      const querySnapshot = await getDocs(collection(db, 'teachers'));
+      // On ne prend que les users avec role teacher !
+      const q = query(collection(db, 'users'), where('role', '==', 'teacher'));
+      const querySnapshot = await getDocs(q);
       const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setTeachers(data);
     };
@@ -16,13 +19,13 @@ export default function Search() {
   }, []);
 
   // Filtrage local (nom, matière, ville, bio)
-  const filtered = query.trim()
+  const filtered = search.trim()
     ? teachers.filter(teacher => {
-        const q = query.toLowerCase();
+        const q = search.toLowerCase();
         return (
           teacher.fullName?.toLowerCase().includes(q) ||
           teacher.subjects?.toLowerCase().includes(q) ||
-          teacher.location?.toLowerCase().includes(q) ||
+          teacher.city?.toLowerCase().includes(q) ||
           teacher.bio?.toLowerCase().includes(q)
         );
       })
@@ -41,13 +44,13 @@ export default function Search() {
         <input
           type="text"
           placeholder="Nom, matière, ville, bio..."
-          value={query}
-          onChange={e => setQuery(e.target.value)}
+          value={search}
+          onChange={e => setSearch(e.target.value)}
           className="w-full border border-gray-300 rounded-lg px-4 py-2 mb-8 focus:ring-2 focus:ring-primary outline-none transition"
         />
 
         {/* Résultats de recherche */}
-        {query.trim() && (
+        {search.trim() && (
           <div className="mb-10">
             <h3 className="text-lg font-semibold text-secondary mb-2">Résultats</h3>
             <div className="grid grid-cols-1 gap-6">
@@ -92,7 +95,7 @@ function TeacherCard({ teacher }) {
       <div className="flex-1 min-w-0">
         <h3 className="font-bold text-lg text-primary">{teacher.fullName}</h3>
         <div className="text-gray-700 mb-1">{teacher.subjects || "Matière non précisée"}</div>
-        <div className="text-xs text-gray-500 mb-1">{teacher.location}</div>
+        <div className="text-xs text-gray-500 mb-1">{teacher.city}</div>
         <div className="text-sm text-gray-600 mb-2 line-clamp-2">{teacher.bio}</div>
         <span className="inline-block text-yellow-700 font-semibold">
           {teacher.price_per_hour ? `${teacher.price_per_hour} € /h` : "Prix non précisé"}

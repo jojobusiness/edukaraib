@@ -24,8 +24,8 @@ export default function TeacherProfile() {
 
   useEffect(() => {
     const fetch = async () => {
-      const snap = await getDoc(doc(db, 'teachers', teacherId));
-      if (snap.exists()) setTeacher({ ...snap.data(), id: teacherId });
+      const snap = await getDoc(doc(db, 'users', teacherId));
+    if (snap.exists()) setTeacher({ ...snap.data(), id: teacherId });
 
       // Récupère les avis
       const q = query(collection(db, 'reviews'), where('teacher_id', '==', teacherId));
