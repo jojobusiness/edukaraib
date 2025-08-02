@@ -29,6 +29,7 @@ import Contact from './pages/Contact';
 import CGU from './pages/CGU';
 import Privacy from './pages/Privacy';
 import ChildDetails from './pages/ChildDetails';
+import TeacherProfile from './pages/TeacherProfile';
 
 import TeacherRoute from './components/TeacherRoute';
 import ParentRoute from './components/ParentRoute';
@@ -44,6 +45,7 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/profils/:teacherId" element={<TeacherProfile />} />
         <Route path="/unauthorized" element={<Unauthorized />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/cgu" element={<CGU />} />

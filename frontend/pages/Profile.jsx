@@ -4,10 +4,11 @@ import { doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { signOut, sendPasswordResetEmail, deleteUser } from 'firebase/auth';
+import TeacherAvailabilityEditor from '../components/TeacherAvailabilityEditor'; // à créer à côté
 
 export default function Profile() {
   const [profile, setProfile] = useState({
-    fullName: '', phone: '', city: '', bio: '', avatarUrl: '', level: '', birth: '', subjects: '', diploma: '', role: ''
+    fullName: '', phone: '', city: '', bio: '', avatarUrl: '', level: '', birth: '', subjects: '', diploma: '', role: '', price_per_hour: '', availability: {}
   });
   const [avatarFile, setAvatarFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -39,6 +40,7 @@ export default function Profile() {
     fields.push({ name: 'subjects', label: 'Matières enseignées', type: 'text' });
     fields.push({ name: 'diploma', label: 'Diplômes', type: 'text' });
     fields.push({ name: 'bio', label: 'Bio', type: 'textarea' });
+    fields.push({ name: 'price_per_hour', label: "Prix à l'heure (€)", type: 'number', step: 1, min: 0 }); // Ajout du prix
   }
 
   // Gestion upload avatar
@@ -148,6 +150,8 @@ export default function Profile() {
                 <input
                   type={f.type}
                   name={f.name}
+                  step={f.step}
+                  min={f.min}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2"
                   value={profile[f.name] || ''}
                   onChange={handleChange}
@@ -156,6 +160,13 @@ export default function Profile() {
               )}
             </div>
           ))}
+          {/* Ajout du sélecteur de disponibilité uniquement pour les profs */}
+          {profile.role === 'teacher' && (
+            <TeacherAvailabilityEditor
+              value={profile.availability || {}}
+              onChange={avail => setProfile({ ...profile, availability: avail })}
+            />
+          )}
           <button
             type="submit"
             className="w-full bg-primary text-white font-semibold py-2 rounded-lg shadow hover:bg-primary-dark transition disabled:opacity-60"
