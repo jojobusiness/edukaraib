@@ -1,104 +1,139 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { auth, db } from '../lib/firebase';
+import React, { useEffect, useState, useRef } from "react";
+import { auth, db } from "../lib/firebase";
 import {
   collection,
   query,
   where,
+  orderBy,
   getDocs,
   addDoc,
-  orderBy,
   serverTimestamp,
-} from 'firebase/firestore';
-import DashboardLayout from '../components/DashboardLayout';
-import { useParams } from 'react-router-dom';
+  doc,
+  getDoc,
+} from "firebase/firestore";
 
-export default function Messages() {
-  const { receiverId } = useParams(); // Permet d’utiliser /chat/:receiverId dans la route
+export default function Messages({ receiverId }) {
   const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
-  const bottomRef = useRef();
+  const [newMessage, setNewMessage] = useState("");
+  const [receiverName, setReceiverName] = useState("");
+  const messagesEndRef = useRef(null);
 
+  // Charger le nom de l'interlocuteur
+  useEffect(() => {
+    const fetchReceiverName = async () => {
+      const userSnap = await getDoc(doc(db, "users", receiverId));
+      if (userSnap.exists()) {
+        setReceiverName(userSnap.data().fullName || "Utilisateur");
+      }
+    };
+    fetchReceiverName();
+  }, [receiverId]);
+
+  // Charger les messages
   useEffect(() => {
     const fetchMessages = async () => {
-      if (!auth.currentUser || !receiverId) return;
       const q = query(
-        collection(db, 'messages'),
-        where('sender_id', 'in', [auth.currentUser.uid, receiverId]),
-        where('receiver_id', 'in', [auth.currentUser.uid, receiverId]),
-        orderBy('sent_at', 'asc')
+        collection(db, "messages"),
+        where("participants", "array-contains", auth.currentUser.uid),
+        orderBy("sent_at", "asc")
       );
       const snapshot = await getDocs(q);
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const data = snapshot.docs
+        .map((doc) => ({ id: doc.id, ...doc.data() }))
+        .filter(
+          (m) =>
+            (m.sender_id === auth.currentUser.uid && m.receiver_id === receiverId) ||
+            (m.sender_id === receiverId && m.receiver_id === auth.currentUser.uid)
+        );
       setMessages(data);
     };
     fetchMessages();
   }, [receiverId]);
 
+  // Scroll auto en bas
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Envoi d'un message
   const handleSend = async (e) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
-    await addDoc(collection(db, 'messages'), {
+
+    await addDoc(collection(db, "messages"), {
       sender_id: auth.currentUser.uid,
       receiver_id: receiverId,
-      message: newMessage,
-      sent_at: serverTimestamp()
+      participants: [auth.currentUser.uid, receiverId],
+      message: newMessage.trim(),
+      sent_at: serverTimestamp(),
     });
-    setNewMessage('');
-    // Les messages seront récupérés via useEffect (rafraîchit automatiquement)
+
+    setNewMessage("");
   };
 
   return (
-    <DashboardLayout>
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-100px)] bg-gradient-to-br from-white via-gray-100 to-secondary/20 px-4 py-10">
-        <div className="w-full max-w-xl bg-white rounded-2xl shadow-xl border border-gray-100 flex flex-col" style={{ height: 500 }}>
-          <h2 className="text-xl font-bold text-primary p-4 border-b mb-0">💬 Conversation</h2>
-          <div className="flex-1 overflow-y-auto px-4 py-2" style={{ minHeight: 0 }}>
-            {messages.length === 0 && (
-              <div className="text-center text-gray-400 pt-8">Aucun message pour l’instant.</div>
-            )}
-            {messages.map((m, idx) => (
-              <div
-                key={m.id || idx}
-                className={`flex mb-2 ${m.sender_id === auth.currentUser.uid ? 'justify-end' : 'justify-start'}`}
-              >
-                <div
-                  className={`rounded-lg px-4 py-2 max-w-xs break-words text-sm shadow
-                    ${m.sender_id === auth.currentUser.uid
-                      ? 'bg-primary text-white'
-                      : 'bg-gray-100 text-gray-800'
-                    }`}
-                >
-                  {m.message}
-                  <div className="text-[10px] text-right text-gray-300 mt-1">
-                    {m.sent_at?.seconds &&
-                      new Date(m.sent_at.seconds * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                  </div>
-                </div>
-              </div>
-            ))}
-            <div ref={bottomRef} />
-          </div>
-          <form onSubmit={handleSend} className="flex items-center p-4 border-t gap-2">
-            <input
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              placeholder="Message..."
-              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary outline-none transition"
-              autoFocus
-            />
-            <button
-              type="submit"
-              className="bg-primary text-white px-5 py-2 rounded-lg font-semibold shadow hover:bg-primary-dark transition"
-            >
-              Envoyer
-            </button>
-          </form>
-        </div>
+    <div className="flex flex-col h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white p-4 shadow flex items-center gap-3">
+        <img
+          src="/avatar-default.png"
+          alt="Avatar"
+          className="w-10 h-10 rounded-full"
+        />
+        <h2 className="text-lg font-semibold">{receiverName}</h2>
       </div>
-    </DashboardLayout>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {messages.map((m) => {
+          const isMine = m.sender_id === auth.currentUser.uid;
+          return (
+            <div
+              key={m.id}
+              className={`flex flex-col max-w-xs ${
+                isMine ? "ml-auto items-end" : "mr-auto items-start"
+              }`}
+            >
+              <div
+                className={`px-4 py-2 rounded-2xl shadow ${
+                  isMine
+                    ? "bg-primary text-white rounded-br-none"
+                    : "bg-gray-200 text-gray-900 rounded-bl-none"
+                }`}
+              >
+                {m.message}
+              </div>
+              <span className="text-xs text-gray-500 mt-1">
+                {isMine ? "Moi" : receiverName} •{" "}
+                {m.sent_at?.toDate
+                  ? m.sent_at.toDate().toLocaleTimeString()
+                  : ""}
+              </span>
+            </div>
+          );
+        })}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Formulaire */}
+      <form
+        onSubmit={handleSend}
+        className="p-3 bg-white border-t flex gap-2 items-center"
+      >
+        <input
+          type="text"
+          placeholder="Votre message..."
+          value={newMessage}
+          onChange={(e) => setNewMessage(e.target.value)}
+          className="flex-1 border rounded-full px-4 py-2 outline-none"
+        />
+        <button
+          type="submit"
+          className="bg-primary text-white px-4 py-2 rounded-full shadow hover:bg-primary-dark transition"
+        >
+          Envoyer
+        </button>
+      </form>
+    </div>
   );
 }

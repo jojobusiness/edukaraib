@@ -1,43 +1,68 @@
-import React, { useEffect, useState } from 'react';
-import { db, auth } from '../lib/firebase';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
-import DashboardLayout from '../components/DashboardLayout';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useState } from "react";
+import { db, auth } from "../lib/firebase";
+import { collection, query, where, orderBy, getDocs, doc, getDoc } from "firebase/firestore";
+import DashboardLayout from "../components/DashboardLayout";
+import { Link } from "react-router-dom";
 
 export default function ChatList() {
   const [contacts, setContacts] = useState([]);
 
   useEffect(() => {
-    const fetch = async () => {
-      // Récupère tous les messages de la base (optimise si trop gros volume !)
-      const snapshot = await getDocs(collection(db, 'messages'));
-      const msgs = snapshot.docs.map(doc => doc.data());
-      // Filtre ceux qui concernent l'utilisateur courant
-      const related = msgs.filter(
-        m => m.sender_id === auth.currentUser.uid || m.receiver_id === auth.currentUser.uid
+    const fetchChats = async () => {
+      if (!auth.currentUser) return;
+
+      // On récupère tous les messages où l'utilisateur est dans "participants"
+      const q = query(
+        collection(db, "messages"),
+        where("participants", "array-contains", auth.currentUser.uid),
+        orderBy("sent_at", "desc")
       );
-      // Liste des IDs de contacts (hors soi-même, pas de doublons)
-      const contactIds = [...new Set(
-        related.map(m =>
-          m.sender_id === auth.currentUser.uid ? m.receiver_id : m.sender_id
-        )
-      )];
+      const snapshot = await getDocs(q);
+      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      // Récupère info de chaque contact (nom, role, avatar…)
-      const infos = await Promise.all(contactIds.map(async (uid) => {
-        let user = { uid, fullName: uid, role: '', avatarUrl: '' };
-        try {
-          const snap = await getDoc(doc(db, 'users', uid));
-          if (snap.exists()) {
-            user = { ...user, ...snap.data() };
-          }
-        } catch {}
-        return user;
-      }));
+      // Regroupe les messages par contact
+      const convoMap = {};
+      for (let m of msgs) {
+        const contactId =
+          m.sender_id === auth.currentUser.uid ? m.receiver_id : m.sender_id;
+        if (!convoMap[contactId]) {
+          convoMap[contactId] = { lastMessage: m, contactId };
+        }
+      }
 
-      setContacts(infos);
+      // Récupère les infos des contacts
+      const contactsInfo = await Promise.all(
+        Object.values(convoMap).map(async (c) => {
+          let userData = {
+            uid: c.contactId,
+            fullName: c.contactId,
+            role: "",
+            avatarUrl: "",
+            lastMessage: c.lastMessage.message || "",
+            lastDate: c.lastMessage.sent_at?.toDate
+              ? c.lastMessage.sent_at.toDate()
+              : null,
+          };
+          try {
+            const snap = await getDoc(doc(db, "users", c.contactId));
+            if (snap.exists()) {
+              const data = snap.data();
+              userData = {
+                ...userData,
+                fullName: data.fullName || c.contactId,
+                role: data.role || "",
+                avatarUrl: data.avatarUrl || "",
+              };
+            }
+          } catch {}
+          return userData;
+        })
+      );
+
+      setContacts(contactsInfo);
     };
-    fetch();
+
+    fetchChats();
   }, []);
 
   return (
@@ -49,15 +74,15 @@ export default function ChatList() {
             <div className="text-gray-500 text-center">Aucune conversation récente.</div>
           ) : (
             <ul className="divide-y divide-gray-100">
-              {contacts.map(u => (
+              {contacts.map((u) => (
                 <li key={u.uid} className="flex items-center gap-4 py-4">
                   <img
                     src={u.avatarUrl || "/avatar-default.png"}
                     alt={u.fullName || u.uid}
                     className="w-12 h-12 rounded-full object-cover border-2 border-primary"
                   />
-                  <div className="flex-1">
-                    <div className="font-bold text-primary">{u.fullName}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-primary truncate">{u.fullName}</div>
                     <div className="text-xs text-gray-500">
                       {u.role === "teacher"
                         ? "Professeur"
@@ -66,6 +91,9 @@ export default function ChatList() {
                         : u.role === "student"
                         ? "Élève"
                         : ""}
+                    </div>
+                    <div className="text-sm text-gray-600 truncate mt-1">
+                      {u.lastMessage || "Aucun message"}
                     </div>
                   </div>
                   <Link
