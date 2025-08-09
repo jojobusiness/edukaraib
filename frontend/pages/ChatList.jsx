@@ -1,6 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { db, auth } from "../lib/firebase";
-import { collection, query, where, orderBy, getDocs, doc, getDoc } from "firebase/firestore";
+import {
+  collection,
+  query,
+  where,
+  orderBy,
+  onSnapshot,
+  doc,
+  getDoc,
+} from "firebase/firestore";
 import DashboardLayout from "../components/DashboardLayout";
 import { Link } from "react-router-dom";
 
@@ -8,65 +16,68 @@ export default function ChatList() {
   const [contacts, setContacts] = useState([]);
 
   useEffect(() => {
-    const fetchChats = async () => {
-      if (!auth.currentUser) return;
+    if (!auth.currentUser) return;
 
-      // On récupère tous les messages où l'utilisateur est dans "participants"
-      const q = query(
-        collection(db, "messages"),
-        where("participants", "array-contains", auth.currentUser.uid),
-        orderBy("sent_at", "desc")
-      );
-      const snapshot = await getDocs(q);
-      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // Messages où je suis participant, triés par plus récent
+    const q = query(
+      collection(db, "messages"),
+      where("participants", "array-contains", auth.currentUser.uid),
+      orderBy("sent_at", "desc")
+    );
 
-      // Regroupe les messages par contact
-      const convoMap = {};
-      for (let m of msgs) {
+    const unsub = onSnapshot(q, async (snap) => {
+      const msgs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      // Regroupe par contact (l’autre personne)
+      const mapByContact = new Map(); // contactId -> { lastMessage, contactId }
+      for (const m of msgs) {
         const contactId =
           m.sender_id === auth.currentUser.uid ? m.receiver_id : m.sender_id;
-        if (!convoMap[contactId]) {
-          convoMap[contactId] = { lastMessage: m, contactId };
+        if (!mapByContact.has(contactId)) {
+          mapByContact.set(contactId, { contactId, lastMessage: m });
         }
       }
 
-      // Récupère les infos des contacts
-      const contactsInfo = await Promise.all(
-        Object.values(convoMap).map(async (c) => {
-          let userData = {
-            uid: c.contactId,
-            fullName: c.contactId,
-            role: "",
-            avatarUrl: "",
-            lastMessage: c.lastMessage.message || "",
-            lastDate: c.lastMessage.sent_at?.toDate
-              ? c.lastMessage.sent_at.toDate()
-              : null,
-          };
-          try {
-            const snap = await getDoc(doc(db, "users", c.contactId));
-            if (snap.exists()) {
-              const data = snap.data();
-              userData = {
-                ...userData,
-                fullName: data.fullName || c.contactId,
-                role: data.role || "",
-                avatarUrl: data.avatarUrl || "",
-              };
-            }
-          } catch {}
-          return userData;
-        })
-      );
+      // Va chercher les infos des contacts (nom, avatar, rôle)
+      const result = [];
+      for (const { contactId, lastMessage } of mapByContact.values()) {
+        let fullName = contactId;
+        let avatarUrl = "";
+        let role = "";
+        try {
+          const uSnap = await getDoc(doc(db, "users", contactId));
+          if (uSnap.exists()) {
+            const u = uSnap.data();
+            fullName = u.fullName || fullName;
+            avatarUrl = u.avatarUrl || "";
+            role = u.role || "";
+          }
+        } catch {}
+        result.push({
+          uid: contactId,
+          fullName,
+          avatarUrl,
+          role,
+          lastMessage: lastMessage.message || "",
+          lastDate: lastMessage.sent_at?.toDate
+            ? lastMessage.sent_at.toDate()
+            : null,
+        });
+      }
 
-      setContacts(contactsInfo);
-    };
+      // Pas obligatoire mais pratique : retrier par date au cas où
+      result.sort((a, b) => (b.lastDate?.getTime() || 0) - (a.lastDate?.getTime() || 0));
+      setContacts(result);
+    });
 
-    fetchChats();
+    return () => unsub();
   }, []);
 
+  // Si tu veux adapter le menu à chaque rôle, récupère-le depuis /users/{uid}
+  const currentRole = "student"; // ou "teacher"/"parent" selon ton layout actuel
+
   return (
-    <DashboardLayout role="student">
+    <DashboardLayout role={currentRole}>
       <div className="max-w-2xl mx-auto">
         <h2 className="text-2xl font-bold text-primary mb-6">💬 Mes conversations</h2>
         <div className="bg-white p-6 rounded-xl shadow border">
@@ -96,12 +107,19 @@ export default function ChatList() {
                       {u.lastMessage || "Aucun message"}
                     </div>
                   </div>
-                  <Link
-                    to={`/chat/${u.uid}`}
-                    className="bg-primary text-white px-4 py-2 rounded shadow font-semibold hover:bg-primary-dark transition"
-                  >
-                    Discuter
-                  </Link>
+                  <div className="flex flex-col items-end">
+                    {u.lastDate && (
+                      <div className="text-xs text-gray-400 mb-2">
+                        {u.lastDate.toLocaleDateString()} {u.lastDate.toLocaleTimeString()}
+                      </div>
+                    )}
+                    <Link
+                      to={`/chat/${u.uid}`}
+                      className="bg-primary text-white px-4 py-2 rounded shadow font-semibold hover:bg-primary-dark transition"
+                    >
+                      Discuter
+                    </Link>
+                  </div>
                 </li>
               ))}
             </ul>

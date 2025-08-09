@@ -5,7 +5,7 @@ import {
   query,
   where,
   orderBy,
-  getDocs,
+  onSnapshot,
   addDoc,
   serverTimestamp,
   doc,
@@ -21,33 +21,42 @@ export default function Messages({ receiverId }) {
   // Charger le nom de l'interlocuteur
   useEffect(() => {
     const fetchReceiverName = async () => {
-      const userSnap = await getDoc(doc(db, "users", receiverId));
-      if (userSnap.exists()) {
-        setReceiverName(userSnap.data().fullName || "Utilisateur");
+      try {
+        const userSnap = await getDoc(doc(db, "users", receiverId));
+        if (userSnap.exists()) {
+          setReceiverName(userSnap.data().fullName || "Utilisateur");
+        } else {
+          setReceiverName(receiverId);
+        }
+      } catch {
+        setReceiverName(receiverId);
       }
     };
     fetchReceiverName();
   }, [receiverId]);
 
-  // Charger les messages
+  // Flux temps réel des messages (les miens + ceux de l'autre)
   useEffect(() => {
-    const fetchMessages = async () => {
-      const q = query(
-        collection(db, "messages"),
-        where("participants", "array-contains", auth.currentUser.uid),
-        orderBy("sent_at", "asc")
-      );
-      const snapshot = await getDocs(q);
-      const data = snapshot.docs
-        .map((doc) => ({ id: doc.id, ...doc.data() }))
+    if (!auth.currentUser) return;
+
+    const q = query(
+      collection(db, "messages"),
+      where("participants", "array-contains", auth.currentUser.uid),
+      orderBy("sent_at", "asc")
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      const data = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
         .filter(
           (m) =>
             (m.sender_id === auth.currentUser.uid && m.receiver_id === receiverId) ||
             (m.sender_id === receiverId && m.receiver_id === auth.currentUser.uid)
         );
       setMessages(data);
-    };
-    fetchMessages();
+    });
+
+    return () => unsub();
   }, [receiverId]);
 
   // Scroll auto en bas
@@ -58,12 +67,12 @@ export default function Messages({ receiverId }) {
   // Envoi d'un message
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() || !auth.currentUser) return;
 
     await addDoc(collection(db, "messages"), {
       sender_id: auth.currentUser.uid,
       receiver_id: receiverId,
-      participants: [auth.currentUser.uid, receiverId],
+      participants: [auth.currentUser.uid, receiverId], // IMPORTANT
       message: newMessage.trim(),
       sent_at: serverTimestamp(),
     });
@@ -105,9 +114,7 @@ export default function Messages({ receiverId }) {
               </div>
               <span className="text-xs text-gray-500 mt-1">
                 {isMine ? "Moi" : receiverName} •{" "}
-                {m.sent_at?.toDate
-                  ? m.sent_at.toDate().toLocaleTimeString()
-                  : ""}
+                {m.sent_at?.toDate ? m.sent_at.toDate().toLocaleTimeString() : ""}
               </span>
             </div>
           );
