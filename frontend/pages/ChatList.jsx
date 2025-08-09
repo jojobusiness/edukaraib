@@ -14,24 +14,41 @@ import {
 import DashboardLayout from "../components/DashboardLayout";
 import { Link } from "react-router-dom";
 
+/**
+ * Récupère un profil utilisateur à partir d'un UID.
+ * Supporte /users/{uid} ou un doc autoId contenant un champ uid.
+ */
 async function fetchUserProfile(uid) {
-  // 1) Essai direct: /users/{uid}
+  if (!uid) return null;
+
+  // 1) Essai direct: users/{uid}
   try {
-    const d = await getDoc(doc(db, "users", uid));
-    if (d.exists()) return { id: uid, ...d.data() };
+    const direct = await getDoc(doc(db, "users", uid));
+    if (direct.exists()) return { id: uid, ...direct.data() };
   } catch {}
 
-  // 2) Fallback: users where uid == <uid>
+  // 2) Fallback: where uid == <uid>
   try {
     const q = query(collection(db, "users"), where("uid", "==", uid), limit(1));
     const snap = await getDocs(q);
     if (!snap.empty) {
-      const docSnap = snap.docs[0];
-      return { id: docSnap.id, ...docSnap.data() };
+      const d = snap.docs[0];
+      return { id: d.id, ...d.data() };
     }
   } catch {}
 
   return null;
+}
+
+/**
+ * Extrait l'UID de l'interlocuteur à partir d'un message.
+ * Priorité aux nouveaux champs *_uid, fallback sur les anciens.
+ */
+function getContactUidFromMessage(m, myUid) {
+  const s = m.sender_uid ?? m.sender_id;
+  const r = m.receiver_uid ?? m.receiver_id;
+  if (!s || !r) return null;
+  return s === myUid ? r : s;
 }
 
 export default function ChatList() {
@@ -40,43 +57,60 @@ export default function ChatList() {
   useEffect(() => {
     if (!auth.currentUser) return;
 
-    const q = query(
+    const myUid = auth.currentUser.uid;
+
+    // Deux listeners : nouveau schéma + ancien schéma (pour compat)
+    const qNew = query(
       collection(db, "messages"),
-      where("participants", "array-contains", auth.currentUser.uid),
+      where("participants_uids", "array-contains", myUid),
+      orderBy("sent_at", "desc")
+    );
+    const qOld = query(
+      collection(db, "messages"),
+      where("participants", "array-contains", myUid),
       orderBy("sent_at", "desc")
     );
 
-    const unsub = onSnapshot(q, async (snap) => {
-      const msgs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    let currentNew = [];
+    let currentOld = [];
 
-      // Récupère l'UID de l'interlocuteur pour chaque message
-      const mapByContact = new Map(); // contactId -> lastMessage
+    const recompute = async () => {
+      // Merge + dédupe par id
+      const all = new Map();
+      for (const d of [...currentNew, ...currentOld]) all.set(d.id, d);
+      const msgs = Array.from(all.values());
+
+      // Map par interlocuteur (dernier message uniquement)
+      const mapByContact = new Map();
       for (const m of msgs) {
-        const contactId =
-          m.sender_id === auth.currentUser.uid ? m.receiver_id : m.sender_id;
-        if (!mapByContact.has(contactId)) {
-          mapByContact.set(contactId, m);
+        const contactUid = getContactUidFromMessage(m, myUid);
+        if (!contactUid) continue;
+        if (!mapByContact.has(contactUid)) {
+          mapByContact.set(contactUid, m);
         }
       }
 
-      // Fetch des profils en parallèle
-      const entries = Array.from(mapByContact.entries()); // [ [contactId, lastMessage], ... ]
+      // Récup profils en parallèle
+      const entries = Array.from(mapByContact.entries()); // [ [contactUid, lastMessage], ... ]
       const profiles = await Promise.all(
-        entries.map(async ([contactId, lastMessage]) => {
-          const profile = await fetchUserProfile(contactId);
-          const displayName =
+        entries.map(async ([contactUid, lastMessage]) => {
+          const profile = await fetchUserProfile(contactUid);
+          const fullName =
             profile?.fullName ||
             profile?.name ||
             profile?.displayName ||
             "(Sans nom)";
           const avatarUrl =
-            profile?.avatarUrl || profile?.avatar_url || profile?.photoURL || "";
+            profile?.avatarUrl ||
+            profile?.avatar_url ||
+            profile?.photoURL ||
+            "";
 
           const role = profile?.role || "";
 
           return {
-            uid: contactId, // <-- bien l'UID de l’interlocuteur
-            fullName: displayName,
+            uid: contactUid, // bien l’UID de l’interlocuteur
+            fullName,
             avatarUrl,
             role,
             lastMessage: lastMessage?.message || "",
@@ -87,16 +121,29 @@ export default function ChatList() {
         })
       );
 
-      // Tri final
       profiles.sort(
         (a, b) => (b.lastDate?.getTime() || 0) - (a.lastDate?.getTime() || 0)
       );
       setContacts(profiles);
+    };
+
+    const unsubNew = onSnapshot(qNew, (snap) => {
+      currentNew = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      recompute();
     });
 
-    return () => unsub();
+    const unsubOld = onSnapshot(qOld, (snap) => {
+      currentOld = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      recompute();
+    });
+
+    return () => {
+      unsubNew();
+      unsubOld();
+    };
   }, []);
 
+  // Adapte ton layout si besoin
   const currentRole = "student";
 
   return (
