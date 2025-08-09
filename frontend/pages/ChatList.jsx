@@ -8,9 +8,31 @@ import {
   onSnapshot,
   doc,
   getDoc,
+  getDocs,
+  limit,
 } from "firebase/firestore";
 import DashboardLayout from "../components/DashboardLayout";
 import { Link } from "react-router-dom";
+
+async function fetchUserProfile(uid) {
+  // 1) Essai direct: /users/{uid}
+  try {
+    const d = await getDoc(doc(db, "users", uid));
+    if (d.exists()) return { id: uid, ...d.data() };
+  } catch {}
+
+  // 2) Fallback: users where uid == <uid>
+  try {
+    const q = query(collection(db, "users"), where("uid", "==", uid), limit(1));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const docSnap = snap.docs[0];
+      return { id: docSnap.id, ...docSnap.data() };
+    }
+  } catch {}
+
+  return null;
+}
 
 export default function ChatList() {
   const [contacts, setContacts] = useState([]);
@@ -18,7 +40,6 @@ export default function ChatList() {
   useEffect(() => {
     if (!auth.currentUser) return;
 
-    // Messages où je suis participant, triés par plus récent
     const q = query(
       collection(db, "messages"),
       where("participants", "array-contains", auth.currentUser.uid),
@@ -28,53 +49,55 @@ export default function ChatList() {
     const unsub = onSnapshot(q, async (snap) => {
       const msgs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-      // Regroupe par contact (l’autre personne)
-      const mapByContact = new Map(); // contactId -> { lastMessage, contactId }
+      // Récupère l'UID de l'interlocuteur pour chaque message
+      const mapByContact = new Map(); // contactId -> lastMessage
       for (const m of msgs) {
         const contactId =
           m.sender_id === auth.currentUser.uid ? m.receiver_id : m.sender_id;
         if (!mapByContact.has(contactId)) {
-          mapByContact.set(contactId, { contactId, lastMessage: m });
+          mapByContact.set(contactId, m);
         }
       }
 
-      // Va chercher les infos des contacts (nom, avatar, rôle)
-      const result = [];
-      for (const { contactId, lastMessage } of mapByContact.values()) {
-        let fullName = contactId;
-        let avatarUrl = "";
-        let role = "";
-        try {
-          const uSnap = await getDoc(doc(db, "users", contactId));
-          if (uSnap.exists()) {
-            const u = uSnap.data();
-            fullName = u.fullName || fullName;
-            avatarUrl = u.avatarUrl || "";
-            role = u.role || "";
-          }
-        } catch {}
-        result.push({
-          uid: contactId,
-          fullName,
-          avatarUrl,
-          role,
-          lastMessage: lastMessage.message || "",
-          lastDate: lastMessage.sent_at?.toDate
-            ? lastMessage.sent_at.toDate()
-            : null,
-        });
-      }
+      // Fetch des profils en parallèle
+      const entries = Array.from(mapByContact.entries()); // [ [contactId, lastMessage], ... ]
+      const profiles = await Promise.all(
+        entries.map(async ([contactId, lastMessage]) => {
+          const profile = await fetchUserProfile(contactId);
+          const displayName =
+            profile?.fullName ||
+            profile?.name ||
+            profile?.displayName ||
+            "(Sans nom)";
+          const avatarUrl =
+            profile?.avatarUrl || profile?.avatar_url || profile?.photoURL || "";
 
-      // Pas obligatoire mais pratique : retrier par date au cas où
-      result.sort((a, b) => (b.lastDate?.getTime() || 0) - (a.lastDate?.getTime() || 0));
-      setContacts(result);
+          const role = profile?.role || "";
+
+          return {
+            uid: contactId, // <-- bien l'UID de l’interlocuteur
+            fullName: displayName,
+            avatarUrl,
+            role,
+            lastMessage: lastMessage?.message || "",
+            lastDate: lastMessage?.sent_at?.toDate
+              ? lastMessage.sent_at.toDate()
+              : null,
+          };
+        })
+      );
+
+      // Tri final
+      profiles.sort(
+        (a, b) => (b.lastDate?.getTime() || 0) - (a.lastDate?.getTime() || 0)
+      );
+      setContacts(profiles);
     });
 
     return () => unsub();
   }, []);
 
-  // Si tu veux adapter le menu à chaque rôle, récupère-le depuis /users/{uid}
-  const currentRole = "student"; // ou "teacher"/"parent" selon ton layout actuel
+  const currentRole = "student";
 
   return (
     <DashboardLayout role={currentRole}>

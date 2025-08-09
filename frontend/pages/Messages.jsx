@@ -10,29 +10,40 @@ import {
   serverTimestamp,
   doc,
   getDoc,
+  getDocs,
+  limit,
 } from "firebase/firestore";
+
+async function fetchUserProfile(uid) {
+  try {
+    const d = await getDoc(doc(db, "users", uid));
+    if (d.exists()) return { id: uid, ...d.data() };
+  } catch {}
+  try {
+    const q = query(collection(db, "users"), where("uid", "==", uid), limit(1));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const docSnap = snap.docs[0];
+      return { id: docSnap.id, ...docSnap.data() };
+    }
+  } catch {}
+  return null;
+}
 
 export default function Messages({ receiverId }) {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [receiverName, setReceiverName] = useState("");
+  const [receiverAvatar, setReceiverAvatar] = useState("");
   const messagesEndRef = useRef(null);
 
-  // Charger le nom de l'interlocuteur
+  // Charger le profil de l'interlocuteur
   useEffect(() => {
-    const fetchReceiverName = async () => {
-      try {
-        const userSnap = await getDoc(doc(db, "users", receiverId));
-        if (userSnap.exists()) {
-          setReceiverName(userSnap.data().fullName || "Utilisateur");
-        } else {
-          setReceiverName(receiverId);
-        }
-      } catch {
-        setReceiverName(receiverId);
-      }
-    };
-    fetchReceiverName();
+    (async () => {
+      const p = await fetchUserProfile(receiverId);
+      setReceiverName(p?.fullName || p?.name || p?.displayName || "Utilisateur");
+      setReceiverAvatar(p?.avatarUrl || p?.avatar_url || p?.photoURL || "/avatar-default.png");
+    })();
   }, [receiverId]);
 
   // Flux temps réel des messages (les miens + ceux de l'autre)
@@ -72,7 +83,7 @@ export default function Messages({ receiverId }) {
     await addDoc(collection(db, "messages"), {
       sender_id: auth.currentUser.uid,
       receiver_id: receiverId,
-      participants: [auth.currentUser.uid, receiverId], // IMPORTANT
+      participants: [auth.currentUser.uid, receiverId], // OK
       message: newMessage.trim(),
       sent_at: serverTimestamp(),
     });
@@ -85,9 +96,9 @@ export default function Messages({ receiverId }) {
       {/* Header */}
       <div className="bg-white p-4 shadow flex items-center gap-3">
         <img
-          src="/avatar-default.png"
+          src={receiverAvatar || "/avatar-default.png"}
           alt="Avatar"
-          className="w-10 h-10 rounded-full"
+          className="w-10 h-10 rounded-full object-cover"
         />
         <h2 className="text-lg font-semibold">{receiverName}</h2>
       </div>
@@ -123,10 +134,7 @@ export default function Messages({ receiverId }) {
       </div>
 
       {/* Formulaire */}
-      <form
-        onSubmit={handleSend}
-        className="p-3 bg-white border-t flex gap-2 items-center"
-      >
+      <form onSubmit={handleSend} className="p-3 bg-white border-t flex gap-2 items-center">
         <input
           type="text"
           placeholder="Votre message..."
