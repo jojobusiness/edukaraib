@@ -36,6 +36,7 @@ import ParentRoute from './components/ParentRoute';
 import ReviewForm from './components/ReviewForm';
 import PrivateRoute from './components/PrivateRoute';
 import StudentRoute from './components/StudentRoute';
+import RequireRole from './routes/RequireRole';
 
 
 function App() {
@@ -54,7 +55,7 @@ function App() {
 
         {/* Routes protégées */}
         <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>}/>
-        <Route path="/chat/:receiverId" element={<PrivateRoute><MessagesWrapper /></PrivateRoute>}/>
+        <Route path="/chat/:id" element={<RequireRole roles={["student", "teacher", "parent"]}><MessagesWrapper /></RequireRole>}/>
         <Route path="/chat" element={<PrivateRoute><Messages /></PrivateRoute>}/>
         <Route path="/chat-list" element={<PrivateRoute><ChatList /></PrivateRoute>}/>
         <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />

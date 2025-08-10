@@ -12,6 +12,7 @@ import {
   limit,
 } from "firebase/firestore";
 import DashboardLayout from "../components/DashboardLayout";
+import { useUserRole } from "../hooks/useUserRole";
 import { Link } from "react-router-dom";
 
 /**
@@ -143,8 +144,8 @@ export default function ChatList() {
     };
   }, []);
 
-  // Adapte ton layout si besoin
-  const currentRole = "student";
+const { role: currentRole, loading } = useUserRole();
+if (loading) return null; // ou un skeleton
 
   return (
     <DashboardLayout role={currentRole}>
