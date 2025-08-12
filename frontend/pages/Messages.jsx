@@ -11,169 +11,128 @@ import {
   doc,
   getDoc,
   getDocs,
+  updateDoc,
   limit,
 } from "firebase/firestore";
 
-/**
- * Récupère un profil utilisateur à partir d'un identifiant quelconque.
- * - Si anyId est déjà un UID: on le trouve direct.
- * - Sinon on tente des fallbacks.
- */
+// ---------- Helpers ----------
+function pairKey(a, b) {
+  return [a, b].sort().join("_");
+}
+
 async function fetchUserProfile(uid) {
   if (!uid) return null;
-
-  // 1) Essai direct: users/{uid}
   try {
-    const direct = await getDoc(doc(db, "users", uid));
-    if (direct.exists()) return { id: uid, ...direct.data() };
+    const d = await getDoc(doc(db, "users", uid));
+    if (d.exists()) return { id: uid, ...d.data() };
   } catch {}
-
-  // 2) Fallback: where uid == <uid>
   try {
     const q = query(collection(db, "users"), where("uid", "==", uid), limit(1));
-    const snap = await getDocs(q);
-    if (!snap.empty) {
-      const d = snap.docs[0];
+    const s = await getDocs(q);
+    if (!s.empty) {
+      const d = s.docs[0];
       return { id: d.id, ...d.data() };
     }
   } catch {}
-
   return null;
 }
 
 /**
- * Essaie de convertir n'importe quel identifiant (docId, ancien id…) en UID Firebase Auth.
- * Si c'est déjà un UID, on retourne tel quel.
+ * S'assure qu'une conversation entre myUid et otherUid existe.
+ * - Cherche par clé triée (key = "a_b")
+ * - Crée si besoin
+ * Retourne l'ID de conversation (cid).
  */
-async function toUid(anyId) {
-  if (!anyId) return anyId;
+async function ensureConversation(myUid, otherUid) {
+  const key = pairKey(myUid, otherUid);
+  const qConv = query(collection(db, "conversations"), where("key", "==", key), limit(1));
+  const snap = await getDocs(qConv);
+  if (!snap.empty) return snap.docs[0].id;
 
-  // 1) users/{anyId}
-  try {
-    const direct = await getDoc(doc(db, "users", anyId));
-    if (direct.exists()) {
-      const d = direct.data();
-      return d?.uid || anyId;
-    }
-  } catch {}
-
-  // 2) where uid == anyId
-  try {
-    const q = query(collection(db, "users"), where("uid", "==", anyId), limit(1));
-    const s = await getDocs(q);
-    if (!s.empty) return s.docs[0].data().uid || anyId;
-  } catch {}
-
-  return anyId;
+  const ref = await addDoc(collection(db, "conversations"), {
+    participants: [myUid, otherUid],
+    key,
+    lastMessage: "",
+    lastSentAt: serverTimestamp(),
+    lastSender: "",
+  });
+  return ref.id;
 }
 
 export default function Messages({ receiverId }) {
+  const [cid, setCid] = useState(null);                 // conversationId
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
-  const [receiverUid, setReceiverUid] = useState("");
   const [receiverName, setReceiverName] = useState("");
   const [receiverAvatar, setReceiverAvatar] = useState("");
   const messagesEndRef = useRef(null);
 
-  // Résoudre l'UID réel du destinataire (si route non standard)
+  // 1) Résoudre/Créer la conversation à partir du UID destinataire (receiverId)
   useEffect(() => {
     (async () => {
-      const uid = await toUid(receiverId);
-      setReceiverUid(uid);
+      const myUid = auth.currentUser?.uid;
+      if (!myUid || !receiverId) return;
+      const conversationId = await ensureConversation(myUid, receiverId);
+      setCid(conversationId);
     })();
   }, [receiverId]);
 
-  // Charger le profil de l'interlocuteur
+  // 2) Charger le profil de l'interlocuteur
   useEffect(() => {
     (async () => {
-      if (!receiverUid) return;
-      const p = await fetchUserProfile(receiverUid);
+      if (!receiverId) return;
+      const p = await fetchUserProfile(receiverId);
       setReceiverName(p?.fullName || p?.name || p?.displayName || "Utilisateur");
       setReceiverAvatar(
         p?.avatarUrl || p?.avatar_url || p?.photoURL || "/avatar-default.png"
       );
     })();
-  }, [receiverUid]);
+  }, [receiverId]);
 
-  // Flux temps réel des messages (les miens + ceux de l'autre), compat ancien/nouveau schéma
+  // 3) Flux temps réel des messages de la conversation
   useEffect(() => {
-    if (!auth.currentUser || !receiverUid) return;
-    const myUid = auth.currentUser.uid;
+    if (!cid) return;
 
-    const qNew = query(
+    const qMsg = query(
       collection(db, "messages"),
-      where("participants_uids", "array-contains", myUid),
-      orderBy("sent_at", "asc")
-    );
-    const qOld = query(
-      collection(db, "messages"),
-      where("participants", "array-contains", myUid),
+      where("conversationId", "==", cid),
       orderBy("sent_at", "asc")
     );
 
-    let listNew = [];
-    let listOld = [];
-
-    const recompute = () => {
-      // Merge + dédupe
-      const map = new Map();
-      for (const d of [...listNew, ...listOld]) map.set(d.id, d);
-      const all = Array.from(map.values());
-
-      // Filtrer pour cette conversation uniquement
-      const filtered = all.filter((m) => {
-        const s = m.sender_uid ?? m.sender_id;
-        const r = m.receiver_uid ?? m.receiver_id;
-        if (!s || !r) return false;
-        return (
-          (s === myUid && r === receiverUid) ||
-          (s === receiverUid && r === myUid)
-        );
-      });
-
-      setMessages(filtered);
-    };
-
-    const unsubNew = onSnapshot(qNew, (snap) => {
-      listNew = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      recompute();
-    });
-    const unsubOld = onSnapshot(qOld, (snap) => {
-      listOld = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      recompute();
+    const unsub = onSnapshot(qMsg, (snap) => {
+      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setMessages(data);
     });
 
-    return () => {
-      unsubNew();
-      unsubOld();
-    };
-  }, [receiverUid]);
+    return () => unsub();
+  }, [cid]);
 
-  // Scroll auto en bas
+  // 4) Scroll auto
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Envoi d'un message (écrit le nouveau schéma + legacy)
+  // 5) Envoi d'un message (écrit messages + met à jour conversations)
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim() || !auth.currentUser || !receiverUid) return;
+    const myUid = auth.currentUser?.uid;
+    if (!newMessage.trim() || !myUid || !cid || !receiverId) return;
 
-    const myUid = auth.currentUser.uid;
-
+    // Écrit le message lié à la conversation
     await addDoc(collection(db, "messages"), {
-      // Nouveau schéma recommandé
+      conversationId: cid,
       sender_uid: myUid,
-      receiver_uid: receiverUid,
-      participants_uids: [myUid, receiverUid],
-
-      // Legacy pour compat (tu pourras supprimer plus tard)
-      sender_id: myUid,
-      receiver_id: receiverUid,
-      participants: [myUid, receiverUid],
-
+      receiver_uid: receiverId,
+      participants_uids: [myUid, receiverId],
       message: newMessage.trim(),
       sent_at: serverTimestamp(),
+    });
+
+    // Met à jour la conversation (dernier message)
+    await updateDoc(doc(db, "conversations", cid), {
+      lastMessage: newMessage.trim(),
+      lastSentAt: serverTimestamp(),
+      lastSender: myUid,
     });
 
     setNewMessage("");
@@ -194,10 +153,7 @@ export default function Messages({ receiverId }) {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.map((m) => {
-          const isMine = m.sender_uid
-            ? m.sender_uid === auth.currentUser?.uid
-            : m.sender_id === auth.currentUser?.uid;
-
+          const isMine = m.sender_uid === auth.currentUser?.uid;
           return (
             <div
               key={m.id}
