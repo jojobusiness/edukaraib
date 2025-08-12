@@ -15,17 +15,19 @@ import {
   limit,
 } from "firebase/firestore";
 
-// ---------- Helpers ----------
+// -------- Helpers --------
 function pairKey(a, b) {
   return [a, b].sort().join("_");
 }
 
 async function fetchUserProfile(uid) {
   if (!uid) return null;
+  // 1) users/{uid}
   try {
     const d = await getDoc(doc(db, "users", uid));
     if (d.exists()) return { id: uid, ...d.data() };
   } catch {}
+  // 2) where uid == <uid>
   try {
     const q = query(collection(db, "users"), where("uid", "==", uid), limit(1));
     const s = await getDocs(q);
@@ -38,9 +40,8 @@ async function fetchUserProfile(uid) {
 }
 
 /**
- * S'assure qu'une conversation entre myUid et otherUid existe.
- * - Cherche par clé triée (key = "a_b")
- * - Crée si besoin
+ * Trouve ou crée une conversation entre myUid et otherUid.
+ * Utilise la clé unique "uidA_uidB" (triée) pour éviter les doublons.
  * Retourne l'ID de conversation (cid).
  */
 async function ensureConversation(myUid, otherUid) {
@@ -55,19 +56,20 @@ async function ensureConversation(myUid, otherUid) {
     lastMessage: "",
     lastSentAt: serverTimestamp(),
     lastSender: "",
+    created_at: serverTimestamp(),
   });
   return ref.id;
 }
 
 export default function Messages({ receiverId }) {
-  const [cid, setCid] = useState(null);                 // conversationId
+  const [cid, setCid] = useState(null); // conversationId
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [receiverName, setReceiverName] = useState("");
   const [receiverAvatar, setReceiverAvatar] = useState("");
   const messagesEndRef = useRef(null);
 
-  // 1) Résoudre/Créer la conversation à partir du UID destinataire (receiverId)
+  // 1) Résoudre/Créer la conversation à partir de l'UID destinataire (:id)
   useEffect(() => {
     (async () => {
       const myUid = auth.currentUser?.uid;
@@ -89,7 +91,7 @@ export default function Messages({ receiverId }) {
     })();
   }, [receiverId]);
 
-  // 3) Flux temps réel des messages de la conversation
+  // 3) Flux temps réel des messages liés à cette conversation
   useEffect(() => {
     if (!cid) return;
 
@@ -107,7 +109,7 @@ export default function Messages({ receiverId }) {
     return () => unsub();
   }, [cid]);
 
-  // 4) Scroll auto
+  // 4) Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -128,7 +130,7 @@ export default function Messages({ receiverId }) {
       sent_at: serverTimestamp(),
     });
 
-    // Met à jour la conversation (dernier message)
+    // Met à jour les infos de synthèse de la conversation
     await updateDoc(doc(db, "conversations", cid), {
       lastMessage: newMessage.trim(),
       lastSentAt: serverTimestamp(),

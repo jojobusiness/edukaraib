@@ -1,139 +1,171 @@
 import React, { useEffect, useState } from "react";
+import { collection, getDocs, query, where, addDoc, limit } from "firebase/firestore";
 import { db, auth } from "../lib/firebase";
-import {
-  collection,
-  query,
-  where,
-  orderBy,
-  onSnapshot,
-  doc,
-  getDoc,
-  getDocs,
-  limit,
-} from "firebase/firestore";
-import DashboardLayout from "../components/DashboardLayout";
-import { Link } from "react-router-dom";
-import { useUserRole } from "../hooks/useUserRole";
+import { Link, useNavigate } from "react-router-dom";
 
-// ---------- Helpers ----------
-async function fetchUserProfile(uid) {
-  if (!uid) return null;
-  // 1) users/{uid}
-  try {
-    const d = await getDoc(doc(db, "users", uid));
-    if (d.exists()) return { id: uid, ...d.data() };
-  } catch {}
-  // 2) where uid == <uid>
-  try {
-    const q = query(collection(db, "users"), where("uid", "==", uid), limit(1));
-    const s = await getDocs(q);
-    if (!s.empty) {
-      const d = s.docs[0];
-      return { id: d.id, ...d.data() };
-    }
-  } catch {}
-  return null;
+// -------- Helpers --------
+function pairKey(a, b) {
+  return [a, b].sort().join("_");
 }
 
-export default function ChatList() {
-  const [items, setItems] = useState([]);
-  const { role: currentRole, loading } = useUserRole();
+export default function Search() {
+  const [teachers, setTeachers] = useState([]);
+  const [search, setSearch] = useState("");
+  const navigate = useNavigate();
 
   useEffect(() => {
-    if (!auth.currentUser) return;
-    const myUid = auth.currentUser.uid;
-
-    // conversations: { participants:[uid1,uid2], lastMessage, lastSentAt, ... }
-    const qConvs = query(
-      collection(db, "conversations"),
-      where("participants", "array-contains", myUid),
-      orderBy("lastSentAt", "desc")
-    );
-
-    const unsub = onSnapshot(qConvs, async (snap) => {
-      const list = await Promise.all(
-        snap.docs.map(async (d) => {
-          const c = { id: d.id, ...d.data() };
-          const otherUid = (c.participants || []).find((u) => u !== myUid);
-          const profile = await fetchUserProfile(otherUid);
-          const name =
-            profile?.fullName || profile?.name || profile?.displayName || "(Sans nom)";
-          const avatar =
-            profile?.avatarUrl || profile?.avatar_url || profile?.photoURL || "";
-          const role = profile?.role || "";
-          const lastDate = c.lastSentAt?.toDate ? c.lastSentAt.toDate() : null;
-
-          return {
-            cid: c.id,
-            otherUid,
-            name,
-            avatar,
-            role,
-            lastMessage: c.lastMessage || "",
-            lastDate,
-          };
-        })
-      );
-      setItems(list);
-    });
-
-    return () => unsub();
+    const fetchTeachers = async () => {
+      // On ne prend que les users avec role teacher
+      const qTeachers = query(collection(db, "users"), where("role", "==", "teacher"));
+      const querySnapshot = await getDocs(qTeachers);
+      const data = querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      setTeachers(data);
+    };
+    fetchTeachers();
   }, []);
 
-  // Attends d'avoir le rôle (évite un layout qui clignote / mauvais menu)
-  if (loading) return null; // ou un petit skeleton si tu veux
+  // Filtrage local (nom, matière, ville, bio)
+  const filtered = search.trim()
+    ? teachers.filter((teacher) => {
+        const q = search.toLowerCase();
+        return (
+          teacher.fullName?.toLowerCase().includes(q) ||
+          teacher.name?.toLowerCase().includes(q) ||
+          (Array.isArray(teacher.subjects)
+            ? teacher.subjects.join(" ").toLowerCase().includes(q)
+            : teacher.subjects?.toLowerCase().includes(q)) ||
+          teacher.city?.toLowerCase().includes(q) ||
+          teacher.bio?.toLowerCase().includes(q)
+        );
+      })
+    : [];
+
+  // Exclut les profs déjà dans les résultats filtrés pour la liste "tous les profs"
+  const displayedTeachers =
+    filtered.length > 0
+      ? teachers.filter((t) => !filtered.find((f) => f.id === t.id))
+      : teachers;
 
   return (
-    <DashboardLayout role={currentRole}>
-      <div className="max-w-2xl mx-auto">
-        <h2 className="text-2xl font-bold text-primary mb-6">💬 Mes conversations</h2>
-        <div className="bg-white p-6 rounded-xl shadow border">
-          {items.length === 0 ? (
-            <div className="text-gray-500 text-center">Aucune conversation récente.</div>
-          ) : (
-            <ul className="divide-y divide-gray-100">
-              {items.map((c) => (
-                <li key={c.cid} className="flex items-center gap-4 py-4">
-                  <img
-                    src={c.avatar || "/avatar-default.png"}
-                    alt={c.name}
-                    className="w-12 h-12 rounded-full object-cover border-2 border-primary"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-bold text-primary truncate">{c.name}</div>
-                    <div className="text-xs text-gray-500">
-                      {c.role === "teacher"
-                        ? "Professeur"
-                        : c.role === "parent"
-                        ? "Parent"
-                        : c.role === "student"
-                        ? "Élève"
-                        : ""}
-                    </div>
-                    <div className="text-sm text-gray-600 truncate mt-1">
-                      {c.lastMessage || "Aucun message"}
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end">
-                    {c.lastDate && (
-                      <div className="text-xs text-gray-400 mb-2">
-                        {c.lastDate.toLocaleDateString()} {c.lastDate.toLocaleTimeString()}
-                      </div>
-                    )}
-                    {/* /chat/:id = UID de l’interlocuteur (ton Messages.jsx s'en charge) */}
-                    <Link
-                      to={`/chat/${c.otherUid}`}
-                      className="bg-primary text-white px-4 py-2 rounded shadow font-semibold hover:bg-primary-dark transition"
-                    >
-                      Discuter
-                    </Link>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+    <div className="min-h-screen flex flex-col items-center bg-gradient-to-br from-white via-gray-100 to-secondary/20 px-4 py-10">
+      <div className="w-full max-w-2xl bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
+        <h2 className="text-2xl font-bold text-primary mb-6 text-center">
+          Rechercher un professeur
+        </h2>
+        <input
+          type="text"
+          placeholder="Nom, matière, ville, bio..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-4 py-2 mb-8 focus:ring-2 focus:ring-primary outline-none transition"
+        />
+
+        {/* Résultats de recherche */}
+        {search.trim() && (
+          <div className="mb-10">
+            <h3 className="text-lg font-semibold text-secondary mb-2">Résultats</h3>
+            <div className="grid grid-cols-1 gap-6">
+              {filtered.length === 0 ? (
+                <p className="text-center text-gray-400">
+                  Aucun professeur trouvé pour cette recherche.
+                </p>
+              ) : (
+                filtered.map((teacher) => (
+                  <TeacherCard key={teacher.id} teacher={teacher} navigate={navigate} />
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tous les profs */}
+        <div>
+          <h3 className="text-lg font-semibold text-primary mb-2">Tous les professeurs</h3>
+          <div className="grid grid-cols-1 gap-6">
+            {displayedTeachers.length === 0 ? (
+              <p className="text-center text-gray-400">Aucun professeur disponible.</p>
+            ) : (
+              displayedTeachers.map((teacher) => (
+                <TeacherCard key={teacher.id} teacher={teacher} navigate={navigate} />
+              ))
+            )}
+          </div>
         </div>
       </div>
-    </DashboardLayout>
+    </div>
+  );
+}
+
+// -------- Carte Prof + Contact ----------
+function TeacherCard({ teacher, navigate }) {
+  const handleContact = async () => {
+    if (!auth.currentUser) {
+      navigate("/login");
+      return;
+    }
+
+    const myUid = auth.currentUser.uid;
+    // selon ta structure, teacher.id peut être le docId; s'il existe un champ 'uid', on privilégie l'UID
+    const teacherUid = teacher.uid || teacher.id;
+
+    // clé unique pour cette paire d'utilisateurs
+    const key = pairKey(myUid, teacherUid);
+
+    // Recherche / Création de la conversation (par clé)
+    const convRef = collection(db, "conversations");
+    const qByKey = query(convRef, where("key", "==", key), limit(1));
+    const snap = await getDocs(qByKey);
+
+    if (snap.empty) {
+      await addDoc(convRef, {
+        participants: [myUid, teacherUid],
+        key,
+        lastMessage: "",
+        lastSentAt: new Date(),
+        lastSender: "",
+        created_at: new Date(),
+      });
+    }
+
+    // Redirige vers /chat/:uid de l’interlocuteur — Messages.jsx se charge d’ouvrir/assurer la conv
+    navigate(`/chat/${teacherUid}`);
+  };
+
+  const name = teacher.fullName || teacher.name || "Professeur";
+  const subjects = Array.isArray(teacher.subjects)
+    ? teacher.subjects.join(", ")
+    : teacher.subjects || "Matière non précisée";
+
+  return (
+    <div className="bg-white rounded-xl shadow-md border p-5 flex flex-col md:flex-row items-center gap-4">
+      <img
+        src={teacher.avatarUrl || teacher.avatar_url || teacher.photoURL || "/avatar-default.png"}
+        alt={name}
+        className="w-20 h-20 rounded-full object-cover border-2 border-primary"
+      />
+      <div className="flex-1 min-w-0">
+        <h3 className="font-bold text-lg text-primary">{name}</h3>
+        <div className="text-gray-700 mb-1">{subjects}</div>
+        <div className="text-xs text-gray-500 mb-1">{teacher.city}</div>
+        <div className="text-sm text-gray-600 mb-2 line-clamp-2">{teacher.bio}</div>
+        <span className="inline-block text-yellow-700 font-semibold">
+          {teacher.price_per_hour ? `${teacher.price_per_hour} € /h` : "Prix non précisé"}
+        </span>
+      </div>
+      <div className="flex flex-col gap-2">
+        <Link
+          to={`/profils/${teacher.id}`}
+          className="bg-primary text-white px-4 py-2 rounded-lg font-semibold shadow hover:bg-primary-dark transition text-center"
+        >
+          Voir profil
+        </Link>
+        <button
+          className="bg-secondary text-white px-4 py-2 rounded-lg font-semibold shadow hover:bg-yellow-500 transition"
+          onClick={handleContact}
+        >
+          Contacter
+        </button>
+      </div>
+    </div>
   );
 }
