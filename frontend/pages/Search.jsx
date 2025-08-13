@@ -105,7 +105,7 @@ function TeacherCard({ teacher, navigate }) {
     let existing = snap.docs
       .map(doc => ({ id: doc.id, ...doc.data() }))
       .find(conv =>
-        conv.participants.includes(teacherId)
+        conv.participants.includes(teacherUid)
       );
     let convId = null;
     if (existing) {

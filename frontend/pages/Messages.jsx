@@ -13,6 +13,8 @@ import {
   getDocs,
   updateDoc,
   limit,
+  deleteDoc,
+  writeBatch,
 } from "firebase/firestore";
 
 
@@ -141,10 +143,61 @@ export default function Messages({ receiverId }) {
     setNewMessage("");
   };
 
+  // --- helper: suppression conversation + messages ---
+
+  async function deleteConversationWithMessages(conversationId, myUid) {
+    // sécurité: s'assurer que l'utilisateur est bien dans la conv (optionnel si tes règles Firestore le font déjà)
+    const convSnap = await getDoc(doc(db, "conversations", conversationId));
+    if (!convSnap.exists()) throw new Error("Conversation introuvable.");
+    const conv = convSnap.data();
+    if (!Array.isArray(conv.participants) || !conv.participants.includes(myUid)) {
+      throw new Error("Accès refusé.");
+    }
+
+    // 1) supprimer par lots tous les messages de cette conversation (limite Firestore 500/op)
+    // on boucle jusqu'à tout supprimer
+    while (true) {
+      const qMsgs = query(
+        collection(db, "messages"),
+        where("conversationId", "==", conversationId),
+        limit(400) // marge < 500
+      );
+      const snap = await getDocs(qMsgs);
+      if (snap.empty) break;
+
+      const batch = writeBatch(db);
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+
+    // 2) supprimer le doc de conversation
+    await deleteDoc(doc(db, "conversations", conversationId));
+  }
+
+  // --- handler du bouton ---
+  const handleDeleteConversation = async () => {
+    const myUid = auth.currentUser?.uid;
+    if (!myUid || !cid) return;
+
+    const ok = window.confirm(
+      "Supprimer cette discussion ?\nTous les messages seront définitivement effacés."
+    );
+    if (!ok) return;
+
+    try {
+      await deleteConversationWithMessages(cid, myUid);
+      // redirige où tu veux (liste des conversations, dashboard, etc.)
+      navigate("/conversations"); // adapte si nécessaire
+    } catch (e) {
+      console.error(e);
+      alert("Impossible de supprimer la discussion. Vérifie tes droits/règles Firestore.");
+    }
+  };
+
   if (!receiverId) {
     return <div className="p-4">Chargement…</div>;
   }
-  
+
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Header */}
@@ -156,7 +209,14 @@ export default function Messages({ receiverId }) {
         />
         <h2 className="text-lg font-semibold">{receiverName}</h2>
       </div>
-
+        {/* +++ BOUTON SUPPRIMER +++ */}
+        <button
+          onClick={handleDeleteConversation}
+          className="text-sm px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
+          title="Supprimer la discussion"
+        >
+          Supprimer
+        </button>
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.map((m) => {
