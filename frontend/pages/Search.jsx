@@ -94,7 +94,7 @@ function TeacherCard({ teacher, navigate }) {
     }
 
     const userId = auth.currentUser.uid;
-    const teacherId = teacher.id;
+    const teacherUid = teacher.uid;
 
     // Vérifie s'il existe déjà une conversation (participants = [userId, teacherId] OU [teacherId, userId])
     const convRef = collection(db, 'conversations');
@@ -113,13 +113,13 @@ function TeacherCard({ teacher, navigate }) {
     } else {
       // Sinon on crée une nouvelle conversation
       const convDoc = await addDoc(convRef, {
-        participants: [userId, teacherId],
+        participants: [userId, teacherUid],
         created_at: new Date()
       });
       convId = convDoc.id;
     }
     // Redirige vers la conversation
-    navigate(`/chat/${convId}`);
+    navigate(`/chat/${teacherUid}`);
   };
 
   return (

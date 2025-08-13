@@ -3,5 +3,5 @@ import Messages from './Messages';
 
 export default function MessagesWrapper() {
   const { receiverId } = useParams();
-  return <Messages receiverId={receiverId} />;
+  return <Messages receiverId={id} />;
 }

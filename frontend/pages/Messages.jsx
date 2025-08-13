@@ -15,6 +15,7 @@ import {
   limit,
 } from "firebase/firestore";
 
+
 // -------- Helpers --------
 function pairKey(a, b) {
   return [a, b].sort().join("_");
@@ -140,6 +141,10 @@ export default function Messages({ receiverId }) {
     setNewMessage("");
   };
 
+  if (!receiverId) {
+    return <div className="p-4">Chargement…</div>;
+  }
+  
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Header */}
