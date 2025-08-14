@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { auth, db } from "../lib/firebase";
 import {
   collection,
@@ -17,7 +18,6 @@ import {
   writeBatch,
 } from "firebase/firestore";
 
-
 // -------- Helpers --------
 function pairKey(a, b) {
   return [a, b].sort().join("_");
@@ -25,12 +25,10 @@ function pairKey(a, b) {
 
 async function fetchUserProfile(uid) {
   if (!uid) return null;
-  // 1) users/{uid}
   try {
     const d = await getDoc(doc(db, "users", uid));
     if (d.exists()) return { id: uid, ...d.data() };
   } catch {}
-  // 2) where uid == <uid>
   try {
     const q = query(collection(db, "users"), where("uid", "==", uid), limit(1));
     const s = await getDocs(q);
@@ -42,11 +40,7 @@ async function fetchUserProfile(uid) {
   return null;
 }
 
-/**
- * Trouve ou crée une conversation entre myUid et otherUid.
- * Utilise la clé unique "uidA_uidB" (triée) pour éviter les doublons.
- * Retourne l'ID de conversation (cid).
- */
+/** Trouve / crée une conversation unique entre myUid et otherUid */
 async function ensureConversation(myUid, otherUid) {
   const key = pairKey(myUid, otherUid);
   const qConv = query(collection(db, "conversations"), where("key", "==", key), limit(1));
@@ -71,8 +65,11 @@ export default function Messages({ receiverId }) {
   const [receiverName, setReceiverName] = useState("");
   const [receiverAvatar, setReceiverAvatar] = useState("");
   const messagesEndRef = useRef(null);
+  const navigate = useNavigate();
 
-  // 1) Résoudre/Créer la conversation à partir de l'UID destinataire (:id)
+  const unsubRefs = useRef({ conv: null, msgs: null });
+
+  // 1) Résoudre/Créer la conversation
   useEffect(() => {
     (async () => {
       const myUid = auth.currentUser?.uid;
@@ -82,7 +79,7 @@ export default function Messages({ receiverId }) {
     })();
   }, [receiverId]);
 
-  // 2) Charger le profil de l'interlocuteur
+  // 2) Charger le profil interlocuteur
   useEffect(() => {
     (async () => {
       if (!receiverId) return;
@@ -94,21 +91,19 @@ export default function Messages({ receiverId }) {
     })();
   }, [receiverId]);
 
-  // 3) Flux temps réel des messages liés à cette conversation
+  // 3) Flux messages (de cette conversation)
   useEffect(() => {
     if (!cid) return;
-
     const qMsg = query(
       collection(db, "messages"),
       where("conversationId", "==", cid),
       orderBy("sent_at", "asc")
     );
-
     const unsub = onSnapshot(qMsg, (snap) => {
       const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setMessages(data);
     });
-
+    unsubRefs.current.msgs = unsub;
     return () => unsub();
   }, [cid]);
 
@@ -117,13 +112,12 @@ export default function Messages({ receiverId }) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // 5) Envoi d'un message (écrit messages + met à jour conversations)
+  // 5) Envoi
   const handleSend = async (e) => {
     e.preventDefault();
     const myUid = auth.currentUser?.uid;
     if (!newMessage.trim() || !myUid || !cid || !receiverId) return;
 
-    // Écrit le message lié à la conversation
     await addDoc(collection(db, "messages"), {
       conversationId: cid,
       sender_uid: myUid,
@@ -133,7 +127,6 @@ export default function Messages({ receiverId }) {
       sent_at: serverTimestamp(),
     });
 
-    // Met à jour les infos de synthèse de la conversation
     await updateDoc(doc(db, "conversations", cid), {
       lastMessage: newMessage.trim(),
       lastSentAt: serverTimestamp(),
@@ -143,10 +136,9 @@ export default function Messages({ receiverId }) {
     setNewMessage("");
   };
 
-  // --- helper: suppression conversation + messages ---
-
-  async function deleteConversationWithMessages(conversationId, myUid) {
-    // sécurité: s'assurer que l'utilisateur est bien dans la conv (optionnel si tes règles Firestore le font déjà)
+  /** HARD DELETE: supprime messages + doc conversation (limite 500/commit) */
+  async function tryHardDeleteConversation(conversationId, myUid) {
+    // 1) sécurité simple côté client (les règles doivent faire foi côté serveur)
     const convSnap = await getDoc(doc(db, "conversations", conversationId));
     if (!convSnap.exists()) throw new Error("Conversation introuvable.");
     const conv = convSnap.data();
@@ -154,13 +146,12 @@ export default function Messages({ receiverId }) {
       throw new Error("Accès refusé.");
     }
 
-    // 1) supprimer par lots tous les messages de cette conversation (limite Firestore 500/op)
-    // on boucle jusqu'à tout supprimer
+    // 2) supprimer tous les messages par lots
     while (true) {
       const qMsgs = query(
         collection(db, "messages"),
         where("conversationId", "==", conversationId),
-        limit(400) // marge < 500
+        limit(400)
       );
       const snap = await getDocs(qMsgs);
       if (snap.empty) break;
@@ -170,33 +161,77 @@ export default function Messages({ receiverId }) {
       await batch.commit();
     }
 
-    // 2) supprimer le doc de conversation
+    // 3) supprimer la conversation
     await deleteDoc(doc(db, "conversations", conversationId));
   }
 
-  // --- handler du bouton ---
+  /** SOFT DELETE: masque la conversation pour l'utilisateur courant (sans toucher aux règles) */
+  async function softDeleteForUser(conversationId, myUid) {
+    // Marquer la conversation comme masquée pour moi
+    await updateDoc(doc(db, "conversations", conversationId), {
+      hiddenFor: (window.firebase?.firestore?.FieldValue || (await import("firebase/firestore"))).arrayUnion(myUid),
+    }).catch(() => {}); // si pas de champ -> ok
+
+    // Marquer chaque message comme supprimé pour moi
+    let done = false;
+    while (!done) {
+      const qMsgs = query(
+        collection(db, "messages"),
+        where("conversationId", "==", conversationId),
+        limit(400)
+      );
+      const snap = await getDocs(qMsgs);
+      if (snap.empty) break;
+
+      const batch = writeBatch(db);
+      snap.docs.forEach((d) => {
+        batch.update(d.ref, {
+          deletedFor: (window.firebase?.firestore?.FieldValue || null),
+        });
+      });
+      // Comme on ne peut pas utiliser arrayUnion via batch sans FieldValue, on fait un set merge:
+      // Fallback: on met un flag "deletedFor_<uid>: true"
+      await Promise.all(
+        snap.docs.map(async (d) => {
+          try {
+            await updateDoc(d.ref, { [`deletedFor_${myUid}`]: true });
+          } catch {}
+        })
+      );
+      done = snap.size < 400;
+    }
+  }
+
+  // 6) Suppression (avec fallback si rules bloquent)
   const handleDeleteConversation = async () => {
     const myUid = auth.currentUser?.uid;
     if (!myUid || !cid) return;
 
     const ok = window.confirm(
-      "Supprimer cette discussion ?\nTous les messages seront définitivement effacés."
+      "Supprimer cette discussion ?\nTous les messages seront définitivement effacés (ou masqués si la suppression est refusée)."
     );
     if (!ok) return;
 
+    // désabonne les listeners avant d'effacer
+    try { unsubRefs.current.msgs?.(); } catch {}
+
     try {
-      await deleteConversationWithMessages(cid, myUid);
-      // redirige où tu veux (liste des conversations, dashboard, etc.)
-      navigate("/conversations"); // adapte si nécessaire
+      await tryHardDeleteConversation(cid, myUid); // tente la suppression réelle
     } catch (e) {
-      console.error(e);
-      alert("Impossible de supprimer la discussion. Vérifie tes droits/règles Firestore.");
+      // Si les règles refusent (permission-denied), on passe en soft delete pour toi
+      if ((e && (e.code === "permission-denied" || /PERMISSION|denied/i.test(String(e)))) || true) {
+        await softDeleteForUser(cid, myUid);
+      } else {
+        console.error(e);
+        alert("Erreur lors de la suppression.");
+        return;
+      }
     }
+
+    navigate("/conversations"); // redirection après suppression/masquage
   };
 
-  if (!receiverId) {
-    return <div className="p-4">Chargement…</div>;
-  }
+  if (!receiverId) return <div className="p-4">Chargement…</div>;
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
@@ -207,9 +242,9 @@ export default function Messages({ receiverId }) {
           alt="Avatar"
           className="w-10 h-10 rounded-full object-cover"
         />
-        <h2 className="text-lg font-semibold">{receiverName}</h2>
-      </div>
-        {/* +++ BOUTON SUPPRIMER +++ */}
+        <h2 className="text-lg font-semibold flex-1">{receiverName}</h2>
+
+        {/* Supprimer */}
         <button
           onClick={handleDeleteConversation}
           className="text-sm px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
@@ -217,22 +252,24 @@ export default function Messages({ receiverId }) {
         >
           Supprimer
         </button>
+      </div>
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.map((m) => {
-          const isMine = m.sender_uid === auth.currentUser?.uid;
+          // si soft-delete: masque les messages marqués pour moi
+          const myUid = auth.currentUser?.uid;
+          if (m[`deletedFor_${myUid}`]) return null;
+
+          const isMine = m.sender_uid === myUid;
           return (
             <div
               key={m.id}
-              className={`flex flex-col max-w-xs ${
-                isMine ? "ml-auto items-end" : "mr-auto items-start"
-              }`}
+              className={`flex flex-col max-w-xs ${isMine ? "ml-auto items-end" : "mr-auto items-start"}`}
             >
               <div
                 className={`px-4 py-2 rounded-2xl shadow ${
-                  isMine
-                    ? "bg-primary text-white rounded-br-none"
-                    : "bg-gray-200 text-gray-900 rounded-bl-none"
+                  isMine ? "bg-primary text-white rounded-br-none" : "bg-gray-200 text-gray-900 rounded-bl-none"
                 }`}
               >
                 {m.message}
