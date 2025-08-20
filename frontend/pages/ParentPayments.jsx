@@ -13,7 +13,6 @@ import DashboardLayout from '../components/DashboardLayout';
 
 // --- helpers ---
 function isPaidFlag(v) {
-  // Normalise plusieurs façons d'encoder "payé"
   if (v === true) return true;
   if (typeof v === 'string') {
     const s = v.toLowerCase();
@@ -21,6 +20,55 @@ function isPaidFlag(v) {
   }
   if (typeof v === 'number') return v === 1;
   return false;
+}
+
+// Convertit plein de formats possibles en Date lisible
+function toJsDate(any) {
+  if (!any) return null;
+  // Firestore Timestamp
+  if (typeof any.toDate === 'function') {
+    try { return any.toDate(); } catch {}
+  }
+  // { seconds, nanoseconds }
+  if (typeof any.seconds === 'number') {
+    try { return new Date(any.seconds * 1000); } catch {}
+  }
+  // Date JS
+  if (any instanceof Date) return any;
+  // millis
+  if (typeof any === 'number') {
+    const d = new Date(any);
+    if (!isNaN(d.getTime())) return d;
+  }
+  // ISO string
+  if (typeof any === 'string') {
+    const d = new Date(any);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+
+// Fallback d’affichage si on n’a pas de vraie date
+function fmtFromSlot(slot_day, slot_hour) {
+  const hh = (slot_hour || slot_hour === 0) ? String(slot_hour).padStart(2, '0') + ':00' : '';
+  if (slot_day && hh) return `${slot_day} • ${hh}`;
+  if (slot_day) return `${slot_day}`;
+  if (hh) return hh;
+  return null;
+}
+
+// Priorité d’affichage : start_datetime → created_at → slot_day/hour → "—"
+function fmtLessonWhen(lesson) {
+  const d1 = toJsDate(lesson.start_datetime);
+  if (d1) return d1.toLocaleString();
+
+  const d2 = toJsDate(lesson.created_at);
+  if (d2) return d2.toLocaleString();
+
+  const slot = fmtFromSlot(lesson.slot_day, lesson.slot_hour);
+  if (slot) return slot;
+
+  return '—';
 }
 
 export default function ParentPayments() {
@@ -33,7 +81,6 @@ export default function ParentPayments() {
   const childLabel = useMemo(() => {
     const m = new Map();
     children.forEach((c) => {
-      // doc id (students) et, si présent, user_id de l'enfant autonome
       m.set(c.id, c.full_name || c.name || 'Enfant');
       if (c.user_id) m.set(c.user_id, c.full_name || c.name || 'Enfant');
       if (c.uid) m.set(c.uid, c.full_name || c.name || 'Enfant');
@@ -44,10 +91,10 @@ export default function ParentPayments() {
   useEffect(() => {
     let unsubLessons = null;
     (async () => {
-      if (!auth.currentUser) return; // sécurité
+      if (!auth.currentUser) return;
       setLoading(true);
 
-      // 1) Récupère les enfants de ce parent
+      // 1) Enfants du parent
       const qKids = query(
         collection(db, 'students'),
         where('parent_id', '==', auth.currentUser.uid)
@@ -56,19 +103,17 @@ export default function ParentPayments() {
       const kids = kidsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setChildren(kids);
 
-      // Construire la liste d'identifiants qui peuvent apparaître dans lessons.student_id
+      // Tous les identifiants possibles vus dans lessons.student_id
       const idsToMatch = new Set();
       kids.forEach((k) => {
-        idsToMatch.add(k.id);         // id du doc students
-        if (k.user_id) idsToMatch.add(k.user_id); // uid user enfant si stocké
+        idsToMatch.add(k.id);
+        if (k.user_id) idsToMatch.add(k.user_id);
         if (k.uid) idsToMatch.add(k.uid);
       });
 
-      // 2) Ecoute temps réel sur lessons (plus simple que de multiplier les 'in' par chunks)
+      // 2) Écoute temps réel des leçons
       unsubLessons = onSnapshot(collection(db, 'lessons'), (snap) => {
         const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-        // Ne garder que les cours des enfants de ce parent
         const mine = all.filter((l) => idsToMatch.has(l.student_id));
 
         const toPayList = mine.filter((l) => !isPaidFlag(l.is_paid));
@@ -76,6 +121,9 @@ export default function ParentPayments() {
 
         setToPay(toPayList);
         setPaid(paidList);
+        setLoading(false);
+      }, (err) => {
+        console.error(err);
         setLoading(false);
       });
     })();
@@ -86,9 +134,8 @@ export default function ParentPayments() {
   }, []);
 
   const handlePay = async (lessonId) => {
-    // Simule le paiement → passe is_paid à true
     await updateDoc(doc(db, 'lessons', lessonId), { is_paid: true });
-    // Déplacement optimiste de l'item vers "payé"
+    // Bascule optimiste
     setToPay((prev) => {
       const found = prev.find((l) => l.id === lessonId);
       if (!found) return prev;
@@ -129,9 +176,7 @@ export default function ParentPayments() {
                           </span>
                         </div>
                         <div className="text-xs text-gray-500 mb-1">
-                          {l.start_datetime && (
-                            <>📅 {new Date(l.start_datetime.seconds * 1000).toLocaleString()}</>
-                          )}
+                          📅 {fmtLessonWhen(l)}
                         </div>
                         <div className="text-xs text-gray-500">
                           Enfant : {childLabel.get(l.student_id) || l.student_id}
@@ -158,10 +203,13 @@ export default function ParentPayments() {
                 ) : (
                   paid
                     .sort((a, b) => {
-                      // Du plus récent au plus ancien si on a la date
-                      const da = a.start_datetime?.seconds || 0;
-                      const db = b.start_datetime?.seconds || 0;
-                      return db - da;
+                      const da = toJsDate(a.start_datetime)?.getTime()
+                        ?? toJsDate(a.created_at)?.getTime()
+                        ?? 0;
+                      const db = toJsDate(b.start_datetime)?.getTime()
+                        ?? toJsDate(b.created_at)?.getTime()
+                        ?? 0;
+                      return (db - da); // plus récent d’abord
                     })
                     .map((l) => (
                       <div
@@ -172,19 +220,17 @@ export default function ParentPayments() {
                           {l.subject_id || 'Matière'}
                         </span>
                         <span className="text-xs text-gray-600">
-                          {l.start_datetime
-                            ? new Date(l.start_datetime.seconds * 1000).toLocaleString()
-                            : 'Date ?'}
+                          {fmtLessonWhen(l)}
                         </span>
                         <span className="text-xs text-gray-500">
                           Enfant : {childLabel.get(l.student_id) || l.student_id}
                         </span>
                         {l.price_per_hour ? (
-                          <span className="text-xs text-gray-700 ml-auto">
+                          <span className="text-xs text-gray-700 md:ml-auto">
                             Montant : {l.price_per_hour} €
                           </span>
                         ) : (
-                          <span className="text-xs text-gray-700 ml-auto">Payé</span>
+                          <span className="text-xs text-green-700 md:ml-auto">Payé</span>
                         )}
                       </div>
                     ))
