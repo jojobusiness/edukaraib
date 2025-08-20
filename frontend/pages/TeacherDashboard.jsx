@@ -164,9 +164,6 @@ export default function TeacherDashboard() {
           <span className="text-3xl mb-2">💰</span>
           <span className="text-xl font-bold text-yellow-600">Revenus ce mois</span>
           <span className="text-gray-700 mt-1">{revenues.toFixed(2)} €</span>
-          <span className="text-xs text-gray-500 mt-1">
-            (basé sur les paiements marqués “payés” créés ce mois)
-          </span>
         </div>
 
         {/* Demandes en attente */}

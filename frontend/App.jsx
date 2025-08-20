@@ -13,6 +13,7 @@ import TeacherDashboard from './pages/TeacherDashboard';
 import TeacherLessons from './pages/TeacherLessons';
 import TeacherEarnings from './pages/TeacherEarnings';
 import StudentCalendar from './pages/StudentCalendar';
+import StudentPayments from './pages/StudentPayments';
 import TeacherCalendar from './pages/TeacherCalendar';
 import TeacherReviews from './pages/TeacherReviews';
 import Messages from './pages/Messages';
@@ -65,6 +66,7 @@ function App() {
         <Route path= "/my-courses" element={<StudentRoute><MyCourses /></StudentRoute>}/>
         <Route path= "/reviewform" element={<StudentRoute><ReviewForm /></StudentRoute>}/>
         <Route path="/dashboard-eleve/planning" element={<StudentRoute><StudentCalendar /></StudentRoute>}/>
+        <Route path="/student/payments" element={<RequireRole roles={['student']}><StudentPayments /></RequireRole>}/>
         <Route path="/book-lesson-eleve" element={<StudentRoute><BookLessonEleve teacherId="TEACHER_ID" subjectId="SUBJECT_ID" /></StudentRoute>}/>
 
         <Route path="/parent/dashboard" element={<ParentRoute><ParentDashboard /></ParentRoute>}/>

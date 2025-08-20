@@ -8,11 +8,13 @@ const menusByRole = {
     { label: 'Trouver un prof', path: '/search', icon: '🔎' },
     { label: 'Mes cours', path: '/my-courses', icon: '📚' },
     { label: 'Planning', path: '/dashboard-eleve/planning', icon: '🗓️' },
+    { label: 'Paiements', path: '/student/payments', icon: '💳' },
     { label: 'Messagerie', path: '/chat-list', icon: '💬' },
     { label: 'Mon profil', path: '/profile', icon: '👤' },
   ],
   parent: [
     { label: 'Tableau de bord', path: '/parent/dashboard', icon: '📊' },
+    { label: 'Trouver un prof', path: '/search', icon: '🔎' },
     { label: 'Mes enfants', path: '/parent/children', icon: '👧' },
     { label: 'Cours réservés', path: '/parent/courses', icon: '📚' },
     { label: 'Planning', path: '/parent/planning', icon: '🗓️' },
