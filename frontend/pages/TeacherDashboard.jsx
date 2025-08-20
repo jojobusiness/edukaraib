@@ -42,12 +42,13 @@ function formatTime(dt) {
   return dt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 
+// ---------- Résolution profil élève (users ou students) ----------
 async function fetchUserProfile(uid) {
   if (!uid) return null;
   // users/{uid}
   try {
     const s = await getDoc(doc(db, 'users', uid));
-    if (s.exists()) return { id: uid, ...s.data() };
+    if (s.exists()) return { id: uid, ...s.data(), _source: 'users' };
   } catch {}
   // where uid == <uid>
   try {
@@ -55,10 +56,35 @@ async function fetchUserProfile(uid) {
     const snap = await getDocs(q);
     if (!snap.empty) {
       const d = snap.docs[0];
-      return { id: d.id, ...d.data() };
+      return { id: d.id, ...d.data(), _source: 'users-query' };
     }
   } catch {}
   return null;
+}
+
+async function fetchStudentDoc(id) {
+  if (!id) return null;
+  try {
+    const s = await getDoc(doc(db, 'students', id));
+    if (s.exists()) return { id, ...s.data(), _source: 'students' };
+  } catch {}
+  return null;
+}
+
+/** Essaie users d'abord (élève autonome), puis students (enfant rattaché). */
+async function resolveStudentName(studentIdOrUid) {
+  // 1) users
+  const u = await fetchUserProfile(studentIdOrUid);
+  if (u) {
+    return u.fullName || u.name || u.displayName || 'Élève';
+  }
+  // 2) students
+  const s = await fetchStudentDoc(studentIdOrUid);
+  if (s) {
+    return s.full_name || s.name || 'Élève';
+  }
+  // fallback
+  return studentIdOrUid;
 }
 
 export default function TeacherDashboard() {
@@ -80,17 +106,10 @@ export default function TeacherDashboard() {
       );
       const lessons = lessonsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      // 2) Résoudre les élèves en une passe
-      const studentUids = Array.from(new Set(lessons.map(l => l.student_id).filter(Boolean)));
-      const profiles = await Promise.all(studentUids.map(uid => fetchUserProfile(uid)));
-      const sMap = new Map(
-        profiles
-          .filter(Boolean)
-          .map(p => [
-            (p.uid || p.id),
-            p.fullName || p.name || p.displayName || 'Élève',
-          ])
-      );
+      // 2) Résoudre les élèves (users OU students) en une passe
+      const uniqueIds = Array.from(new Set(lessons.map(l => l.student_id).filter(Boolean)));
+      const names = await Promise.all(uniqueIds.map(id => resolveStudentName(id)));
+      const sMap = new Map(uniqueIds.map((id, i) => [id, names[i]]));
       setStudentMap(sMap);
 
       // 3) Cours à venir (confirmés) via slot_day/slot_hour
@@ -101,15 +120,20 @@ export default function TeacherDashboard() {
         .filter(l => l.startAt && l.startAt > now)
         .sort((a, b) => a.startAt - b.startAt);
 
-      setUpcomingCourses(enriched.slice(0, 10)); // on garde une petite liste
+      setUpcomingCourses(enriched.slice(0, 10)); // petite liste
 
       // 4) Revenus du mois (approx: paiements créés ce mois)
-      // Si tu as un champ "completed_at", utilise-le à la place de created_at.
       const today = new Date();
       const thisYear = today.getFullYear();
       const thisMonth = today.getMonth();
       const earned = lessons
-        .filter(l => l.is_paid && l.created_at?.toDate && l.created_at.toDate().getMonth() === thisMonth && l.created_at.toDate().getFullYear() === thisYear)
+        .filter(
+          l =>
+            l.is_paid &&
+            l.created_at?.toDate &&
+            l.created_at.toDate().getMonth() === thisMonth &&
+            l.created_at.toDate().getFullYear() === thisYear
+        )
         .reduce((sum, l) => sum + Number(l.price_per_hour || 0), 0);
       setRevenues(earned);
 

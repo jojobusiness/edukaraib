@@ -48,21 +48,55 @@ function formatHour(h) {
   return `${String(n).padStart(2, '0')}:00`;
 }
 
+// ---------- Résolution profil élève (users OU students) ----------
 async function fetchUserProfile(uid) {
   if (!uid) return null;
+  // users/{uid}
   try {
-    const direct = await getDoc(doc(db, 'users', uid));
-    if (direct.exists()) return { id: uid, ...direct.data() };
+    const s = await getDoc(doc(db, 'users', uid));
+    if (s.exists()) return { id: uid, ...s.data(), _src: 'users' };
   } catch {}
+  // where uid == <uid>
   try {
     const q = query(collection(db, 'users'), where('uid', '==', uid), limit(1));
-    const s = await getDocs(q);
-    if (!s.empty) {
-      const d = s.docs[0];
-      return { id: d.id, ...d.data() };
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const d = snap.docs[0];
+      return { id: d.id, ...d.data(), _src: 'users-query' };
     }
   } catch {}
   return null;
+}
+
+async function fetchStudentDoc(id) {
+  if (!id) return null;
+  try {
+    const s = await getDoc(doc(db, 'students', id));
+    if (s.exists()) return { id, ...s.data(), _src: 'students' };
+  } catch {}
+  return null;
+}
+
+/** Essaie users d'abord (élève autonome), puis students (enfant rattaché). */
+async function resolveStudentProfile(studentIdOrUid) {
+  // 1) users
+  const u = await fetchUserProfile(studentIdOrUid);
+  if (u) {
+    return {
+      name: u.fullName || u.name || u.displayName || 'Élève',
+      avatar: u.avatarUrl || u.avatar_url || u.photoURL || '',
+    };
+  }
+  // 2) students
+  const s = await fetchStudentDoc(studentIdOrUid);
+  if (s) {
+    return {
+      name: s.full_name || s.name || 'Élève',
+      avatar: s.avatarUrl || s.avatar_url || '',
+    };
+  }
+  // fallback
+  return { name: studentIdOrUid, avatar: '' };
 }
 
 export default function TeacherCalendar() {
@@ -87,18 +121,10 @@ export default function TeacherCalendar() {
       const snap = await getDocs(qLessons);
       const raw = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      // 2) profiler les élèves (une passe)
-      const studentUids = Array.from(new Set(raw.map(l => l.student_id).filter(Boolean)));
-      const profiles = await Promise.all(studentUids.map(uid => fetchUserProfile(uid)));
-      const sMap = new Map(
-        profiles.filter(Boolean).map(p => [
-          (p.uid || p.id),
-          {
-            name: p.fullName || p.name || p.displayName || 'Élève',
-            avatar: p.avatarUrl || p.avatar_url || p.photoURL || '',
-          },
-        ])
-      );
+      // 2) profiler les élèves (users OU students, une passe)
+      const studentIds = Array.from(new Set(raw.map(l => l.student_id).filter(Boolean)));
+      const profiles = await Promise.all(studentIds.map(id => resolveStudentProfile(id)));
+      const sMap = new Map(studentIds.map((id, i) => [id, profiles[i]]));
       setStudentMap(sMap);
 
       // 3) enrichir avec startAt (semaine courante)
