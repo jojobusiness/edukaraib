@@ -24,7 +24,7 @@ const menusByRole = {
   ],
   teacher: [
     { label: 'Tableau de bord', path: '/prof/dashboard', icon: '📊' },
-    { label: 'Demandes de cours', path: '/prof/lessons', icon: '📚' },
+    { label: 'Mes cours', path: '/prof/lessons', icon: '📚' },
     { label: 'Planning', path: '/prof/planning', icon: '🗓️' },
     { label: 'Revenus', path: '/prof/earnings', icon: '💰' },
     { label: 'Mes avis', path: '/prof/reviews', icon: '🌟' },

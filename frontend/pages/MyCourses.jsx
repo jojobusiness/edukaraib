@@ -10,6 +10,7 @@ import {
   limit
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
+import ReviewForm from '../components/ReviewForm';
 
 // --- Helpers: récupérer un profil user par UID, qu'il soit docId==uid ou champ uid ---
 async function fetchUserProfile(uid) {
@@ -171,24 +172,19 @@ export default function MyCourses() {
 
                 {/* Avis à laisser si cours terminé et pas d'avis */}
                 {course.status === 'completed' && !course.hasReview && (
-                  <div>
-                    {/* 
-                    <ReviewForm
-                      lessonId={course.id}
-                      teacherId={course.teacher_id}
-                      studentId={course.student_id}
-                      onReviewSent={() => {
-                        setCourses(prev =>
-                          prev.map(c => (c.id === course.id ? { ...c, hasReview: true } : c))
-                        );
-                      }}
-                    />
-                    */}
-                    <span className="text-xs text-primary">
-                      À noter&nbsp;: ajouter le composant Review ici !
-                    </span>
-                  </div>
-                )}
+                    <div>
+                      <ReviewForm
+                        lessonId={course.id}
+                        teacherId={course.teacher_id}
+                        studentId={course.student_id}
+                        onReviewSent={() => {
+                          setCourses(prev =>
+                            prev.map(c => (c.id === course.id ? { ...c, hasReview: true } : c))
+                          );
+                        }}
+                      />
+                    </div>
+                  )}
 
                 {course.status === 'completed' && course.hasReview && (
                   <span className="text-green-600 text-xs font-semibold">Avis laissé ✔️</span>
