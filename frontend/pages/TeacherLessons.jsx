@@ -200,14 +200,23 @@ function DocumentsModal({ open, onClose, lesson, onUploaded }) {
                           : '—'}
                       </div>
                     </div>
-                    <a
-                      href={f.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary hover:underline font-semibold"
-                    >
-                      Ouvrir ⤴
-                    </a>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <a
+                          href={f.url}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="text-primary hover:underline font-semibold"
+                        >
+                          Ouvrir ⤴
+                        </a>
+                        <a
+                          href={f.url}
+                          download={f.filename || true}
+                          className="bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded text-sm font-semibold"
+                        >
+                          ⬇️ Télécharger
+                        </a>
+                      </div>
                   </li>
                 ))}
               </ul>
