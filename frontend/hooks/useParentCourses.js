@@ -27,18 +27,19 @@ async function fetchUserProfile(uid) {
 
 export default function useParentCourses() {
   const [courses, setCourses] = useState([]);
-  const [children, setChildren] = useState([]);  // {id, ...}
+  const [children, setChildren] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const teacherCacheRef = useRef(new Map());
-  const lessonsMapRef = useRef(new Map());       // id -> lesson
-  const reviewedIdsRef = useRef(new Set());      // Set(lesson_id)
+  const teacherCacheRef = useRef(new Map()); // teacher_id -> {name, avatar}
+  const lessonsMapRef  = useRef(new Map());  // lesson_id  -> lesson
+  const reviewedIdsRef = useRef(new Set());  // Set(lesson_id)
+  const childMapRef    = useRef(new Map());  // student_id -> studentName
 
   useEffect(() => {
     let unsubAuth = () => {};
     let unsubChildren = () => {};
-    let unsubLessonsArr = []; // multiples listeners sur chunks
-    let unsubReviewsArr = []; // un listener par enfant
+    let unsubLessonsArr = [];
+    let unsubReviewsArr = [];
 
     const clearLessonsSubs = () => { unsubLessonsArr.forEach(u => u()); unsubLessonsArr = []; };
     const clearReviewsSubs = () => { unsubReviewsArr.forEach(u => u()); unsubReviewsArr = []; };
@@ -46,8 +47,14 @@ export default function useParentCourses() {
     const recompute = () => {
       const arr = Array.from(lessonsMapRef.current.values()).map((lesson) => {
         const t = teacherCacheRef.current.get(lesson.teacher_id) || {};
+        const studentName =
+          childMapRef.current.get(lesson.student_id) ||
+          lesson.studentName || // au cas où déjà enrichi ailleurs
+          lesson.student_id;
+
         return {
           ...lesson,
+          studentName,
           teacherName: t.name || lesson.teacher_id,
           teacherAvatar: t.avatar || '',
           hasReview: reviewedIdsRef.current.has(lesson.id),
@@ -80,6 +87,7 @@ export default function useParentCourses() {
       clearReviewsSubs();
       lessonsMapRef.current.clear();
       reviewedIdsRef.current = new Set();
+      childMapRef.current = new Map();
       setChildren([]);
       setCourses([]);
       setLoading(true);
@@ -92,7 +100,15 @@ export default function useParentCourses() {
         const kids = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         setChildren(kids);
 
-        // rebranche listeners leçons
+        // map id -> nom (priorité aux champs les plus probables)
+        childMapRef.current = new Map(
+          kids.map(k => [
+            k.id,
+            k.full_name || k.name || k.first_name || k.firstname || k.displayName || k.id
+          ])
+        );
+
+        // (Re)branche listeners leçons
         clearLessonsSubs();
         lessonsMapRef.current.clear();
 
@@ -127,7 +143,7 @@ export default function useParentCourses() {
           unsubLessonsArr.push(u);
         });
 
-        // rebranche listeners reviews (un par enfant)
+        // LIVE reviews (un listener par enfant)
         clearReviewsSubs();
         reviewedIdsRef.current = new Set();
         kids.forEach((k) => {
@@ -140,6 +156,9 @@ export default function useParentCourses() {
           });
           unsubReviewsArr.push(u);
         });
+
+        // Recalcule immédiatement avec les noms fraîchement mappés
+        recompute();
       });
     });
 
