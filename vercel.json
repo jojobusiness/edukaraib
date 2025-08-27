@@ -1,5 +1,10 @@
 {
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
-  ]
+  "routes": [
+    { "src": "^/api/.*", "dest": "/api" },
+    { "src": "^/(.*)\\.(js|css|png|jpg|jpeg|svg|ico|txt|map|json|woff2?)$", "dest": "/frontend/dist/$1" },
+    { "src": "^/(.*)$", "dest": "/frontend/dist/index.html" }
+  ],
+  "functions": {
+    "api/**": { "runtime": "nodejs22.x" }
+  }
 }
