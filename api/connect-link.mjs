@@ -1,14 +1,14 @@
-const { stripe } = require('./_stripe');
-const { getFirestore, getAuthAdmin } = require('./_firebaseAdmin');
+import { stripe } from './_stripe.mjs';
+import { getFirestore, getAuthAdmin } from './_firebaseAdmin.mjs';
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
   }
-
-  if (!process.env.STRIPE_SECRET_KEY)
+  if (!process.env.STRIPE_SECRET_KEY) {
     return res.status(500).json({ error: 'ENV_MISSING', message: 'STRIPE_SECRET_KEY missing' });
+  }
 
   try {
     const idToken = (req.headers.authorization || '').split('Bearer ')[1];
@@ -17,12 +17,12 @@ module.exports = async (req, res) => {
     const authAdmin = getAuthAdmin();
     const decoded = await authAdmin.verifyIdToken(idToken).catch(() => null);
     if (!decoded) return res.status(401).json({ error: 'INVALID_TOKEN' });
-    const uid = decoded.uid;
 
-    const firestore = getFirestore();
-    const userRef = firestore.collection('users').doc(uid);
+    const db = getFirestore();
+    const userRef = db.collection('users').doc(decoded.uid);
     const snap = await userRef.get();
     if (!snap.exists) return res.status(404).json({ error: 'USER_NOT_FOUND' });
+
     const user = snap.data();
     if (user.role !== 'teacher') return res.status(403).json({ error: 'ONLY_TEACHER' });
 
@@ -40,7 +40,7 @@ module.exports = async (req, res) => {
     }
 
     const mode = req.query.mode === 'update' ? 'account_update' : 'account_onboarding';
-    const base = process.env.APP_BASE_URL || 'http://localhost:3000';
+    const base = process.env.APP_BASE_URL || 'https://edukaraib.vercel.app';
     const link = await stripe.accountLinks.create({
       account: accountId,
       type: mode,
@@ -51,9 +51,6 @@ module.exports = async (req, res) => {
     return res.status(200).json({ url: link.url, accountId });
   } catch (err) {
     console.error('connect-link error:', err);
-    return res.status(500).json({
-      error: err?.code || err?.type || 'SERVER_ERROR',
-      message: err?.message || 'server_error',
-    });
+    return res.status(500).json({ error: err?.code || err?.type || 'SERVER_ERROR', message: err?.message || 'server_error' });
   }
-};
+}
