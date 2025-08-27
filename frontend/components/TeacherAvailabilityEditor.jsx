@@ -1,5 +1,3 @@
-import React from 'react';
-
 const jours = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const heures = Array.from({ length: 12 }, (_, i) => i + 8); // 8h à 19h
 
