@@ -24,22 +24,15 @@ import TeacherAvailabilityEditor from '../components/TeacherAvailabilityEditor';
 
 // ------- helpers API signées (Stripe Connect) -------
 async function fetchWithAuth(url, opts = {}) {
-  const current = auth.currentUser;
-  if (!current) throw new Error('Not authenticated');
-  const token = await current.getIdToken();
+  const token = await auth.currentUser.getIdToken();
   const res = await fetch(url, {
-    method: opts.method || 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...(opts.headers || {}),
-    },
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
+    ...opts,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {
-    let msg = '';
-    try { msg = await res.text(); } catch {}
-    throw new Error(msg || 'Request failed');
+    let data; try { data = await res.json(); } catch {}
+    const msg = data?.message || data?.error || `HTTP ${res.status}`;
+    throw new Error(msg);
   }
   return res.json();
 }
