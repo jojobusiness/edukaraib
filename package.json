@@ -5,10 +5,9 @@
   "description": "Plateforme de cours particuliers en Guyane",
   "main": "index.js",
   "scripts": {
-    "dev": "vite --config vite.config.js",
-    "start": "vite --config vite.config.js",
-    "build": "vite build --config vite.config.js",
-    "preview": "vite preview --config vite.config.js"
+    "dev": "vite",
+    "start": "vite",
+    "build": "chmod +x ./node_modules/.bin/vite && vite build"
   },
   "dependencies": {
     "firebase": "^10.14.1",
