@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import fetchWithAuth from '../../utils/fetchWithAuth';
+import { fetchWithAuth } from '../../utils/fetchWithAuth'
 
 export default function StripeConnectButtons({ hasAccount }) {
   const [loading, setLoading] = useState(false);

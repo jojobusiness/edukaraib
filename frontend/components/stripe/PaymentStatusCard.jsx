@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import fetchWithAuth from '../../utils/fetchWithAuth';
+import { fetchWithAuth } from '../../utils/fetchWithAuth'
 
 export default function PaymentStatusCard() {
   const [status, setStatus] = useState(null);
