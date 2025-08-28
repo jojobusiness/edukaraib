@@ -1,94 +1,13 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import { auth, db, storage } from '../lib/firebase';
-import {
-  doc,
-  getDoc,
-  updateDoc,
-  deleteDoc,
-} from 'firebase/firestore';
-import {
-  ref as sRef,
-  uploadBytes,
-  getDownloadURL,
-  deleteObject,
-} from 'firebase/storage';
-import {
-  onAuthStateChanged,
-  signOut,
-  sendPasswordResetEmail,
-  deleteUser,
-} from 'firebase/auth';
+import { doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { ref as sRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { onAuthStateChanged, signOut, sendPasswordResetEmail, deleteUser } from 'firebase/auth';
 
-import TeacherAvailabilityEditor from '../components/TeacherAvailabilityEditor'; // composant dispo prof
-
-// ------- helpers API signées (Stripe Connect) -------
-async function fetchWithAuth(url, opts = {}) {
-  const token = await auth.currentUser.getIdToken();
-  const res = await fetch(url, {
-    ...opts,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    let data; try { data = await res.json(); } catch {}
-    const msg = data?.message || data?.error || `HTTP ${res.status}`;
-    throw new Error(msg);
-  }
-  return res.json();
-}
-
-// ------- sous-composant statut Stripe -------
-function PaymentStatusCard() {
-  const [status, setStatus] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await fetchWithAuth('/api/connect-status');
-      setStatus(data);
-    } catch (e) {
-      setStatus(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  if (loading) return <p className="text-gray-500">Chargement du statut…</p>;
-  if (!status || !status.exists) {
-    return <p className="text-gray-600">Paiements non configurés.</p>;
-  }
-
-  return (
-    <div className="text-sm text-gray-700 space-y-1">
-      <div>
-        Charges activées :{' '}
-        <b className={status.charges_enabled ? 'text-emerald-600' : 'text-red-600'}>
-          {status.charges_enabled ? 'oui' : 'non'}
-        </b>
-      </div>
-      <div>
-        Payouts (virements) :{' '}
-        <b className={status.payouts_enabled ? 'text-emerald-600' : 'text-red-600'}>
-          {status.payouts_enabled ? 'oui' : 'non'}
-        </b>
-      </div>
-      {!status.details_submitted && (
-        <div className="text-amber-600">
-          Infos à compléter : {status.requirements_due?.join(', ') || '—'}
-        </div>
-      )}
-      <button
-        onClick={load}
-        className="mt-2 text-xs underline text-gray-500 hover:text-gray-700"
-      >
-        Rafraîchir le statut
-      </button>
-    </div>
-  );
-}
+import TeacherAvailabilityEditor from '../components/TeacherAvailabilityEditor';
+import PaymentStatusCard from '../components/stripe/PaymentStatusCard';
+import StripeConnectButtons from '../components/stripe/StripeConnectButtons';
 
 export default function Profile() {
   const [userLoaded, setUserLoaded] = useState(false);
@@ -107,7 +26,6 @@ export default function Profile() {
     diploma: '',
     price_per_hour: '',
     availability: {},
-    // champs stripe (miroir, mis à jour par serveur/webhook)
     stripeAccountId: '',
     stripePayoutsEnabled: false,
     stripeChargesEnabled: false,
@@ -133,12 +51,7 @@ export default function Profile() {
             role: data.role || data.type || prev.role || 'student',
           }));
         } else {
-          // fallback minimal si doc absent
-          setProfile((prev) => ({
-            ...prev,
-            uid: u.uid,
-            email: u.email || '',
-          }));
+          setProfile((prev) => ({ ...prev, uid: u.uid, email: u.email || '' }));
         }
       } catch (e) {
         console.error(e);
@@ -149,22 +62,26 @@ export default function Profile() {
     return () => unsub();
   }, []);
 
-  // champs dynamiques selon rôle
-  const baseFields = [
+  // Champs dynamiques
+  const fields = [
     { name: 'fullName', label: 'Nom complet', required: true, type: 'text' },
     { name: 'phone', label: 'Téléphone', type: 'tel' },
     { name: 'city', label: 'Ville', type: 'text' },
+    ...(profile.role === 'student'
+      ? [
+          { name: 'level', label: 'Niveau scolaire', type: 'text' },
+          { name: 'birth', label: 'Date de naissance', type: 'date' },
+        ]
+      : []),
+    ...(profile.role === 'teacher'
+      ? [
+          { name: 'subjects', label: 'Matières enseignées', type: 'text' },
+          { name: 'diploma', label: 'Diplômes', type: 'text' },
+          { name: 'bio', label: 'Bio', type: 'textarea' },
+          { name: 'price_per_hour', label: "Prix à l'heure (€)", type: 'number', step: 1, min: 0 },
+        ]
+      : []),
   ];
-  if (profile.role === 'student') {
-    baseFields.push({ name: 'level', label: 'Niveau scolaire', type: 'text' });
-    baseFields.push({ name: 'birth', label: 'Date de naissance', type: 'date' });
-  }
-  if (profile.role === 'teacher') {
-    baseFields.push({ name: 'subjects', label: 'Matières enseignées', type: 'text' });
-    baseFields.push({ name: 'diploma', label: 'Diplômes', type: 'text' });
-    baseFields.push({ name: 'bio', label: 'Bio', type: 'textarea' });
-    baseFields.push({ name: 'price_per_hour', label: "Prix à l'heure (€)", type: 'number', step: 1, min: 0 });
-  }
 
   const handlePhoto = (e) => {
     const f = e.target.files?.[0];
@@ -191,7 +108,7 @@ export default function Profile() {
 
       const ref = doc(db, 'users', profile.uid);
       const toSave = { ...profile, avatarUrl };
-      delete toSave.uid; // ne pas écraser l'uid dans le doc
+      delete toSave.uid;
 
       await updateDoc(ref, toSave);
       setProfile((p) => ({ ...p, avatarUrl }));
@@ -221,42 +138,24 @@ export default function Profile() {
     if (!profile.uid) return;
     setSaving(true);
     try {
-      // supprimer avatar si présent
       if (profile.avatarUrl) {
         try {
           const r = sRef(storage, `avatars/${profile.uid}`);
           await deleteObject(r);
         } catch {}
       }
-      // supprimer doc Firestore
       await deleteDoc(doc(db, 'users', profile.uid));
-      // supprimer utilisateur
       await deleteUser(auth.currentUser);
       alert('Compte supprimé. À bientôt !');
       window.location.href = '/';
     } catch (error) {
       if (String(error?.code || '').includes('requires-recent-login')) {
-        alert("Pour des raisons de sécurité, reconnecte-toi puis réessaie la suppression.");
+        alert('Pour des raisons de sécurité, reconnecte-toi puis réessaie.');
       } else {
         alert('Erreur lors de la suppression : ' + error.message);
       }
     } finally {
       setSaving(false);
-    }
-  };
-
-  // ------- actions Stripe (onboarding / update) -------
-  const handleStripeOnboarding = async (mode = 'onboarding') => {
-    try {
-      const data = await fetchWithAuth(
-        mode === 'update' ? '/api/connect-link?mode=update' : '/api/connect-link',
-        { method: 'POST' }
-      );
-      // redirige vers le flow Stripe (saisie IBAN, KYC…)
-      window.location.href = data.url;
-    } catch (e) {
-      console.error(e);
-      alert("Impossible d'ouvrir la page de configuration des paiements.");
     }
   };
 
@@ -273,6 +172,7 @@ export default function Profile() {
   return (
     <DashboardLayout role={profile.role || 'student'}>
       <div className="w-full max-w-xl mx-auto bg-white rounded-2xl shadow-lg p-8 border border-gray-100 mt-6">
+        {/* Avatar */}
         <div className="flex flex-col items-center mb-6">
           <div className="w-24 h-24 rounded-full bg-gray-100 overflow-hidden mb-3 shadow border-2 border-primary">
             <img
@@ -281,18 +181,14 @@ export default function Profile() {
               className="w-full h-full object-cover"
             />
           </div>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={handlePhoto}
-            className="block text-xs mb-1"
-          />
+          <input type="file" accept="image/*" onChange={handlePhoto} className="block text-xs mb-1" />
         </div>
 
         <h2 className="text-2xl font-bold text-primary mb-4 text-center">Mon Profil</h2>
 
+        {/* Form */}
         <form className="space-y-4" onSubmit={handleSave}>
-          {baseFields.map((f) => (
+          {fields.map((f) => (
             <div key={f.name}>
               <label className="block mb-1 text-sm font-medium text-gray-700">{f.label}</label>
               {f.type === 'textarea' ? (
@@ -318,7 +214,6 @@ export default function Profile() {
             </div>
           ))}
 
-          {/* Dispos prof */}
           {profile.role === 'teacher' && (
             <TeacherAvailabilityEditor
               value={profile.availability || {}}
@@ -335,44 +230,19 @@ export default function Profile() {
           </button>
         </form>
 
-        {/* -------- Carte Paiements (Stripe) pour PROF -------- */}
+        {/* Paiements (Stripe) pour PROF */}
         {profile.role === 'teacher' && (
           <div className="mt-8 bg-white border border-gray-200 rounded-2xl p-6">
             <h3 className="text-lg font-bold text-primary mb-2">Paiements & RIB (via Stripe)</h3>
             <p className="text-sm text-gray-600 mb-3">
-              Configure tes informations (identité, IBAN). C’est Stripe qui les stocke et vérifie — rien n’est conservé chez EduKaraib.
+              Configure tes informations (identité, IBAN). Stripe les stocke/vérifie — rien n’est conservé chez EduKaraib.
             </p>
 
             <PaymentStatusCard />
-
-            <div className="flex flex-wrap gap-2 mt-4">
-              {!profile.stripeAccountId ? (
-                <button
-                  onClick={() => handleStripeOnboarding('onboarding')}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded font-semibold"
-                >
-                  Configurer mes paiements
-                </button>
-              ) : (
-                <>
-                  <button
-                    onClick={() => handleStripeOnboarding('onboarding')}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded font-semibold"
-                  >
-                    Ouvrir mon portail Stripe
-                  </button>
-                  <button
-                    onClick={() => handleStripeOnboarding('update')}
-                    className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded font-semibold"
-                  >
-                    Mettre à jour mon RIB
-                  </button>
-                </>
-              )}
-            </div>
+            <StripeConnectButtons hasAccount={!!profile.stripeAccountId} />
 
             <p className="text-xs text-gray-500 mt-3">
-              Anti-fraude & conformité : KYC/AML par Stripe, 3DS, vérification IBAN. Les virements sont déclenchés automatiquement vers ton compte.
+              Anti-fraude : vérif. identité (KYC), IBAN, 3DS. Les virements arrivent directement sur ton compte bancaire.
             </p>
           </div>
         )}
