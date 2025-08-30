@@ -5,29 +5,33 @@ import {
   getDocs,
   query,
   where,
-  updateDoc,
   doc,
   getDoc,
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
+import fetchWithAuth from '../utils/fetchWithAuth'; // <- helper API signé
+
+// Choix du flow de paiement : 'checkout' (bouton Stripe) ou 'payment_link' (lien partageable)
+const PAY_FLOW = 'checkout'; // ou 'payment_link'
 
 export default function ParentPayments() {
   const [toPay, setToPay] = useState([]);
   const [paid, setPaid] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [payingId, setPayingId] = useState(null); // pour désactiver/afficher "Redirection…" sur le bon bouton
 
   // -- helpers --
   const formatDateTime = (start_datetime, slot_day, slot_hour) => {
     if (start_datetime?.seconds) {
-      return new Date(start_datetime.seconds * 1000).toLocaleString();
+      return new Date(start_datetime.seconds * 1000).toLocaleString('fr-FR');
     }
     if (typeof start_datetime?.toDate === 'function') {
-      try { return start_datetime.toDate().toLocaleString(); } catch {}
+      try { return start_datetime.toDate().toLocaleString('fr-FR'); } catch {}
     }
     if (slot_day && (slot_hour || slot_hour === 0)) {
       return `${slot_day} • ${String(slot_hour).padStart(2, '0')}:00`;
     }
-    return 'Date/heure —';
+    return '—';
   };
 
   const resolveTeacherName = async (uid) => {
@@ -52,7 +56,7 @@ export default function ParentPayments() {
         return d.full_name || d.name || idOrUid;
       }
     } catch {}
-    // 2) users/{uid} (si l’enfant est autonome et a un user)
+    // 2) users/{uid} (si l’enfant a un compte user)
     try {
       const s = await getDoc(doc(db, 'users', idOrUid));
       if (s.exists()) {
@@ -65,7 +69,7 @@ export default function ParentPayments() {
 
   useEffect(() => {
     const fetch = async () => {
-      if (!auth.currentUser) return;
+      if (!auth.currentUser) { setLoading(false); return; }
       setLoading(true);
 
       // 1) Enfants du parent
@@ -74,8 +78,6 @@ export default function ParentPayments() {
       );
       const kids = kidsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-      // Identifiants possibles présents dans lessons.student_id
-      // (id du doc students + éventuellement user_id/uid si tu les stockes)
       const childIds = [];
       kids.forEach((k) => {
         childIds.push(k.id);
@@ -84,17 +86,13 @@ export default function ParentPayments() {
       });
 
       if (childIds.length === 0) {
-        setToPay([]);
-        setPaid([]);
-        setLoading(false);
+        setToPay([]); setPaid([]); setLoading(false);
         return;
       }
 
-      // 2) Récupère les leçons des enfants (chunk de 10 pour where('in', ...))
+      // 2) Récupère les leçons pour ces enfants (where('in') par chunks de 10)
       const chunks = [];
-      for (let i = 0; i < childIds.length; i += 10) {
-        chunks.push(childIds.slice(i, i + 10));
-      }
+      for (let i = 0; i < childIds.length; i += 10) chunks.push(childIds.slice(i, i + 10));
 
       const lessons = [];
       for (const c of chunks) {
@@ -104,7 +102,7 @@ export default function ParentPayments() {
         snap.docs.forEach((d) => lessons.push({ id: d.id, ...d.data() }));
       }
 
-      // 3) Enrichit avec noms prof & enfant (comme StudentPayments → teacherName)
+      // 3) Enrichit avec noms prof & enfant
       const enriched = await Promise.all(
         lessons.map(async (l) => {
           const [teacherName, childName] = await Promise.all([
@@ -115,22 +113,50 @@ export default function ParentPayments() {
         })
       );
 
-      setToPay(enriched.filter((l) => !l.is_paid));
-      setPaid(enriched.filter((l) => l.is_paid));
+      const sortByTime = (a, b) => {
+        const ta =
+          (a.start_datetime?.seconds && a.start_datetime.seconds * 1000) ||
+          (typeof a.start_datetime?.toDate === 'function' && a.start_datetime.toDate().getTime()) ||
+          0;
+        const tb =
+          (b.start_datetime?.seconds && b.start_datetime.seconds * 1000) ||
+          (typeof b.start_datetime?.toDate === 'function' && b.start_datetime.toDate().getTime()) ||
+          0;
+        return tb - ta;
+      };
+
+      setToPay(enriched.filter((l) => !l.is_paid).sort(sortByTime));
+      setPaid(enriched.filter((l) => l.is_paid).sort(sortByTime));
       setLoading(false);
     };
 
     fetch();
   }, []);
 
-  const handlePay = async (lessonId) => {
-    await updateDoc(doc(db, 'lessons', lessonId), { is_paid: true });
-    setToPay((prev) => {
-      const found = prev.find((l) => l.id === lessonId);
-      if (!found) return prev;
-      setPaid((p) => [{ ...found, is_paid: true }, ...p]);
-      return prev.filter((l) => l.id !== lessonId);
-    });
+  // ---- Paiement : création du lien (Checkout ou Payment Link) puis redirection ----
+  const handlePay = async (lesson) => {
+    try {
+      setPayingId(lesson.id);
+
+      const endpoint =
+        PAY_FLOW === 'payment_link'
+          ? '/api/pay/create-payment-link'
+          : '/api/pay/create-checkout-session';
+
+      const data = await fetchWithAuth(endpoint, {
+        method: 'POST',
+        body: JSON.stringify({ lessonId: lesson.id }),
+      });
+
+      if (!data?.url) throw new Error("Lien de paiement introuvable.");
+      // Redirection vers Stripe (plein écran)
+      window.location.href = data.url;
+    } catch (e) {
+      console.error(e);
+      alert(e.message || "Impossible de démarrer le paiement.");
+    } finally {
+      setPayingId(null);
+    }
   };
 
   return (
@@ -148,7 +174,7 @@ export default function ParentPayments() {
             </div>
           ) : toPay.length === 0 ? (
             <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">
-              Aucun paiement en attente !
+              Aucun paiement en attente !
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4">
@@ -176,10 +202,12 @@ export default function ParentPayments() {
                   </div>
 
                   <button
-                    className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded font-semibold shadow"
-                    onClick={() => handlePay(l.id)}
+                    className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded font-semibold shadow disabled:opacity-60"
+                    onClick={() => handlePay(l)}
+                    disabled={payingId === l.id}
+                    aria-busy={payingId === l.id}
                   >
-                    Régler ce cours
+                    {payingId === l.id ? 'Redirection…' : 'Payer maintenant'}
                   </button>
                 </div>
               ))}
@@ -196,40 +224,28 @@ export default function ParentPayments() {
             <div className="text-gray-400 text-sm">Aucun paiement effectué.</div>
           ) : (
             <div className="flex flex-col gap-3">
-              {paid
-                .sort((a, b) => {
-                  const ta =
-                    (a.start_datetime?.seconds && a.start_datetime.seconds * 1000) ||
-                    (typeof a.start_datetime?.toDate === 'function' && a.start_datetime.toDate().getTime()) ||
-                    0;
-                  const tb =
-                    (b.start_datetime?.seconds && b.start_datetime.seconds * 1000) ||
-                    (typeof b.start_datetime?.toDate === 'function' && b.start_datetime.toDate().getTime()) ||
-                    0;
-                  return tb - ta;
-                })
-                .map((l) => (
-                  <div
-                    key={l.id}
-                    className="border rounded-lg px-4 py-2 flex flex-col md:flex-row md:items-center gap-2 bg-gray-50"
-                  >
-                    <span className="font-bold text-primary">
-                      {l.subject_id || 'Matière'}
-                    </span>
-                    <span className="text-xs text-gray-600">
-                      {formatDateTime(l.start_datetime, l.slot_day, l.slot_hour)}
-                    </span>
-                    <span className="text-xs text-gray-600">
-                      Enfant : {l.childName || l.student_id}
-                    </span>
-                    <span className="text-xs text-gray-600">
-                      Prof : {l.teacherName || l.teacher_id}
-                    </span>
-                    <span className="text-green-600 text-xs font-semibold md:ml-auto">
-                      Payé {l.price_per_hour ? `• ${l.price_per_hour} €` : ''}
-                    </span>
-                  </div>
-                ))}
+              {paid.map((l) => (
+                <div
+                  key={l.id}
+                  className="border rounded-lg px-4 py-2 flex flex-col md:flex-row md:items-center gap-2 bg-gray-50"
+                >
+                  <span className="font-bold text-primary">
+                    {l.subject_id || 'Matière'}
+                  </span>
+                  <span className="text-xs text-gray-600">
+                    {formatDateTime(l.start_datetime, l.slot_day, l.slot_hour)}
+                  </span>
+                  <span className="text-xs text-gray-600">
+                    Enfant : {l.childName || l.student_id}
+                  </span>
+                  <span className="text-xs text-gray-600">
+                    Prof : {l.teacherName || l.teacher_id}
+                  </span>
+                  <span className="text-green-600 text-xs font-semibold md:ml-auto">
+                    Payé {l.price_per_hour ? `• ${l.price_per_hour} €` : ''}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </div>

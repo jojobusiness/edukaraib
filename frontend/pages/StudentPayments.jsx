@@ -6,21 +6,25 @@ import {
   getDoc,
   onSnapshot,
   query,
-  updateDoc,
   where,
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
+import fetchWithAuth from '../utils/fetchWithAuth'; // <— helper d’API signée (token Firebase)
+
+// Choix du flow de paiement : 'checkout' (bouton) ou 'payment_link' (lien partagé)
+const PAY_FLOW = 'checkout'; // ou 'payment_link'
 
 export default function StudentPayments() {
   const [toPay, setToPay] = useState([]);
   const [paid, setPaid] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [payingId, setPayingId] = useState(null); // <— pour désactiver le bouton pendant la redirection
   const teacherCacheRef = useRef(new Map()); // évite de re-fetch 100x le même prof
 
   // ---- Helpers ----
   const fmtDateTime = (start_datetime, slot_day, slot_hour) => {
     if (start_datetime?.seconds) {
-      return new Date(start_datetime.seconds * 1000).toLocaleString();
+      return new Date(start_datetime.seconds * 1000).toLocaleString('fr-FR');
     }
     if (slot_day != null && (slot_hour || slot_hour === 0)) {
       return `${slot_day} • ${String(slot_hour).padStart(2, '0')}:00`;
@@ -65,10 +69,9 @@ export default function StudentPayments() {
     const unsub = onSnapshot(
       qLessons,
       async (snap) => {
-        // enrichissement prof (avec petit cache)
         const lessonsRaw = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        // hydrate teacherName en parallèle (mais sans spammer Firestore)
+        // hydrate teacherName (cache)
         const enriched = await Promise.all(
           lessonsRaw.map(async (l) => ({
             ...l,
@@ -76,23 +79,17 @@ export default function StudentPayments() {
           }))
         );
 
-        // is_paid peut être absent → on considère false par défaut
+        // is_paid absent => false par défaut
         const unpaid = enriched.filter((l) => !!l && l.is_paid !== true);
         const alreadyPaid = enriched.filter((l) => l?.is_paid === true);
 
-        // tri optionnel par date/slot pour un rendu stable
-        const sortFn = (a, b) => {
-          const ta =
-            (a.start_datetime?.seconds ?? 0) * 1000 ||
-            Number.isFinite(a.slot_hour) ? a.slot_hour : 9999;
-          const tb =
-            (b.start_datetime?.seconds ?? 0) * 1000 ||
-            Number.isFinite(b.slot_hour) ? b.slot_hour : 9999;
-          return ta - tb;
-        };
+        // tri léger pour stabilité d’affichage
+        const keyTime = (l) =>
+          (l.start_datetime?.seconds ? l.start_datetime.seconds * 1000 : 0) ||
+          (Number.isFinite(l.slot_hour) ? l.slot_hour : 9_999_999);
 
-        setToPay(unpaid.sort(sortFn));
-        setPaid(alreadyPaid.sort(sortFn));
+        setToPay(unpaid.sort((a, b) => keyTime(a) - keyTime(b)));
+        setPaid(alreadyPaid.sort((a, b) => keyTime(a) - keyTime(b)));
         setLoading(false);
       },
       (err) => {
@@ -107,29 +104,36 @@ export default function StudentPayments() {
   // total des montants à payer / déjà payés (facultatif pour affichage)
   const totals = useMemo(() => {
     const sum = (arr) =>
-      arr.reduce(
-        (acc, l) => acc + (parseFloat(l.price_per_hour || 0) || 0),
-        0
-      );
+      arr.reduce((acc, l) => acc + (parseFloat(l.price_per_hour || 0) || 0), 0);
     return {
       due: sum(toPay),
       paid: sum(paid),
     };
   }, [toPay, paid]);
 
-  // ---- Paiement (mock): set is_paid = true + bascule optimiste dans l'UI ----
+  // ---- Paiement : création du lien (Checkout ou Payment Link) puis redirection ----
   const handlePay = async (lesson) => {
-    // Optimistic UI: basculer tout de suite côté client
-    setToPay((prev) => prev.filter((l) => l.id !== lesson.id));
-    setPaid((prev) => [{ ...lesson, is_paid: true }, ...prev]);
     try {
-      await updateDoc(doc(db, 'lessons', lesson.id), { is_paid: true });
+      setPayingId(lesson.id);
+
+      const endpoint =
+        PAY_FLOW === 'payment_link'
+          ? '/api/pay/create-payment-link'
+          : '/api/pay/create-checkout-session';
+
+      const data = await fetchWithAuth(endpoint, {
+        method: 'POST',
+        body: JSON.stringify({ lessonId: lesson.id }),
+      });
+
+      if (!data?.url) throw new Error("Lien de paiement introuvable.");
+      // Redirection plein écran vers Stripe
+      window.location.href = data.url;
     } catch (e) {
       console.error(e);
-      // rollback si erreur
-      setPaid((prev) => prev.filter((l) => l.id !== lesson.id));
-      setToPay((prev) => [lesson, ...prev]);
-      alert("Le paiement simulé a échoué (droits/règles Firestore ?).");
+      alert(e.message || "Impossible de démarrer le paiement.");
+    } finally {
+      setPayingId(null);
     }
   };
 
@@ -155,7 +159,7 @@ export default function StudentPayments() {
             </div>
           ) : toPay.length === 0 ? (
             <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">
-              Aucun paiement en attente !
+              Aucun paiement en attente !
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4">
@@ -180,10 +184,12 @@ export default function StudentPayments() {
                   </div>
 
                   <button
-                    className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded font-semibold shadow"
+                    className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded font-semibold shadow disabled:opacity-60"
                     onClick={() => handlePay(l)}
+                    disabled={payingId === l.id}
+                    aria-busy={payingId === l.id}
                   >
-                    Régler ce cours
+                    {payingId === l.id ? 'Redirection…' : 'Payer maintenant'}
                   </button>
                 </div>
               ))}

@@ -1,45 +1,77 @@
 import { stripe } from './_stripe.mjs';
-import { getFirestore } from './_firebaseAdmin.mjs';
+import { adminDb, rawBody } from './_firebaseAdmin.mjs';
 
-// obligatoire : désactiver le bodyParser
 export const config = { api: { bodyParser: false } };
 
-async function buffer(req) {
-  const chunks = [];
-  for await (const c of req) chunks.push(c);
-  return Buffer.concat(chunks);
+export default async function handler(req, res) {
+  const sig = req.headers['stripe-signature'];
+  let event;
+  try {
+    const buf = await rawBody(req);
+    event = stripe.webhooks.constructEvent(
+      buf,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        // On peut lire session -> payment_intent puis récupérer tous les metadata
+        const session = event.data.object;
+        const piId = session.payment_intent;
+        const pi = await stripe.paymentIntents.retrieve(piId);
+        await handlePaid(pi);
+        break;
+      }
+      case 'payment_intent.succeeded': {
+        const pi = event.data.object;
+        await handlePaid(pi);
+        break;
+      }
+      default:
+        break;
+    }
+    res.json({ received: true });
+  } catch (e) {
+    console.error('webhook handler error:', e);
+    res.status(500).json({ error: 'webhook_error' });
+  }
 }
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end();
+async function handlePaid(pi) {
+  const md = pi.metadata || {};
+  const lessonId = md.lesson_id;
+  if (!lessonId) return;
 
-  const sig = req.headers['stripe-signature'];
-  const buf = await buffer(req);
+  const grossCents = pi.amount_received || pi.amount || 0;
+  const feeCents = Number(md.platform_fee_cents || 0); // pas obligatoire ici
+  const payerUserId = md.booked_by || md.parent_id || md.student_id || md.created_by || '';
 
-  let evt;
-  try {
-    evt = stripe.webhooks.constructEvent(buf, sig, process.env.STRIPE_WEBHOOK_SECRET);
-  } catch (e) {
-    console.error('Webhook signature failed', e.message);
-    return res.status(400).send('Bad signature');
-  }
+  // Mise à jour de la leçon
+  const ref = adminDb.collection('lessons').doc(lessonId);
+  await ref.set({
+    is_paid: true,
+    paid_at: new Date(),
+    paid_by: payerUserId || null,
+    total_amount: grossCents / 100,
+    payment_intent_id: pi.id,
+    stripe_charge_id: (pi.charges?.data?.[0]?.id) || null,
+  }, { merge: true });
 
-  try {
-    if (evt.type === 'account.updated') {
-      const acc = evt.data.object;
-      const db = getFirestore();
-      const q = await db.collection('users').where('stripeAccountId', '==', acc.id).limit(1).get();
-      if (!q.empty) {
-        await q.docs[0].ref.update({
-          stripePayoutsEnabled: acc.payouts_enabled,
-          stripeChargesEnabled: acc.charges_enabled,
-          stripeDetailsSubmitted: acc.details_submitted,
-        });
-      }
-    }
-    return res.status(200).json({ received: true });
-  } catch (e) {
-    console.error('webhook error:', e);
-    return res.status(500).end();
-  }
+  // Optionnel : écrire un enregistrement “payments”
+  await adminDb.collection('payments').add({
+    created_at: new Date(),
+    lesson_id: lessonId,
+    teacher_id: md.teacher_id || null,
+    student_id: md.student_id || null,
+    payer_id: payerUserId || null,
+    model: md.model || 'unknown',
+    amount_cents: grossCents,
+    // La commission exacte de Stripe se trouve dans balance_transaction -> fees ; si besoin, retrieve charge.balance_transaction.
+  });
 }
