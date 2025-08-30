@@ -20,7 +20,7 @@ export default function StudentPayments() {
   const [loading, setLoading] = useState(true);
   const [payingId, setPayingId] = useState(null); // <— pour désactiver le bouton pendant la redirection
   const teacherCacheRef = useRef(new Map()); // évite de re-fetch 100x le même prof
-
+  
   // ---- Helpers ----
   const fmtDateTime = (start_datetime, slot_day, slot_hour) => {
     if (start_datetime?.seconds) {
@@ -97,7 +97,7 @@ export default function StudentPayments() {
         setLoading(false);
       }
     );
-
+    
     return () => unsub();
   }, []);
 
@@ -115,26 +115,33 @@ export default function StudentPayments() {
   const handlePay = async (lesson) => {
     try {
       setPayingId(lesson.id);
-
-      const endpoint =
-        PAY_FLOW === 'payment_link'
-          ? '/api/pay/create-payment-link'
-          : '/api/pay/create-checkout-session';
-
-      const data = await fetchWithAuth(endpoint, {
+      
+        // 1) DIAGNOSTIC AVANT CRÉATION
+        const diag = await fetchWithAuth('/api/pay/diag', {
         method: 'POST',
         body: JSON.stringify({ lessonId: lesson.id }),
-      });
+        });
+        console.log('[PAY DIAG student]', diag);
+        if (!diag.ok) {
+        alert('Diagnostic paiement : ' + (diag.error || 'inconnu'));
+        setPayingId(null);
+        return; // on ne lance pas Stripe si le diag dit "non"
+        }
 
-      if (!data?.url) throw new Error("Lien de paiement introuvable.");
-      // Redirection plein écran vers Stripe
-      window.location.href = data.url;
-    } catch (e) {
-      console.error(e);
-      alert(e.message || "Impossible de démarrer le paiement.");
-    } finally {
-      setPayingId(null);
-    }
+        // 2) CRÉATION DE LA SESSION STRIPE (inchangé)
+        const endpoint = '/api/pay/create-checkout-session'; // ou payment-link
+        const data = await fetchWithAuth(endpoint, {
+        method: 'POST',
+        body: JSON.stringify({ lessonId: lesson.id }),
+        });
+        if (!data?.url) throw new Error('Lien de paiement introuvable.');
+        window.location.href = data.url;
+        } catch (e) {
+            console.error(e);
+            alert(e.message || 'Impossible de démarrer le paiement.');
+        } finally {
+            setPayingId(null);
+        }
   };
 
   return (

@@ -138,22 +138,27 @@ export default function ParentPayments() {
     try {
       setPayingId(lesson.id);
 
-      const endpoint =
-        PAY_FLOW === 'payment_link'
-          ? '/api/pay/create-payment-link'
-          : '/api/pay/create-checkout-session';
+      const diag = await fetchWithAuth('/api/pay/diag', {
+        method: 'POST',
+        body: JSON.stringify({ lessonId: lesson.id }),
+      });
+      console.log('[PAY DIAG parent]', diag);
+      if (!diag.ok) {
+        alert('Diagnostic paiement : ' + (diag.error || 'inconnu'));
+        setPayingId(null);
+        return;
+      }
 
+      const endpoint = '/api/pay/create-checkout-session';
       const data = await fetchWithAuth(endpoint, {
         method: 'POST',
         body: JSON.stringify({ lessonId: lesson.id }),
       });
-
-      if (!data?.url) throw new Error("Lien de paiement introuvable.");
-      // Redirection vers Stripe (plein écran)
+      if (!data?.url) throw new Error('Lien de paiement introuvable.');
       window.location.href = data.url;
     } catch (e) {
       console.error(e);
-      alert(e.message || "Impossible de démarrer le paiement.");
+      alert(e.message || 'Impossible de démarrer le paiement.');
     } finally {
       setPayingId(null);
     }
