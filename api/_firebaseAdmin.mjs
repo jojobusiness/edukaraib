@@ -1,31 +1,56 @@
 import admin from 'firebase-admin';
+import { getFirestore } from 'firebase-admin/firestore';
 
-let initialized = false;
+const projectId = process.env.FIREBASE_PROJECT_ID;
+const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+// ⚠️ très important : remplacer les "\n" par des retours à la ligne
+const privateKey = (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
 
-function ensureInit() {
-  if (initialized) return;
-  const projectId   = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const rawKey      = process.env.FIREBASE_PRIVATE_KEY;
-
-  if (!projectId || !clientEmail || !rawKey) {
-    const miss = [
-      !projectId && 'FIREBASE_PROJECT_ID',
-      !clientEmail && 'FIREBASE_CLIENT_EMAIL',
-      !rawKey && 'FIREBASE_PRIVATE_KEY',
-    ].filter(Boolean).join(', ');
-    throw new Error(`FIREBASE_ADMIN_ENV_MISSING: ${miss}`);
+if (!admin.apps.length) {
+  if (!projectId || !clientEmail || !privateKey) {
+    // On log quand même pour les fonctions Vercel (utile au debug)
+    console.warn('[firebase-admin] Missing service account env vars');
   }
-
-  const privateKey = rawKey.replace(/\\n/g, '\n');
-
-  if (!admin.apps.length) {
-    admin.initializeApp({
-      credential: admin.credential.cert({ projectId, clientEmail, privateKey }),
-    });
-  }
-  initialized = true;
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId,
+      clientEmail,
+      privateKey,
+    }),
+  });
 }
 
-export function getFirestore() { ensureInit(); return admin.firestore(); }
-export function getAuthAdmin() { ensureInit(); return admin.auth(); }
+// Firestore (Admin)
+export const adminDb = getFirestore();
+
+// Vérifie le token Firebase envoyé par le front (Authorization: Bearer <idToken>)
+export async function verifyAuth(req, res) {
+  try {
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'NO_TOKEN' });
+      return null;
+    }
+    const idToken = authHeader.split(' ')[1];
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    return decoded; // { uid, ... }
+  } catch (e) {
+    console.error('[verifyAuth] error:', e?.message || e);
+    res.status(401).json({ error: 'INVALID_TOKEN' });
+    return null;
+  }
+}
+
+// Lit le corps brut de la requête (utile pour Stripe webhooks)
+export function rawBody(req) {
+  return new Promise((resolve, reject) => {
+    try {
+      const chunks = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', () => resolve(Buffer.concat(chunks)));
+      req.on('error', reject);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
