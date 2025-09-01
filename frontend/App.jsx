@@ -30,6 +30,8 @@ import CGU from './pages/CGU';
 import Privacy from './pages/Privacy';
 import ChildDetails from './pages/ChildDetails';
 import TeacherProfile from './pages/TeacherProfile';
+import PaySuccess from './pages/pay/Success.jsx';
+import PayCancel from './pages/pay/Cancel.jsx';
 
 import TeacherRoute from './components/TeacherRoute';
 import ParentRoute from './components/ParentRoute';
@@ -52,6 +54,8 @@ function App() {
         <Route path="/cgu" element={<CGU />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="*" element={<NotFound />} />
+        <Route path="/pay/success" element={<PaySuccess />} />
+        <Route path="/pay/cancel" element={<PayCancel />} />
 
         {/* Routes protégées */}
         <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>}/>

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://edukaraib.vercel.app/sitemap.xml

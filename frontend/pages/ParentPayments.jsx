@@ -12,13 +12,14 @@ import DashboardLayout from '../components/DashboardLayout';
 import fetchWithAuth from '../utils/fetchWithAuth'; // <- helper API signé
 
 // Choix du flow de paiement : 'checkout' (bouton Stripe) ou 'payment_link' (lien partageable)
+// (Ici on utilise checkout côté serveur /api/pay/create-checkout-session)
 const PAY_FLOW = 'checkout'; // ou 'payment_link'
 
 export default function ParentPayments() {
-  const [toPay, setToPay] = useState([]);
-  const [paid, setPaid] = useState([]);
+  const [toPay, setToPay] = useState([]);   // UNIQUEMENT les "confirmés" et non payés
+  const [paid, setPaid] = useState([]);     // Tous les cours déjà payés
   const [loading, setLoading] = useState(true);
-  const [payingId, setPayingId] = useState(null); // pour désactiver/afficher "Redirection…" sur le bon bouton
+  const [payingId, setPayingId] = useState(null); // pour désactiver le bouton
 
   // -- helpers --
   const formatDateTime = (start_datetime, slot_day, slot_hour) => {
@@ -125,7 +126,10 @@ export default function ParentPayments() {
         return tb - ta;
       };
 
-      setToPay(enriched.filter((l) => !l.is_paid).sort(sortByTime));
+      // 🔎 Ne proposer à payer QUE les leçons confirmées par le prof
+      const unpaidConfirmed = enriched.filter((l) => l.status === 'confirmed' && !l.is_paid);
+
+      setToPay(unpaidConfirmed.sort(sortByTime));
       setPaid(enriched.filter((l) => l.is_paid).sort(sortByTime));
       setLoading(false);
     };
@@ -133,11 +137,12 @@ export default function ParentPayments() {
     fetch();
   }, []);
 
-  // ---- Paiement : création du lien (Checkout ou Payment Link) puis redirection ----
+  // ---- Paiement : diag -> création de lien -> redirection ----
   const handlePay = async (lesson) => {
     try {
       setPayingId(lesson.id);
 
+      // diagnostic (vérifie prof Stripe, montant, etc.)
       const diag = await fetchWithAuth('/api/pay/diag', {
         method: 'POST',
         body: JSON.stringify({ lessonId: lesson.id }),
@@ -149,7 +154,11 @@ export default function ParentPayments() {
         return;
       }
 
-      const endpoint = '/api/pay/create-checkout-session';
+      const endpoint =
+        PAY_FLOW === 'payment_link'
+          ? '/api/pay/create-payment-link'
+          : '/api/pay/create-checkout-session';
+
       const data = await fetchWithAuth(endpoint, {
         method: 'POST',
         body: JSON.stringify({ lessonId: lesson.id }),
@@ -169,9 +178,9 @@ export default function ParentPayments() {
       <div className="max-w-2xl mx-auto">
         <h2 className="text-2xl font-bold text-primary mb-6">💳 Paiements (Parent)</h2>
 
-        {/* À régler */}
+        {/* À régler — uniquement les cours CONFIRMÉS */}
         <div className="mb-8">
-          <h3 className="font-bold text-secondary mb-3">Paiements à effectuer</h3>
+          <h3 className="font-bold text-secondary mb-3">Paiements à effectuer (cours confirmés)</h3>
 
           {loading ? (
             <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">
@@ -179,7 +188,7 @@ export default function ParentPayments() {
             </div>
           ) : toPay.length === 0 ? (
             <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">
-              Aucun paiement en attente !
+              Aucun paiement en attente pour des cours confirmés.
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4">
@@ -194,6 +203,9 @@ export default function ParentPayments() {
                       <span className="text-gray-600 text-xs ml-2">
                         {l.price_per_hour ? `${l.price_per_hour} €` : ''}
                       </span>
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Statut : <b>Confirmé</b>
                     </div>
                     <div className="text-xs text-gray-500">
                       Professeur : {l.teacherName || l.teacher_id}
@@ -220,7 +232,7 @@ export default function ParentPayments() {
           )}
         </div>
 
-        {/* Historique */}
+        {/* Historique (toutes les leçons payées, quel que soit le statut) */}
         <div className="bg-white p-6 rounded-xl shadow border">
           <h3 className="font-bold text-primary mb-3">Historique des paiements</h3>
           {loading ? (

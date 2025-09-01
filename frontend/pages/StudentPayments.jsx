@@ -1,3 +1,4 @@
+// frontend/pages/StudentPayments.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { auth, db } from '../lib/firebase';
 import {
@@ -9,18 +10,18 @@ import {
   where,
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
-import fetchWithAuth from '../utils/fetchWithAuth'; // <— helper d’API signée (token Firebase)
+import fetchWithAuth from '../utils/fetchWithAuth';
 
 // Choix du flow de paiement : 'checkout' (bouton) ou 'payment_link' (lien partagé)
 const PAY_FLOW = 'checkout'; // ou 'payment_link'
 
 export default function StudentPayments() {
-  const [toPay, setToPay] = useState([]);
-  const [paid, setPaid] = useState([]);
+  const [toPay, setToPay] = useState([]);       // ← uniquement les "confirmés" & non payés
+  const [paid, setPaid] = useState([]);         // ← déjà payés (tous statuts)
   const [loading, setLoading] = useState(true);
-  const [payingId, setPayingId] = useState(null); // <— pour désactiver le bouton pendant la redirection
-  const teacherCacheRef = useRef(new Map()); // évite de re-fetch 100x le même prof
-  
+  const [payingId, setPayingId] = useState(null);
+  const teacherCacheRef = useRef(new Map());
+
   // ---- Helpers ----
   const fmtDateTime = (start_datetime, slot_day, slot_hour) => {
     if (start_datetime?.seconds) {
@@ -38,7 +39,6 @@ export default function StudentPayments() {
     if (cache.has(uid)) return cache.get(uid);
 
     try {
-      // users/{uid}
       const snap = await getDoc(doc(db, 'users', uid));
       let name = uid;
       if (snap.exists()) {
@@ -79,8 +79,10 @@ export default function StudentPayments() {
           }))
         );
 
-        // is_paid absent => false par défaut
-        const unpaid = enriched.filter((l) => !!l && l.is_paid !== true);
+        // 🔎 ICI: on ne propose de payer QUE les cours confirmés par le prof
+        const unpaidConfirmed = enriched.filter(
+          (l) => l?.status === 'confirmed' && l.is_paid !== true
+        );
         const alreadyPaid = enriched.filter((l) => l?.is_paid === true);
 
         // tri léger pour stabilité d’affichage
@@ -88,7 +90,7 @@ export default function StudentPayments() {
           (l.start_datetime?.seconds ? l.start_datetime.seconds * 1000 : 0) ||
           (Number.isFinite(l.slot_hour) ? l.slot_hour : 9_999_999);
 
-        setToPay(unpaid.sort((a, b) => keyTime(a) - keyTime(b)));
+        setToPay(unpaidConfirmed.sort((a, b) => keyTime(a) - keyTime(b)));
         setPaid(alreadyPaid.sort((a, b) => keyTime(a) - keyTime(b)));
         setLoading(false);
       },
@@ -97,7 +99,7 @@ export default function StudentPayments() {
         setLoading(false);
       }
     );
-    
+
     return () => unsub();
   }, []);
 
@@ -111,37 +113,41 @@ export default function StudentPayments() {
     };
   }, [toPay, paid]);
 
-  // ---- Paiement : création du lien (Checkout ou Payment Link) puis redirection ----
+  // ---- Paiement : diag + création du lien (Checkout ou Payment Link) puis redirection ----
   const handlePay = async (lesson) => {
     try {
       setPayingId(lesson.id);
-      
-        // 1) DIAGNOSTIC AVANT CRÉATION
-        const diag = await fetchWithAuth('/api/pay/diag', {
+
+      // DIAGNOSTIC AVANT CRÉATION
+      const diag = await fetchWithAuth('/api/pay/diag', {
         method: 'POST',
         body: JSON.stringify({ lessonId: lesson.id }),
-        });
-        console.log('[PAY DIAG student]', diag);
-        if (!diag.ok) {
+      });
+      console.log('[PAY DIAG student]', diag);
+      if (!diag.ok) {
         alert('Diagnostic paiement : ' + (diag.error || 'inconnu'));
         setPayingId(null);
-        return; // on ne lance pas Stripe si le diag dit "non"
-        }
+        return;
+      }
 
-        // 2) CRÉATION DE LA SESSION STRIPE (inchangé)
-        const endpoint = '/api/pay/create-checkout-session'; // ou payment-link
-        const data = await fetchWithAuth(endpoint, {
+      // CRÉATION DE LA SESSION STRIPE
+      const endpoint =
+        PAY_FLOW === 'payment_link'
+          ? '/api/pay/create-payment-link'
+          : '/api/pay/create-checkout-session';
+
+      const data = await fetchWithAuth(endpoint, {
         method: 'POST',
         body: JSON.stringify({ lessonId: lesson.id }),
-        });
-        if (!data?.url) throw new Error('Lien de paiement introuvable.');
-        window.location.href = data.url;
-        } catch (e) {
-            console.error(e);
-            alert(e.message || 'Impossible de démarrer le paiement.');
-        } finally {
-            setPayingId(null);
-        }
+      });
+      if (!data?.url) throw new Error('Lien de paiement introuvable.');
+      window.location.href = data.url;
+    } catch (e) {
+      console.error(e);
+      alert(e.message || 'Impossible de démarrer le paiement.');
+    } finally {
+      setPayingId(null);
+    }
   };
 
   return (
@@ -149,10 +155,10 @@ export default function StudentPayments() {
       <div className="max-w-2xl mx-auto">
         <h2 className="text-2xl font-bold text-primary mb-6">💳 Mes paiements</h2>
 
-        {/* À régler */}
+        {/* À régler — uniquement les cours CONFIRMÉS */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-bold text-secondary">Paiements à effectuer</h3>
+            <h3 className="font-bold text-secondary">Paiements à effectuer (cours confirmés)</h3>
             {!loading && (
               <span className="text-xs text-gray-600">
                 Total à régler : {totals.due.toFixed(2)} €
@@ -166,7 +172,7 @@ export default function StudentPayments() {
             </div>
           ) : toPay.length === 0 ? (
             <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">
-              Aucun paiement en attente !
+              Aucun paiement en attente pour des cours confirmés.
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4">
@@ -181,6 +187,9 @@ export default function StudentPayments() {
                       <span className="text-gray-600 text-xs ml-2">
                         {l.price_per_hour ? `${l.price_per_hour} €` : ''}
                       </span>
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Statut : <b>Confirmé</b>
                     </div>
                     <div className="text-xs text-gray-500">
                       Professeur&nbsp;: {l.teacherName || l.teacher_id}
