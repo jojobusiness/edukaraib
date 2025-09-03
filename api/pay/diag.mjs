@@ -1,5 +1,6 @@
 import { adminDb, verifyAuth } from '../_firebaseAdmin.mjs';
 
+// body parser tolérant (Vercel peut déjà parser selon headers)
 function readBody(req) {
   try {
     if (req.body == null) return {};
@@ -10,52 +11,93 @@ function readBody(req) {
   }
 }
 
-function toNum(v) {
+const toNum = (v) => {
   const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v);
   return Number.isFinite(n) ? n : 0;
-}
+};
 
 export default async function handler(req, res) {
-  try {
-    if (req.method !== 'POST') return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
-
-    const { uid } = await verifyAuth(req, res);
-    if (!uid) return;
-
-    const body = readBody(req);
-    const { lessonId } = body;
-    if (!lessonId) return res.status(400).json({ ok:false, error: 'MISSING_LESSON_ID' });
-
-    const lessonSnap = await adminDb.collection('lessons').doc(lessonId).get();
-    if (!lessonSnap.exists) return res.status(404).json({ ok:false, error: 'LESSON_NOT_FOUND' });
-    const lesson = lessonSnap.data();
-
-    const teacherSnap = await adminDb.collection('users').doc(lesson.teacher_id).get();
-    if (!teacherSnap.exists) return res.status(400).json({ ok:false, error: 'TEACHER_NOT_FOUND' });
-    const teacher = teacherSnap.data();
-
-    const pricePerHour = toNum(lesson.price_per_hour);
-    const hours = toNum(lesson.duration_hours) || 1;
-    const grossCents = Math.round(pricePerHour * hours * 100);
-
-    res.json({
-      ok: true,
-      env: {
-        APP_BASE_URL: !!process.env.APP_BASE_URL,
-        STRIPE_KEY_SET: !!process.env.STRIPE_SECRET_KEY,
-      },
-      authUid: uid,
-      teacherHasStripe: !!teacher.stripeAccountId,
-      amount: { pricePerHour, hours, grossCents },
-      lesson: {
-        id: lessonId,
-        teacher_id: lesson.teacher_id || null,
-        student_id: lesson.student_id || null,
-        subject_id: lesson.subject_id || null,
-      }
-    });
-  } catch (e) {
-    console.error('diag error:', e);
-    res.status(500).json({ ok:false, error: e.message });
+  if (req.method !== 'POST') {
+    return res.status(405).json({ ok: false, error: 'METHOD_NOT_ALLOWED' });
   }
+
+  // 1) Auth Firebase
+  const auth = await verifyAuth(req, res);
+  if (!auth) return; // verifyAuth a déjà renvoyé 401 si besoin
+  const uid = auth.uid;
+
+  // 2) Body
+  const { lessonId, forStudent } = readBody(req);
+  if (!lessonId) return res.status(400).json({ ok: false, error: 'MISSING_LESSON_ID' });
+
+  // 3) Récupération de la leçon
+  const snap = await adminDb.collection('lessons').doc(lessonId).get();
+  if (!snap.exists) return res.status(404).json({ ok: false, error: 'LESSON_NOT_FOUND' });
+  const lesson = snap.data();
+
+  // 4) Doit être confirmé
+  if (lesson.status !== 'confirmed') {
+    return res.json({ ok: false, error: 'Leçon non confirmée' });
+  }
+
+  // 5) Déterminer le participant ciblé
+  let targetStudent = forStudent || lesson.student_id || null;
+
+  if (Array.isArray(lesson.participant_ids) && lesson.participant_ids.length) {
+    // cours de groupe
+    if (!targetStudent) {
+      // si l'utilisateur est lui-même élève et présent dans le groupe, on peut l’inférer
+      if (lesson.participant_ids.includes(uid)) {
+        targetStudent = uid;
+      } else {
+        return res.json({ ok: false, error: 'FOR_STUDENT_REQUIRED' });
+      }
+    }
+  }
+
+  if (!targetStudent) {
+    return res.json({ ok: false, error: 'STUDENT_NOT_RESOLVED' });
+  }
+
+  // 6) Vérifier que cet élève est bien inscrit à la leçon
+  const isParticipant = Array.isArray(lesson.participant_ids)
+    ? lesson.participant_ids.includes(targetStudent)
+    : (!lesson.participant_ids && lesson.student_id === targetStudent);
+
+  if (!isParticipant) {
+    return res.json({ ok: false, error: 'Élève non inscrit à ce cours' });
+  }
+
+  // 7) Contrôle d’accès payeur :
+  //    - l’élève lui-même
+  //    - ou le parent associé au participant (participantsMap[target].parent_id)
+  //    - ou (legacy) lesson.parent_id (si réservé pour enfant)
+  const payerIsStudent = uid === targetStudent;
+  const payerIsParent =
+    (lesson.participantsMap?.[targetStudent]?.parent_id && lesson.participantsMap[targetStudent].parent_id === uid) ||
+    (lesson.parent_id && lesson.parent_id === uid);
+
+  if (!payerIsStudent && !payerIsParent) {
+    return res.status(403).json({ ok: false, error: 'NOT_ALLOWED' });
+  }
+
+  // 8) Déjà payé pour ce participant ?
+  const alreadyPaid =
+    lesson.participantsMap?.[targetStudent]?.is_paid ??
+    (lesson.student_id === targetStudent ? lesson.is_paid : false);
+
+  if (alreadyPaid) {
+    return res.json({ ok: false, error: 'Déjà payé' });
+  }
+
+  // 9) Montant OK ?
+  const pricePerHour = toNum(lesson.price_per_hour);
+  const hours = toNum(lesson.duration_hours) || 1;
+  const grossCents = Math.round(pricePerHour * hours * 100);
+
+  if (!(grossCents > 0)) {
+    return res.json({ ok: false, error: 'Montant invalide' });
+  }
+
+  return res.json({ ok: true });
 }
