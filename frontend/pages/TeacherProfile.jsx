@@ -11,7 +11,7 @@ import {
   addDoc,
   serverTimestamp,
 } from 'firebase/firestore';
-import BookingModal from '../components/lessons/BookingModal';
+import BookingModal from '../components/BookingModal';
 
 const DAYS_ORDER = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
