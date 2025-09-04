@@ -1,4 +1,3 @@
-// frontend/pages/TeacherLessons.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import { auth, db } from '../lib/firebase';
@@ -33,7 +32,6 @@ const fmtFromSlot = (slot_day, slot_hour) =>
   `${slot_day || ''} ${slot_hour != null ? `• ${String(slot_hour).padStart(2, '0')}:00` : ''}`.trim();
 
 function When({ lesson }) {
-  // start_datetime peut être Timestamp Firestore ou objet {seconds}
   const ts = lesson?.start_datetime;
   if (ts?.toDate) {
     try {
@@ -78,7 +76,6 @@ async function resolvePersonName(id, cache) {
   if (!id) return '';
   if (cache.has(id)) return cache.get(id);
 
-  // users/{uid}
   try {
     const u = await getDoc(doc(db, 'users', id));
     if (u.exists()) {
@@ -89,7 +86,6 @@ async function resolvePersonName(id, cache) {
     }
   } catch {}
 
-  // students/{id}
   try {
     const s = await getDoc(doc(db, 'students', id));
     if (s.exists()) {
@@ -151,7 +147,7 @@ export default function TeacherLessons() {
       async (snap) => {
         const raw = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        // enrichissement: legacy student + premiers noms de groupe (jusqu'à 3)
+        // enrichissement: legacy student + premiers noms de groupe (jusqu'à 5 pour l'affichage)
         const enriched = await Promise.all(
           raw.map(async (l) => {
             let studentName = '';
@@ -161,7 +157,7 @@ export default function TeacherLessons() {
 
             let participantNames = [];
             if (Array.isArray(l.participant_ids) && l.participant_ids.length > 0) {
-              const sample = l.participant_ids.slice(0, 3);
+              const sample = l.participant_ids.slice(0, 5);
               participantNames = await Promise.all(
                 sample.map((sid) => resolvePersonName(sid, nameCacheRef.current))
               );
@@ -264,20 +260,23 @@ export default function TeacherLessons() {
       });
     } catch (e) {
       console.error(e);
-      alert("Impossible de modifier le statut.");
+      alert('Impossible de modifier le statut.');
     }
   }
 
   // ----------------- Carte d’une leçon -----------------
   const Card = ({ lesson, showActionsForPending }) => {
     const isGroup = Array.isArray(lesson.participant_ids) && lesson.participant_ids.length > 0;
-    const capacity = lesson.capacity || (isGroup ? lesson.participant_ids.length : 1);
-    const used = isGroup ? lesson.participant_ids.length : (lesson.student_id ? 1 : 0);
 
+    // Label uniquement avec des noms (pas d'indicateurs de capacité)
     const studentsLabel = isGroup
       ? (lesson.participantNames?.length
-          ? `${lesson.participantNames.join(', ')}${used > lesson.participantNames.length ? ` +${used - lesson.participantNames.length}` : ''}`
-          : `Groupe (${used}/${capacity})`)
+          ? `${lesson.participantNames.join(', ')}${
+              lesson.participant_ids.length > lesson.participantNames.length
+                ? ` +${lesson.participant_ids.length - lesson.participantNames.length}`
+                : ''
+            }`
+          : 'Élèves')
       : (lesson.studentName || 'Élève');
 
     return (
@@ -286,11 +285,6 @@ export default function TeacherLessons() {
           <div className="flex gap-2 items-center mb-1">
             <span className="font-bold text-primary">{lesson.subject_id || 'Matière'}</span>
             <StatusPill status={lesson.status} />
-            {isGroup && (
-              <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded ml-1">
-                👥 {used}/{capacity}
-              </span>
-            )}
           </div>
 
           <div className="text-gray-700">
@@ -427,9 +421,24 @@ export default function TeacherLessons() {
                       <StatusPill status="completed" />
                     </div>
                     <div className="text-gray-700">
-                      {(Array.isArray(l.participant_ids) && l.participant_ids.length > 0)
-                        ? `Élèves (👥 ${l.participant_ids.length}/${l.capacity || l.participant_ids.length})`
-                        : <>Élève : <span className="font-semibold">{l.studentName || '—'}</span></>}
+                      {Array.isArray(l.participant_ids) && l.participant_ids.length > 0 ? (
+                        <>
+                          Élèves :{' '}
+                          <span className="font-semibold">
+                            {(l.participantNames?.length
+                              ? `${l.participantNames.join(', ')}${
+                                  l.participant_ids.length > l.participantNames.length
+                                    ? ` +${l.participant_ids.length - l.participantNames.length}`
+                                    : ''
+                                }`
+                              : '—')}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          Élève : <span className="font-semibold">{l.studentName || '—'}</span>
+                        </>
+                      )}
                     </div>
                     <div className="text-gray-500 text-sm"><When lesson={l} /></div>
                   </div>
@@ -454,13 +463,20 @@ export default function TeacherLessons() {
         open={docOpen}
         onClose={() => setDocOpen(false)}
         lesson={docLesson}
-        allowUpload={true} // le prof peut envoyer des documents
+        allowUpload={true}
       />
 
       <GroupSettingsModal
         open={groupOpen}
         onClose={() => setGroupOpen(false)}
         lesson={groupLesson}
+        // Optimise UI: on close, on veut rafraîchir les noms immédiatement côté UI
+        onLocalLessonUpdate={(patch) => {
+          if (!groupLesson) return;
+          setLessons((prev) =>
+            prev.map((x) => (x.id === groupLesson.id ? { ...x, ...patch } : x))
+          );
+        }}
       />
     </DashboardLayout>
   );

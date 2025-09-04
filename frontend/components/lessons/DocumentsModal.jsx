@@ -4,30 +4,47 @@ import {
   collection,
   query,
   where,
+  getDocs,
   addDoc,
   serverTimestamp,
-  onSnapshot,
 } from 'firebase/firestore';
 import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-export default function DocumentsModal({ open, onClose, lesson, allowUpload = true, onUploaded }) {
-  const [docsList, setDocsList] = useState([]);
+export default function DocumentsModal({
+  open,
+  onClose,
+  lesson,
+  allowUpload = true, // côté prof = true ; côté parent/élève = false
+  onUploaded,
+}) {
+  const [files, setFiles] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
 
-  // LIVE: écoute en temps réel des docs de la leçon
   useEffect(() => {
-    if (!open || !lesson?.id) return;
-    const qDocs = query(collection(db, 'documents'), where('lesson_id', '==', lesson.id));
-    const unsub = onSnapshot(qDocs, (snap) => {
-      const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      items.sort((a, b) => (b.created_at?.seconds || 0) - (a.created_at?.seconds || 0));
-      setDocsList(items);
-    });
-    return () => unsub();
+    let cancelled = false;
+    const fetchDocs = async () => {
+      if (!open || !lesson?.id) return;
+      setLoading(true);
+      try {
+        const qDocs = query(collection(db, 'documents'), where('lesson_id', '==', lesson.id));
+        const snap = await getDocs(qDocs);
+        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        items.sort((a, b) => (b.created_at?.seconds || 0) - (a.created_at?.seconds || 0));
+        if (!cancelled) setFiles(items);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    fetchDocs();
+    return () => {
+      cancelled = true;
+    };
   }, [open, lesson?.id]);
 
   const handleUpload = async (e) => {
-    if (!allowUpload) return;
     const file = e.target.files?.[0];
     if (!file || !lesson?.id) return;
     setUploading(true);
@@ -46,23 +63,33 @@ export default function DocumentsModal({ open, onClose, lesson, allowUpload = tr
         created_at: serverTimestamp(),
       });
 
-      await addDoc(collection(db, 'notifications'), {
-        user_id: lesson.student_id,
-        type: 'document_shared',
-        with_id: auth.currentUser?.uid || null,
-        lesson_id: lesson.id,
-        message: `Un nouveau document a été partagé pour votre cours ${lesson.subject_id || ''}.`,
-        created_at: serverTimestamp(),
-        read: false,
-      });
+      // notif élève principal (si défini)
+      if (lesson.student_id) {
+        await addDoc(collection(db, 'notifications'), {
+          user_id: lesson.student_id,
+          type: 'document_shared',
+          with_id: auth.currentUser?.uid || null,
+          lesson_id: lesson.id,
+          message: `Un nouveau document a été partagé pour votre cours ${lesson.subject_id || ''}.`,
+          created_at: serverTimestamp(),
+          read: false,
+        });
+      }
 
       onUploaded?.();
+
+      // refresh
+      const qDocs = query(collection(db, 'documents'), where('lesson_id', '==', lesson.id));
+      const snap = await getDocs(qDocs);
+      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      items.sort((a, b) => (b.created_at?.seconds || 0) - (a.created_at?.seconds || 0));
+      setFiles(items);
     } catch (err) {
       console.error(err);
       alert("Échec de l'upload du document.");
     } finally {
       setUploading(false);
-      e.target.value = '';
+      if (e?.target) e.target.value = '';
     }
   };
 
@@ -72,9 +99,7 @@ export default function DocumentsModal({ open, onClose, lesson, allowUpload = tr
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl">
         <div className="p-5 border-b flex items-center justify-between">
-          <h3 className="text-lg font-semibold">
-            Documents — {lesson?.subject_id || 'Cours'}
-          </h3>
+          <h3 className="text-lg font-semibold">Documents — {lesson?.subject_id || 'Cours'}</h3>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
         </div>
 
@@ -96,15 +121,17 @@ export default function DocumentsModal({ open, onClose, lesson, allowUpload = tr
           )}
 
           <div>
-            <h4 className="font-medium mb-2">Partagés ({docsList.length})</h4>
-            {docsList.length === 0 ? (
+            <h4 className="font-medium mb-2">Partagés ({files.length})</h4>
+            {loading ? (
+              <div className="text-gray-500">Chargement…</div>
+            ) : files.length === 0 ? (
               <div className="text-gray-500">Aucun document pour ce cours.</div>
             ) : (
               <ul className="divide-y">
-                {docsList.map((f) => (
-                  <li key={f.id} className="py-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-medium truncate">{f.filename}</div>
+                {files.map((f) => (
+                  <li key={f.id} className="py-3 flex items-center justify-between">
+                    <div>
+                      <div className="font-medium">{f.filename}</div>
                       <div className="text-xs text-gray-500">
                         {f.created_at?.seconds
                           ? new Date(f.created_at.seconds * 1000).toLocaleString('fr-FR')

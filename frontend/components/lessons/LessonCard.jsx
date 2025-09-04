@@ -10,10 +10,15 @@ const statusColors = {
 
 function StatusPill({ status }) {
   const label =
-    status === 'booked' ? 'En attente' :
-    status === 'confirmed' ? 'Confirmé' :
-    status === 'rejected' ? 'Refusé' :
-    status === 'completed' ? 'Terminé' : status;
+    status === 'booked'
+      ? 'En attente'
+      : status === 'confirmed'
+      ? 'Confirmé'
+      : status === 'rejected'
+      ? 'Refusé'
+      : status === 'completed'
+      ? 'Terminé'
+      : status;
 
   return (
     <span className={`px-3 py-1 rounded-full text-xs font-semibold ml-2 ${statusColors[status] || 'bg-gray-200'}`}>

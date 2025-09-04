@@ -21,7 +21,7 @@ export default function ReviewModal({ open, onClose, lesson, onSent }) {
     try {
       await addDoc(collection(db, 'reviews'), {
         lesson_id: lesson.id,
-        student_id: lesson.student_id,           // avis au nom de l'enfant
+        student_id: lesson.student_id, // avis au nom de l'élève
         teacher_id: lesson.teacher_id,
         rating: Number(rating),
         comment: comment.trim(),
@@ -32,7 +32,7 @@ export default function ReviewModal({ open, onClose, lesson, onSent }) {
       await addDoc(collection(db, 'notifications'), {
         user_id: lesson.teacher_id,
         type: 'review_left',
-        with_id: lesson.student_id,              // auteur réel = élève
+        with_id: lesson.student_id,
         lesson_id: lesson.id,
         message: `Un nouvel avis a été laissé pour le cours (${lesson.subject_id || 'Cours'}).`,
         created_at: serverTimestamp(),
@@ -55,7 +55,9 @@ export default function ReviewModal({ open, onClose, lesson, onSent }) {
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
         <div className="p-5 border-b flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Laisser un avis (au nom de {lesson?.studentName})</h3>
+          <h3 className="text-lg font-semibold">
+            Laisser un avis {lesson?.studentName ? `(au nom de ${lesson.studentName})` : ''}
+          </h3>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
         </div>
 
@@ -67,8 +69,10 @@ export default function ReviewModal({ open, onClose, lesson, onSent }) {
               onChange={(e) => setRating(e.target.value)}
               className="w-full border rounded-lg p-2"
             >
-              {[5,4,3,2,1].map(n => (
-                <option key={n} value={n}>{n} / 5</option>
+              {[5, 4, 3, 2, 1].map((n) => (
+                <option key={n} value={n}>
+                  {n} / 5
+                </option>
               ))}
             </select>
           </div>
