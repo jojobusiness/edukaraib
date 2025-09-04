@@ -21,27 +21,31 @@ export default function DocumentsModal({
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
 
+  // ---- util ----
+  async function refreshList() {
+    if (!lesson?.id) return;
+    const qDocs = query(collection(db, 'documents'), where('lesson_id', '==', lesson.id));
+    const snap = await getDocs(qDocs);
+    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    items.sort((a, b) => (b.created_at?.seconds || 0) - (a.created_at?.seconds || 0));
+    setFiles(items);
+  }
+
   useEffect(() => {
     let cancelled = false;
-    const fetchDocs = async () => {
+    const run = async () => {
       if (!open || !lesson?.id) return;
       setLoading(true);
       try {
-        const qDocs = query(collection(db, 'documents'), where('lesson_id', '==', lesson.id));
-        const snap = await getDocs(qDocs);
-        const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        items.sort((a, b) => (b.created_at?.seconds || 0) - (a.created_at?.seconds || 0));
-        if (!cancelled) setFiles(items);
+        await refreshList();
       } catch (e) {
         console.error(e);
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
-    fetchDocs();
-    return () => {
-      cancelled = true;
-    };
+    run();
+    return () => { cancelled = true; };
   }, [open, lesson?.id]);
 
   const handleUpload = async (e) => {
@@ -49,11 +53,13 @@ export default function DocumentsModal({
     if (!file || !lesson?.id) return;
     setUploading(true);
     try {
+      // 1) Upload Storage
       const path = `lessons/${lesson.id}/${Date.now()}_${file.name}`;
       const fileRef = sRef(storage, path);
       await uploadBytes(fileRef, file);
       const url = await getDownloadURL(fileRef);
 
+      // 2) Enregistrement document
       await addDoc(collection(db, 'documents'), {
         lesson_id: lesson.id,
         sender_id: auth.currentUser?.uid || null,
@@ -63,27 +69,36 @@ export default function DocumentsModal({
         created_at: serverTimestamp(),
       });
 
-      // notif élève principal (si défini)
-      if (lesson.student_id) {
-        await addDoc(collection(db, 'notifications'), {
-          user_id: lesson.student_id,
-          type: 'document_shared',
-          with_id: auth.currentUser?.uid || null,
-          lesson_id: lesson.id,
-          message: `Un nouveau document a été partagé pour votre cours ${lesson.subject_id || ''}.`,
-          created_at: serverTimestamp(),
-          read: false,
-        });
+      // 3) Notifications — élève principal + tous les participants
+      const recipients = new Set();
+      if (lesson.student_id) recipients.add(lesson.student_id);
+      if (Array.isArray(lesson.participant_ids)) {
+        lesson.participant_ids.forEach((id) => id && recipients.add(id));
+      }
+
+      const notifWrites = [];
+      const message = `Un nouveau document a été partagé pour votre cours ${lesson.subject_id || ''}.`;
+      for (const uid of recipients) {
+        notifWrites.push(
+          addDoc(collection(db, 'notifications'), {
+            user_id: uid,
+            type: 'document_shared',
+            with_id: auth.currentUser?.uid || null,
+            lesson_id: lesson.id,
+            message,
+            created_at: serverTimestamp(),
+            read: false,
+          })
+        );
+      }
+      if (notifWrites.length) {
+        await Promise.allSettled(notifWrites);
       }
 
       onUploaded?.();
 
-      // refresh
-      const qDocs = query(collection(db, 'documents'), where('lesson_id', '==', lesson.id));
-      const snap = await getDocs(qDocs);
-      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      items.sort((a, b) => (b.created_at?.seconds || 0) - (a.created_at?.seconds || 0));
-      setFiles(items);
+      // 4) Refresh liste
+      await refreshList();
     } catch (err) {
       console.error(err);
       alert("Échec de l'upload du document.");
