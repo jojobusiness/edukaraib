@@ -60,8 +60,11 @@ export default function TeacherProfile() {
       const bySlot = new Map(); // key "day|hour" -> array of lessons
       lessonsSnap.docs.forEach((docu) => {
         const l = docu.data();
-        if (!l.slot_day || (l.slot_hour !== 0 && !l.slot_hour && l.slot_hour !== 0)) return;
+        // slot_hour peut être 0 (00h), donc on teste null/undefined proprement
+        const noHour = l.slot_hour === null || l.slot_hour === undefined;
+        if (!l.slot_day || noHour) return;
         if (!(l.status === 'booked' || l.status === 'confirmed')) return;
+
         const key = `${l.slot_day}|${String(l.slot_hour)}`;
         if (!bySlot.has(key)) bySlot.set(key, []);
         bySlot.get(key).push(l);
@@ -84,7 +87,9 @@ export default function TeacherProfile() {
         // uniquement des groupes
         const groupFull = arr.some((l) => {
           const cap = Number(l.capacity || 0);
-          const used = Array.isArray(l.participant_ids) ? l.participant_ids.length : 0;
+          const partCount = Array.isArray(l.participant_ids) ? l.participant_ids.length : 0;
+          const legacyCount = l.student_id ? 1 : 0; // legacy: élève fondateur resté dans student_id
+          const used = partCount + legacyCount;
           return cap > 0 && used >= cap;
         });
 
@@ -170,51 +175,70 @@ export default function TeacherProfile() {
       let joinedGroup = false;
       for (const d of existSnap.docs) {
         const l = d.data();
-        if (!l.is_group) continue;
+        if (l.is_group) {
+          const capacity = Number(l.capacity || 0);
+          const current = Array.isArray(l.participant_ids) ? l.participant_ids : [];
+          const legacyCount = l.student_id ? 1 : 0;
+          const used = current.length + legacyCount; // compte aussi l'élève legacy
 
-        const capacity = Number(l.capacity || 0);
-        const current = Array.isArray(l.participant_ids) ? l.participant_ids : [];
-        const used = current.length;
+          // déjà inscrit ?
+          if (current.includes(targetStudentId) || l.student_id === targetStudentId) {
+            setBooked(true);
+            setShowBooking(false);
+            setConfirmationMsg(`Vous êtes déjà inscrit(e) sur ce créneau ${slot.day} ${slot.hour}h.`);
+            joinedGroup = true;
+            break;
+          }
 
-        // déjà inscrit ?
-        if (current.includes(targetStudentId)) {
-          joinedGroup = true;
-          setBooked(true);
-          setShowBooking(false);
-          setConfirmationMsg(`Vous êtes déjà inscrit(e) sur ce créneau ${slot.day} ${slot.hour}h.`);
-          break;
-        }
+          // place dispo ?
+          if (capacity > 0 && used < capacity) {
+            const ref = doc(db, 'lessons', d.id);
+            const updatePayload = {
+              participant_ids: arrayUnion(targetStudentId),
+              [`participantsMap.${targetStudentId}`]: {
+                parent_id: bookingFor === 'child' ? me.uid : null,
+                booked_by: me.uid,
+                is_paid: false,
+                paid_by: null,
+                paid_at: null,
+                status: 'booked',
+                added_at: serverTimestamp(),
+              },
+            };
 
-        // place dispo ?
-        if (capacity > 0 && used < capacity) {
-          await updateDoc(doc(db, 'lessons', d.id), {
-            participant_ids: arrayUnion(targetStudentId),
-            [`participantsMap.${targetStudentId}`]: {
-              parent_id: bookingFor === 'child' ? me.uid : null,
-              booked_by: me.uid,
-              is_paid: false,
-              paid_by: null,
-              paid_at: null,
-              status: 'booked',
-              added_at: serverTimestamp(),
-            },
-          });
+            // si legacy encore dans student_id, on le bascule aussi dans participants
+            if (l.student_id && !current.includes(l.student_id)) {
+              updatePayload.participant_ids = arrayUnion(targetStudentId, l.student_id);
+              updatePayload[`participantsMap.${l.student_id}`] = {
+                parent_id: null,
+                booked_by: l.booked_by || null,
+                is_paid: false,
+                paid_by: null,
+                paid_at: null,
+                status: l.status || 'booked',
+                added_at: serverTimestamp(),
+              };
+              updatePayload.student_id = null; // normalisation
+            }
 
-          setBooked(true);
-          setShowBooking(false);
-          setConfirmationMsg(
-            bookingFor === 'child'
-              ? `Ajouté au groupe ! ${slot.day} à ${slot.hour}h pour votre enfant.`
-              : `Ajouté au groupe ! ${slot.day} à ${slot.hour}h.`
-          );
-          joinedGroup = true;
-          break;
+            await updateDoc(ref, updatePayload);
+
+            setBooked(true);
+            setShowBooking(false);
+            setConfirmationMsg(
+              bookingFor === 'child'
+                ? `Ajouté au groupe ! ${slot.day} à ${slot.hour}h pour votre enfant.`
+                : `Ajouté au groupe ! ${slot.day} à ${slot.hour}h.`
+            );
+            joinedGroup = true;
+            break;
+          }
         }
       }
 
       if (joinedGroup) return;
 
-      // 2) Sinon, créer un nouveau cours
+      // 2) Sinon, créer un nouveau cours (individuel ou groupe selon préférences prof)
       const groupEnabled = !!teacher?.group_enabled;
       const defaultCap =
         typeof teacher?.group_capacity === 'number' && teacher.group_capacity > 1

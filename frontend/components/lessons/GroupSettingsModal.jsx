@@ -128,38 +128,99 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
   const [searching, setSearching] = useState(false);
   const debounceRef = useRef(null);
 
-  // sync à l’ouverture
-  useEffect(() => {
-    if (!open || !lesson) return;
-    setCapacity(lesson.capacity || 1);
-    setParticipantIds(Array.isArray(lesson.participant_ids) ? lesson.participant_ids : []);
-    setParticipantsMap(lesson.participantsMap || {});
-    // précharger noms existants
-    (async () => {
-      const nm = {};
-      for (const id of (lesson.participant_ids || [])) {
-        let done = false;
+// sync à l’ouverture
+useEffect(() => {
+  if (!open || !lesson) return;
+
+  // Base
+  setCapacity(lesson.capacity || 1);
+  setParticipantIds(Array.isArray(lesson.participant_ids) ? lesson.participant_ids : []);
+  setParticipantsMap(lesson.participantsMap || {});
+
+  (async () => {
+    const nm = {};
+
+    // ---------------------------
+    // MIGRATION LEGACY (si besoin)
+    // ---------------------------
+    // Cas: is_group = true, student_id défini, participant_ids ne le contient pas encore.
+    try {
+      if (lesson.is_group && lesson.student_id && !lesson.participant_ids?.includes(lesson.student_id)) {
+        const legacyId = lesson.student_id;
+
+        // Récup nom pour UI
+        let legacyName = legacyId;
         try {
-          const s = await getDoc(doc(db, 'students', id));
+          const s = await getDoc(doc(db, 'students', legacyId));
           if (s.exists()) {
             const d = s.data();
-            nm[id] = d.full_name || d.name || id;
-            done = true;
-          }
-        } catch {}
-        if (!done) {
-          try {
-            const u = await getDoc(doc(db, 'users', id));
+            legacyName = d.full_name || d.name || legacyId;
+          } else {
+            const u = await getDoc(doc(db, 'users', legacyId));
             if (u.exists()) {
               const d = u.data();
-              nm[id] = d.fullName || d.name || d.displayName || id;
+              legacyName = d.fullName || d.name || d.displayName || legacyId;
             }
-          } catch {}
-        }
+          }
+        } catch {}
+
+        // Patch Firestore : pousse le legacyId dans participant_ids, crée entrée map, vide student_id
+        await updateDoc(doc(db, 'lessons', lesson.id), {
+          participant_ids: arrayUnion(legacyId),
+          [`participantsMap.${legacyId}`]: {
+            parent_id: null,
+            booked_by: lesson.booked_by || null,
+            is_paid: false,
+            paid_by: null,
+            paid_at: null,
+            status: lesson.status || 'booked',
+            added_at: serverTimestamp(),
+          },
+          student_id: null,
+        });
+
+        // Patch UI local
+        setParticipantIds((prev) => (prev.includes(legacyId) ? prev : [...prev, legacyId]));
+        setParticipantsMap((prev) => ({
+          ...prev,
+          [legacyId]: {
+            parent_id: null,
+            booked_by: lesson.booked_by || null,
+            is_paid: false,
+            paid_by: null,
+            paid_at: null,
+            status: lesson.status || 'booked',
+            added_at: new Date(), // purement visuel
+          },
+        }));
+        nm[legacyId] = legacyName;
       }
-      setNameMap(nm);
-    })();
-  }, [open, lesson]);
+    } catch (e) {
+      console.error('Migration legacy group failed:', e);
+    }
+
+    // Précharger les noms de tous les participants
+    for (const id of (lesson.participant_ids || [])) {
+      try {
+        const s = await getDoc(doc(db, 'students', id));
+        if (s.exists()) {
+          const d = s.data();
+          nm[id] = d.full_name || d.name || id;
+          continue;
+        }
+      } catch {}
+      try {
+        const u = await getDoc(doc(db, 'users', id));
+        if (u.exists()) {
+          const d = u.data();
+          nm[id] = d.fullName || d.name || d.displayName || id;
+        }
+      } catch {}
+    }
+
+    setNameMap((prev) => ({ ...prev, ...nm }));
+  })();
+}, [open, lesson]);
 
   // recherche (debounce)
   useEffect(() => {
