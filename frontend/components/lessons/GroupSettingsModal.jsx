@@ -325,11 +325,11 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
               <div className="text-sm text-gray-500 mt-2">Aucun résultat.</div>
             )}
 
-            <p className="text-xs text-gray-400 mt-2">
+            {/*<p className="text-xs text-gray-400 mt-2">
               (Optionnel) Pour des recherches plus rapides : ajoute <code>full_name_lc</code> (minuscule)
               dans <code>students</code> et <code>fullName_lc</code> dans <code>users</code>, puis crée
               les index demandés par Firestore.
-            </p>
+            </p>*/}
           </div>
 
           {/* Participants (noms uniquement) */}
