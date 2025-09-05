@@ -219,7 +219,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
   // Recherche
   const [search, setSearch] = useState('');
   const [results, setResults] = useState([]);
-  the [searching, setSearching] = useState(false);
+  const [searching, setSearching] = useState(false);
   const debounceRef = useRef(null);
 
   // Sync à l'ouverture + MIGRATION LEGACY
