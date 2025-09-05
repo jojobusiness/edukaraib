@@ -106,7 +106,10 @@ export default function ParentCourses() {
   const [teacherMap, setTeacherMap] = useState(new Map()); // teacherId -> name
   const nameCacheRef = useRef(new Map());
 
-  // charge cours confirmés/terminés pour tous mes enfants + noms profs/élèves/participants
+  const openDocs = (lesson) => { setDocLesson(lesson); setDocOpen(true); };
+  const openReview = (lesson) => { setReviewLesson(lesson); setReviewOpen(true); };
+
+  // charge cours pour tous mes enfants + noms profs/élèves/participants
   useEffect(() => {
     const run = async () => {
       if (!auth.currentUser) return;
@@ -147,11 +150,7 @@ export default function ParentCourses() {
         sB.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
       }
 
-      // Confirmés/terminés
-      const data = Array.from(map.values()).filter(
-        l => l.status === 'confirmed' || l.status === 'completed'
-      );
-
+      const data = Array.from(map.values());
       setCourses(data);
 
       // participants (affichage noms)
@@ -209,8 +208,88 @@ export default function ParentCourses() {
     return futureConfirmed[0] || null;
   }, [courses]);
 
-  const openDocs = (lesson) => { setDocLesson(lesson); setDocOpen(true); };
-  const openReview = (lesson) => { setReviewLesson(lesson); setReviewOpen(true); };
+  // sections
+  const booked = useMemo(() => courses.filter(c => c.status === 'booked'), [courses]);
+  const confirmed = useMemo(() => courses.filter(c => c.status === 'confirmed'), [courses]);
+  const completed = useMemo(() => courses.filter(c => c.status === 'completed'), [courses]);
+
+  function CourseCard({ c }) {
+    const isGroup = !!c.is_group;
+    const groupNames = groupNamesByLesson.get(c.id) || [];
+    const open = openGroupId === c.id;
+
+    const childName = studentMap.get(c.student_id) || c.student_id;
+    const teacherName = teacherMap.get(c.teacher_id) || c.teacher_id;
+
+    return (
+      <div
+        className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between relative"
+      >
+        <div className="flex-1 min-w-0">
+          <div className="flex gap-2 items-center mb-1">
+            <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
+            <span className={`px-3 py-1 rounded-full text-xs font-semibold ml-2 ${statusColors[c.status] || 'bg-gray-200'}`}>
+              {c.status === 'confirmed' ? 'Confirmé' : c.status === 'completed' ? 'Terminé' : c.status === 'booked' ? 'En attente' : c.status}
+            </span>
+
+            {isGroup && (
+              <button
+                className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100"
+                onClick={() => setOpenGroupId(open ? null : c.id)}
+                title="Voir les élèves du groupe"
+              >
+                👥 {groupNames.length}
+              </button>
+            )}
+          </div>
+
+          <div className="text-gray-700 text-sm">
+            Élève : <span className="font-semibold">{childName}</span>
+          </div>
+          <div className="text-gray-700 text-sm">
+            Professeur : <span className="font-semibold">{teacherName}</span>
+          </div>
+          <div className="text-gray-500 text-xs mb-1">
+            {(c.slot_day || c.slot_hour !== undefined) && `${c.slot_day} ${formatHourFromSlot(c.slot_hour)}`}
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-2">
+          <button
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold"
+            onClick={() => openDocs(c)}
+          >
+            📄 Documents
+          </button>
+
+          {c.status === 'completed' && (
+            <button
+              className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded shadow font-semibold"
+              onClick={() => openReview(c)}
+            >
+              ⭐ Laisser un avis
+            </button>
+          )}
+        </div>
+
+        {/* Mini-fenêtre participants */}
+        {isGroup && open && (
+          <div className="absolute top-full mt-2 left-6 z-10 bg-white border rounded-lg shadow p-3 w-64">
+            <div className="text-xs font-semibold mb-1">Élèves du groupe</div>
+            {groupNames.length ? (
+              <ul className="text-sm text-gray-700 list-disc pl-4 space-y-1">
+                {groupNames.map((nm, i) => (
+                  <li key={i}>{nm}</li>
+                ))}
+              </ul>
+            ) : (
+              <div className="text-xs text-gray-500">Aucun participant.</div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <DashboardLayout role="parent">
@@ -238,92 +317,58 @@ export default function ParentCourses() {
         {loading ? (
           <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Chargement…</div>
         ) : (
-          <div className="grid grid-cols-1 gap-5">
-            {courses.length === 0 && (
-              <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">
-                Aucun cours confirmé/terminé pour vos enfants.
+          <>
+            {/* En attente */}
+            <section className="mb-8">
+              <div className="flex items-baseline justify-between mb-3">
+                <h3 className="text-lg font-semibold">En attente de confirmation</h3>
+                <span className="text-sm text-gray-500">{booked.length}</span>
               </div>
-            )}
-
-            {courses.map((c) => {
-              const isGroup = !!c.is_group;
-              const groupNames = groupNamesByLesson.get(c.id) || [];
-              const open = openGroupId === c.id;
-
-              const childName = studentMap.get(c.student_id) || c.student_id;
-              const teacherName = teacherMap.get(c.teacher_id) || c.teacher_id;
-
-              return (
-                <div
-                  key={c.id}
-                  className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between relative"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex gap-2 items-center mb-1">
-                      <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ml-2 ${statusColors[c.status] || 'bg-gray-200'}`}>
-                        {c.status === 'confirmed' ? 'Confirmé' : c.status === 'completed' ? 'Terminé' : c.status}
-                      </span>
-
-                      {isGroup && (
-                        <button
-                          className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100"
-                          onClick={() => setOpenGroupId(open ? null : c.id)}
-                          title="Voir les élèves du groupe"
-                        >
-                          👥 {groupNames.length}
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="text-gray-700 text-sm">
-                      Élève : <span className="font-semibold">{childName}</span>
-                    </div>
-                    <div className="text-gray-700 text-sm">
-                      Professeur : <span className="font-semibold">{teacherName}</span>
-                    </div>
-                    <div className="text-gray-500 text-xs mb-1">
-                      {(c.slot_day || c.slot_hour !== undefined) && `${c.slot_day} ${formatHourFromSlot(c.slot_hour)}`}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <button
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold"
-                      onClick={() => openDocs(c)}
-                    >
-                      📄 Documents
-                    </button>
-
-                    {c.status === 'completed' && (
-                      <button
-                        className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded shadow font-semibold"
-                        onClick={() => openReview(c)}
-                      >
-                        ⭐ Laisser un avis
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Mini-fenêtre participants */}
-                  {isGroup && open && (
-                    <div className="absolute top-full mt-2 left-6 z-10 bg-white border rounded-lg shadow p-3 w-64">
-                      <div className="text-xs font-semibold mb-1">Élèves du groupe</div>
-                      {groupNames.length ? (
-                        <ul className="text-sm text-gray-700 list-disc pl-4 space-y-1">
-                          {groupNames.map((nm, i) => (
-                            <li key={i}>{nm}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <div className="text-xs text-gray-500">Aucun participant.</div>
-                      )}
-                    </div>
-                  )}
+              {booked.length === 0 ? (
+                <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">
+                  Aucun cours en attente.
                 </div>
-              );
-            })}
-          </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                  {booked.map((c) => <CourseCard key={c.id} c={c} />)}
+                </div>
+              )}
+            </section>
+
+            {/* Confirmés */}
+            <section className="mb-8">
+              <div className="flex items-baseline justify-between mb-3">
+                <h3 className="text-lg font-semibold">Cours confirmés</h3>
+                <span className="text-sm text-gray-500">{confirmed.length}</span>
+              </div>
+              {confirmed.length === 0 ? (
+                <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">
+                  Aucun cours confirmé.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                  {confirmed.map((c) => <CourseCard key={c.id} c={c} />)}
+                </div>
+              )}
+            </section>
+
+            {/* Terminés */}
+            <section className="mb-8">
+              <div className="flex items-baseline justify-between mb-3">
+                <h3 className="text-lg font-semibold">Cours terminés</h3>
+                <span className="text-sm text-gray-500">{completed.length}</span>
+              </div>
+              {completed.length === 0 ? (
+                <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">
+                  Aucun cours terminé.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                  {completed.map((c) => <CourseCard key={c.id} c={c} />)}
+                </div>
+              )}
+            </section>
+          </>
         )}
       </div>
 
