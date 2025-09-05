@@ -19,21 +19,42 @@ import {
 
 /* ==========================
    Recherche unifiée d'élèves par NOM
-   - Cherche dans `students` (full_name_lc si dispo; sinon fallback client)
-   - Cherche dans `users` (role in ['student','child'])
-   - Cherche dans `users/*/children/*` via collectionGroup('children')
-   - Déduplique et trie par pertinence
+   PRIORITÉ: students (car chez toi les enfants y sont enregistrés)
+   - Couvre plusieurs clés de nom possibles (full_name, name, fullName, displayName, first_name+last_name)
+   - Normalise sans accents (lc)
+   - Fallbacks si index absents
+   - users/children gardés “au cas où”
    ========================== */
-function lc(s) { return (s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase(); }
+function lc(s) {
+  return (s || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .trim();
+}
+
+// Récupère un "nom affichable" quel que soit le schéma
+function pickStudentName(x) {
+  return (
+    x.full_name ||
+    x.name ||
+    x.fullName ||
+    x.displayName ||
+    [x.first_name, x.last_name].filter(Boolean).join(' ') ||
+    (x.profile && (x.profile.full_name || x.profile.name)) ||
+    ''
+  );
+}
 
 async function searchStudentsByName(termRaw) {
-  const term = lc(termRaw || '').trim();
+  const term = lc(termRaw);
   if (!term) return [];
 
   const MAX = 12;
   const results = [];
 
-  // --- A) STUDENTS (prefix si index full_name_lc; sinon fallback client) ---
+  /* ---------- A) STUDENTS (PRIORITÉ) ---------- */
+  // 1) Essai indexé sur full_name_lc (si tu l’as matérialisé)
   try {
     const qs = query(
       collection(db, 'students'),
@@ -44,130 +65,114 @@ async function searchStudentsByName(termRaw) {
     const snap = await getDocs(qs);
     snap.forEach((d) => {
       const x = d.data();
-      const name = x.full_name || x.name || [x.first_name, x.last_name].filter(Boolean).join(' ') || 'Sans nom';
+      const name = pickStudentName(x) || 'Sans nom';
       results.push({ id: d.id, name, source: 'students' });
     });
-  } catch {
-    // Fallback: petit lot ordonné + filtre client
+  } catch {}
+
+  // 2) Si pas assez de résultats, on tente d'autres clés indexées classiques
+  if (results.length < MAX) {
+    const tryOrderKeys = ['full_name', 'name', 'last_name', 'created_at', '__name__'];
+    for (const key of tryOrderKeys) {
+      if (results.length >= MAX) break;
+      try {
+        const qs = query(collection(db, 'students'), orderBy(key), limit(250));
+        const snap = await getDocs(qs);
+        snap.forEach((d) => {
+          const x = d.data();
+          const cand = pickStudentName(x);
+          if (!cand) return;
+          if (lc(cand).includes(term)) {
+            results.push({ id: d.id, name: cand, source: `students(${key})` });
+          }
+        });
+      } catch {
+        // ignore si l'index n'existe pas
+      }
+    }
+  }
+
+  // 3) Dernier fallback "scan" limité si toujours trop peu (sécurité)
+  if (results.length < Math.min(4, MAX)) {
     try {
-      const qs = query(collection(db, 'students'), orderBy('full_name'), limit(150));
+      const qs = query(collection(db, 'students'), limit(400));
       const snap = await getDocs(qs);
       snap.forEach((d) => {
         const x = d.data();
-        const cand =
-          x.full_name ||
-          x.name ||
-          [x.first_name, x.last_name].filter(Boolean).join(' ') ||
-          '';
+        const cand = pickStudentName(x);
+        if (!cand) return;
         if (lc(cand).includes(term)) {
-          results.push({ id: d.id, name: cand || 'Sans nom', source: 'students' });
+          results.push({ id: d.id, name: cand, source: 'students(scan)' });
+        }
+      });
+    } catch {}
+  }
+
+  /* ---------- B) USERS (élèves autonomes) — au cas où ---------- */
+  if (results.length < MAX) {
+    try {
+      const qu = query(collection(db, 'users'), where('role', 'in', ['student', 'child']), limit(200));
+      const snapU = await getDocs(qu);
+      snapU.forEach((d) => {
+        const x = d.data();
+        const display =
+          x.fullName ||
+          x.name ||
+          x.displayName ||
+          (x.profile && (x.profile.full_name || x.profile.name)) ||
+          '';
+        if (lc(display).includes(term)) {
+          results.push({ id: d.id, name: display || 'Sans nom', source: 'users' });
         }
       });
     } catch {
-      // Dernier fallback: sampler sur created_at si dispo
       try {
-        const qs2 = query(collection(db, 'students'), orderBy('created_at', 'desc'), limit(150));
-        const snap2 = await getDocs(qs2);
-        snap2.forEach((d) => {
+        const qu2 = query(collection(db, 'users'), limit(300));
+        const snapU2 = await getDocs(qu2);
+        snapU2.forEach((d) => {
           const x = d.data();
-          const cand =
-            x.full_name ||
+          if (!['student', 'child'].includes(x.role)) return;
+          const display =
+            x.fullName ||
             x.name ||
-            [x.first_name, x.last_name].filter(Boolean).join(' ') ||
+            x.displayName ||
+            (x.profile && (x.profile.full_name || x.profile.name)) ||
             '';
-          if (lc(cand).includes(term)) {
-            results.push({ id: d.id, name: cand || 'Sans nom', source: 'students' });
+          if (lc(display).includes(term)) {
+            results.push({ id: d.id, name: display || 'Sans nom', source: 'users(scan)' });
           }
         });
       } catch {}
     }
   }
 
-  // --- B) USERS (élève "autonome") ---
-  try {
-    const qu = query(collection(db, 'users'), where('role', 'in', ['student', 'child']), limit(120));
-    const snapU = await getDocs(qu);
-    snapU.forEach((d) => {
-      const x = d.data();
-      const display =
-        x.fullName ||
-        x.name ||
-        x.displayName ||
-        (x.profile && x.profile.name) ||
-        '';
-      if (lc(display).includes(term)) {
-        results.push({ id: d.id, name: display || 'Sans nom', source: 'users' });
-      }
-    });
-  } catch {
-    // Fallback très permissif (petit scan client)
+  /* ---------- C) Sous-collections children (users/{parent}/children) — backup ---------- */
+  if (results.length < MAX) {
     try {
-      const qu2 = query(collection(db, 'users'), limit(200));
-      const snapU2 = await getDocs(qu2);
-      snapU2.forEach((d) => {
+      const qc = query(
+        collectionGroup(db, 'children'),
+        where('full_name_lc', '>=', term),
+        where('full_name_lc', '<=', term + '\uf8ff'),
+        limit(MAX)
+      );
+      const snapC = await getDocs(qc);
+      snapC.forEach((d) => {
         const x = d.data();
-        if (!['student', 'child'].includes(x.role)) return;
-        const display =
-          x.fullName ||
+        const name =
+          x.full_name ||
           x.name ||
-          x.displayName ||
-          (x.profile && x.profile.name) ||
-          '';
-        if (lc(display).includes(term)) {
-          results.push({ id: d.id, name: display || 'Sans nom', source: 'users' });
+          [x.first_name, x.last_name].filter(Boolean).join(' ') ||
+          (x.profile && (x.profile.full_name || x.profile.name)) ||
+          'Sans nom';
+        const sid = x.student_id || d.id; // si le doc stocke l'id du student, on le préfère
+        if (lc(name).includes(term)) {
+          results.push({ id: sid, name, source: 'users/children' });
         }
       });
     } catch {}
   }
 
-  // --- C) CHILDREN sous-collection (users/{parentId}/children/*) ---
-  //     → utile quand l'élève n'a PAS de doc users (uniquement students ou un enfant rattaché au parent)
-  try {
-    const qc = query(
-      collectionGroup(db, 'children'),
-      where('full_name_lc', '>=', term),
-      where('full_name_lc', '<=', term + '\uf8ff'),
-      limit(MAX)
-    );
-    const snapC = await getDocs(qc);
-    snapC.forEach((d) => {
-      const x = d.data();
-      const name =
-        x.full_name ||
-        x.name ||
-        [x.first_name, x.last_name].filter(Boolean).join(' ') ||
-        'Sans nom';
-      // Si le doc stocke un identifiant "student_id", on le privilégie
-      const sid = x.student_id || d.id;
-      results.push({ id: sid, name, source: 'users/children' });
-    });
-  } catch {
-    // Fallback client (si pas d'index ni champ *_lc) : petit scan de quelques parents
-    try {
-      const parentsSnap = await getDocs(
-        query(collection(db, 'users'), where('role', '==', 'parent'), limit(60))
-      );
-      // On ne peut pas faire de "collectionGroup" client sans index; on abandonne ce fallback si non-structuré.
-      // Mais si certains parents stockent une array "children" en champ, on filtre dessus.
-      parentsSnap.forEach((p) => {
-        const data = p.data();
-        const childrenArr = Array.isArray(data.children) ? data.children : [];
-        childrenArr.forEach((c) => {
-          const name =
-            c.full_name ||
-            c.name ||
-            [c.first_name, c.last_name].filter(Boolean).join(' ') ||
-            '';
-          if (lc(name).includes(term)) {
-            const sid = c.student_id || c.id || `${p.id}#${name}`;
-            results.push({ id: sid, name: name || 'Sans nom', source: 'users.children[]' });
-          }
-        });
-      });
-    } catch {}
-  }
-
-  // --- Déduplique par id ---
+  /* ---------- Dédup + tri pertinence ---------- */
   const seen = new Set();
   const unique = [];
   for (const r of results) {
@@ -176,7 +181,6 @@ async function searchStudentsByName(termRaw) {
     unique.push(r);
   }
 
-  // --- Tri par "pertinence simple" ---
   const withScore = unique.map((x) => {
     const idx = lc(x.name).indexOf(term);
     const score = (idx === -1 ? 999 : idx) + lc(x.name).length * 0.01;
@@ -215,7 +219,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
   // Recherche
   const [search, setSearch] = useState('');
   const [results, setResults] = useState([]);
-  const [searching, setSearching] = useState(false);
+  the [searching, setSearching] = useState(false);
   const debounceRef = useRef(null);
 
   // Sync à l'ouverture + MIGRATION LEGACY
@@ -229,28 +233,33 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     (async () => {
       const nm = {};
 
-      // Migration legacy : si l'élève “fondateur” est dans student_id mais pas encore dans participant_ids
+      // Migration legacy : basculer student_id -> participants si besoin
       try {
         if (lesson.is_group && lesson.student_id && !lesson.participant_ids?.includes(lesson.student_id)) {
           const legacyId = lesson.student_id;
 
-          // 1) Résoudre son nom pour l'UI
+          // 1) Nom pour UI
           let legacyName = legacyId;
           try {
             const s = await getDoc(doc(db, 'students', legacyId));
             if (s.exists()) {
               const d = s.data();
-              legacyName = d.full_name || d.name || [d.first_name, d.last_name].filter(Boolean).join(' ') || legacyId;
+              legacyName = pickStudentName(d) || legacyId;
             } else {
               const u = await getDoc(doc(db, 'users', legacyId));
               if (u.exists()) {
                 const d = u.data();
-                legacyName = d.fullName || d.name || d.displayName || legacyId;
+                legacyName =
+                  d.fullName ||
+                  d.name ||
+                  d.displayName ||
+                  (d.profile && (d.profile.full_name || d.profile.name)) ||
+                  legacyId;
               }
             }
           } catch {}
 
-          // 2) Patch Firestore : on bascule dans participants & on vide student_id
+          // 2) Patch Firestore
           await updateDoc(doc(db, 'lessons', lesson.id), {
             participant_ids: arrayUnion(legacyId),
             [`participantsMap.${legacyId}`]: {
@@ -265,7 +274,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
             student_id: null,
           });
 
-          // 3) Patch UI local
+          // 3) Patch UI
           setParticipantIds((prev) => (prev.includes(legacyId) ? prev : [...prev, legacyId]));
           setParticipantsMap((prev) => ({
             ...prev,
@@ -285,14 +294,14 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
         console.error('Migration legacy group failed:', e);
       }
 
-      // Précharger les noms des participants actuels
+      // Précharge les noms des participants actuels
       const ids = Array.isArray(lesson.participant_ids) ? lesson.participant_ids : [];
       for (const id of ids) {
         try {
           const s = await getDoc(doc(db, 'students', id));
           if (s.exists()) {
             const d = s.data();
-            nm[id] = d.full_name || d.name || [d.first_name, d.last_name].filter(Boolean).join(' ') || id;
+            nm[id] = pickStudentName(d) || id;
             continue;
           }
         } catch {}
@@ -300,7 +309,12 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
           const u = await getDoc(doc(db, 'users', id));
           if (u.exists()) {
             const d = u.data();
-            nm[id] = d.fullName || d.name || d.displayName || id;
+            nm[id] =
+              d.fullName ||
+              d.name ||
+              d.displayName ||
+              (d.profile && (d.profile.full_name || d.profile.name)) ||
+              id;
           }
         } catch {}
       }
@@ -352,7 +366,6 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
 
     const ref = doc(db, 'lessons', lesson.id);
 
-    // Patch minimal côté participantsMap (compat)
     const participantPatch = {
       parent_id: null,
       booked_by: null,

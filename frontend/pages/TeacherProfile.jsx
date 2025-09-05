@@ -62,6 +62,7 @@ export default function TeacherProfile() {
         const l = docu.data();
         const noHour = l.slot_hour === null || l.slot_hour === undefined;
         if (!l.slot_day || noHour) return;
+        // les créneaux pris en compte pour le "busy" sont ceux où il y a des demandes en cours ou confirmées
         if (!(l.status === 'booked' || l.status === 'confirmed')) return;
 
         const key = `${l.slot_day}|${String(l.slot_hour)}`;
@@ -71,7 +72,8 @@ export default function TeacherProfile() {
 
       // Un créneau est occupé si:
       // - il y a un cours non-groupé (is_group !== true)
-      // - OU il existe un cours groupé used >= capacity (used = participants + éventuel student_id legacy)
+      // - OU il existe un cours groupé used >= capacity
+      //    (used = nombre de participants + éventuel student_id legacy)
       const busy = [];
       for (const [key, arr] of bySlot.entries()) {
         const [day, hourStr] = key.split('|');
@@ -121,7 +123,7 @@ export default function TeacherProfile() {
         if (!cancelled) setCurrentRole(null);
       }
 
-      // children (if parent)
+      // children (if parent) depuis students (parent_id == me.uid)
       try {
         const kidsQ = query(collection(db, 'students'), where('parent_id', '==', me.uid));
         const kidsSnap = await getDocs(kidsQ);
@@ -154,7 +156,7 @@ export default function TeacherProfile() {
     if (!auth.currentUser) return navigate('/login');
 
     const me = auth.currentUser;
-    const targetStudentId = selectedStudentId || me.uid;
+    const targetStudentId = selectedStudentId || me.uid; // si parent n’a rien choisi, c’est lui-même
     const bookingFor = isParent && targetStudentId !== me.uid ? 'child' : 'self';
 
     setIsBooking(true);
@@ -249,7 +251,7 @@ export default function TeacherProfile() {
         student_id: willBeGroup ? null : targetStudentId, // si groupé, pas d'élève "principal"
         parent_id: bookingFor === 'child' ? me.uid : null,
         booked_by: me.uid,
-        booked_for: bookingFor, // 'self' | 'child'  (un parent qui réserve pour lui-même reste 'self')
+        booked_for: bookingFor, // 'self' | 'child'
         status: 'booked',
         created_at: serverTimestamp(),
         subject_id: Array.isArray(teacher?.subjects)
