@@ -13,7 +13,7 @@ import {
   limit,
 } from 'firebase/firestore';
 
-// ---- Helpers ----
+/* ---------- Helpers ---------- */
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const codeIndex = (c) => Math.max(0, FR_DAY_CODES.indexOf(c));
 
@@ -32,7 +32,6 @@ function nextOccurrence(slot_day, slot_hour, now = new Date()) {
   if (start <= now) start.setDate(start.getDate() + 7);
   return start;
 }
-
 function formatHourFromSlot(h) {
   const n = Number(h) || 0;
   return `${String(n).padStart(2, '0')}:00`;
@@ -45,7 +44,7 @@ const statusColors = {
   rejected: 'bg-red-100 text-red-700',
 };
 
-// Résolution de noms (users -> students) avec cache
+/* ---------- Résolution noms (users -> students) ---------- */
 async function fetchUserProfile(uid) {
   if (!uid) return null;
   try {
@@ -103,9 +102,11 @@ export default function ParentCourses() {
   // Group UI
   const [openGroupId, setOpenGroupId] = useState(null);
   const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map());
+  const [studentMap, setStudentMap] = useState(new Map()); // childId -> name
+  const [teacherMap, setTeacherMap] = useState(new Map()); // teacherId -> name
   const nameCacheRef = useRef(new Map());
 
-  // Chargement (inclut participant_ids)
+  // charge cours confirmés/terminés pour tous mes enfants + noms profs/élèves/participants
   useEffect(() => {
     const run = async () => {
       if (!auth.currentUser) return;
@@ -118,13 +119,19 @@ export default function ParentCourses() {
       const kids = kidsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       const kidIds = kids.map(k => k.id);
 
+      // map nom enfant
+      const sMap = new Map(
+        kids.map(k => [k.id, k.full_name || k.fullName || k.name || 'Enfant'])
+      );
+      setStudentMap(sMap);
+
       if (kidIds.length === 0) {
         setCourses([]);
         setLoading(false);
         return;
       }
 
-      // A) leçons où student_id == child
+      // A) leçons avec student_id in kidIds (par paquets de 10)
       const map = new Map();
       for (let i = 0; i < kidIds.length; i += 10) {
         const chunk = kidIds.slice(i, i + 10);
@@ -146,9 +153,8 @@ export default function ParentCourses() {
       );
 
       setCourses(data);
-      setLoading(false);
 
-      // participants
+      // participants (affichage noms)
       const idSet = new Set();
       data.forEach(l => {
         if (l.is_group) {
@@ -173,12 +179,23 @@ export default function ParentCourses() {
       });
       setGroupNamesByLesson(mapByLesson);
 
-      if (openGroupId && !data.some(x => x.id === openGroupId)) {
-        setOpenGroupId(null);
-      }
+      // profs (affichage nom au lieu d’ID)
+      const tIds = Array.from(new Set(data.map(l => l.teacher_id).filter(Boolean)));
+      const tProfiles = await Promise.all(tIds.map(uid => fetchUserProfile(uid)));
+      const tMap = new Map(
+        tProfiles
+          .filter(Boolean)
+          .map(p => [p.id || p.uid, p.fullName || p.name || p.displayName || 'Professeur'])
+      );
+      setTeacherMap(tMap);
+
+      if (openGroupId && !data.some(x => x.id === openGroupId)) setOpenGroupId(null);
+
+      setLoading(false);
     };
 
     run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // prochain cours confirmé (tous enfants)
@@ -208,8 +225,10 @@ export default function ParentCourses() {
             <span className="text-gray-700 mt-1">
               {nextCourse
                 ? (() => {
-                    const when = `${nextCourse.slot_day} ${String(nextCourse.slot_hour).padStart(2,'0')}h`;
-                    return `${nextCourse.subject_id || 'Cours'} · ${when} · Prof: ${nextCourse.teacher_id}`;
+                    const when = `${nextCourse.slot_day} ${formatHourFromSlot(nextCourse.slot_hour)}`;
+                    const prof = teacherMap.get(nextCourse.teacher_id) || nextCourse.teacher_id;
+                    const childNm = studentMap.get(nextCourse.student_id) || 'Enfant';
+                    return `${nextCourse.subject_id || 'Cours'} · ${when} · ${childNm} · avec ${prof}`;
                   })()
                 : 'Aucun cours confirmé à venir'}
             </span>
@@ -230,6 +249,9 @@ export default function ParentCourses() {
               const isGroup = !!c.is_group;
               const groupNames = groupNamesByLesson.get(c.id) || [];
               const open = openGroupId === c.id;
+
+              const childName = studentMap.get(c.student_id) || c.student_id;
+              const teacherName = teacherMap.get(c.teacher_id) || c.teacher_id;
 
               return (
                 <div
@@ -255,10 +277,10 @@ export default function ParentCourses() {
                     </div>
 
                     <div className="text-gray-700 text-sm">
-                      Élève : <span className="font-semibold">{c.student_id}</span>
+                      Élève : <span className="font-semibold">{childName}</span>
                     </div>
                     <div className="text-gray-700 text-sm">
-                      Professeur : <span className="font-semibold">{c.teacher_id}</span>
+                      Professeur : <span className="font-semibold">{teacherName}</span>
                     </div>
                     <div className="text-gray-500 text-xs mb-1">
                       {(c.slot_day || c.slot_hour !== undefined) && `${c.slot_day} ${formatHourFromSlot(c.slot_hour)}`}

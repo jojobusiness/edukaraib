@@ -11,6 +11,31 @@ import {
   limit,
 } from 'firebase/firestore';
 
+/* ---------- Helpers ---------- */
+const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+const codeIndex = (c) => Math.max(0, FR_DAY_CODES.indexOf(c));
+
+function nextOccurrence(slot_day, slot_hour, now = new Date()) {
+  if (!FR_DAY_CODES.includes(slot_day)) return null;
+  const jsDay = now.getDay(); // 0..6
+  const offsetToMonday = ((jsDay + 6) % 7);
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(now.getDate() - offsetToMonday);
+
+  const idx = codeIndex(slot_day);
+  const start = new Date(monday);
+  start.setDate(monday.getDate() + idx);
+  start.setHours(Number(slot_hour) || 0, 0, 0, 0);
+  if (start <= now) start.setDate(start.getDate() + 7);
+  return start;
+}
+
+function fmtHourFromSlot(h) {
+  const n = Number(h) || 0;
+  return `${String(n).padStart(2, '0')}:00`;
+}
+
 const statusColors = {
   booked: 'bg-yellow-100 text-yellow-800',
   confirmed: 'bg-green-100 text-green-800',
@@ -18,6 +43,7 @@ const statusColors = {
   rejected: 'bg-red-100 text-red-700',
 };
 
+/* ---------- Résolution de noms (users -> students) ---------- */
 async function fetchUserProfile(uid) {
   if (!uid) return null;
   try {
@@ -45,6 +71,7 @@ async function fetchStudentDoc(id) {
 async function resolvePersonName(id, cacheRef) {
   if (!id) return '';
   if (cacheRef.current.has(id)) return cacheRef.current.get(id);
+  // users
   try {
     const u = await getDoc(doc(db, 'users', id));
     if (u.exists()) {
@@ -54,6 +81,7 @@ async function resolvePersonName(id, cacheRef) {
       return nm;
     }
   } catch {}
+  // students
   const s = await fetchStudentDoc(id);
   if (s) {
     const nm = s.full_name || s.name || id;
@@ -70,8 +98,10 @@ export default function MyCourses() {
 
   const [openGroupId, setOpenGroupId] = useState(null);
   const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map());
+  const [teacherMap, setTeacherMap] = useState(new Map()); // teacher_id -> name
   const nameCacheRef = useRef(new Map());
 
+  // charge mes cours confirmés/terminés + noms profs et participants
   useEffect(() => {
     const run = async () => {
       if (!auth.currentUser) return;
@@ -90,7 +120,7 @@ export default function MyCourses() {
       sA.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
       sB.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
 
-      // On montre confirmés + terminés
+      // Confirmés + terminés
       const data = Array.from(map.values()).filter(
         l => l.status === 'confirmed' || l.status === 'completed'
       );
@@ -98,16 +128,16 @@ export default function MyCourses() {
       setCourses(data);
 
       // participants
-      const idSet = new Set();
+      const partIdSet = new Set();
       data.forEach(l => {
         if (l.is_group) {
-          (Array.isArray(l.participant_ids) ? l.participant_ids : []).forEach(id => id && idSet.add(id));
-          if (l.student_id) idSet.add(l.student_id);
+          (Array.isArray(l.participant_ids) ? l.participant_ids : []).forEach(id => id && partIdSet.add(id));
+          if (l.student_id) partIdSet.add(l.student_id);
         }
       });
-      const ids = Array.from(idSet);
-      const names = await Promise.all(ids.map(id => resolvePersonName(id, nameCacheRef)));
-      const idToName = new Map(ids.map((id, i) => [id, names[i]]));
+      const partIds = Array.from(partIdSet);
+      const partNames = await Promise.all(partIds.map(id => resolvePersonName(id, nameCacheRef)));
+      const idToName = new Map(partIds.map((id, i) => [id, partNames[i]]));
 
       const mapByLesson = new Map();
       data.forEach(l => {
@@ -122,20 +152,58 @@ export default function MyCourses() {
       });
       setGroupNamesByLesson(mapByLesson);
 
-      if (openGroupId && !data.some(x => x.id === openGroupId)) {
-        setOpenGroupId(null);
-      }
+      // profs
+      const tIds = Array.from(new Set(data.map(l => l.teacher_id).filter(Boolean)));
+      const tProfiles = await Promise.all(tIds.map(uid => fetchUserProfile(uid)));
+      const tMap = new Map(
+        tProfiles
+          .filter(Boolean)
+          .map(p => [p.id || p.uid, p.fullName || p.name || p.displayName || 'Professeur'])
+      );
+      setTeacherMap(tMap);
+
+      // si un panneau ouvert correspond à un cours qui n’est plus affiché, on le referme
+      if (openGroupId && !data.some(x => x.id === openGroupId)) setOpenGroupId(null);
 
       setLoading(false);
     };
 
     run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // prochain cours confirmé (à partir des slot_day/hour)
+  const nextCourse = useMemo(() => {
+    const now = new Date();
+    const future = courses
+      .filter(l => l.status === 'confirmed' && FR_DAY_CODES.includes(l.slot_day))
+      .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
+      .filter(l => l.startAt && l.startAt > now)
+      .sort((a, b) => a.startAt - b.startAt);
+    return future[0] || null;
+  }, [courses]);
 
   return (
     <DashboardLayout role="student">
       <div className="max-w-3xl mx-auto">
         <h2 className="text-2xl font-bold text-primary mb-6">📚 Mes cours</h2>
+
+        {/* Prochain cours */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <div className="bg-white rounded-xl shadow p-6 border-l-4 border-primary flex flex-col items-start md:col-span-3">
+            <span className="text-3xl mb-2">📅</span>
+            <span className="text-xl font-bold text-primary">Prochain cours</span>
+            <span className="text-gray-700 mt-1">
+              {nextCourse
+                ? (() => {
+                    const when = `${nextCourse.slot_day} ${fmtHourFromSlot(nextCourse.slot_hour)}`;
+                    const profName = teacherMap.get(nextCourse.teacher_id) || nextCourse.teacher_id;
+                    return `${nextCourse.subject_id || 'Cours'} · ${when} · avec ${profName}`;
+                  })()
+                : 'Aucun cours confirmé à venir'}
+            </span>
+          </div>
+        </div>
 
         {loading ? (
           <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Chargement…</div>
@@ -151,6 +219,7 @@ export default function MyCourses() {
               const isGroup = !!c.is_group;
               const groupNames = groupNamesByLesson.get(c.id) || [];
               const open = openGroupId === c.id;
+              const teacherName = teacherMap.get(c.teacher_id) || c.teacher_id;
 
               return (
                 <div
@@ -176,10 +245,10 @@ export default function MyCourses() {
                     </div>
 
                     <div className="text-gray-700 text-sm">
-                      Professeur : <span className="font-semibold">{c.teacher_id}</span>
+                      Professeur : <span className="font-semibold">{teacherName}</span>
                     </div>
                     <div className="text-gray-500 text-xs mb-1">
-                      {(c.slot_day || c.slot_hour !== undefined) && `${c.slot_day} ${String(c.slot_hour).padStart(2, '0')}:00`}
+                      {(c.slot_day || c.slot_hour !== undefined) && `${c.slot_day} ${fmtHourFromSlot(c.slot_hour)}`}
                     </div>
                   </div>
 
