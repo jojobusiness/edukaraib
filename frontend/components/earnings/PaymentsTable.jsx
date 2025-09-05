@@ -42,9 +42,9 @@ export default function PaymentsTable({ rows }) {
         </div>
       )}
 
-      <p className="text-xs text-gray-400 mt-3">
+      {/*<p className="text-xs text-gray-400 mt-3">
         * Le “Payer” est déterminé par <code>paid_by</code> si présent, sinon <code>parent_id</code> (si réservation pour enfant), sinon <code>booked_by</code>.
-      </p>
+      </p>*/}
     </div>
   );
 }

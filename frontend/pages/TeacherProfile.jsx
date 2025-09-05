@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import {
@@ -24,7 +24,7 @@ export default function TeacherProfile() {
   // UI / data
   const [teacher, setTeacher] = useState(null);
   const [reviews, setReviews] = useState([]);
-  const [bookedSlots, setBookedSlots] = useState([]); // [{day, hour}] pour l'UI
+  const [bookedSlots, setBookedSlots] = useState([]); // [{day, hour}]
   const [showBooking, setShowBooking] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
   const [booked, setBooked] = useState(false);
@@ -52,7 +52,7 @@ export default function TeacherProfile() {
         setReviews(rSnap.docs.map((d) => d.data()));
       }
 
-      // Lessons pour calculer les créneaux occupés en tenant compte des groupes
+      // Lessons pour calculer les créneaux occupés (indiv pleins + groupes pleins)
       const lessonsQ = query(collection(db, 'lessons'), where('teacher_id', '==', teacherId));
       const lessonsSnap = await getDocs(lessonsQ);
 
@@ -60,7 +60,6 @@ export default function TeacherProfile() {
       const bySlot = new Map(); // key "day|hour" -> array of lessons
       lessonsSnap.docs.forEach((docu) => {
         const l = docu.data();
-        // slot_hour peut être 0 (00h), donc on teste null/undefined proprement
         const noHour = l.slot_hour === null || l.slot_hour === undefined;
         if (!l.slot_day || noHour) return;
         if (!(l.status === 'booked' || l.status === 'confirmed')) return;
@@ -72,7 +71,7 @@ export default function TeacherProfile() {
 
       // Un créneau est occupé si:
       // - il y a un cours non-groupé (is_group !== true)
-      // - OU il existe au moins un cours groupé pour lequel used >= capacity
+      // - OU il existe un cours groupé used >= capacity (used = participants + éventuel student_id legacy)
       const busy = [];
       for (const [key, arr] of bySlot.entries()) {
         const [day, hourStr] = key.split('|');
@@ -84,11 +83,10 @@ export default function TeacherProfile() {
           continue;
         }
 
-        // uniquement des groupes
         const groupFull = arr.some((l) => {
           const cap = Number(l.capacity || 0);
           const partCount = Array.isArray(l.participant_ids) ? l.participant_ids.length : 0;
-          const legacyCount = l.student_id ? 1 : 0; // legacy: élève fondateur resté dans student_id
+          const legacyCount = l.student_id ? 1 : 0;
           const used = partCount + legacyCount;
           return cap > 0 && used >= cap;
         });
@@ -133,7 +131,7 @@ export default function TeacherProfile() {
         if (!cancelled) setChildren([]);
       }
 
-      // default selected student id
+      // default selected student id = soi-même par défaut
       if (!cancelled) setSelectedStudentId((prev) => prev || me.uid);
     })();
     return () => {
@@ -151,7 +149,7 @@ export default function TeacherProfile() {
   const isParent = currentRole === 'parent';
   const meUid = auth.currentUser?.uid;
 
-  // -------- Booking (group-aware)
+  // -------- Booking (group-aware + parent flux)
   const handleBookingSlot = async (slot) => {
     if (!auth.currentUser) return navigate('/login');
 
@@ -162,7 +160,7 @@ export default function TeacherProfile() {
     setIsBooking(true);
     setConfirmationMsg('');
     try {
-      // 1) Tenter de rejoindre un groupe existant non plein sur ce créneau
+      // 1) Essayer de rejoindre un groupe existant non plein (booked/confirmed)
       const qExisting = query(
         collection(db, 'lessons'),
         where('teacher_id', '==', teacherId),
@@ -179,9 +177,9 @@ export default function TeacherProfile() {
           const capacity = Number(l.capacity || 0);
           const current = Array.isArray(l.participant_ids) ? l.participant_ids : [];
           const legacyCount = l.student_id ? 1 : 0;
-          const used = current.length + legacyCount; // compte aussi l'élève legacy
+          const used = current.length + legacyCount;
 
-          // déjà inscrit ?
+          // déjà présent ?
           if (current.includes(targetStudentId) || l.student_id === targetStudentId) {
             setBooked(true);
             setShowBooking(false);
@@ -190,7 +188,6 @@ export default function TeacherProfile() {
             break;
           }
 
-          // place dispo ?
           if (capacity > 0 && used < capacity) {
             const ref = doc(db, 'lessons', d.id);
             const updatePayload = {
@@ -206,7 +203,7 @@ export default function TeacherProfile() {
               },
             };
 
-            // si legacy encore dans student_id, on le bascule aussi dans participants
+            // Migration legacy : si student_id est encore utilisé, on le bascule aussi
             if (l.student_id && !current.includes(l.student_id)) {
               updatePayload.participant_ids = arrayUnion(targetStudentId, l.student_id);
               updatePayload[`participantsMap.${l.student_id}`] = {
@@ -218,7 +215,7 @@ export default function TeacherProfile() {
                 status: l.status || 'booked',
                 added_at: serverTimestamp(),
               };
-              updatePayload.student_id = null; // normalisation
+              updatePayload.student_id = null;
             }
 
             await updateDoc(ref, updatePayload);
@@ -238,7 +235,7 @@ export default function TeacherProfile() {
 
       if (joinedGroup) return;
 
-      // 2) Sinon, créer un nouveau cours (individuel ou groupe selon préférences prof)
+      // 2) Sinon créer un nouveau cours (individuel ou groupe selon préférences prof)
       const groupEnabled = !!teacher?.group_enabled;
       const defaultCap =
         typeof teacher?.group_capacity === 'number' && teacher.group_capacity > 1
@@ -252,7 +249,7 @@ export default function TeacherProfile() {
         student_id: willBeGroup ? null : targetStudentId, // si groupé, pas d'élève "principal"
         parent_id: bookingFor === 'child' ? me.uid : null,
         booked_by: me.uid,
-        booked_for: bookingFor, // 'self' | 'child'
+        booked_for: bookingFor, // 'self' | 'child'  (un parent qui réserve pour lui-même reste 'self')
         status: 'booked',
         created_at: serverTimestamp(),
         subject_id: Array.isArray(teacher?.subjects)
@@ -371,7 +368,7 @@ export default function TeacherProfile() {
                 ))}
               </select>
               <p className="text-xs text-gray-500 mt-1">
-                Sélectionnez l’enfant si vous réservez pour lui.
+                Sélectionnez l’enfant si vous réservez pour lui ; sinon laissez “Moi (parent)”.
               </p>
             </div>
           )}
@@ -401,7 +398,7 @@ export default function TeacherProfile() {
         {showBooking && (
           <BookingModal
             availability={teacher.availability || {}}
-            bookedSlots={bookedSlots} // déjà "group-aware"
+            bookedSlots={bookedSlots} // group-aware
             onBook={handleBookingSlot}
             onClose={() => setShowBooking(false)}
             orderDays={DAYS_ORDER}

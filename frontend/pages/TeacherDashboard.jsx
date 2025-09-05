@@ -87,6 +87,21 @@ async function resolveStudentName(studentIdOrUid) {
   return studentIdOrUid;
 }
 
+// ---------- Helpers revenus ----------
+function isSameMonth(ts, ref = new Date()) {
+  if (!ts) return false;
+  const d = ts instanceof Date ? ts : ts?.toDate?.() ? ts.toDate() : null;
+  if (!d) return false;
+  return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth();
+}
+
+function coerceAmount(val) {
+  // accepte cents ou euros selon le champ
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') return Number(val.replace(',', '.')) || 0;
+  return 0;
+}
+
 export default function TeacherDashboard() {
   const [upcomingCourses, setUpcomingCourses] = useState([]); // confirmés, futur
   const [revenues, setRevenues] = useState(0);
@@ -122,23 +137,83 @@ export default function TeacherDashboard() {
 
       setUpcomingCourses(enriched.slice(0, 10)); // petite liste
 
-      // 4) Revenus du mois (approx: paiements créés ce mois)
-      const today = new Date();
-      const thisYear = today.getFullYear();
-      const thisMonth = today.getMonth();
-      const earned = lessons
-        .filter(
-          l =>
-            l.is_paid &&
-            l.created_at?.toDate &&
-            l.created_at.toDate().getMonth() === thisMonth &&
-            l.created_at.toDate().getFullYear() === thisYear
-        )
-        .reduce((sum, l) => sum + Number(l.price_per_hour || 0), 0);
-      setRevenues(earned);
-
-      // 5) Demandes en attente
+      // 4) Demandes en attente
       setPending(lessons.filter(l => l.status === 'booked').length);
+
+      // 5) Revenus du mois
+      //    - Essaye d'abord via collection "payments" (statut réussi)
+      //    - Sinon fallback sur les champs des "lessons" (individuel + groupé)
+      let monthRevenue = 0;
+
+      try {
+        const paySnap = await getDocs(
+          query(collection(db, 'payments'), where('teacher_id', '==', userId))
+        );
+
+        const pays = paySnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        // Filtrage mois courant et statuts "valides"
+        const successLike = new Set(['succeeded', 'paid', 'completed']);
+        const monthPays = pays.filter(p => {
+          const paidAt = p.paid_at || p.created_at || null;
+          const okMonth = isSameMonth(paidAt, now);
+          const okStatus = p.status ? successLike.has(String(p.status).toLowerCase()) : true;
+          return okMonth && okStatus;
+        });
+
+        if (monthPays.length > 0) {
+          monthRevenue = monthPays.reduce((sum, p) => {
+            // champs possibles : amount_cents, amount, amount_total
+            const cents =
+              (typeof p.amount_cents === 'number' && p.amount_cents) ||
+              (typeof p.amount_total === 'number' && p.amount_total) ||
+              0;
+            const euros = cents ? cents / 100 : coerceAmount(p.amount);
+            return sum + (euros || 0);
+          }, 0);
+        } else {
+          // Pas (encore) de documents "payments" ce mois-ci : fallback sur lessons
+          monthRevenue = lessons.reduce((sum, l) => {
+            // date de référence pour le mois : paid_at si existe, sinon created_at
+            const refDate = l.paid_at || l.created_at || null;
+            if (!isSameMonth(refDate, now)) return sum;
+
+            const price = Number(l.price_per_hour || l.price || 0) || 0;
+
+            if (l.is_group) {
+              // somme des participants payés
+              const map = l.participantsMap || {};
+              const paidCount = Object.values(map).filter(
+                (p) => p && (p.is_paid || p.paid_at)
+              ).length;
+              return sum + paidCount * price;
+            } else {
+              // individuel
+              const paid = !!(l.is_paid || l.paid_at);
+              return sum + (paid ? price : 0);
+            }
+          }, 0);
+        }
+      } catch (e) {
+        // Si la collection payments n'existe pas, on passe direct au fallback
+        monthRevenue = lessons.reduce((sum, l) => {
+          const now = new Date();
+          const refDate = l.paid_at || l.created_at || null;
+          if (!isSameMonth(refDate, now)) return sum;
+          const price = Number(l.price_per_hour || l.price || 0) || 0;
+          if (l.is_group) {
+            const map = l.participantsMap || {};
+            const paidCount = Object.values(map).filter(
+              (p) => p && (p.is_paid || p.paid_at)
+            ).length;
+            return sum + paidCount * price;
+          } else {
+            const paid = !!(l.is_paid || l.paid_at);
+            return sum + (paid ? price : 0);
+          }
+        }, 0);
+      }
+
+      setRevenues(monthRevenue);
 
       // 6) Avis (derniers)
       const reviewsSnap = await getDocs(

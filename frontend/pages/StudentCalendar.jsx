@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { auth, db } from '../lib/firebase';
 import {
   collection,
@@ -17,9 +17,8 @@ const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 function getThisWeekDays() {
   // retourne un tableau de 7 objets { code:'Lun', label:'lundi 12 août', date: Date }
   const now = new Date();
-  // JS: getDay() => 0=Dim ... 6=Sam ; on veut démarrer à Lundi
   const jsDay = now.getDay(); // 0..6
-  const offsetToMonday = ((jsDay + 6) % 7); // 0=Mon,1=Tue,...6=Sun
+  const offsetToMonday = ((jsDay + 6) % 7);
 
   const monday = new Date(now);
   monday.setHours(0,0,0,0);
@@ -43,6 +42,7 @@ function formatHourFromSlot(slot_hour) {
   return `${String(h).padStart(2,'0')}:00`;
 }
 
+// Résolution profil prof
 async function fetchUserProfile(uid) {
   if (!uid) return null;
   try {
@@ -60,28 +60,64 @@ async function fetchUserProfile(uid) {
   return null;
 }
 
+// Résolution noms participants (users -> students) avec cache
+async function fetchStudentDoc(id) {
+  if (!id) return null;
+  try {
+    const s = await getDoc(doc(db, 'students', id));
+    if (s.exists()) return { id, ...s.data() };
+  } catch {}
+  return null;
+}
+async function resolvePersonName(id, cacheRef) {
+  if (!id) return '';
+  if (cacheRef.current.has(id)) return cacheRef.current.get(id);
+  try {
+    const u = await getDoc(doc(db, 'users', id));
+    if (u.exists()) {
+      const d = u.data();
+      const nm = d.fullName || d.name || d.displayName || id;
+      cacheRef.current.set(id, nm);
+      return nm;
+    }
+  } catch {}
+  const s = await fetchStudentDoc(id);
+  if (s) {
+    const nm = s.full_name || s.name || id;
+    cacheRef.current.set(id, nm);
+    return nm;
+  }
+  cacheRef.current.set(id, id);
+  return id;
+}
+
 export default function StudentCalendar() {
   const [lessons, setLessons] = useState([]);
   const [teacherMap, setTeacherMap] = useState(new Map());
+  const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map());
+  const [openGroupId, setOpenGroupId] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const nameCacheRef = useRef(new Map());
 
   useEffect(() => {
     const fetchLessons = async () => {
       if (!auth.currentUser) return;
       setLoading(true);
 
-      // 1) Charger les cours de l'élève connecté
+      // 1) Charger les cours de l'élève connecté (confirmés & terminés)
       const qLessons = query(
         collection(db, 'lessons'),
         where('student_id', '==', auth.currentUser.uid)
       );
       const snapshot = await getDocs(qLessons);
-      const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
-        .filter(l => l.status === 'confirmed');
+      const data = snapshot.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(l => l.status === 'confirmed' || l.status === 'completed');
 
       setLessons(data);
 
-      // 2) Charger les profils des profs en une passe
+      // 2) Profils profs
       const teacherUids = Array.from(new Set(data.map(l => l.teacher_id).filter(Boolean)));
       const profiles = await Promise.all(teacherUids.map(uid => fetchUserProfile(uid)));
       const map = new Map(
@@ -97,22 +133,47 @@ export default function StudentCalendar() {
       );
       setTeacherMap(map);
 
+      // 3) Noms des participants pour cours groupés
+      const idSet = new Set();
+      data.forEach(l => {
+        if (l.is_group) {
+          (Array.isArray(l.participant_ids) ? l.participant_ids : []).forEach(id => id && idSet.add(id));
+          if (l.student_id) idSet.add(l.student_id);
+        }
+      });
+      const ids = Array.from(idSet);
+      const names = await Promise.all(ids.map(id => resolvePersonName(id, nameCacheRef)));
+      const idToName = new Map(ids.map((id, i) => [id, names[i]]));
+
+      const mapByLesson = new Map();
+      data.forEach(l => {
+        if (!l.is_group) return;
+        const idsForLesson = [
+          ...(Array.isArray(l.participant_ids) ? l.participant_ids : []),
+          ...(l.student_id ? [l.student_id] : []),
+        ];
+        const uniq = Array.from(new Set(idsForLesson));
+        const nmList = uniq.map(id => idToName.get(id) || id);
+        mapByLesson.set(l.id, nmList);
+      });
+      setGroupNamesByLesson(mapByLesson);
+
       setLoading(false);
     };
 
     fetchLessons();
   }, []);
 
-  // Grouper par jour de la semaine courante (Lun..Dim) sur base slot_day
+  // Grouper par jour de la semaine courante (Lun..Dim)
   const week = getThisWeekDays();
-  const lessonsByDay = Object.fromEntries(week.map(w => [w.code, []]));
-
-  lessons.forEach(l => {
-    const code = typeof l.slot_day === 'string' ? l.slot_day : '';
-    if (lessonsByDay[code]) {
-      lessonsByDay[code].push(l);
-    }
-  });
+  const lessonsByDay = useMemo(() => {
+    const m = Object.fromEntries(week.map(w => [w.code, []]));
+    lessons.forEach(l => {
+      const code = typeof l.slot_day === 'string' ? l.slot_day : '';
+      if (m[code]) m[code].push(l);
+    });
+    return m;
+  }, [week, lessons]);
 
   const statusColors = {
     booked: 'bg-yellow-100 text-yellow-800',
@@ -146,10 +207,14 @@ export default function StudentCalendar() {
                       .sort((a, b) => (Number(a.slot_hour) || 0) - (Number(b.slot_hour) || 0))
                       .map(l => {
                         const prof = teacherMap.get(l.teacher_id) || {};
+                        const isGroup = !!l.is_group;
+                        const groupNames = groupNamesByLesson.get(l.id) || [];
+                        const open = openGroupId === l.id;
+
                         return (
                           <li
                             key={l.id}
-                            className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border"
+                            className="relative flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border"
                           >
                             <span
                               className={`px-3 py-1 rounded-full text-xs font-semibold ${
@@ -182,9 +247,35 @@ export default function StudentCalendar() {
                               {prof.name || l.teacher_id}
                             </span>
 
+                            {isGroup && (
+                              <button
+                                className="ml-2 text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100"
+                                onClick={() => setOpenGroupId(open ? null : l.id)}
+                                title="Voir les élèves du groupe"
+                              >
+                                👥 {groupNames.length}
+                              </button>
+                            )}
+
                             <span className="text-xs text-gray-500 ml-auto">
                               {formatHourFromSlot(l.slot_hour)}
                             </span>
+
+                            {/* Mini-fenêtre participants */}
+                            {isGroup && open && (
+                              <div className="absolute top-full mt-2 left-3 z-10 bg-white border rounded-lg shadow p-3 w-64">
+                                <div className="text-xs font-semibold mb-1">Élèves du groupe</div>
+                                {groupNames.length ? (
+                                  <ul className="text-sm text-gray-700 list-disc pl-4 space-y-1">
+                                    {groupNames.map((nm, i) => (
+                                      <li key={i}>{nm}</li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <div className="text-xs text-gray-500">Aucun participant.</div>
+                                )}
+                              </div>
+                            )}
                           </li>
                         );
                       })}

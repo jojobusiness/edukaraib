@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { db } from '../../lib/firebase';
 import {
   collection,
+  collectionGroup,
   doc,
   getDoc,
   getDocs,
@@ -16,18 +17,23 @@ import {
   deleteField,
 } from 'firebase/firestore';
 
-// --- Recherche unifiée d'élèves par NOM ---
-// - Cherche dans `students` (full_name / full_name_lc)
-// - Cherche dans `users` (fullName / name / displayName) avec role in ['student','child']
-// - Fallback si index absents : petit lot + filtre client
+/* ==========================
+   Recherche unifiée d'élèves par NOM
+   - Cherche dans `students` (full_name_lc si dispo; sinon fallback client)
+   - Cherche dans `users` (role in ['student','child'])
+   - Cherche dans `users/*/children/*` via collectionGroup('children')
+   - Déduplique et trie par pertinence
+   ========================== */
+function lc(s) { return (s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase(); }
+
 async function searchStudentsByName(termRaw) {
-  const term = (termRaw || '').trim().toLowerCase();
+  const term = lc(termRaw || '').trim();
   if (!term) return [];
 
   const MAX = 12;
-  const res = [];
+  const results = [];
 
-  // STUDENTS
+  // --- A) STUDENTS (prefix si index full_name_lc; sinon fallback client) ---
   try {
     const qs = query(
       collection(db, 'students'),
@@ -38,59 +44,142 @@ async function searchStudentsByName(termRaw) {
     const snap = await getDocs(qs);
     snap.forEach((d) => {
       const x = d.data();
-      res.push({ id: d.id, name: x.full_name || x.name || 'Sans nom', source: 'students' });
+      const name = x.full_name || x.name || [x.first_name, x.last_name].filter(Boolean).join(' ') || 'Sans nom';
+      results.push({ id: d.id, name, source: 'students' });
     });
   } catch {
+    // Fallback: petit lot ordonné + filtre client
     try {
-      const qs = query(collection(db, 'students'), orderBy('full_name'), limit(60));
+      const qs = query(collection(db, 'students'), orderBy('full_name'), limit(150));
       const snap = await getDocs(qs);
       snap.forEach((d) => {
         const x = d.data();
-        const n = (x.full_name || x.name || '').toLowerCase();
-        if (n.includes(term)) res.push({ id: d.id, name: x.full_name || x.name || 'Sans nom', source: 'students' });
+        const cand =
+          x.full_name ||
+          x.name ||
+          [x.first_name, x.last_name].filter(Boolean).join(' ') ||
+          '';
+        if (lc(cand).includes(term)) {
+          results.push({ id: d.id, name: cand || 'Sans nom', source: 'students' });
+        }
       });
-    } catch {}
+    } catch {
+      // Dernier fallback: sampler sur created_at si dispo
+      try {
+        const qs2 = query(collection(db, 'students'), orderBy('created_at', 'desc'), limit(150));
+        const snap2 = await getDocs(qs2);
+        snap2.forEach((d) => {
+          const x = d.data();
+          const cand =
+            x.full_name ||
+            x.name ||
+            [x.first_name, x.last_name].filter(Boolean).join(' ') ||
+            '';
+          if (lc(cand).includes(term)) {
+            results.push({ id: d.id, name: cand || 'Sans nom', source: 'students' });
+          }
+        });
+      } catch {}
+    }
   }
 
-  // USERS (élèves/children)
+  // --- B) USERS (élève "autonome") ---
   try {
-    const qu = query(collection(db, 'users'), where('role', 'in', ['student', 'child']), limit(60));
+    const qu = query(collection(db, 'users'), where('role', 'in', ['student', 'child']), limit(120));
     const snapU = await getDocs(qu);
     snapU.forEach((d) => {
       const x = d.data();
-      const name = x.fullName || x.name || x.displayName || (x.profile && x.profile.name) || 'Sans nom';
-      if ((name || '').toLowerCase().includes(term)) {
-        res.push({ id: d.id, name, source: 'users' });
+      const display =
+        x.fullName ||
+        x.name ||
+        x.displayName ||
+        (x.profile && x.profile.name) ||
+        '';
+      if (lc(display).includes(term)) {
+        results.push({ id: d.id, name: display || 'Sans nom', source: 'users' });
       }
     });
   } catch {
+    // Fallback très permissif (petit scan client)
     try {
-      const qu = query(collection(db, 'users'), limit(80));
-      const snapU = await getDocs(qu);
-      snapU.forEach((d) => {
+      const qu2 = query(collection(db, 'users'), limit(200));
+      const snapU2 = await getDocs(qu2);
+      snapU2.forEach((d) => {
         const x = d.data();
         if (!['student', 'child'].includes(x.role)) return;
-        const name = x.fullName || x.name || x.displayName || (x.profile && x.profile.name) || 'Sans nom';
-        if ((name || '').toLowerCase().includes(term)) {
-          res.push({ id: d.id, name, source: 'users' });
+        const display =
+          x.fullName ||
+          x.name ||
+          x.displayName ||
+          (x.profile && x.profile.name) ||
+          '';
+        if (lc(display).includes(term)) {
+          results.push({ id: d.id, name: display || 'Sans nom', source: 'users' });
         }
       });
     } catch {}
   }
 
-  // déduplique par id
+  // --- C) CHILDREN sous-collection (users/{parentId}/children/*) ---
+  //     → utile quand l'élève n'a PAS de doc users (uniquement students ou un enfant rattaché au parent)
+  try {
+    const qc = query(
+      collectionGroup(db, 'children'),
+      where('full_name_lc', '>=', term),
+      where('full_name_lc', '<=', term + '\uf8ff'),
+      limit(MAX)
+    );
+    const snapC = await getDocs(qc);
+    snapC.forEach((d) => {
+      const x = d.data();
+      const name =
+        x.full_name ||
+        x.name ||
+        [x.first_name, x.last_name].filter(Boolean).join(' ') ||
+        'Sans nom';
+      // Si le doc stocke un identifiant "student_id", on le privilégie
+      const sid = x.student_id || d.id;
+      results.push({ id: sid, name, source: 'users/children' });
+    });
+  } catch {
+    // Fallback client (si pas d'index ni champ *_lc) : petit scan de quelques parents
+    try {
+      const parentsSnap = await getDocs(
+        query(collection(db, 'users'), where('role', '==', 'parent'), limit(60))
+      );
+      // On ne peut pas faire de "collectionGroup" client sans index; on abandonne ce fallback si non-structuré.
+      // Mais si certains parents stockent une array "children" en champ, on filtre dessus.
+      parentsSnap.forEach((p) => {
+        const data = p.data();
+        const childrenArr = Array.isArray(data.children) ? data.children : [];
+        childrenArr.forEach((c) => {
+          const name =
+            c.full_name ||
+            c.name ||
+            [c.first_name, c.last_name].filter(Boolean).join(' ') ||
+            '';
+          if (lc(name).includes(term)) {
+            const sid = c.student_id || c.id || `${p.id}#${name}`;
+            results.push({ id: sid, name: name || 'Sans nom', source: 'users.children[]' });
+          }
+        });
+      });
+    } catch {}
+  }
+
+  // --- Déduplique par id ---
   const seen = new Set();
   const unique = [];
-  for (const r of res) {
+  for (const r of results) {
     if (seen.has(r.id)) continue;
     seen.add(r.id);
     unique.push(r);
   }
 
-  // tri simple par pertinence
+  // --- Tri par "pertinence simple" ---
   const withScore = unique.map((x) => {
-    const idx = (x.name || '').toLowerCase().indexOf(term);
-    const score = (idx === -1 ? 999 : idx) + (x.name || '').length * 0.01;
+    const idx = lc(x.name).indexOf(term);
+    const score = (idx === -1 ? 999 : idx) + lc(x.name).length * 0.01;
     return { ...x, _score: score };
   });
   withScore.sort((a, b) => a._score - b._score);
@@ -98,6 +187,7 @@ async function searchStudentsByName(termRaw) {
   return withScore.slice(0, MAX).map(({ _score, ...rest }) => rest);
 }
 
+/* ========== UI utils ========== */
 function Chip({ children, onRemove }) {
   return (
     <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-100 text-gray-800 text-sm">
@@ -116,113 +206,110 @@ function Chip({ children, onRemove }) {
 }
 
 export default function GroupSettingsModal({ open, onClose, lesson }) {
-  // états principaux
+  // États
   const [capacity, setCapacity] = useState(lesson?.capacity || 1);
   const [participantIds, setParticipantIds] = useState(lesson?.participant_ids || []);
-  const [participantsMap, setParticipantsMap] = useState(lesson?.participantsMap || {}); // conservé pour compat
-  const [nameMap, setNameMap] = useState({}); // {id: name} pour affichage
+  const [participantsMap, setParticipantsMap] = useState(lesson?.participantsMap || {}); // compat
+  const [nameMap, setNameMap] = useState({}); // { id: name }
 
-  // recherche
+  // Recherche
   const [search, setSearch] = useState('');
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const debounceRef = useRef(null);
 
-// sync à l’ouverture
-useEffect(() => {
-  if (!open || !lesson) return;
+  // Sync à l'ouverture + MIGRATION LEGACY
+  useEffect(() => {
+    if (!open || !lesson) return;
 
-  // Base
-  setCapacity(lesson.capacity || 1);
-  setParticipantIds(Array.isArray(lesson.participant_ids) ? lesson.participant_ids : []);
-  setParticipantsMap(lesson.participantsMap || {});
+    setCapacity(lesson.capacity || 1);
+    setParticipantIds(Array.isArray(lesson.participant_ids) ? lesson.participant_ids : []);
+    setParticipantsMap(lesson.participantsMap || {});
 
-  (async () => {
-    const nm = {};
+    (async () => {
+      const nm = {};
 
-    // ---------------------------
-    // MIGRATION LEGACY (si besoin)
-    // ---------------------------
-    // Cas: is_group = true, student_id défini, participant_ids ne le contient pas encore.
-    try {
-      if (lesson.is_group && lesson.student_id && !lesson.participant_ids?.includes(lesson.student_id)) {
-        const legacyId = lesson.student_id;
+      // Migration legacy : si l'élève “fondateur” est dans student_id mais pas encore dans participant_ids
+      try {
+        if (lesson.is_group && lesson.student_id && !lesson.participant_ids?.includes(lesson.student_id)) {
+          const legacyId = lesson.student_id;
 
-        // Récup nom pour UI
-        let legacyName = legacyId;
+          // 1) Résoudre son nom pour l'UI
+          let legacyName = legacyId;
+          try {
+            const s = await getDoc(doc(db, 'students', legacyId));
+            if (s.exists()) {
+              const d = s.data();
+              legacyName = d.full_name || d.name || [d.first_name, d.last_name].filter(Boolean).join(' ') || legacyId;
+            } else {
+              const u = await getDoc(doc(db, 'users', legacyId));
+              if (u.exists()) {
+                const d = u.data();
+                legacyName = d.fullName || d.name || d.displayName || legacyId;
+              }
+            }
+          } catch {}
+
+          // 2) Patch Firestore : on bascule dans participants & on vide student_id
+          await updateDoc(doc(db, 'lessons', lesson.id), {
+            participant_ids: arrayUnion(legacyId),
+            [`participantsMap.${legacyId}`]: {
+              parent_id: null,
+              booked_by: lesson.booked_by || null,
+              is_paid: false,
+              paid_by: null,
+              paid_at: null,
+              status: lesson.status || 'booked',
+              added_at: serverTimestamp(),
+            },
+            student_id: null,
+          });
+
+          // 3) Patch UI local
+          setParticipantIds((prev) => (prev.includes(legacyId) ? prev : [...prev, legacyId]));
+          setParticipantsMap((prev) => ({
+            ...prev,
+            [legacyId]: {
+              parent_id: null,
+              booked_by: lesson.booked_by || null,
+              is_paid: false,
+              paid_by: null,
+              paid_at: null,
+              status: lesson.status || 'booked',
+              added_at: new Date(),
+            },
+          }));
+          nm[legacyId] = legacyName;
+        }
+      } catch (e) {
+        console.error('Migration legacy group failed:', e);
+      }
+
+      // Précharger les noms des participants actuels
+      const ids = Array.isArray(lesson.participant_ids) ? lesson.participant_ids : [];
+      for (const id of ids) {
         try {
-          const s = await getDoc(doc(db, 'students', legacyId));
+          const s = await getDoc(doc(db, 'students', id));
           if (s.exists()) {
             const d = s.data();
-            legacyName = d.full_name || d.name || legacyId;
-          } else {
-            const u = await getDoc(doc(db, 'users', legacyId));
-            if (u.exists()) {
-              const d = u.data();
-              legacyName = d.fullName || d.name || d.displayName || legacyId;
-            }
+            nm[id] = d.full_name || d.name || [d.first_name, d.last_name].filter(Boolean).join(' ') || id;
+            continue;
           }
         } catch {}
-
-        // Patch Firestore : pousse le legacyId dans participant_ids, crée entrée map, vide student_id
-        await updateDoc(doc(db, 'lessons', lesson.id), {
-          participant_ids: arrayUnion(legacyId),
-          [`participantsMap.${legacyId}`]: {
-            parent_id: null,
-            booked_by: lesson.booked_by || null,
-            is_paid: false,
-            paid_by: null,
-            paid_at: null,
-            status: lesson.status || 'booked',
-            added_at: serverTimestamp(),
-          },
-          student_id: null,
-        });
-
-        // Patch UI local
-        setParticipantIds((prev) => (prev.includes(legacyId) ? prev : [...prev, legacyId]));
-        setParticipantsMap((prev) => ({
-          ...prev,
-          [legacyId]: {
-            parent_id: null,
-            booked_by: lesson.booked_by || null,
-            is_paid: false,
-            paid_by: null,
-            paid_at: null,
-            status: lesson.status || 'booked',
-            added_at: new Date(), // purement visuel
-          },
-        }));
-        nm[legacyId] = legacyName;
+        try {
+          const u = await getDoc(doc(db, 'users', id));
+          if (u.exists()) {
+            const d = u.data();
+            nm[id] = d.fullName || d.name || d.displayName || id;
+          }
+        } catch {}
       }
-    } catch (e) {
-      console.error('Migration legacy group failed:', e);
-    }
 
-    // Précharger les noms de tous les participants
-    for (const id of (lesson.participant_ids || [])) {
-      try {
-        const s = await getDoc(doc(db, 'students', id));
-        if (s.exists()) {
-          const d = s.data();
-          nm[id] = d.full_name || d.name || id;
-          continue;
-        }
-      } catch {}
-      try {
-        const u = await getDoc(doc(db, 'users', id));
-        if (u.exists()) {
-          const d = u.data();
-          nm[id] = d.fullName || d.name || d.displayName || id;
-        }
-      } catch {}
-    }
+      setNameMap((prev) => ({ ...prev, ...nm }));
+    })();
+  }, [open, lesson]);
 
-    setNameMap((prev) => ({ ...prev, ...nm }));
-  })();
-}, [open, lesson]);
-
-  // recherche (debounce)
+  // Recherche (debounce)
   useEffect(() => {
     if (!open) return;
     const term = (search || '').trim();
@@ -244,10 +331,13 @@ useEffect(() => {
 
   const selectedSet = useMemo(() => new Set(participantIds), [participantIds]);
 
-  // actions
+  // Actions
   async function saveCapacity() {
     try {
-      await updateDoc(doc(db, 'lessons', lesson.id), { capacity: Number(capacity) || 1, is_group: true });
+      await updateDoc(doc(db, 'lessons', lesson.id), {
+        capacity: Number(capacity) || 1,
+        is_group: true,
+      });
       alert('Capacité mise à jour.');
     } catch (e) {
       console.error(e);
@@ -262,7 +352,7 @@ useEffect(() => {
 
     const ref = doc(db, 'lessons', lesson.id);
 
-    // Patch minimal côté participantsMap pour compat (tu peux le retirer si inutile)
+    // Patch minimal côté participantsMap (compat)
     const participantPatch = {
       parent_id: null,
       booked_by: null,
@@ -371,7 +461,7 @@ useEffect(() => {
                     key={`${r.source}:${r.id}`}
                     className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center justify-between"
                     onClick={() => addByPick(r)}
-                    title={r.source === 'users' ? 'Depuis users' : 'Depuis students'}
+                    title={r.source}
                     disabled={participantIds.length >= (capacity || 1)}
                   >
                     <span>{r.name}</span>
@@ -385,12 +475,6 @@ useEffect(() => {
             {search.length >= 2 && !searching && results.length === 0 && (
               <div className="text-sm text-gray-500 mt-2">Aucun résultat.</div>
             )}
-
-            {/*<p className="text-xs text-gray-400 mt-2">
-              (Optionnel) Pour des recherches plus rapides : ajoute <code>full_name_lc</code> (minuscule)
-              dans <code>students</code> et <code>fullName_lc</code> dans <code>users</code>, puis crée
-              les index demandés par Firestore.
-            </p>*/}
           </div>
 
           {/* Participants (noms uniquement) */}
