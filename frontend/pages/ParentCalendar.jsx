@@ -16,7 +16,6 @@ const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const codeIndex = (c) => Math.max(0, FR_DAY_CODES.indexOf(c));
 
 function getThisWeekDays() {
-  // [{ code:'Lun', label:'lundi 12 août', date: Date }, ...]
   const now = new Date();
   const jsDay = now.getDay(); // 0=Dim..6=Sam
   const offsetToMonday = ((jsDay + 6) % 7);
@@ -51,7 +50,7 @@ function nextOccurrence(slot_day, slot_hour, now = new Date()) {
   const start = new Date(monday);
   start.setDate(monday.getDate() + idx);
   start.setHours(Number(slot_hour) || 0, 0, 0, 0);
-  if (start <= now) start.setDate(start.getDate() + 7); // semaine suivante si déjà passé
+  if (start <= now) start.setDate(start.getDate() + 7);
   return start;
 }
 
@@ -129,7 +128,7 @@ export default function ParentCalendar() {
       if (!auth.currentUser) return;
       setLoading(true);
 
-      // 1) Récupérer les enfants du parent
+      // 1) Enfants du parent
       const kidsSnap = await getDocs(
         query(collection(db, 'students'), where('parent_id', '==', auth.currentUser.uid))
       );
@@ -145,30 +144,38 @@ export default function ParentCalendar() {
         return;
       }
 
-      // 2) Récupérer les leçons des enfants (par lots de 10)
+      // 2) Cours où l’enfant est dans student_id (in par lots)
       const kidIds = kids.map(k => k.id);
       const lessonChunks = chunk(kidIds, 10);
-      let allLessons = [];
+      const map = new Map();
+
       for (const c of lessonChunks) {
         const qLessons = query(collection(db, 'lessons'), where('student_id', 'in', c));
         const snap = await getDocs(qLessons);
-        allLessons = allLessons.concat(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        snap.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
       }
 
-      // Garder uniquement Confirmé & Terminé  (⚠️ bug venait d’une parenthèse en trop)
-      allLessons = allLessons.filter(
+      // 3) Cours où l’enfant est dans participant_ids (array-contains -> 1 requête par enfant)
+      for (const kid of kidIds) {
+        const qPart = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', kid));
+        const snapP = await getDocs(qPart);
+        snapP.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
+      }
+
+      // 4) Filtrer Confirmé & Terminé
+      let allLessons = Array.from(map.values()).filter(
         (l) => l.status === 'confirmed' || l.status === 'completed'
       );
 
       setLessons(allLessons);
 
-      // 3) Map enfants (id -> nom)
+      // 5) Map enfants (id -> nom)
       const sMap = new Map(
         kids.map(k => [k.id, k.full_name || k.fullName || k.name || 'Enfant'])
       );
       setStudentMap(sMap);
 
-      // 4) Profils profs
+      // 6) Profils profs
       const teacherUids = Array.from(new Set(allLessons.map(l => l.teacher_id).filter(Boolean)));
       const profiles = await Promise.all(teacherUids.map(uid => fetchUserProfile(uid)));
       const tMap = new Map(
@@ -184,7 +191,7 @@ export default function ParentCalendar() {
       );
       setTeacherMap(tMap);
 
-      // 5) Noms des participants pour cours groupés (participantsIds + legacy student_id)
+      // 7) Participants (noms)
       const idSet = new Set();
       allLessons.forEach(l => {
         if (l.is_group) {
@@ -210,7 +217,7 @@ export default function ParentCalendar() {
       });
       setGroupNamesByLesson(mapByLesson);
 
-      // si le cours ouvert n’existe plus, on ferme la popup
+      // sécuriser la popup
       if (openGroupId && !allLessons.some(l => l.id === openGroupId)) {
         setOpenGroupId(null);
       }
@@ -219,11 +226,10 @@ export default function ParentCalendar() {
     };
 
     run();
-    // on ferme la popup si l’utilisateur change (par précaution)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Groupage par jour (slot_day) pour la semaine courante
+  // Groupage par jour (semaine courante)
   const week = getThisWeekDays();
   const lessonsByDay = useMemo(() => {
     const m = Object.fromEntries(week.map(w => [w.code, []]));
@@ -234,7 +240,7 @@ export default function ParentCalendar() {
     return m;
   }, [week, lessons]);
 
-  // Prochain cours (uniquement l'état confirmé, dans le futur)
+  // Prochain cours (confirmé futur)
   const nextCourse = useMemo(() => {
     const now = new Date();
     const futureConfirmed = lessons

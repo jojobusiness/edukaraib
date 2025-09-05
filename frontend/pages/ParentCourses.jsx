@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
-import useParentCourses from '../hooks/useParentCourses';
 import DocumentsModal from '../components/lessons/DocumentsModal';
 import ReviewModal from '../components/lessons/ReviewModal';
 import { auth, db } from '../lib/firebase';
@@ -13,17 +12,10 @@ import {
   getDoc,
   limit,
 } from 'firebase/firestore';
-import { whenString } from '../utils/datetime';
 
 // ---- Helpers ----
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const codeIndex = (c) => Math.max(0, FR_DAY_CODES.indexOf(c));
-const statusColors = {
-  booked: 'bg-yellow-100 text-yellow-800',
-  confirmed: 'bg-green-100 text-green-800',
-  completed: 'bg-gray-100 text-gray-700',
-  rejected: 'bg-red-100 text-red-700',
-};
 
 function nextOccurrence(slot_day, slot_hour, now = new Date()) {
   if (!FR_DAY_CODES.includes(slot_day)) return null;
@@ -45,6 +37,13 @@ function formatHourFromSlot(h) {
   const n = Number(h) || 0;
   return `${String(n).padStart(2, '0')}:00`;
 }
+
+const statusColors = {
+  booked: 'bg-yellow-100 text-yellow-800',
+  confirmed: 'bg-green-100 text-green-800',
+  completed: 'bg-gray-100 text-gray-700',
+  rejected: 'bg-red-100 text-red-700',
+};
 
 // Résolution de noms (users -> students) avec cache
 async function fetchUserProfile(uid) {
@@ -91,7 +90,8 @@ async function resolvePersonName(id, cacheRef) {
 }
 
 export default function ParentCourses() {
-  const { courses, loading } = useParentCourses();
+  const [courses, setCourses] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   // Modals
   const [docOpen, setDocOpen] = useState(false);
@@ -105,31 +105,53 @@ export default function ParentCourses() {
   const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map());
   const nameCacheRef = useRef(new Map());
 
-  // On force aux seuls confirmés/terminés pour l’affichage
-  const visible = useMemo(
-    () => (courses || []).filter(c => c && (c.status === 'confirmed' || c.status === 'completed')),
-    [courses]
-  );
-
-  // Prochain cours confirmé parmi tous les enfants
-  const nextCourse = useMemo(() => {
-    const now = new Date();
-    const futureConfirmed = visible
-      .filter(l => l.status === 'confirmed' && FR_DAY_CODES.includes(l.slot_day))
-      .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
-      .filter(l => l.startAt && l.startAt > now)
-      .sort((a, b) => a.startAt - b.startAt);
-    return futureConfirmed[0] || null;
-  }, [visible]);
-
-  // Charger les noms des participants pour les cours groupés
+  // Chargement (inclut participant_ids)
   useEffect(() => {
     const run = async () => {
       if (!auth.currentUser) return;
+      setLoading(true);
 
+      // enfants
+      const kidsSnap = await getDocs(
+        query(collection(db, 'students'), where('parent_id', '==', auth.currentUser.uid))
+      );
+      const kids = kidsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const kidIds = kids.map(k => k.id);
+
+      if (kidIds.length === 0) {
+        setCourses([]);
+        setLoading(false);
+        return;
+      }
+
+      // A) leçons où student_id == child
+      const map = new Map();
+      for (let i = 0; i < kidIds.length; i += 10) {
+        const chunk = kidIds.slice(i, i + 10);
+        const qA = query(collection(db, 'lessons'), where('student_id', 'in', chunk));
+        const sA = await getDocs(qA);
+        sA.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
+      }
+
+      // B) leçons où participant_ids array-contains child
+      for (const kid of kidIds) {
+        const qB = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', kid));
+        const sB = await getDocs(qB);
+        sB.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
+      }
+
+      // Confirmés/terminés
+      const data = Array.from(map.values()).filter(
+        l => l.status === 'confirmed' || l.status === 'completed'
+      );
+
+      setCourses(data);
+      setLoading(false);
+
+      // participants
       const idSet = new Set();
-      visible.forEach(l => {
-        if (l?.is_group) {
+      data.forEach(l => {
+        if (l.is_group) {
           (Array.isArray(l.participant_ids) ? l.participant_ids : []).forEach(id => id && idSet.add(id));
           if (l.student_id) idSet.add(l.student_id);
         }
@@ -138,26 +160,37 @@ export default function ParentCourses() {
       const names = await Promise.all(ids.map(id => resolvePersonName(id, nameCacheRef)));
       const idToName = new Map(ids.map((id, i) => [id, names[i]]));
 
-      const map = new Map();
-      visible.forEach(l => {
-        if (!l?.is_group) return;
+      const mapByLesson = new Map();
+      data.forEach(l => {
+        if (!l.is_group) return;
         const idsForLesson = [
           ...(Array.isArray(l.participant_ids) ? l.participant_ids : []),
           ...(l.student_id ? [l.student_id] : []),
         ];
         const uniq = Array.from(new Set(idsForLesson));
         const nmList = uniq.map(id => idToName.get(id) || id);
-        map.set(l.id, nmList);
+        mapByLesson.set(l.id, nmList);
       });
-      setGroupNamesByLesson(map);
+      setGroupNamesByLesson(mapByLesson);
 
-      if (openGroupId && !visible.some(x => x.id === openGroupId)) {
+      if (openGroupId && !data.some(x => x.id === openGroupId)) {
         setOpenGroupId(null);
       }
     };
+
     run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+  }, []);
+
+  // prochain cours confirmé (tous enfants)
+  const nextCourse = useMemo(() => {
+    const now = new Date();
+    const futureConfirmed = courses
+      .filter(l => l.status === 'confirmed' && FR_DAY_CODES.includes(l.slot_day))
+      .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
+      .filter(l => l.startAt && l.startAt > now)
+      .sort((a, b) => a.startAt - b.startAt);
+    return futureConfirmed[0] || null;
+  }, [courses]);
 
   const openDocs = (lesson) => { setDocLesson(lesson); setDocOpen(true); };
   const openReview = (lesson) => { setReviewLesson(lesson); setReviewOpen(true); };
@@ -176,8 +209,7 @@ export default function ParentCourses() {
               {nextCourse
                 ? (() => {
                     const when = `${nextCourse.slot_day} ${String(nextCourse.slot_hour).padStart(2,'0')}h`;
-                    const child = nextCourse.studentName || nextCourse.student_id;
-                    return `${nextCourse.subject_id || 'Cours'} · ${when} · avec ${nextCourse.teacherName || nextCourse.teacher_id} · ${child}`;
+                    return `${nextCourse.subject_id || 'Cours'} · ${when} · Prof: ${nextCourse.teacher_id}`;
                   })()
                 : 'Aucun cours confirmé à venir'}
             </span>
@@ -188,13 +220,13 @@ export default function ParentCourses() {
           <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Chargement…</div>
         ) : (
           <div className="grid grid-cols-1 gap-5">
-            {visible.length === 0 && (
+            {courses.length === 0 && (
               <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">
                 Aucun cours confirmé/terminé pour vos enfants.
               </div>
             )}
 
-            {visible.map((c) => {
+            {courses.map((c) => {
               const isGroup = !!c.is_group;
               const groupNames = groupNamesByLesson.get(c.id) || [];
               const open = openGroupId === c.id;
@@ -221,16 +253,15 @@ export default function ParentCourses() {
                         </button>
                       )}
                     </div>
+
                     <div className="text-gray-700 text-sm">
-                      Enfant : <span className="font-semibold">{c.studentName || c.student_id}</span>
+                      Élève : <span className="font-semibold">{c.student_id}</span>
                     </div>
                     <div className="text-gray-700 text-sm">
-                      Professeur : <span className="font-semibold">{c.teacherName || c.teacher_id}</span>
+                      Professeur : <span className="font-semibold">{c.teacher_id}</span>
                     </div>
                     <div className="text-gray-500 text-xs mb-1">
-                      {whenString(c) || (
-                        (c.slot_day || c.slot_hour !== undefined) && `${c.slot_day} ${formatHourFromSlot(c.slot_hour)}`
-                      )}
+                      {(c.slot_day || c.slot_hour !== undefined) && `${c.slot_day} ${formatHourFromSlot(c.slot_hour)}`}
                     </div>
                   </div>
 
@@ -242,19 +273,13 @@ export default function ParentCourses() {
                       📄 Documents
                     </button>
 
-                    {c.status === 'completed' && !c.hasReview && (
+                    {c.status === 'completed' && (
                       <button
                         className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded shadow font-semibold"
                         onClick={() => openReview(c)}
                       >
                         ⭐ Laisser un avis
                       </button>
-                    )}
-
-                    {c.status === 'completed' && c.hasReview && (
-                      <span className="text-green-600 text-xs font-semibold self-center">
-                        Avis laissé ✔️
-                      </span>
                     )}
                   </div>
 

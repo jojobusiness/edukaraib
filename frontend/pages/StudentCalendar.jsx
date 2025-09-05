@@ -16,7 +16,6 @@ const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const codeIndex = (c) => Math.max(0, FR_DAY_CODES.indexOf(c));
 
 function getThisWeekDays() {
-  // retourne un tableau de 7 objets { code:'Lun', label:'lundi 12 août', date: Date }
   const now = new Date();
   const jsDay = now.getDay(); // 0..6
   const offsetToMonday = ((jsDay + 6) % 7);
@@ -123,22 +122,33 @@ export default function StudentCalendar() {
       if (!auth.currentUser) return;
       setLoading(true);
 
-      // 1) Charger les cours de l'élève connecté (confirmés & terminés)
-      const qLessons = query(
-        collection(db, 'lessons'),
-        where('student_id', '==', auth.currentUser.uid)
+      // 1) Charger les cours de l'élève connecté
+      const uid = auth.currentUser.uid;
+
+      // a) où il est l’élève « principal »
+      const qA = query(collection(db, 'lessons'), where('student_id', '==', uid));
+      const snapA = await getDocs(qA);
+
+      // b) où il est dans participant_ids
+      const qB = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', uid));
+      const snapB = await getDocs(qB);
+
+      // Fusion + dédupe
+      const map = new Map();
+      snapA.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
+      snapB.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
+
+      // Confirmés/terminés uniquement
+      const data = Array.from(map.values()).filter(
+        l => l.status === 'confirmed' || l.status === 'completed'
       );
-      const snapshot = await getDocs(qLessons);
-      const data = snapshot.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .filter(l => l.status === 'confirmed' || l.status === 'completed');
 
       setLessons(data);
 
       // 2) Profils profs
       const teacherUids = Array.from(new Set(data.map(l => l.teacher_id).filter(Boolean)));
       const profiles = await Promise.all(teacherUids.map(uid => fetchUserProfile(uid)));
-      const map = new Map(
+      const tmap = new Map(
         profiles
           .filter(Boolean)
           .map(p => [
@@ -149,7 +159,7 @@ export default function StudentCalendar() {
             }
           ])
       );
-      setTeacherMap(map);
+      setTeacherMap(tmap);
 
       // 3) Noms des participants pour cours groupés
       const idSet = new Set();
@@ -182,7 +192,7 @@ export default function StudentCalendar() {
     fetchLessons();
   }, []);
 
-  // Grouper par jour de la semaine courante (Lun..Dim)
+  // Grouper par jour
   const week = getThisWeekDays();
   const lessonsByDay = useMemo(() => {
     const m = Object.fromEntries(week.map(w => [w.code, []]));
@@ -193,7 +203,7 @@ export default function StudentCalendar() {
     return m;
   }, [week, lessons]);
 
-  // Prochain cours (confirmé uniquement)
+  // Prochain cours (confirmé)
   const nextCourse = useMemo(() => {
     const now = new Date();
     const futureConfirmed = lessons
