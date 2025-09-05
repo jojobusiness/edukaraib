@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { auth, db } from '../lib/firebase';
 import {
   collection,
@@ -13,6 +13,7 @@ import DashboardLayout from '../components/DashboardLayout';
 
 // ----- Helpers communs -----
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+const codeIndex = (c) => Math.max(0, FR_DAY_CODES.indexOf(c));
 
 function getThisWeekDays() {
   // [{ code:'Lun', label:'lundi 12 août', date: Date }, ...]
@@ -35,6 +36,23 @@ function getThisWeekDays() {
     });
     return { code, label, date: d };
   });
+}
+
+function nextOccurrence(slot_day, slot_hour, now = new Date()) {
+  if (!FR_DAY_CODES.includes(slot_day)) return null;
+  const jsDay = now.getDay(); // 0=Dim..6=Sam
+  const offsetToMonday = ((jsDay + 6) % 7);
+
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(now.getDate() - offsetToMonday);
+
+  const idx = codeIndex(slot_day);
+  const start = new Date(monday);
+  start.setDate(monday.getDate() + idx);
+  start.setHours(Number(slot_hour) || 0, 0, 0, 0);
+  if (start <= now) start.setDate(start.getDate() + 7); // semaine suivante si déjà passé
+  return start;
 }
 
 function formatHourFromSlot(h) {
@@ -122,6 +140,7 @@ export default function ParentCalendar() {
         setStudentMap(new Map());
         setTeacherMap(new Map());
         setGroupNamesByLesson(new Map());
+        setOpenGroupId(null);
         setLoading(false);
         return;
       }
@@ -136,8 +155,10 @@ export default function ParentCalendar() {
         allLessons = allLessons.concat(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       }
 
-      // Garder uniquement Confirmé & Terminé
-      allLessons = allLessons.filter(l => l.status === 'confirmed' || l.status === 'completed');
+      // Garder uniquement Confirmé & Terminé  (⚠️ bug venait d’une parenthèse en trop)
+      allLessons = allLessons.filter(
+        (l) => l.status === 'confirmed' || l.status === 'completed'
+      );
 
       setLessons(allLessons);
 
@@ -189,10 +210,17 @@ export default function ParentCalendar() {
       });
       setGroupNamesByLesson(mapByLesson);
 
+      // si le cours ouvert n’existe plus, on ferme la popup
+      if (openGroupId && !allLessons.some(l => l.id === openGroupId)) {
+        setOpenGroupId(null);
+      }
+
       setLoading(false);
     };
 
     run();
+    // on ferme la popup si l’utilisateur change (par précaution)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Groupage par jour (slot_day) pour la semaine courante
@@ -206,6 +234,17 @@ export default function ParentCalendar() {
     return m;
   }, [week, lessons]);
 
+  // Prochain cours (uniquement l'état confirmé, dans le futur)
+  const nextCourse = useMemo(() => {
+    const now = new Date();
+    const futureConfirmed = lessons
+      .filter(l => l.status === 'confirmed' && FR_DAY_CODES.includes(l.slot_day))
+      .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
+      .filter(l => l.startAt && l.startAt > now)
+      .sort((a, b) => a.startAt - b.startAt);
+    return futureConfirmed[0] || null;
+  }, [lessons]);
+
   const statusColors = {
     booked: 'bg-yellow-100 text-yellow-800',
     confirmed: 'bg-green-100 text-green-800',
@@ -215,8 +254,26 @@ export default function ParentCalendar() {
 
   return (
     <DashboardLayout role="parent">
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-3xl mx-auto">
         <h2 className="text-2xl font-bold text-primary mb-6">🗓️ Planning hebdo des enfants</h2>
+
+        {/* Prochain cours */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <div className="bg-white rounded-xl shadow p-6 border-l-4 border-primary flex flex-col items-start md:col-span-3">
+            <span className="text-3xl mb-2">📅</span>
+            <span className="text-xl font-bold text-primary">Prochain cours</span>
+            <span className="text-gray-700 mt-1">
+              {nextCourse
+                ? (() => {
+                    const childName = studentMap.get(nextCourse.student_id) || 'Enfant';
+                    const teacher = teacherMap.get(nextCourse.teacher_id) || {};
+                    const when = `${nextCourse.slot_day} ${String(nextCourse.slot_hour).padStart(2,'0')}h`;
+                    return `${nextCourse.subject_id || 'Cours'} · ${when} · avec ${teacher.name || nextCourse.teacher_id} · ${childName}`;
+                  })()
+                : 'Aucun cours confirmé à venir'}
+            </span>
+          </div>
+        </div>
 
         {loading ? (
           <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">
@@ -235,6 +292,7 @@ export default function ParentCalendar() {
                 ) : (
                   <ul className="flex flex-col gap-2">
                     {lessonsByDay[code]
+                      .filter(l => l.status === 'confirmed' || l.status === 'completed')
                       .sort((a, b) => (Number(a.slot_hour) || 0) - (Number(b.slot_hour) || 0))
                       .map(l => {
                         const childName = studentMap.get(l.student_id) || 'Enfant';
@@ -253,15 +311,7 @@ export default function ParentCalendar() {
                                 statusColors[l.status] || 'bg-gray-200'
                               }`}
                             >
-                              {l.status === 'booked'
-                                ? 'En attente'
-                                : l.status === 'confirmed'
-                                ? 'Confirmé'
-                                : l.status === 'rejected'
-                                ? 'Refusé'
-                                : l.status === 'completed'
-                                ? 'Terminé'
-                                : l.status}
+                              {l.status === 'confirmed' ? 'Confirmé' : l.status === 'completed' ? 'Terminé' : l.status}
                             </span>
 
                             <span className="font-bold text-primary">{childName}</span>
@@ -292,7 +342,7 @@ export default function ParentCalendar() {
                               {formatHourFromSlot(l.slot_hour)}
                             </span>
 
-                            {/* Mini-fenêtre participants */}
+                            {/* Mini-fenêtre participants (noms uniquement) */}
                             {isGroup && open && (
                               <div className="absolute top-full mt-2 left-3 z-10 bg-white border rounded-lg shadow p-3 w-64">
                                 <div className="text-xs font-semibold mb-1">Élèves du groupe</div>

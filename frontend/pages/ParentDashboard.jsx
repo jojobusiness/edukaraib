@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import { auth, db } from '../lib/firebase';
 import {
@@ -8,37 +8,27 @@ import {
   getDocs,
   onSnapshot,
   orderBy,
+  doc,
+  getDoc,
 } from 'firebase/firestore';
 import NotifList from '../components/NotifList';
+import { autoClearPaymentDueNotifications } from '../lib/paymentNotifications';
 
-// ---- Helpers jours/heures ----
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const codeIndex = (c) => Math.max(0, FR_DAY_CODES.indexOf(c));
+function mondayOfWeek(base = new Date()) { const d=new Date(base); const jsDay=d.getDay(); const offset=((jsDay+6)%7); d.setHours(0,0,0,0); d.setDate(d.getDate()-offset); return d; }
+function nextOccurrence(slot_day, slot_hour, now = new Date()) { if(!FR_DAY_CODES.includes(slot_day)) return null; const mon=mondayOfWeek(now); const idx=codeIndex(slot_day); const start=new Date(mon); start.setDate(mon.getDate()+idx); start.setHours(Number(slot_hour)||0,0,0,0); if(start<=now) start.setDate(start.getDate()+7); return start; }
+function chunk(arr, size = 10){ const out=[]; for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size)); return out; }
 
-function mondayOfWeek(base = new Date()) {
-  const d = new Date(base);
-  const jsDay = d.getDay(); // 0=Dim..6=Sam
-  const offsetToMonday = ((jsDay + 6) % 7);
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - offsetToMonday);
-  return d;
-}
-
-function nextOccurrence(slot_day, slot_hour, now = new Date()) {
-  if (!FR_DAY_CODES.includes(slot_day)) return null;
-  const mon = mondayOfWeek(now);
-  const idx = codeIndex(slot_day);
-  const start = new Date(mon);
-  start.setDate(mon.getDate() + idx);
-  start.setHours(Number(slot_hour) || 0, 0, 0, 0);
-  if (start <= now) start.setDate(start.getDate() + 7); // semaine suivante si déjà passé
-  return start;
-}
-
-function chunk(arr, size = 10) {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
+async function resolveName(id) {
+  // users direct
+  try { const s = await getDoc(doc(db,'users', id)); if (s.exists()) { const d=s.data(); return d.fullName||d.name||d.displayName||'Élève'; } } catch {}
+  // students
+  try {
+    const st = await getDoc(doc(db, 'students', id));
+    if (st.exists()) { const d=st.data(); return d.full_name||d.name||'Élève'; }
+  } catch {}
+  return 'Élève';
 }
 
 export default function ParentDashboard() {
@@ -46,10 +36,12 @@ export default function ParentDashboard() {
   const [courses, setCourses] = useState([]);
   const [unpaid, setUnpaid] = useState(0);
   const [notifications, setNotifications] = useState([]);
+  const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map());
+  const [openRowId, setOpenRowId] = useState(null);
 
   const userId = auth.currentUser?.uid;
 
-  // 🔔 Notifications LIVE
+  // 🔔 Notifications LIVE + auto-clean paiement
   useEffect(() => {
     if (!userId) return;
     const qNotif = query(
@@ -57,16 +49,17 @@ export default function ParentDashboard() {
       where('user_id', '==', userId),
       orderBy('created_at', 'desc')
     );
-    const unsub = onSnapshot(qNotif, snap => {
+    const unsub = onSnapshot(qNotif, async snap => {
       setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      await autoClearPaymentDueNotifications(userId);
     });
+    autoClearPaymentDueNotifications(userId).catch(() => {});
     return () => unsub();
   }, [userId]);
 
   useEffect(() => {
     if (!userId) return;
     (async () => {
-      // 👧 Enfants
       const kidsSnap = await getDocs(
         query(collection(db, 'students'), where('parent_id', '==', userId))
       );
@@ -79,31 +72,82 @@ export default function ParentDashboard() {
         return;
       }
 
-      // 📚 Leçons des enfants (where in par lots de 10)
       const kidIds = kids.map(k => k.id);
-      const batches = chunk(kidIds, 10);
       let allLessons = [];
-      for (const ids of batches) {
+
+      // Leçons individuelles
+      for (const ids of chunk(kidIds, 10)) {
         const qLessons = query(collection(db, 'lessons'), where('student_id', 'in', ids));
         const snap = await getDocs(qLessons);
         allLessons = allLessons.concat(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       }
+      // Leçons groupées (participant)
+      for (const ids of chunk(kidIds, 10)) {
+        const qLessonsGrp = query(collection(db, 'lessons'), where('participant_ids', 'array-contains-any', ids));
+        const snap = await getDocs(qLessonsGrp);
+        allLessons = allLessons.concat(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      }
 
-      // 💳 Paiements en attente
-      setUnpaid(allLessons.filter(l => !l.is_paid).length);
+      // dédup
+      const seen = new Set();
+      const lessons = [];
+      for (const l of allLessons) {
+        if (seen.has(l.id)) continue;
+        seen.add(l.id);
+        lessons.push(l);
+      }
 
-      // 🗓️ Enrichir avec startAt (prochaine occurrence à partir de slot_day/slot_hour)
+      // startAt pour affichage
       const now = new Date();
-      const enriched = allLessons
+      const enriched = lessons
         .filter(l => l.slot_day && (l.slot_hour !== undefined))
         .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
-        .filter(l => l.startAt); // garde uniquement ceux mappables
-
+        .filter(l => l.startAt);
       setCourses(enriched);
+
+      // Compteur "à régler" (par enfant)
+      const unpaidCount = lessons.reduce((acc, l) => {
+        if (l.is_group) {
+          const map = l.participantsMap || {};
+          const anyChildUnpaid = kidIds.some((cid) => {
+            const entry = map[cid];
+            return entry && !(entry.is_paid || entry.paid_at);
+          });
+          return acc + (anyChildUnpaid ? 1 : 0);
+        }
+        // individuel
+        if (kidIds.includes(l.student_id)) {
+          return acc + (l.is_paid || l.paid_at ? 0 : 1);
+        }
+        return acc;
+      }, 0);
+      setUnpaid(unpaidCount);
+
+      // Noms pour bouton 👥
+      const idSet = new Set();
+      lessons.forEach(l => {
+        if (l.is_group) {
+          (Array.isArray(l.participant_ids) ? l.participant_ids : []).forEach(id => id && idSet.add(id));
+          if (l.student_id) idSet.add(l.student_id);
+        }
+      });
+      const pairs = await Promise.all(Array.from(idSet).map(async (id) => [id, await resolveName(id)]));
+      const idToName = new Map(pairs);
+      const gMap = new Map();
+      lessons.forEach(l => {
+        if (!l.is_group) return;
+        const idsForLesson = [
+          ...(Array.isArray(l.participant_ids) ? l.participant_ids : []),
+          ...(l.student_id ? [l.student_id] : []),
+        ];
+        const uniq = Array.from(new Set(idsForLesson));
+        gMap.set(l.id, uniq.map(id => idToName.get(id) || 'Élève'));
+      });
+      setGroupNamesByLesson(gMap);
     })();
   }, [userId]);
 
-  // 🎯 Prochains cours (confirmés et futurs), limités à 5
+  // Prochains cours confirmés (quelques-uns)
   const upcoming = useMemo(() => {
     const now = new Date();
     return courses
@@ -111,17 +155,18 @@ export default function ParentDashboard() {
       .sort((a, b) => a.startAt - b.startAt)
       .slice(0, 5)
       .map(l => {
-        const child = children.find(k => k.id === l.student_id);
-        const childName = child?.full_name || child?.fullName || child?.name || 'Enfant';
         const datePart = l.startAt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
         const timePart = l.startAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        const who = l.is_group ? 'Groupe' : 'Cours';
         return {
           id: l.id,
-          name: childName,
-          info: `${l.subject_id || 'Cours'} — ${datePart} ${timePart}`,
+          info: `${l.subject_id || 'Cours'} — ${datePart} ${timePart} — ${who}`,
+          isGroup: !!l.is_group
         };
       });
-  }, [courses, children]);
+  }, [courses]);
+
+  const nextOne = upcoming[0] || null;
 
   return (
     <DashboardLayout role="parent">
@@ -148,10 +193,34 @@ export default function ParentDashboard() {
         <div className="bg-white rounded-xl shadow p-6 border-l-4 border-yellow-400 flex flex-col items-start">
           <span className="text-3xl mb-2">📅</span>
           <span className="text-xl font-bold text-yellow-600">Prochains cours</span>
-          <ul className="text-gray-700 mt-1">
-            {upcoming.length === 0 && <li>Aucun cours à venir.</li>}
+          <ul className="text-gray-700 mt-1 space-y-1">
+            {upcoming.length === 0 && <li>Aucun cours confirmé à venir.</li>}
             {upcoming.map((c) => (
-              <li key={c.id}>{c.name} : {c.info}</li>
+              <li key={c.id} className="flex items-start justify-between gap-2">
+                <div>{c.info}</div>
+                {c.isGroup && (
+                  <div className="relative">
+                    <button
+                      onClick={() => setOpenRowId(openRowId === c.id ? null : c.id)}
+                      className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100"
+                    >
+                      👥 Participants
+                    </button>
+                    {openRowId === c.id && (
+                      <div className="absolute right-0 mt-2 bg-white border rounded-lg shadow p-3 w-72 z-10">
+                        <div className="text-xs font-semibold mb-1">Élèves du groupe</div>
+                        {(groupNamesByLesson.get(c.id) || []).length ? (
+                          <ul className="text-sm text-gray-700 list-disc pl-4 space-y-1">
+                            {(groupNamesByLesson.get(c.id) || []).map((nm, i) => <li key={i}>{nm}</li>)}
+                          </ul>
+                        ) : (
+                          <div className="text-xs text-gray-500">Aucun participant.</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </li>
             ))}
           </ul>
         </div>
@@ -159,8 +228,37 @@ export default function ParentDashboard() {
         <div className="bg-white rounded-xl shadow p-6 border-l-4 border-secondary flex flex-col items-start">
           <span className="text-3xl mb-2">💳</span>
           <span className="text-xl font-bold text-secondary">Paiements à régler</span>
-          <span className="text-gray-700 mt-1">{unpaid} en attente</span>
+          <span className="text-gray-700 mt-1">{unpaid} cours à régler</span>
         </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow p-5 mb-6">
+        <h3 className="font-bold text-primary mb-2">Prochain cours</h3>
+        <div className="text-gray-700">
+          {nextOne ? nextOne.info : 'Aucun cours confirmé à venir'}
+        </div>
+        {nextOne?.isGroup && (
+          <div className="mt-3">
+            <button
+              onClick={() => setOpenRowId(openRowId === nextOne.id ? null : nextOne.id)}
+              className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100"
+            >
+              👥 Participants
+            </button>
+            {openRowId === nextOne.id && (
+              <div className="mt-2 bg-white border rounded-lg shadow p-3 w-72">
+                <div className="text-xs font-semibold mb-1">Élèves du groupe</div>
+                {(groupNamesByLesson.get(nextOne.id) || []).length ? (
+                  <ul className="text-sm text-gray-700 list-disc pl-4 space-y-1">
+                    {(groupNamesByLesson.get(nextOne.id) || []).map((nm, i) => <li key={i}>{nm}</li>)}
+                  </ul>
+                ) : (
+                  <div className="text-xs text-gray-500">Aucun participant.</div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow p-5">

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import { auth, db } from '../lib/firebase';
 import {
@@ -15,6 +15,7 @@ import {
   limit,
 } from 'firebase/firestore';
 import NotifList from '../components/NotifList';
+import { autoClearPaymentDueNotifications } from '../lib/paymentNotifications';
 
 // ---------- Helpers temps ----------
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -36,22 +37,17 @@ function nextOccurrence(slot_day, slot_hour, now = new Date()) {
   const start = new Date(mon);
   start.setDate(mon.getDate() + idx);
   start.setHours(Number(slot_hour) || 0, 0, 0, 0);
-  // si l'horaire de cette semaine est déjà passé, prendre la semaine suivante
-  if (start <= now) {
-    start.setDate(start.getDate() + 7);
-  }
+  if (start <= now) start.setDate(start.getDate() + 7);
   return start;
 }
 
-// ---------- Helpers data ----------
+// ---------- Fetch helpers ----------
 async function fetchUserProfile(uid) {
   if (!uid) return null;
-  // users/{uid}
   try {
     const s = await getDoc(doc(db, 'users', uid));
     if (s.exists()) return { id: uid, ...s.data() };
   } catch {}
-  // where uid == <uid>
   try {
     const q = query(collection(db, 'users'), where('uid', '==', uid), limit(1));
     const snap = await getDocs(q);
@@ -62,18 +58,53 @@ async function fetchUserProfile(uid) {
   } catch {}
   return null;
 }
+async function resolveNamesForParticipants(lessons) {
+  const setIds = new Set();
+  lessons.forEach(l => {
+    if (l.student_id) setIds.add(l.student_id);
+    if (l.is_group && Array.isArray(l.participant_ids)) l.participant_ids.forEach(id => id && setIds.add(id));
+  });
+  const ids = Array.from(setIds);
+  const map = new Map();
+  for (const id of ids) {
+    // users d'abord
+    let nm = null;
+    try {
+      const s = await getDoc(doc(db, 'users', id));
+      if (s.exists()) {
+        const d = s.data();
+        nm = d.fullName || d.name || d.displayName;
+      }
+    } catch {}
+    if (!nm) {
+      try {
+        const s = await getDoc(doc(db, 'students', id));
+        if (s.exists()) {
+          const d = s.data();
+          nm = d.full_name || d.name;
+        }
+      } catch {}
+    }
+    map.set(id, nm || 'Élève');
+  }
+  return map;
+}
 
 export default function StudentDashboard() {
   const [nextCourse, setNextCourse] = useState(null);
-  const [recentTeachers, setRecentTeachers] = useState([]); // profs rencontrés récemment (pour choisir favoris)
-  const [favoriteTeachers, setFavoriteTeachers] = useState([]); // profils des favoris
-  const [favoriteIds, setFavoriteIds] = useState(new Set()); // set d'UID prof favoris
+  const [confirmedList, setConfirmedList] = useState([]);
+  const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map());
+  const [openRowId, setOpenRowId] = useState(null);
+
+  const [recentTeachers, setRecentTeachers] = useState([]);
+  const [favoriteTeachers, setFavoriteTeachers] = useState([]);
+  const [favoriteIds, setFavoriteIds] = useState(new Set());
   const [totalCourses, setTotalCourses] = useState(0);
   const [notifications, setNotifications] = useState([]);
 
   const userId = auth.currentUser?.uid;
 
-  // -------- Notifications (LIVE) --------
+  // 🔔 Notifications (LIVE) + auto-clean paiement
   useEffect(() => {
     if (!userId) return;
     const notifQ = query(
@@ -81,13 +112,17 @@ export default function StudentDashboard() {
       where('user_id', '==', userId),
       orderBy('created_at', 'desc')
     );
-    const unsub = onSnapshot(notifQ, (snapshot) => {
+    const unsub = onSnapshot(notifQ, async (snapshot) => {
       setNotifications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      // nettoyage silencieux des "payment_due" devenues obsolètes
+      await autoClearPaymentDueNotifications(userId);
     });
+    // premier passage: clean
+    autoClearPaymentDueNotifications(userId).catch(() => {});
     return () => unsub();
   }, [userId]);
 
-  // -------- Favoris: chargement --------
+  // -------- Favoris --------
   useEffect(() => {
     if (!userId) return;
     (async () => {
@@ -95,66 +130,9 @@ export default function StudentDashboard() {
       const ids = favSnap.docs.map(d => d.data().teacher_id).filter(Boolean);
       setFavoriteIds(new Set(ids));
 
-      // charger profils des favoris
       const profiles = await Promise.all(ids.map(uid => fetchUserProfile(uid)));
       setFavoriteTeachers(
         profiles
-          .filter(Boolean)
-          .map(p => ({
-            uid: p.uid || p.id,
-            name: p.fullName || p.name || p.displayName || 'Professeur',
-            avatar: p.avatarUrl || p.avatar_url || p.photoURL || '',
-            subjects: p.subjects || '',
-          }))
-      );
-    })();
-  }, [userId]);
-
-  // -------- Cours / Prochain cours / Profs rencontrés --------
-  useEffect(() => {
-    if (!userId) return;
-    (async () => {
-      // 1) Tous les cours de l'élève
-      const lessonsSnap = await getDocs(query(
-        collection(db, 'lessons'),
-        where('student_id', '==', userId)
-      ));
-      const lessons = lessonsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setTotalCourses(lessons.length);
-
-      // 2) Calcul du prochain cours (confirmed & futur) avec slot_day/slot_hour
-      const now = new Date();
-      const enriched = lessons
-        .filter(l => l.status === 'confirmed' && FR_DAY_CODES.includes(l.slot_day))
-        .map(l => ({
-          ...l,
-          startAt: nextOccurrence(l.slot_day, l.slot_hour, now),
-        }))
-        .filter(l => l.startAt && l.startAt > now)
-        .sort((a, b) => a.startAt - b.startAt);
-
-      let nextCourseWithProf = null;
-      if (enriched[0]) {
-        const t = await fetchUserProfile(enriched[0].teacher_id);
-        nextCourseWithProf = {
-          ...enriched[0],
-          teacherName: t?.fullName || t?.name || t?.displayName || enriched[0].teacher_id,
-        };
-      }
-      setNextCourse(nextCourseWithProf);
-
-      // 3) Profs rencontrés récemment (sur base des cours triés par proximité temporelle)
-      const uniqueTeacherIds = Array.from(
-        new Set(
-          enriched
-            .map(l => l.teacher_id)
-            .concat(lessons.map(l => l.teacher_id)) // fallback si pas de confirmed à venir
-        )
-      ).slice(0, 5);
-
-      const teacherProfiles = await Promise.all(uniqueTeacherIds.map(uid => fetchUserProfile(uid)));
-      setRecentTeachers(
-        teacherProfiles
           .filter(Boolean)
           .map(p => ({
             uid: p.uid || p.id,
@@ -166,6 +144,90 @@ export default function StudentDashboard() {
     })();
   }, [userId]);
 
+  // -------- Cours / Prochain cours (incl. groupes) --------
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      // Individuels (legacy)
+      const snapSolo = await getDocs(query(
+        collection(db, 'lessons'),
+        where('student_id', '==', userId)
+      ));
+      // Groupes où je suis participant
+      const snapGroup = await getDocs(query(
+        collection(db, 'lessons'),
+        where('participant_ids', 'array-contains', userId)
+      ));
+      const lessons = [...snapSolo.docs, ...snapGroup.docs]
+        .map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // dédup
+      const seen = new Set();
+      const allLessons = [];
+      for (const l of lessons) {
+        if (seen.has(l.id)) continue;
+        seen.add(l.id);
+        allLessons.push(l);
+      }
+
+      setTotalCourses(allLessons.length);
+
+      // Prochain confirmé
+      const now = new Date();
+      const enriched = allLessons
+        .filter(l => l.status === 'confirmed' && FR_DAY_CODES.includes(l.slot_day))
+        .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
+        .filter(l => l.startAt && l.startAt > now)
+        .sort((a, b) => a.startAt - b.startAt);
+
+      let nextCourseWithProf = null;
+      if (enriched[0]) {
+        const t = await fetchUserProfile(enriched[0].teacher_id);
+        nextCourseWithProf = {
+          ...enriched[0],
+          teacherName: t?.fullName || t?.name || t?.displayName || 'Professeur',
+        };
+      }
+      setNextCourse(nextCourseWithProf);
+
+      // Liste confirmés (pour le bouton 👥)
+      const confirmed = allLessons
+        .filter(l => l.status === 'confirmed' && FR_DAY_CODES.includes(l.slot_day))
+        .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
+        .filter(l => l.startAt)
+        .sort((a, b) => a.startAt - b.startAt);
+
+      setConfirmedList(confirmed);
+
+      // Noms pour les groupes
+      const namesMap = await resolveNamesForParticipants(confirmed);
+      const gMap = new Map();
+      confirmed.forEach(l => {
+        if (!l.is_group) return;
+        const ids = [
+          ...(Array.isArray(l.participant_ids) ? l.participant_ids : []),
+          ...(l.student_id ? [l.student_id] : []),
+        ];
+        const uniq = Array.from(new Set(ids));
+        gMap.set(l.id, uniq.map(id => namesMap.get(id) || 'Élève'));
+      });
+      setGroupNamesByLesson(gMap);
+
+      // Profs récents (sur base des confirmés/sinon tous)
+      const base = confirmed.length ? confirmed : allLessons;
+      const uniqueTeacherIds = Array.from(new Set(base.map(l => l.teacher_id))).slice(0, 5);
+      const tProfiles = await Promise.all(uniqueTeacherIds.map(uid => fetchUserProfile(uid)));
+      setRecentTeachers(
+        tProfiles.filter(Boolean).map(p => ({
+          uid: p.uid || p.id,
+          name: p.fullName || p.name || p.displayName || 'Professeur',
+          avatar: p.avatarUrl || p.avatar_url || p.photoURL || '',
+          subjects: Array.isArray(p.subjects) ? p.subjects.join(', ') : (p.subjects || ''),
+        }))
+      );
+    })();
+  }, [userId]);
+
   // -------- Toggle favori --------
   const toggleFavorite = async (teacherUid) => {
     if (!userId || !teacherUid) return;
@@ -173,14 +235,12 @@ export default function StudentDashboard() {
     const isFav = favoriteIds.has(teacherUid);
 
     if (isFav) {
-      // retirer
       await deleteDoc(doc(db, 'favorites', key)).catch(() => {});
       const next = new Set(favoriteIds);
       next.delete(teacherUid);
       setFavoriteIds(next);
       setFavoriteTeachers(prev => prev.filter(p => p.uid !== teacherUid));
     } else {
-      // ajouter
       await setDoc(doc(db, 'favorites', key), {
         user_id: userId,
         teacher_id: teacherUid,
@@ -219,10 +279,13 @@ export default function StudentDashboard() {
   };
 
   const ProchainCoursText = useMemo(() => {
-    if (!nextCourse) return 'Aucun cours à venir';
+    if (!nextCourse) return 'Aucun cours confirmé à venir';
     const datePart = nextCourse.startAt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
     const timePart = nextCourse.startAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-    return `${nextCourse.subject_id || 'Cours'} - ${datePart} ${timePart} avec ${nextCourse.teacherName}`;
+    const who = nextCourse.is_group
+      ? 'Groupe'
+      : 'Cours';
+    return `${who} ${nextCourse.subject_id ? `(${nextCourse.subject_id}) ` : ''}- ${datePart} ${timePart} avec ${nextCourse.teacherName}`;
   }, [nextCourse]);
 
   return (
@@ -243,14 +306,34 @@ export default function StudentDashboard() {
           <span className="text-gray-700 mt-1">
             {ProchainCoursText}
           </span>
+          {nextCourse?.is_group && (
+            <div className="mt-3">
+              <button
+                onClick={() => setOpenRowId(openRowId === nextCourse.id ? null : nextCourse.id)}
+                className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100"
+              >
+                👥 Participants
+              </button>
+              {openRowId === nextCourse.id && (
+                <div className="mt-2 bg-white border rounded-lg shadow p-3 w-72">
+                  <div className="text-xs font-semibold mb-1">Élèves du groupe</div>
+                  {(groupNamesByLesson.get(nextCourse.id) || []).length ? (
+                    <ul className="text-sm text-gray-700 list-disc pl-4 space-y-1">
+                      {(groupNamesByLesson.get(nextCourse.id) || []).map((nm, i) => <li key={i}>{nm}</li>)}
+                    </ul>
+                  ) : (
+                    <div className="text-xs text-gray-500">Aucun participant.</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Profs favoris (sélectionnable) */}
+        {/* Profs favoris */}
         <div className="bg-white rounded-xl shadow p-6 border-l-4 border-yellow-400 flex flex-col items-start">
           <span className="text-3xl mb-2">👨‍🏫</span>
           <span className="text-xl font-bold text-yellow-600">Profs favoris</span>
-
-          {/* Liste des favoris actuels */}
           <ul className="text-gray-700 mt-2 w-full">
             {favoriteTeachers.length === 0 && <li className="text-gray-500">Aucun favori pour l’instant.</li>}
             {favoriteTeachers.map((p) => (
@@ -263,8 +346,6 @@ export default function StudentDashboard() {
               </li>
             ))}
           </ul>
-
-          {/* Choisir parmi les profs récents */}
           <div className="mt-4 w-full">
             <div className="text-sm text-gray-500 mb-1">Récemment contactés</div>
             <ul className="space-y-1">
@@ -282,7 +363,7 @@ export default function StudentDashboard() {
           </div>
         </div>
 
-        {/* Stats rapides */}
+        {/* Stats */}
         <div className="bg-white rounded-xl shadow p-6 border-l-4 border-secondary flex flex-col items-start">
           <span className="text-3xl mb-2">📚</span>
           <span className="text-xl font-bold text-secondary">Cours suivis</span>
@@ -290,7 +371,48 @@ export default function StudentDashboard() {
         </div>
       </div>
 
+      {/* Liste des cours confirmés (avec bouton 👥) */}
       <div className="bg-white rounded-xl shadow p-5">
+        <h3 className="font-bold text-primary mb-3">Cours confirmés</h3>
+        <ul className="text-gray-700 space-y-2">
+          {confirmedList.length === 0 && <li>Aucun cours confirmé pour le moment.</li>}
+          {confirmedList.map((l) => {
+            const isGroup = !!l.is_group;
+            const size = (Array.isArray(l.participant_ids) ? l.participant_ids.length : 0) + (l.student_id ? 1 : 0);
+            const cap = l.capacity || (isGroup ? size : 1);
+            const labelBase = `${l.subject_id || 'Cours'} — ${l.slot_day} ${String(l.slot_hour).padStart(2,'0')}h`;
+            return (
+              <li key={l.id} className="flex items-start justify-between gap-2">
+                <div>📅 {labelBase} {isGroup ? `— Groupe (${size}/${cap})` : null}</div>
+                {isGroup && (
+                  <div className="relative">
+                    <button
+                      onClick={() => setOpenRowId(openRowId === l.id ? null : l.id)}
+                      className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100"
+                    >
+                      👥 Participants
+                    </button>
+                    {openRowId === l.id && (
+                      <div className="absolute right-0 mt-2 bg-white border rounded-lg shadow p-3 w-72 z-10">
+                        <div className="text-xs font-semibold mb-1">Élèves du groupe</div>
+                        {(groupNamesByLesson.get(l.id) || []).length ? (
+                          <ul className="text-sm text-gray-700 list-disc pl-4 space-y-1">
+                            {(groupNamesByLesson.get(l.id) || []).map((nm, i) => <li key={i}>{nm}</li>)}
+                          </ul>
+                        ) : (
+                          <div className="text-xs text-gray-500">Aucun participant.</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
+      <div className="bg-white rounded-xl shadow p-5 mt-6">
         <h3 className="font-bold text-primary mb-3">Notifications</h3>
         <NotifList notifications={notifications} />
       </div>

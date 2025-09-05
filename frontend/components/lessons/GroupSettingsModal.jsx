@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { db } from '../../lib/firebase';
 import {
   collection,
-  collectionGroup,
   doc,
   getDoc,
   getDocs,
@@ -15,46 +14,28 @@ import {
   arrayUnion,
   arrayRemove,
   deleteField,
+  addDoc,
 } from 'firebase/firestore';
 
-/* ==========================
-   Recherche unifiée d'élèves par NOM
-   PRIORITÉ: students (car chez toi les enfants y sont enregistrés)
-   - Couvre plusieurs clés de nom possibles (full_name, name, fullName, displayName, first_name+last_name)
-   - Normalise sans accents (lc)
-   - Fallbacks si index absents
-   - users/children gardés “au cas où”
-   ========================== */
-function lc(s) {
-  return (s || '')
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-    .trim();
-}
+// --- utils nom ---
+const lc = (s) => (s || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
+const pickStudentName = (x) =>
+  x.full_name ||
+  x.name ||
+  x.fullName ||
+  x.displayName ||
+  [x.first_name, x.last_name].filter(Boolean).join(' ') ||
+  (x.profile && (x.profile.full_name || x.profile.name)) ||
+  'Sans nom';
 
-// Récupère un "nom affichable" quel que soit le schéma
-function pickStudentName(x) {
-  return (
-    x.full_name ||
-    x.name ||
-    x.fullName ||
-    x.displayName ||
-    [x.first_name, x.last_name].filter(Boolean).join(' ') ||
-    (x.profile && (x.profile.full_name || x.profile.name)) ||
-    ''
-  );
-}
-
+// --- recherche par nom (priorité students) ---
 async function searchStudentsByName(termRaw) {
   const term = lc(termRaw);
   if (!term) return [];
-
   const MAX = 12;
   const results = [];
 
-  /* ---------- A) STUDENTS (PRIORITÉ) ---------- */
-  // 1) Essai indexé sur full_name_lc (si tu l’as matérialisé)
+  // students (fallbacks inclus)
   try {
     const qs = query(
       collection(db, 'students'),
@@ -65,143 +46,52 @@ async function searchStudentsByName(termRaw) {
     const snap = await getDocs(qs);
     snap.forEach((d) => {
       const x = d.data();
-      const name = pickStudentName(x) || 'Sans nom';
-      results.push({ id: d.id, name, source: 'students' });
+      results.push({ id: d.id, name: pickStudentName(x), source: 'students' });
     });
-  } catch {}
-
-  // 2) Si pas assez de résultats, on tente d'autres clés indexées classiques
-  if (results.length < MAX) {
-    const tryOrderKeys = ['full_name', 'name', 'last_name', 'created_at', '__name__'];
-    for (const key of tryOrderKeys) {
+  } catch {
+    const tryKeys = ['full_name', 'name', 'last_name', 'created_at', '__name__'];
+    for (const k of tryKeys) {
       if (results.length >= MAX) break;
       try {
-        const qs = query(collection(db, 'students'), orderBy(key), limit(250));
+        const qs = query(collection(db, 'students'), orderBy(k), limit(200));
         const snap = await getDocs(qs);
         snap.forEach((d) => {
           const x = d.data();
-          const cand = pickStudentName(x);
-          if (!cand) return;
-          if (lc(cand).includes(term)) {
-            results.push({ id: d.id, name: cand, source: `students(${key})` });
-          }
-        });
-      } catch {
-        // ignore si l'index n'existe pas
-      }
-    }
-  }
-
-  // 3) Dernier fallback "scan" limité si toujours trop peu (sécurité)
-  if (results.length < Math.min(4, MAX)) {
-    try {
-      const qs = query(collection(db, 'students'), limit(400));
-      const snap = await getDocs(qs);
-      snap.forEach((d) => {
-        const x = d.data();
-        const cand = pickStudentName(x);
-        if (!cand) return;
-        if (lc(cand).includes(term)) {
-          results.push({ id: d.id, name: cand, source: 'students(scan)' });
-        }
-      });
-    } catch {}
-  }
-
-  /* ---------- B) USERS (élèves autonomes) — au cas où ---------- */
-  if (results.length < MAX) {
-    try {
-      const qu = query(collection(db, 'users'), where('role', 'in', ['student', 'child']), limit(200));
-      const snapU = await getDocs(qu);
-      snapU.forEach((d) => {
-        const x = d.data();
-        const display =
-          x.fullName ||
-          x.name ||
-          x.displayName ||
-          (x.profile && (x.profile.full_name || x.profile.name)) ||
-          '';
-        if (lc(display).includes(term)) {
-          results.push({ id: d.id, name: display || 'Sans nom', source: 'users' });
-        }
-      });
-    } catch {
-      try {
-        const qu2 = query(collection(db, 'users'), limit(300));
-        const snapU2 = await getDocs(qu2);
-        snapU2.forEach((d) => {
-          const x = d.data();
-          if (!['student', 'child'].includes(x.role)) return;
-          const display =
-            x.fullName ||
-            x.name ||
-            x.displayName ||
-            (x.profile && (x.profile.full_name || x.profile.name)) ||
-            '';
-          if (lc(display).includes(term)) {
-            results.push({ id: d.id, name: display || 'Sans nom', source: 'users(scan)' });
-          }
+          const nm = pickStudentName(x);
+          if (lc(nm).includes(term)) results.push({ id: d.id, name: nm, source: `students(${k})` });
         });
       } catch {}
     }
   }
 
-  /* ---------- C) Sous-collections children (users/{parent}/children) — backup ---------- */
-  if (results.length < MAX) {
-    try {
-      const qc = query(
-        collectionGroup(db, 'children'),
-        where('full_name_lc', '>=', term),
-        where('full_name_lc', '<=', term + '\uf8ff'),
-        limit(MAX)
-      );
-      const snapC = await getDocs(qc);
-      snapC.forEach((d) => {
-        const x = d.data();
-        const name =
-          x.full_name ||
-          x.name ||
-          [x.first_name, x.last_name].filter(Boolean).join(' ') ||
-          (x.profile && (x.profile.full_name || x.profile.name)) ||
-          'Sans nom';
-        const sid = x.student_id || d.id; // si le doc stocke l'id du student, on le préfère
-        if (lc(name).includes(term)) {
-          results.push({ id: sid, name, source: 'users/children' });
-        }
-      });
-    } catch {}
-  }
-
-  /* ---------- Dédup + tri pertinence ---------- */
+  // dedup & tri
   const seen = new Set();
-  const unique = [];
+  const uniq = [];
   for (const r of results) {
     if (seen.has(r.id)) continue;
     seen.add(r.id);
-    unique.push(r);
+    uniq.push(r);
   }
-
-  const withScore = unique.map((x) => {
-    const idx = lc(x.name).indexOf(term);
-    const score = (idx === -1 ? 999 : idx) + lc(x.name).length * 0.01;
-    return { ...x, _score: score };
-  });
-  withScore.sort((a, b) => a._score - b._score);
-
-  return withScore.slice(0, MAX).map(({ _score, ...rest }) => rest);
+  const withScore = uniq.map((x) => ({ ...x, _s: (lc(x.name).indexOf(term) === -1 ? 999 : lc(x.name).indexOf(term)) + lc(x.name).length * 0.01 }));
+  withScore.sort((a, b) => a._s - b._s);
+  return withScore.slice(0, MAX).map(({ _s, ...rest }) => rest);
 }
 
-/* ========== UI utils ========== */
+// --- compteur acceptés ---
+function countAccepted(lesson) {
+  const pm = lesson.participantsMap || {};
+  const ids = Array.isArray(lesson.participant_ids) ? lesson.participant_ids : [];
+  let acc = 0;
+  for (const id of ids) if (pm?.[id]?.status === 'accepted') acc += 1;
+  return acc;
+}
+
 function Chip({ children, onRemove }) {
   return (
     <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-100 text-gray-800 text-sm">
       {children}
       {onRemove && (
-        <button
-          onClick={onRemove}
-          className="ml-1 rounded-full hover:bg-gray-200 px-2 py-0.5"
-          title="Retirer"
-        >
+        <button onClick={onRemove} className="ml-1 rounded-full hover:bg-gray-200 px-2 py-0.5" title="Retirer">
           ✕
         </button>
       )}
@@ -210,19 +100,17 @@ function Chip({ children, onRemove }) {
 }
 
 export default function GroupSettingsModal({ open, onClose, lesson }) {
-  // États
   const [capacity, setCapacity] = useState(lesson?.capacity || 1);
   const [participantIds, setParticipantIds] = useState(lesson?.participant_ids || []);
-  const [participantsMap, setParticipantsMap] = useState(lesson?.participantsMap || {}); // compat
-  const [nameMap, setNameMap] = useState({}); // { id: name }
+  const [participantsMap, setParticipantsMap] = useState(lesson?.participantsMap || {});
+  const [nameMap, setNameMap] = useState({});
 
-  // Recherche
   const [search, setSearch] = useState('');
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const debounceRef = useRef(null);
 
-  // Sync à l'ouverture + MIGRATION LEGACY
+  // charge noms + normalise legacy
   useEffect(() => {
     if (!open || !lesson) return;
 
@@ -232,106 +120,29 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
 
     (async () => {
       const nm = {};
-
-      // Migration legacy : basculer student_id -> participants si besoin
-      try {
-        if (lesson.is_group && lesson.student_id && !lesson.participant_ids?.includes(lesson.student_id)) {
-          const legacyId = lesson.student_id;
-
-          // 1) Nom pour UI
-          let legacyName = legacyId;
-          try {
-            const s = await getDoc(doc(db, 'students', legacyId));
-            if (s.exists()) {
-              const d = s.data();
-              legacyName = pickStudentName(d) || legacyId;
-            } else {
-              const u = await getDoc(doc(db, 'users', legacyId));
-              if (u.exists()) {
-                const d = u.data();
-                legacyName =
-                  d.fullName ||
-                  d.name ||
-                  d.displayName ||
-                  (d.profile && (d.profile.full_name || d.profile.name)) ||
-                  legacyId;
-              }
-            }
-          } catch {}
-
-          // 2) Patch Firestore
-          await updateDoc(doc(db, 'lessons', lesson.id), {
-            participant_ids: arrayUnion(legacyId),
-            [`participantsMap.${legacyId}`]: {
-              parent_id: null,
-              booked_by: lesson.booked_by || null,
-              is_paid: false,
-              paid_by: null,
-              paid_at: null,
-              status: lesson.status || 'booked',
-              added_at: serverTimestamp(),
-            },
-            student_id: null,
-          });
-
-          // 3) Patch UI
-          setParticipantIds((prev) => (prev.includes(legacyId) ? prev : [...prev, legacyId]));
-          setParticipantsMap((prev) => ({
-            ...prev,
-            [legacyId]: {
-              parent_id: null,
-              booked_by: lesson.booked_by || null,
-              is_paid: false,
-              paid_by: null,
-              paid_at: null,
-              status: lesson.status || 'booked',
-              added_at: new Date(),
-            },
-          }));
-          nm[legacyId] = legacyName;
-        }
-      } catch (e) {
-        console.error('Migration legacy group failed:', e);
-      }
-
-      // Précharge les noms des participants actuels
+      // noms
       const ids = Array.isArray(lesson.participant_ids) ? lesson.participant_ids : [];
       for (const id of ids) {
         try {
           const s = await getDoc(doc(db, 'students', id));
-          if (s.exists()) {
-            const d = s.data();
-            nm[id] = pickStudentName(d) || id;
-            continue;
-          }
+          if (s.exists()) { nm[id] = pickStudentName(s.data()); continue; }
         } catch {}
         try {
           const u = await getDoc(doc(db, 'users', id));
-          if (u.exists()) {
-            const d = u.data();
-            nm[id] =
-              d.fullName ||
-              d.name ||
-              d.displayName ||
-              (d.profile && (d.profile.full_name || d.profile.name)) ||
-              id;
-          }
+          if (u.exists()) nm[id] = pickStudentName(u.data());
         } catch {}
+        if (!nm[id]) nm[id] = id;
       }
-
-      setNameMap((prev) => ({ ...prev, ...nm }));
+      setNameMap(nm);
     })();
   }, [open, lesson]);
 
-  // Recherche (debounce)
+  // recherche (debounce)
   useEffect(() => {
     if (!open) return;
-    const term = (search || '').trim();
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (term.length < 2) {
-      setResults([]);
-      return;
-    }
+    const term = (search || '').trim();
+    if (term.length < 2) { setResults([]); return; }
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
       try {
@@ -343,9 +154,10 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     }, 250);
   }, [search, open]);
 
-  const selectedSet = useMemo(() => new Set(participantIds), [participantIds]);
+  const acceptedCount = useMemo(() => countAccepted({ participant_ids: participantIds, participantsMap, capacity }), [participantIds, participantsMap]);
+  const free = Math.max((capacity || 0) - acceptedCount, 0);
 
-  // Actions
+  // actions
   async function saveCapacity() {
     try {
       await updateDoc(doc(db, 'lessons', lesson.id), {
@@ -359,60 +171,112 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     }
   }
 
+  // inviter un élève (statut: invited_student)
   async function addByPick(p) {
     if (!p?.id) return;
-    if (selectedSet.has(p.id)) return alert('Déjà dans la liste.');
-    if (participantIds.length >= (capacity || 1)) return alert('Capacité atteinte.');
+    const id = p.id;
+    if (participantIds.includes(id)) return alert('Déjà présent (même en attente).');
 
     const ref = doc(db, 'lessons', lesson.id);
-
-    const participantPatch = {
+    const patch = {
       parent_id: null,
       booked_by: null,
       is_paid: false,
       paid_by: null,
       paid_at: null,
-      status: 'confirmed',
+      status: 'invited_student', // <<< invitation envoyée, en attente réponse élève
       added_at: serverTimestamp(),
     };
 
     try {
       await updateDoc(ref, {
         is_group: true,
-        participant_ids: arrayUnion(p.id),
-        [`participantsMap.${p.id}`]: participantPatch,
+        participant_ids: arrayUnion(id),
+        [`participantsMap.${id}`]: patch,
       });
 
-      setParticipantIds((prev) => [...prev, p.id]);
-      setParticipantsMap((prev) => ({ ...prev, [p.id]: participantPatch }));
-      setNameMap((prev) => ({ ...prev, [p.id]: p.name }));
+      // notif élève
+      try {
+        await addDoc(collection(db, 'notifications'), {
+          user_id: id,
+          read: false,
+          created_at: serverTimestamp(),
+          type: 'group_invite',
+          lesson_id: lesson.id,
+          message: `Invitation à rejoindre le cours ${lesson.subject_id || ''} (${lesson.slot_day} ${lesson.slot_hour}h)`,
+        });
+      } catch {}
+
+      setParticipantIds((prev) => [...prev, id]);
+      setParticipantsMap((prev) => ({ ...prev, [id]: patch }));
+      setNameMap((prev) => ({ ...prev, [id]: p.name }));
       setSearch('');
       setResults([]);
     } catch (e) {
       console.error(e);
-      alert("Impossible d'ajouter l'élève.");
+      alert("Impossible d'inviter l'élève.");
     }
   }
 
-  async function removeStudent(id) {
-    const ok = window.confirm('Retirer cet élève du cours ?');
-    if (!ok) return;
-    const ref = doc(db, 'lessons', lesson.id);
+  // accepter une DEMANDE (pending_teacher → accepted)
+  async function acceptStudent(id) {
+    const pm = participantsMap || {};
+    const current = pm[id] || {};
+    const newStatus = 'accepted';
+
+    // contrôle capacité (sur acceptés uniquement)
+    const accepted = Object.keys(pm).filter((k) => pm[k]?.status === 'accepted').length;
+    if (accepted >= (capacity || 0)) {
+      alert('Capacité atteinte, impossible d’accepter.');
+      return;
+    }
+
     try {
-      await updateDoc(ref, {
+      await updateDoc(doc(db, 'lessons', lesson.id), {
+        [`participantsMap.${id}.status`]: newStatus,
+      });
+
+      setParticipantsMap((prev) => ({
+        ...prev,
+        [id]: { ...current, status: newStatus },
+      }));
+
+      // notif élève
+      try {
+        await addDoc(collection(db, 'notifications'), {
+          user_id: id,
+          read: false,
+          created_at: serverTimestamp(),
+          type: 'group_request_accepted',
+          lesson_id: lesson.id,
+          message: `Votre participation a été acceptée (${lesson.slot_day} ${lesson.slot_hour}h).`,
+        });
+      } catch {}
+    } catch (e) {
+      console.error(e);
+      alert("Impossible d'accepter.");
+    }
+  }
+
+  // refuser une DEMANDE / annuler une INVITATION (→ remove)
+  async function declineOrRemove(id) {
+    const ok = window.confirm('Retirer cet élève de la liste (invitation/demande incluse) ?');
+    if (!ok) return;
+    try {
+      await updateDoc(doc(db, 'lessons', lesson.id), {
         participant_ids: arrayRemove(id),
         [`participantsMap.${id}`]: deleteField(),
       });
-      setParticipantIds((p) => p.filter((x) => x !== id));
-      setParticipantsMap((m) => {
-        const copy = { ...m };
-        delete copy[id];
-        return copy;
+      setParticipantIds((prev) => prev.filter((x) => x !== id));
+      setParticipantsMap((prev) => {
+        const cp = { ...prev };
+        delete cp[id];
+        return cp;
       });
-      setNameMap((n) => {
-        const copy = { ...n };
-        delete copy[id];
-        return copy;
+      setNameMap((prev) => {
+        const cp = { ...prev };
+        delete cp[id];
+        return cp;
       });
     } catch (e) {
       console.error(e);
@@ -420,8 +284,19 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     }
   }
 
-  const used = participantIds.length;
-  const free = Math.max((capacity || 0) - used, 0);
+  // groupes par statut
+  const groups = useMemo(() => {
+    const g = { accepted: [], pending_teacher: [], invited_student: [], declined: [], other: [] };
+    for (const id of participantIds) {
+      const st = participantsMap?.[id]?.status || 'accepted';
+      if (st === 'accepted') g.accepted.push(id);
+      else if (st === 'pending_teacher') g.pending_teacher.push(id);
+      else if (st === 'invited_student') g.invited_student.push(id);
+      else if (st === 'declined') g.declined.push(id);
+      else g.other.push(id);
+    }
+    return g;
+  }, [participantIds, participantsMap]);
 
   if (!open || !lesson) return null;
 
@@ -433,7 +308,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
         </div>
 
-        <div className="p-5 space-y-5">
+        <div className="p-5 space-y-6">
           {/* Capacité */}
           <div className="flex items-center gap-3">
             <label className="font-medium">Capacité (places max)</label>
@@ -444,21 +319,17 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
               value={capacity}
               onChange={(e) => setCapacity(Number(e.target.value || 1))}
             />
-            <button
-              onClick={saveCapacity}
-              className="bg-gray-800 hover:bg-gray-900 text-white px-3 py-1 rounded"
-            >
+            <button onClick={saveCapacity} className="bg-gray-800 hover:bg-gray-900 text-white px-3 py-1 rounded">
               Enregistrer
             </button>
           </div>
-
           <div className="text-sm text-gray-600">
-            Occupées : <b>{used}</b> / {capacity} — Places libres : <b>{free}</b>
+            Acceptés : <b>{acceptedCount}</b> / {capacity} — Places libres : <b>{Math.max(capacity - acceptedCount, 0)}</b>
           </div>
 
-          {/* Recherche par nom */}
+          {/* Recherche par nom → invitation */}
           <div>
-            <label className="block text-sm font-medium mb-1">Ajouter un élève (par nom)</label>
+            <label className="block text-sm font-medium mb-1">Inviter un élève (par nom)</label>
             <input
               type="text"
               placeholder="Rechercher un élève…"
@@ -471,16 +342,13 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
               <div className="mt-2 border rounded-lg max-h-56 overflow-auto divide-y">
                 {results.map((r) => (
                   <button
-                    key={`${r.source}:${r.id}`}
+                    key={`pick:${r.id}`}
                     className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center justify-between"
                     onClick={() => addByPick(r)}
-                    title={r.source}
-                    disabled={participantIds.length >= (capacity || 1)}
+                    disabled={participantIds.includes(r.id)}
                   >
                     <span>{r.name}</span>
-                    {participantIds.includes(r.id) && (
-                      <span className="text-xs text-green-600">déjà ajouté</span>
-                    )}
+                    {participantIds.includes(r.id) && <span className="text-xs text-green-600">déjà listé</span>}
                   </button>
                 ))}
               </div>
@@ -490,27 +358,67 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
             )}
           </div>
 
-          {/* Participants (noms uniquement) */}
-          <div className="border rounded-lg p-3">
-            <div className="font-medium mb-2">Participants</div>
-            {participantIds.length === 0 ? (
-              <div className="text-gray-500 text-sm">Aucun élève dans ce cours.</div>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {participantIds.map((sid) => (
-                  <Chip key={sid} onRemove={() => removeStudent(sid)}>
-                    {nameMap[sid] || sid}
-                  </Chip>
-                ))}
-              </div>
-            )}
+          {/* Listes par statut */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* En attente de validation PROF */}
+            <div className="border rounded-lg p-3">
+              <div className="font-medium mb-2">Demandes à valider (par vous)</div>
+              {groups.pending_teacher.length === 0 ? (
+                <div className="text-sm text-gray-500">Aucune demande.</div>
+              ) : (
+                <div className="space-y-2">
+                  {groups.pending_teacher.map((id) => (
+                    <div key={`pt:${id}`} className="flex items-center justify-between">
+                      <span>{nameMap[id] || id}</span>
+                      <div className="flex gap-2">
+                        <button className="px-3 py-1 rounded bg-green-600 text-white" onClick={() => acceptStudent(id)}>Accepter</button>
+                        <button className="px-3 py-1 rounded bg-red-600 text-white" onClick={() => declineOrRemove(id)}>Refuser</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Invitations envoyées (en attente côté élève) */}
+            <div className="border rounded-lg p-3">
+              <div className="font-medium mb-2">Invitations envoyées (attente élève)</div>
+              {groups.invited_student.length === 0 ? (
+                <div className="text-sm text-gray-500">Aucune invitation en attente.</div>
+              ) : (
+                <div className="space-y-2">
+                  {groups.invited_student.map((id) => (
+                    <div key={`is:${id}`} className="flex items-center justify-between">
+                      <span>{nameMap[id] || id}</span>
+                      <div className="flex gap-2">
+                        <button className="px-3 py-1 rounded bg-gray-200" onClick={() => declineOrRemove(id)}>Annuler l’invitation</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Acceptés */}
+            <div className="border rounded-lg p-3 md:col-span-2">
+              <div className="font-medium mb-2">Participants (acceptés)</div>
+              {groups.accepted.length === 0 ? (
+                <div className="text-sm text-gray-500">Aucun élève accepté.</div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {groups.accepted.map((sid) => (
+                    <Chip key={`acc:${sid}`} onRemove={() => declineOrRemove(sid)}>
+                      {nameMap[sid] || sid}
+                    </Chip>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
         <div className="p-4 border-t flex justify-end">
-          <button onClick={onClose} className="px-4 py-2 rounded bg-gray-100 hover:bg-gray-200">
-            Fermer
-          </button>
+          <button onClick={onClose} className="px-4 py-2 rounded bg-gray-100 hover:bg-gray-200">Fermer</button>
         </div>
       </div>
     </div>

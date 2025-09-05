@@ -17,227 +17,195 @@ import BookingModal from '../components/BookingModal';
 
 const DAYS_ORDER = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
+// --------- helpers comptage groupe (acceptés uniquement) ----------
+function countAccepted(l) {
+  const pm = l.participantsMap || {};
+  const ids = Array.isArray(l.participant_ids) ? l.participant_ids : [];
+  let accepted = 0;
+  for (const id of ids) {
+    if (pm?.[id]?.status === 'accepted') accepted += 1;
+  }
+  return accepted;
+}
+
 export default function TeacherProfile() {
   const { teacherId } = useParams();
   const navigate = useNavigate();
 
-  // UI / data
   const [teacher, setTeacher] = useState(null);
   const [reviews, setReviews] = useState([]);
-  const [bookedSlots, setBookedSlots] = useState([]); // [{day, hour}]
+  const [bookedSlots, setBookedSlots] = useState([]); // [{day, hour}] (indispos)
   const [showBooking, setShowBooking] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
   const [booked, setBooked] = useState(false);
   const [confirmationMsg, setConfirmationMsg] = useState('');
 
   // Parent flow
-  const [currentRole, setCurrentRole] = useState(null); // 'student' | 'teacher' | 'parent' | null
+  const [currentRole, setCurrentRole] = useState(null); // 'student' | 'teacher' | 'parent'
   const [children, setChildren] = useState([]);
   const [selectedStudentId, setSelectedStudentId] = useState('');
 
-  // -------- Fetch teacher + reviews + busy slots (group-aware)
+  // -------- Fetch teacher + reviews + busy slots (group-aware on ACCEPTED only)
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Teacher
       const snap = await getDoc(doc(db, 'users', teacherId));
-      if (!cancelled && snap.exists()) {
-        setTeacher({ ...snap.data(), id: teacherId });
-      }
+      if (!cancelled && snap.exists()) setTeacher({ ...snap.data(), id: teacherId });
 
-      // Reviews
       const qReviews = query(collection(db, 'reviews'), where('teacher_id', '==', teacherId));
       const rSnap = await getDocs(qReviews);
-      if (!cancelled) {
-        setReviews(rSnap.docs.map((d) => d.data()));
-      }
+      if (!cancelled) setReviews(rSnap.docs.map((d) => d.data()));
 
-      // Lessons pour calculer les créneaux occupés (indiv pleins + groupes pleins)
       const lessonsQ = query(collection(db, 'lessons'), where('teacher_id', '==', teacherId));
       const lessonsSnap = await getDocs(lessonsQ);
 
-      // Regrouper par (day, hour)
-      const bySlot = new Map(); // key "day|hour" -> array of lessons
+      const bySlot = new Map();
       lessonsSnap.docs.forEach((docu) => {
         const l = docu.data();
         const noHour = l.slot_hour === null || l.slot_hour === undefined;
         if (!l.slot_day || noHour) return;
-        // les créneaux pris en compte pour le "busy" sont ceux où il y a des demandes en cours ou confirmées
-        if (!(l.status === 'booked' || l.status === 'confirmed')) return;
 
-        const key = `${l.slot_day}|${String(l.slot_hour)}`;
-        if (!bySlot.has(key)) bySlot.set(key, []);
-        bySlot.get(key).push(l);
+        // On considère “occupé” uniquement si:
+        // - cours individuel confirmé (status === 'confirmed')
+        // - groupe où accepted >= capacity
+        if (!l.is_group) {
+          if (l.status === 'confirmed') {
+            const key = `${l.slot_day}|${String(l.slot_hour)}`;
+            bySlot.set(key, true);
+          }
+        } else {
+          const cap = Number(l.capacity || 0);
+          const accepted = countAccepted(l);
+          if (cap > 0 && accepted >= cap) {
+            const key = `${l.slot_day}|${String(l.slot_hour)}`;
+            bySlot.set(key, true);
+          }
+        }
       });
 
-      // Un créneau est occupé si:
-      // - il y a un cours non-groupé (is_group !== true)
-      // - OU il existe un cours groupé used >= capacity
-      //    (used = nombre de participants + éventuel student_id legacy)
-      const busy = [];
-      for (const [key, arr] of bySlot.entries()) {
-        const [day, hourStr] = key.split('|');
-        const hour = Number(hourStr);
-
-        const hasSingle = arr.some((l) => !l.is_group);
-        if (hasSingle) {
-          busy.push({ day, hour });
-          continue;
-        }
-
-        const groupFull = arr.some((l) => {
-          const cap = Number(l.capacity || 0);
-          const partCount = Array.isArray(l.participant_ids) ? l.participant_ids.length : 0;
-          const legacyCount = l.student_id ? 1 : 0;
-          const used = partCount + legacyCount;
-          return cap > 0 && used >= cap;
-        });
-
-        if (groupFull) {
-          busy.push({ day, hour });
-        }
-      }
-
       if (!cancelled) {
+        const busy = Array.from(bySlot.keys()).map((k) => {
+          const [day, hourStr] = k.split('|');
+          return { day, hour: Number(hourStr) };
+        });
         setBookedSlots(busy);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [teacherId]);
 
-  // -------- Fetch current user role + children when logged in
+  // -------- Fetch role + enfants
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const me = auth.currentUser;
       if (!me) return;
 
-      // role
       try {
         const meSnap = await getDoc(doc(db, 'users', me.uid));
         const role = meSnap.exists() ? meSnap.data()?.role : null;
         if (!cancelled) setCurrentRole(role || null);
-      } catch {
-        if (!cancelled) setCurrentRole(null);
-      }
+      } catch { if (!cancelled) setCurrentRole(null); }
 
-      // children (if parent) depuis students (parent_id == me.uid)
       try {
         const kidsQ = query(collection(db, 'students'), where('parent_id', '==', me.uid));
         const kidsSnap = await getDocs(kidsQ);
         const kids = kidsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
         if (!cancelled) setChildren(kids);
-      } catch {
-        if (!cancelled) setChildren([]);
-      }
+      } catch { if (!cancelled) setChildren([]); }
 
-      // default selected student id = soi-même par défaut
       if (!cancelled) setSelectedStudentId((prev) => prev || me.uid);
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
-  // -------- Derived values
   const avgRating = useMemo(() => {
     if (!reviews.length) return null;
     const sum = reviews.reduce((acc, r) => acc + (r.rating || 0), 0);
     return (sum / reviews.length).toFixed(1);
   }, [reviews]);
 
-  const isParent = currentRole === 'parent';
   const meUid = auth.currentUser?.uid;
+  const isParent = currentRole === 'parent';
 
-  // -------- Booking (group-aware + parent flux)
+  // -------- Booking (group-aware + parent flux + approbations)
   const handleBookingSlot = async (slot) => {
     if (!auth.currentUser) return navigate('/login');
 
     const me = auth.currentUser;
-    const targetStudentId = selectedStudentId || me.uid; // si parent n’a rien choisi, c’est lui-même
+    const targetStudentId = selectedStudentId || me.uid;
     const bookingFor = isParent && targetStudentId !== me.uid ? 'child' : 'self';
 
     setIsBooking(true);
     setConfirmationMsg('');
     try {
-      // 1) Essayer de rejoindre un groupe existant non plein (booked/confirmed)
+      // 1) Tenter de rejoindre un groupe existant: créer une DEMANDE (status participant = 'pending_teacher')
       const qExisting = query(
         collection(db, 'lessons'),
         where('teacher_id', '==', teacherId),
         where('slot_day', '==', slot.day),
         where('slot_hour', '==', slot.hour),
-        where('status', 'in', ['booked', 'confirmed'])
+        where('is_group', '==', true)
       );
       const existSnap = await getDocs(qExisting);
 
-      let joinedGroup = false;
+      let createdRequest = false;
       for (const d of existSnap.docs) {
         const l = d.data();
-        if (l.is_group) {
-          const capacity = Number(l.capacity || 0);
-          const current = Array.isArray(l.participant_ids) ? l.participant_ids : [];
-          const legacyCount = l.student_id ? 1 : 0;
-          const used = current.length + legacyCount;
+        const pm = l.participantsMap || {};
+        const current = Array.isArray(l.participant_ids) ? l.participant_ids : [];
 
-          // déjà présent ?
-          if (current.includes(targetStudentId) || l.student_id === targetStudentId) {
-            setBooked(true);
-            setShowBooking(false);
-            setConfirmationMsg(`Vous êtes déjà inscrit(e) sur ce créneau ${slot.day} ${slot.hour}h.`);
-            joinedGroup = true;
-            break;
-          }
-
-          if (capacity > 0 && used < capacity) {
-            const ref = doc(db, 'lessons', d.id);
-            const updatePayload = {
-              participant_ids: arrayUnion(targetStudentId),
-              [`participantsMap.${targetStudentId}`]: {
-                parent_id: bookingFor === 'child' ? me.uid : null,
-                booked_by: me.uid,
-                is_paid: false,
-                paid_by: null,
-                paid_at: null,
-                status: 'booked',
-                added_at: serverTimestamp(),
-              },
-            };
-
-            // Migration legacy : si student_id est encore utilisé, on le bascule aussi
-            if (l.student_id && !current.includes(l.student_id)) {
-              updatePayload.participant_ids = arrayUnion(targetStudentId, l.student_id);
-              updatePayload[`participantsMap.${l.student_id}`] = {
-                parent_id: null,
-                booked_by: l.booked_by || null,
-                is_paid: false,
-                paid_by: null,
-                paid_at: null,
-                status: l.status || 'booked',
-                added_at: serverTimestamp(),
-              };
-              updatePayload.student_id = null;
-            }
-
-            await updateDoc(ref, updatePayload);
-
-            setBooked(true);
-            setShowBooking(false);
-            setConfirmationMsg(
-              bookingFor === 'child'
-                ? `Ajouté au groupe ! ${slot.day} à ${slot.hour}h pour votre enfant.`
-                : `Ajouté au groupe ! ${slot.day} à ${slot.hour}h.`
-            );
-            joinedGroup = true;
-            break;
-          }
+        // déjà présent sous une forme ?
+        if (current.includes(targetStudentId)) {
+          setBooked(true);
+          setShowBooking(false);
+          setConfirmationMsg(`Vous avez déjà une participation sur ${slot.day} ${slot.hour}h.`);
+          createdRequest = true;
+          break;
         }
+
+        // on autorise la demande même si plein; l’acceptation restera impossible si capacité atteinte
+        const ref = doc(db, 'lessons', d.id);
+        await updateDoc(ref, {
+          participant_ids: arrayUnion(targetStudentId),
+          [`participantsMap.${targetStudentId}`]: {
+            parent_id: bookingFor === 'child' ? me.uid : null,
+            booked_by: me.uid,
+            is_paid: false,
+            paid_by: null,
+            paid_at: null,
+            status: 'pending_teacher',   // <<< élève a demandé, attente validation prof
+            added_at: serverTimestamp(),
+          },
+        });
+
+        // petite notif prof (optionnel)
+        try {
+          await addDoc(collection(db, 'notifications'), {
+            user_id: teacherId,
+            read: false,
+            created_at: serverTimestamp(),
+            type: 'group_join_request',
+            lesson_id: d.id,
+            requester_id: targetStudentId,
+            message: `Nouvelle demande pour ${slot.day} ${slot.hour}h`,
+          });
+        } catch {}
+
+        setBooked(true);
+        setShowBooking(false);
+        setConfirmationMsg(
+          bookingFor === 'child'
+            ? `Demande envoyée au professeur pour ${slot.day} à ${slot.hour}h (enfant).`
+            : `Demande envoyée au professeur pour ${slot.day} à ${slot.hour}h.`
+        );
+        createdRequest = true;
+        break;
       }
 
-      if (joinedGroup) return;
+      if (createdRequest) return;
 
-      // 2) Sinon créer un nouveau cours (individuel ou groupe selon préférences prof)
+      // 2) Pas de groupe existant: créer une séance (individuelle ou groupe selon préférences prof)
       const groupEnabled = !!teacher?.group_enabled;
       const defaultCap =
         typeof teacher?.group_capacity === 'number' && teacher.group_capacity > 1
@@ -246,51 +214,71 @@ export default function TeacherProfile() {
 
       const willBeGroup = groupEnabled && defaultCap > 1;
 
-      await addDoc(collection(db, 'lessons'), {
-        teacher_id: teacherId,
-        student_id: willBeGroup ? null : targetStudentId, // si groupé, pas d'élève "principal"
-        parent_id: bookingFor === 'child' ? me.uid : null,
-        booked_by: me.uid,
-        booked_for: bookingFor, // 'self' | 'child'
-        status: 'booked',
-        created_at: serverTimestamp(),
-        subject_id: Array.isArray(teacher?.subjects)
-          ? teacher.subjects.join(', ')
-          : teacher?.subjects || '',
-        price_per_hour: teacher?.price_per_hour || 0,
-        slot_day: slot.day,
-        slot_hour: slot.hour,
+      if (willBeGroup) {
+        // Créer un groupe avec le 1er participant déjà "accepted" (c’est l’initiateur)
+        await addDoc(collection(db, 'lessons'), {
+          teacher_id: teacherId,
+          student_id: null,
+          parent_id: bookingFor === 'child' ? me.uid : null,
+          booked_by: me.uid,
+          booked_for: bookingFor,
+          status: 'booked',
+          created_at: serverTimestamp(),
+          subject_id: Array.isArray(teacher?.subjects) ? teacher.subjects.join(', ') : teacher?.subjects || '',
+          price_per_hour: teacher?.price_per_hour || 0,
+          slot_day: slot.day,
+          slot_hour: slot.hour,
+          is_group: true,
+          capacity: defaultCap,
+          participant_ids: [targetStudentId],
+          participantsMap: {
+            [targetStudentId]: {
+              parent_id: bookingFor === 'child' ? me.uid : null,
+              booked_by: me.uid,
+              is_paid: false,
+              paid_by: null,
+              paid_at: null,
+              status: 'accepted', // l’initiateur du nouveau groupe est accepté d’office
+              added_at: serverTimestamp(),
+            },
+          },
+        });
 
-        // Champs groupe
-        is_group: willBeGroup,
-        capacity: willBeGroup ? defaultCap : 1,
-        participant_ids: willBeGroup ? [targetStudentId] : [],
-        participantsMap: willBeGroup
-          ? {
-              [targetStudentId]: {
-                parent_id: bookingFor === 'child' ? me.uid : null,
-                booked_by: me.uid,
-                is_paid: false,
-                paid_by: null,
-                paid_at: null,
-                status: 'booked',
-                added_at: serverTimestamp(),
-              },
-            }
-          : {},
-      });
+        setBooked(true);
+        setShowBooking(false);
+        setConfirmationMsg(
+          bookingFor === 'child'
+            ? `Groupe créé (${slot.day} à ${slot.hour}h). Votre enfant est inscrit.`
+            : `Groupe créé (${slot.day} à ${slot.hour}h). Vous êtes inscrit.`
+        );
+      } else {
+        // Individuel classique
+        await addDoc(collection(db, 'lessons'), {
+          teacher_id: teacherId,
+          student_id: targetStudentId,
+          parent_id: bookingFor === 'child' ? me.uid : null,
+          booked_by: me.uid,
+          booked_for: bookingFor,
+          status: 'booked',
+          created_at: serverTimestamp(),
+          subject_id: Array.isArray(teacher?.subjects) ? teacher.subjects.join(', ') : teacher?.subjects || '',
+          price_per_hour: teacher?.price_per_hour || 0,
+          slot_day: slot.day,
+          slot_hour: slot.hour,
+          is_group: false,
+          capacity: 1,
+          participant_ids: [],
+          participantsMap: {},
+        });
 
-      setBooked(true);
-      setShowBooking(false);
-      setConfirmationMsg(
-        willBeGroup
-          ? bookingFor === 'child'
-            ? `Votre enfant est préinscrit dans un nouveau groupe (${slot.day} à ${slot.hour}h).`
-            : `Préinscription dans un nouveau groupe (${slot.day} à ${slot.hour}h).`
-          : bookingFor === 'child'
-          ? `Demande envoyée ! ${slot.day} à ${slot.hour}h pour votre enfant.`
-          : `Votre demande de cours (${slot.day} à ${slot.hour}h) a bien été envoyée !`
-      );
+        setBooked(true);
+        setShowBooking(false);
+        setConfirmationMsg(
+          bookingFor === 'child'
+            ? `Demande envoyée ! ${slot.day} à ${slot.hour}h pour votre enfant.`
+            : `Votre demande de cours (${slot.day} à ${slot.hour}h) a bien été envoyée !`
+        );
+      }
     } catch (e) {
       console.error('Booking error', e);
       setConfirmationMsg("Erreur lors de la réservation. Réessayez plus tard.");
@@ -299,7 +287,6 @@ export default function TeacherProfile() {
     }
   };
 
-  // -------- Render
   if (!teacher) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -324,7 +311,6 @@ export default function TeacherProfile() {
             {teacher.fullName || teacher.name || 'Professeur'}
           </h2>
 
-          {/* Note moyenne */}
           <div className="flex items-center gap-2 mb-1">
             <span className="text-yellow-500 text-lg">
               {avgRating ? '★'.repeat(Math.round(avgRating)) : '—'}
@@ -341,10 +327,7 @@ export default function TeacherProfile() {
               : teacher.subjects || 'Matière non précisée'}
           </div>
 
-          <div className="text-xs text-gray-500 mb-1">
-            {teacher.location || teacher.city || ''}
-          </div>
-
+          <div className="text-xs text-gray-500 mb-1">{teacher.location || teacher.city || ''}</div>
           <div className="text-sm text-gray-600 mb-2 text-center">{teacher.bio}</div>
 
           <span className="inline-block text-yellow-700 font-semibold mb-4">
@@ -354,9 +337,7 @@ export default function TeacherProfile() {
           {/* Sélecteur enfant (si parent) */}
           {currentRole === 'parent' && (
             <div className="w-full bg-gray-50 border rounded-lg p-3 mb-4">
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
-                Qui est l’élève ?
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Qui est l’élève ?</label>
               <select
                 className="w-full border rounded px-3 py-2"
                 value={selectedStudentId || meUid || ''}
@@ -375,7 +356,6 @@ export default function TeacherProfile() {
             </div>
           )}
 
-          {/* Bouton Réserver */}
           <button
             className="bg-primary text-white px-6 py-3 rounded-lg font-semibold shadow hover:bg-primary-dark transition mb-4 disabled:opacity-60"
             disabled={isBooking || booked}
@@ -388,7 +368,6 @@ export default function TeacherProfile() {
             {booked ? 'Demande envoyée !' : isBooking ? 'Envoi en cours…' : 'Réserver un cours'}
           </button>
 
-          {/* Message post-réservation */}
           {confirmationMsg && (
             <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-2 rounded mb-2 text-sm text-center mt-2">
               {confirmationMsg}
@@ -396,23 +375,19 @@ export default function TeacherProfile() {
           )}
         </div>
 
-        {/* Modal créneau */}
         {showBooking && (
           <BookingModal
             availability={teacher.availability || {}}
-            bookedSlots={bookedSlots} // group-aware
+            bookedSlots={bookedSlots}
             onBook={handleBookingSlot}
             onClose={() => setShowBooking(false)}
             orderDays={DAYS_ORDER}
           />
         )}
 
-        {/* Avis */}
         <h3 className="text-lg font-bold text-secondary mt-6 mb-3">Avis</h3>
         <div className="flex flex-col gap-3">
-          {reviews.length === 0 && (
-            <div className="text-gray-400 text-sm">Aucun avis pour ce professeur.</div>
-          )}
+          {reviews.length === 0 && <div className="text-gray-400 text-sm">Aucun avis pour ce professeur.</div>}
           {reviews.map((r, idx) => (
             <div key={idx} className="bg-gray-50 border rounded-xl px-4 py-3">
               <span className="text-yellow-500 mr-2">{'★'.repeat(r.rating || 0)}</span>
