@@ -30,6 +30,10 @@ export default function Profile() {
     stripePayoutsEnabled: false,
     stripeChargesEnabled: false,
     stripeDetailsSubmitted: false,
+
+    // 🚀 NOUVEAU : paramètres cours de groupe (déjà consommés ailleurs)
+    group_enabled: false,
+    group_capacity: 1,
   });
   const [avatarFile, setAvatarFile] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -49,6 +53,9 @@ export default function Profile() {
             uid: u.uid,
             email: data.email || u.email || '',
             role: data.role || data.type || prev.role || 'student',
+            // valeurs par défaut si absentes en base
+            group_enabled: typeof data.group_enabled === 'boolean' ? data.group_enabled : false,
+            group_capacity: typeof data.group_capacity === 'number' ? data.group_capacity : 1,
           }));
         } else {
           setProfile((prev) => ({ ...prev, uid: u.uid, email: u.email || '' }));
@@ -89,8 +96,11 @@ export default function Profile() {
   };
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    setProfile((p) => ({ ...p, [name]: value }));
+    const { name, value, type, checked } = e.target;
+    setProfile((p) => ({
+      ...p,
+      [name]: type === 'checkbox' ? !!checked : value,
+    }));
   };
 
   const handleSave = async (e) => {
@@ -107,8 +117,26 @@ export default function Profile() {
       }
 
       const ref = doc(db, 'users', profile.uid);
-      const toSave = { ...profile, avatarUrl };
-      delete toSave.uid;
+
+      // conversions numériques sûres
+      const priceNum =
+        profile.price_per_hour === '' || profile.price_per_hour === null
+          ? null
+          : Number(profile.price_per_hour);
+      const capacityNum =
+        profile.group_capacity === '' || profile.group_capacity === null
+          ? 1
+          : Math.max(1, Number(profile.group_capacity));
+
+      const toSave = {
+        ...profile,
+        avatarUrl,
+        // on réécrit les champs qui doivent être num/boolean
+        price_per_hour: typeof priceNum === 'number' && !Number.isNaN(priceNum) ? priceNum : 0,
+        group_enabled: !!profile.group_enabled,
+        group_capacity: Number.isNaN(capacityNum) ? 1 : capacityNum,
+      };
+      delete toSave.uid; // uid n'est pas stocké dans le doc
 
       await updateDoc(ref, toSave);
       setProfile((p) => ({ ...p, avatarUrl }));
@@ -206,13 +234,51 @@ export default function Profile() {
                   step={f.step}
                   min={f.min}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                  value={profile[f.name] || ''}
+                  value={profile[f.name] ?? ''}
                   onChange={handleChange}
                   required={f.required}
                 />
               )}
             </div>
           ))}
+
+          {/* ⚙️ Réglage des cours de groupe pour PROF */}
+          {profile.role === 'teacher' && (
+            <div className="rounded-xl border border-gray-200 p-4 space-y-3 bg-gray-50">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-semibold text-gray-700">
+                  Activer les cours en groupe
+                </label>
+                <input
+                  type="checkbox"
+                  name="group_enabled"
+                  checked={!!profile.group_enabled}
+                  onChange={handleChange}
+                  className="h-5 w-5"
+                />
+              </div>
+
+              <div>
+                <label className="block mb-1 text-sm font-semibold text-gray-700">
+                  Nombre d’élèves par cours (par défaut)
+                </label>
+                <input
+                  type="number"
+                  name="group_capacity"
+                  min={1}
+                  step={1}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  value={profile.group_capacity ?? 1}
+                  onChange={handleChange}
+                  disabled={!profile.group_enabled}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Ce nombre sera utilisé par défaut lors des réservations groupées. Il reste modifiable
+                  ensuite dans “Gérer le groupe” pour chaque cours.
+                </p>
+              </div>
+            </div>
+          )}
 
           {profile.role === 'teacher' && (
             <TeacherAvailabilityEditor
