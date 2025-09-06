@@ -35,10 +35,7 @@ const pickStudentName = (x = {}) =>
   'Sans nom';
 
 /* ===========================================================
-   Recherche élèves par NOM
-   - priorité: students (avec index full_name_lc si dispo)
-   - fallback: scan limité + filtre client
-   - + fallback users (si certains élèves existent côté users)
+   Recherche élèves par NOM (priorité students)
    =========================================================== */
 async function searchStudentsByName(termRaw) {
   const term = lc(termRaw);
@@ -150,13 +147,13 @@ async function searchStudentsByName(termRaw) {
 }
 
 /* ===============================
-   Compte des ACCEPTÉS (pour places)
+   Compte des CONFIRMÉS (places)
    =============================== */
-function countAccepted(participant_ids = [], participantsMap = {}) {
+function countConfirmed(participant_ids = [], participantsMap = {}) {
   let acc = 0;
   for (const id of participant_ids) {
-    const st = participantsMap?.[id]?.status || 'accepted';
-    if (st === 'accepted') acc += 1;
+    const st = participantsMap?.[id]?.status || 'confirmed';
+    if (st === 'confirmed') acc += 1;
   }
   return acc;
 }
@@ -180,7 +177,7 @@ function Chip({ children, onRemove }) {
 }
 
 /* ====================================================
-   GroupSettingsModal — version “qui n’oublie PERSONNE”
+   GroupSettingsModal (confirmé/invité seulement)
    ==================================================== */
 export default function GroupSettingsModal({ open, onClose, lesson }) {
   const [capacity, setCapacity] = useState(lesson?.capacity || 1);
@@ -208,7 +205,12 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
         const data = snap.data();
 
         // migration legacy au premier affichage (si besoin)
-        if (!migrated && data.is_group && data.student_id && !Array.isArray(data.participant_ids)?.includes(data.student_id)) {
+        if (
+          !migrated &&
+          data.is_group &&
+          data.student_id &&
+          !Array.isArray(data.participant_ids)?.includes(data.student_id)
+        ) {
           try {
             await updateDoc(ref, {
               participant_ids: arrayUnion(data.student_id),
@@ -218,7 +220,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
                 is_paid: false,
                 paid_by: null,
                 paid_at: null,
-                status: 'accepted',
+                status: 'confirmed',
                 added_at: serverTimestamp(),
               },
               student_id: null,
@@ -235,6 +237,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
         setCapacity(Number(data.capacity || 1));
         setParticipantIds(pIds);
         setParticipantsMap(data.participantsMap || {});
+
         // charger les noms pour tous les pIds
         const nm = {};
         for (const id of pIds) {
@@ -270,11 +273,11 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     }, 250);
   }, [search, open]);
 
-  const acceptedCount = useMemo(
-    () => countAccepted(participantIds, participantsMap),
+  const confirmedCount = useMemo(
+    () => countConfirmed(participantIds, participantsMap),
     [participantIds, participantsMap]
   );
-  const free = Math.max((Number(capacity) || 0) - acceptedCount, 0);
+  const free = Math.max((Number(capacity) || 0) - confirmedCount, 0);
 
   /* -------- Helpers -------- */
   async function resolveName(id) {
@@ -352,38 +355,9 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     }
   }
 
-  // Accepter une demande → pending_teacher -> accepted
-  async function acceptStudent(id) {
-    const alreadyAccepted = acceptedCount;
-    if (alreadyAccepted >= (Number(capacity) || 0)) {
-      alert('Capacité atteinte, impossible d’accepter.');
-      return;
-    }
-    try {
-      await updateDoc(doc(db, 'lessons', lesson.id), {
-        [`participantsMap.${id}.status`]: 'accepted',
-      });
-      // notif
-      try {
-        await addDoc(collection(db, 'notifications'), {
-          user_id: id,
-          read: false,
-          created_at: serverTimestamp(),
-          type: 'group_request_accepted',
-          lesson_id: lesson.id,
-          message: `Votre participation a été acceptée (${lesson.slot_day} ${lesson.slot_hour}h).`,
-        });
-      } catch {}
-      setParticipantsMap((prev) => ({ ...prev, [id]: { ...(prev[id] || {}), status: 'accepted' } }));
-    } catch (e) {
-      console.error(e);
-      alert("Impossible d'accepter.");
-    }
-  }
-
-  // Refuser une demande OU annuler une invitation → suppression de la liste
-  async function declineOrRemove(id) {
-    const ok = window.confirm("Retirer cet élève de la liste ?");
+  // Supprimer (annuler invitation / retirer participant)
+  async function removeStudent(id) {
+    const ok = window.confirm('Retirer cet élève de la liste ?');
     if (!ok) return;
     try {
       await updateDoc(doc(db, 'lessons', lesson.id), {
@@ -407,19 +381,22 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     }
   }
 
-  /* -------- Grouping UI -------- */
-  const groups = useMemo(() => {
-    const g = { accepted: [], pending_teacher: [], invited_student: [], declined: [], other: [] };
-    for (const id of participantIds) {
-      const st = participantsMap?.[id]?.status || 'accepted';
-      if (st === 'accepted') g.accepted.push(id);
-      else if (st === 'pending_teacher') g.pending_teacher.push(id);
-      else if (st === 'invited_student') g.invited_student.push(id);
-      else if (st === 'declined') g.declined.push(id);
-      else g.other.push(id);
-    }
-    return g;
-  }, [participantIds, participantsMap]);
+  /* -------- Filtrages pour l’affichage (UNIQUEMENT 2 sections) -------- */
+  const invitedIds = useMemo(
+    () =>
+      (participantIds || []).filter(
+        (id) => (participantsMap?.[id]?.status || 'confirmed') === 'invited_student'
+      ),
+    [participantIds, participantsMap]
+  );
+
+  const confirmedIds = useMemo(
+    () =>
+      (participantIds || []).filter(
+        (id) => (participantsMap?.[id]?.status || 'confirmed') === 'confirmed'
+      ),
+    [participantIds, participantsMap]
+  );
 
   if (!open || !lesson) return null;
 
@@ -456,7 +433,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
             </button>
           </div>
           <div className="text-sm text-gray-600">
-            Acceptés : <b>{acceptedCount}</b> / {capacity} — Places libres : <b>{Math.max(free, 0)}</b>
+            Confirmés : <b>{confirmedCount}</b> / {capacity} — Places libres : <b>{Math.max(free, 0)}</b>
           </div>
 
           {/* Recherche → Invitation */}
@@ -493,89 +470,39 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
             )}
           </div>
 
-          {/* Listes par statut */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Demandes à valider par le prof */}
-            <div className="border rounded-lg p-3">
-              <div className="font-medium mb-2">Demandes à valider</div>
-              {groups.pending_teacher.length === 0 ? (
-                <div className="text-sm text-gray-500">Aucune demande.</div>
-              ) : (
-                <div className="space-y-2">
-                  {groups.pending_teacher.map((id) => (
-                    <div key={`pt:${id}`} className="flex items-center justify-between">
-                      <span>{nameMap[id] || id}</span>
-                      <div className="flex gap-2">
-                        <button
-                          className="px-3 py-1 rounded bg-green-600 text-white"
-                          onClick={() => acceptStudent(id)}
-                        >
-                          Accepter
-                        </button>
-                        <button
-                          className="px-3 py-1 rounded bg-red-600 text-white"
-                          onClick={() => declineOrRemove(id)}
-                        >
-                          Refuser
-                        </button>
-                      </div>
+          {/* Invitations envoyées (attente élève) */}
+          <div className="border rounded-lg p-3">
+            <div className="font-medium mb-2">Invitations envoyées (attente élève)</div>
+            {invitedIds.length === 0 ? (
+              <div className="text-sm text-gray-500">Aucune invitation en attente.</div>
+            ) : (
+              <div className="space-y-2">
+                {invitedIds.map((id) => (
+                  <div key={`is:${id}`} className="flex items-center justify-between">
+                    <span>{nameMap[id] || id}</span>
+                    <div className="flex gap-2">
+                      <button className="px-3 py-1 rounded bg-gray-200" onClick={() => removeStudent(id)}>
+                        Annuler l’invitation
+                      </button>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
-            {/* Invitations envoyées (attente élève) */}
-            <div className="border rounded-lg p-3">
-              <div className="font-medium mb-2">Invitations envoyées</div>
-              {groups.invited_student.length === 0 ? (
-                <div className="text-sm text-gray-500">Aucune invitation en attente.</div>
-              ) : (
-                <div className="space-y-2">
-                  {groups.invited_student.map((id) => (
-                    <div key={`is:${id}`} className="flex items-center justify-between">
-                      <span>{nameMap[id] || id}</span>
-                      <div className="flex gap-2">
-                        <button
-                          className="px-3 py-1 rounded bg-gray-200"
-                          onClick={() => declineOrRemove(id)}
-                        >
-                          Annuler
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Acceptés */}
-            <div className="border rounded-lg p-3 md:col-span-2">
-              <div className="font-medium mb-2">Participants (acceptés)</div>
-              {groups.accepted.length === 0 ? (
-                <div className="text-sm text-gray-500">Aucun élève accepté.</div>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {groups.accepted.map((sid) => (
-                    <Chip key={`acc:${sid}`} onRemove={() => declineOrRemove(sid)}>
-                      {nameMap[sid] || sid}
-                    </Chip>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Autres statuts (sécurité) */}
-            {groups.other.length > 0 && (
-              <div className="border rounded-lg p-3 md:col-span-2">
-                <div className="font-medium mb-2">Autres</div>
-                <div className="flex flex-wrap gap-2">
-                  {groups.other.map((sid) => (
-                    <Chip key={`oth:${sid}`} onRemove={() => declineOrRemove(sid)}>
-                      {nameMap[sid] || sid}
-                    </Chip>
-                  ))}
-                </div>
+          {/* Participants (confirmés) */}
+          <div className="border rounded-lg p-3">
+            <div className="font-medium mb-2">Participants</div>
+            {confirmedIds.length === 0 ? (
+              <div className="text-sm text-gray-500">Aucun élève confirmé.</div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {confirmedIds.map((sid) => (
+                  <Chip key={`cf:${sid}`} onRemove={() => removeStudent(sid)}>
+                    {nameMap[sid] || sid}
+                  </Chip>
+                ))}
               </div>
             )}
           </div>

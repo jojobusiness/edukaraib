@@ -10,6 +10,7 @@ import {
   getDocs,
   doc,
   getDoc,
+  updateDoc,
   limit,
 } from 'firebase/firestore';
 
@@ -19,7 +20,7 @@ const codeIndex = (c) => Math.max(0, FR_DAY_CODES.indexOf(c));
 
 function nextOccurrence(slot_day, slot_hour, now = new Date()) {
   if (!FR_DAY_CODES.includes(slot_day)) return null;
-  const jsDay = now.getDay(); // 0..6
+  const jsDay = now.getDay();
   const offsetToMonday = ((jsDay + 6) % 7);
   const monday = new Date(now);
   monday.setHours(0,0,0,0);
@@ -32,10 +33,7 @@ function nextOccurrence(slot_day, slot_hour, now = new Date()) {
   if (start <= now) start.setDate(start.getDate() + 7);
   return start;
 }
-function formatHourFromSlot(h) {
-  const n = Number(h) || 0;
-  return `${String(n).padStart(2, '0')}:00`;
-}
+function formatHour(h) { const n = Number(h) || 0; return `${String(n).padStart(2, '0')}:00`; }
 
 const statusColors = {
   booked: 'bg-yellow-100 text-yellow-800',
@@ -44,7 +42,7 @@ const statusColors = {
   rejected: 'bg-red-100 text-red-700',
 };
 
-/* ---------- Résolution noms (users -> students) ---------- */
+/* ---------- noms ---------- */
 async function fetchUserProfile(uid) {
   if (!uid) return null;
   try {
@@ -61,33 +59,34 @@ async function fetchUserProfile(uid) {
   } catch {}
   return null;
 }
-async function fetchStudentDoc(id) {
-  if (!id) return null;
-  try {
-    const s = await getDoc(doc(db, 'students', id));
-    if (s.exists()) return { id, ...s.data() };
-  } catch {}
-  return null;
-}
 async function resolvePersonName(id, cacheRef) {
   if (!id) return '';
   if (cacheRef.current.has(id)) return cacheRef.current.get(id);
-  const u = await fetchUserProfile(id);
-  if (u) {
-    const nm = u.fullName || u.name || u.displayName || id;
-    cacheRef.current.set(id, nm);
-    return nm;
-  }
-  const s = await fetchStudentDoc(id);
-  if (s) {
-    const nm = s.full_name || s.name || id;
-    cacheRef.current.set(id, nm);
-    return nm;
-  }
+  // users
+  try {
+    const u = await getDoc(doc(db, 'users', id));
+    if (u.exists()) {
+      const d = u.data();
+      const nm = d.fullName || d.name || d.displayName || id;
+      cacheRef.current.set(id, nm);
+      return nm;
+    }
+  } catch {}
+  // students
+  try {
+    const s = await getDoc(doc(db, 'students', id));
+    if (s.exists()) {
+      const d = s.data();
+      const nm = d.full_name || d.name || id;
+      cacheRef.current.set(id, nm);
+      return nm;
+    }
+  } catch {}
   cacheRef.current.set(id, id);
   return id;
 }
 
+/* =================== PAGE =================== */
 export default function ParentCourses() {
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -99,42 +98,31 @@ export default function ParentCourses() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewLesson, setReviewLesson] = useState(null);
 
-  // Group UI
+  // Group popup
   const [openGroupId, setOpenGroupId] = useState(null);
-  const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map());
-  const [studentMap, setStudentMap] = useState(new Map()); // childId -> name
-  const [teacherMap, setTeacherMap] = useState(new Map()); // teacherId -> name
+
+  // maps
+  const [studentMap, setStudentMap] = useState(new Map());
+  const [teacherMap, setTeacherMap] = useState(new Map());
   const nameCacheRef = useRef(new Map());
 
-  const openDocs = (lesson) => { setDocLesson(lesson); setDocOpen(true); };
-  const openReview = (lesson) => { setReviewLesson(lesson); setReviewOpen(true); };
-
-  // charge cours pour tous mes enfants + noms profs/élèves/participants
   useEffect(() => {
     const run = async () => {
       if (!auth.currentUser) return;
       setLoading(true);
 
       // enfants
-      const kidsSnap = await getDocs(
-        query(collection(db, 'students'), where('parent_id', '==', auth.currentUser.uid))
-      );
+      const kidsSnap = await getDocs(query(collection(db, 'students'), where('parent_id', '==', auth.currentUser.uid)));
       const kids = kidsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       const kidIds = kids.map(k => k.id);
 
-      // map nom enfant
-      const sMap = new Map(
-        kids.map(k => [k.id, k.full_name || k.fullName || k.name || 'Enfant'])
-      );
-      setStudentMap(sMap);
+      setStudentMap(new Map(kids.map(k => [k.id, k.full_name || k.fullName || k.name || 'Enfant'])));
 
       if (kidIds.length === 0) {
-        setCourses([]);
-        setLoading(false);
-        return;
+        setCourses([]); setLoading(false); return;
       }
 
-      // A) leçons avec student_id in kidIds (par paquets de 10)
+      // A) lessons via student_id
       const map = new Map();
       for (let i = 0; i < kidIds.length; i += 10) {
         const chunk = kidIds.slice(i, i + 10);
@@ -142,8 +130,7 @@ export default function ParentCourses() {
         const sA = await getDocs(qA);
         sA.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
       }
-
-      // B) leçons où participant_ids array-contains child
+      // B) lessons via participant_ids
       for (const kid of kidIds) {
         const qB = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', kid));
         const sB = await getDocs(qB);
@@ -151,53 +138,19 @@ export default function ParentCourses() {
       }
 
       const data = Array.from(map.values());
-      setCourses(data);
 
-      // participants (affichage noms)
-      const idSet = new Set();
-      data.forEach(l => {
-        if (l.is_group) {
-          (Array.isArray(l.participant_ids) ? l.participant_ids : []).forEach(id => id && idSet.add(id));
-          if (l.student_id) idSet.add(l.student_id);
-        }
-      });
-      const ids = Array.from(idSet);
-      const names = await Promise.all(ids.map(id => resolvePersonName(id, nameCacheRef)));
-      const idToName = new Map(ids.map((id, i) => [id, names[i]]));
-
-      const mapByLesson = new Map();
-      data.forEach(l => {
-        if (!l.is_group) return;
-        const idsForLesson = [
-          ...(Array.isArray(l.participant_ids) ? l.participant_ids : []),
-          ...(l.student_id ? [l.student_id] : []),
-        ];
-        const uniq = Array.from(new Set(idsForLesson));
-        const nmList = uniq.map(id => idToName.get(id) || id);
-        mapByLesson.set(l.id, nmList);
-      });
-      setGroupNamesByLesson(mapByLesson);
-
-      // profs (affichage nom au lieu d’ID)
+      // prof names
       const tIds = Array.from(new Set(data.map(l => l.teacher_id).filter(Boolean)));
-      const tProfiles = await Promise.all(tIds.map(uid => fetchUserProfile(uid)));
-      const tMap = new Map(
-        tProfiles
-          .filter(Boolean)
-          .map(p => [p.id || p.uid, p.fullName || p.name || p.displayName || 'Professeur'])
-      );
-      setTeacherMap(tMap);
+      const tProfiles = await Promise.all(tIds.map((tid) => fetchUserProfile(tid)));
+      setTeacherMap(new Map(tProfiles.filter(Boolean).map(p => [p.id || p.uid, p.fullName || p.name || p.displayName || 'Professeur'])));
 
-      if (openGroupId && !data.some(x => x.id === openGroupId)) setOpenGroupId(null);
-
+      setCourses(data);
       setLoading(false);
     };
-
     run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // prochain cours confirmé (tous enfants)
+  // prochaines (confirmées)
   const nextCourse = useMemo(() => {
     const now = new Date();
     const futureConfirmed = courses
@@ -208,85 +161,133 @@ export default function ParentCourses() {
     return futureConfirmed[0] || null;
   }, [courses]);
 
-  // sections
-  const booked = useMemo(() => courses.filter(c => c.status === 'booked'), [courses]);
+  // invitations pour mes enfants (status invited_student)
+  const invitations = useMemo(() => {
+    const list = [];
+    for (const c of courses) {
+      const pm = c.participantsMap || {};
+      const ids = c.participant_ids || [];
+      const invitedChild = ids.find((sid) => pm?.[sid]?.status === 'invited_student' && studentMap.has(sid));
+      if (invitedChild) list.push({ ...c, __child: invitedChild });
+    }
+    return list;
+  }, [courses, studentMap]);
+
+  // confirmés/terminés (on exclut les en attente comme demandé)
   const confirmed = useMemo(() => courses.filter(c => c.status === 'confirmed'), [courses]);
   const completed = useMemo(() => courses.filter(c => c.status === 'completed'), [courses]);
 
-  function CourseCard({ c }) {
+  // actions invitations (pour l’enfant)
+  async function acceptInvite(c) {
+    const sid = c.__child;
+    try {
+      await updateDoc(doc(db, 'lessons', c.id), { [`participantsMap.${sid}.status`]: 'accepted' });
+      setCourses(prev => prev.map(x => x.id === c.id ? {
+        ...x,
+        participantsMap: { ...(x.participantsMap||{}), [sid]: { ...(x.participantsMap?.[sid]||{}), status: 'accepted' } }
+      } : x));
+    } catch (e) {
+      console.error(e);
+      alert("Impossible d'accepter l'invitation.");
+    }
+  }
+  async function declineInvite(c) {
+    const sid = c.__child;
+    try {
+      const newIds = (c.participant_ids || []).filter(x => x !== sid);
+      await updateDoc(doc(db, 'lessons', c.id), {
+        participant_ids: newIds,
+        [`participantsMap.${sid}`]: null,
+      });
+      setCourses(prev => prev.map(x => x.id === c.id ? { ...x, participant_ids: newIds } : x));
+    } catch (e) {
+      console.error(e);
+      alert("Impossible de refuser l'invitation.");
+    }
+  }
+
+  function teacherNameFor(id) { return teacherMap.get(id) || id; }
+  function childNameFor(id) { return studentMap.get(id) || id; }
+
+  function paymentBadgeForChild(c, sid) {
     const isGroup = !!c.is_group;
-    const groupNames = groupNamesByLesson.get(c.id) || [];
-    const open = openGroupId === c.id;
-
-    const childName = studentMap.get(c.student_id) || c.student_id;
-    const teacherName = teacherMap.get(c.teacher_id) || c.teacher_id;
-
+    const paid = isGroup ? !!c.participantsMap?.[sid]?.is_paid : !!c.is_paid;
     return (
-      <div
-        className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between relative"
-      >
-        <div className="flex-1 min-w-0">
-          <div className="flex gap-2 items-center mb-1">
-            <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
-            <span className={`px-3 py-1 rounded-full text-xs font-semibold ml-2 ${statusColors[c.status] || 'bg-gray-200'}`}>
-              {c.status === 'confirmed' ? 'Confirmé' : c.status === 'completed' ? 'Terminé' : c.status === 'booked' ? 'En attente' : c.status}
-            </span>
+      <span className={`text-[11px] px-2 py-0.5 rounded-full ${paid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+        {paid ? 'Payé' : 'À payer'}
+      </span>
+    );
+  }
 
-            {isGroup && (
-              <button
-                className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100"
-                onClick={() => setOpenGroupId(open ? null : c.id)}
-                title="Voir les élèves du groupe"
-              >
-                👥 {groupNames.length}
-              </button>
-            )}
-          </div>
-
-          <div className="text-gray-700 text-sm">
-            Élève : <span className="font-semibold">{childName}</span>
-          </div>
-          <div className="text-gray-700 text-sm">
-            Professeur : <span className="font-semibold">{teacherName}</span>
-          </div>
-          <div className="text-gray-500 text-xs mb-1">
-            {(c.slot_day || c.slot_hour !== undefined) && `${c.slot_day} ${formatHourFromSlot(c.slot_hour)}`}
-          </div>
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-2">
-          <button
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold"
-            onClick={() => openDocs(c)}
-          >
-            📄 Documents
-          </button>
-
-          {c.status === 'completed' && (
-            <button
-              className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded shadow font-semibold"
-              onClick={() => openReview(c)}
-            >
-              ⭐ Laisser un avis
-            </button>
-          )}
-        </div>
-
-        {/* Mini-fenêtre participants */}
-        {isGroup && open && (
-          <div className="absolute top-full mt-2 left-6 z-10 bg-white border rounded-lg shadow p-3 w-64">
+  function ParticipantsPopover({ c }) {
+    const [open, setOpen] = useState(false);
+    const [names, setNames] = useState([]);
+    useEffect(() => {
+      if (!open) return;
+      (async () => {
+        const ids = (c.participant_ids || []).slice(0, 40);
+        const nm = await Promise.all(ids.map((id) => resolvePersonName(id, nameCacheRef)));
+        setNames(nm);
+      })();
+    }, [open, c]);
+    return (
+      <>
+        <button className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100" onClick={() => setOpen(v => !v)}>
+          👥 {(c.participant_ids || []).length}
+        </button>
+        {open && (
+          <div className="mt-2 bg-white border rounded-lg shadow p-3 w-64">
             <div className="text-xs font-semibold mb-1">Élèves du groupe</div>
-            {groupNames.length ? (
+            {names.length ? (
               <ul className="text-sm text-gray-700 list-disc pl-4 space-y-1">
-                {groupNames.map((nm, i) => (
-                  <li key={i}>{nm}</li>
-                ))}
+                {names.map((nm, i) => <li key={i}>{nm}</li>)}
               </ul>
             ) : (
               <div className="text-xs text-gray-500">Aucun participant.</div>
             )}
           </div>
         )}
+      </>
+    );
+  }
+
+  function statusBadge(st) {
+    return (
+      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[st] || 'bg-gray-200'}`}>
+        {st === 'confirmed' ? 'Confirmé' : st === 'completed' ? 'Terminé' : st === 'booked' ? 'En attente' : st}
+      </span>
+    );
+  }
+
+  function CourseCard({ c }) {
+    const isGroup = !!c.is_group;
+    // élève concerné :
+    const studentId = (c.student_id && studentMap.has(c.student_id)) ? c.student_id
+      : (c.participant_ids || []).find((sid) => studentMap.has(sid)) || c.student_id;
+
+    return (
+      <div className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
+            {statusBadge(c.status)}
+            {isGroup && <ParticipantsPopover c={c} />}
+          </div>
+          <div className="text-gray-700 text-sm">Enfant : <span className="font-semibold">{childNameFor(studentId)}</span></div>
+          <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>
+          <div className="text-gray-500 text-xs">{c.slot_day} {formatHour(c.slot_hour)}</div>
+          <div className="mt-1">{paymentBadgeForChild(c, studentId)}</div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => { setDocLesson(c); setDocOpen(true); }}>
+            📄 Documents
+          </button>
+          {c.status === 'completed' && (
+            <button className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => { setReviewLesson(c); setReviewOpen(true); }}>
+              ⭐ Laisser un avis
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -294,23 +295,21 @@ export default function ParentCourses() {
   return (
     <DashboardLayout role="parent">
       <div className="max-w-3xl mx-auto">
-        <h2 className="text-2xl font-bold text-primary mb-6">📚 Suivi des cours</h2>
+        <h2 className="text-2xl font-bold text-primary mb-6">📚 Suivi des cours (enfants)</h2>
 
         {/* Prochain cours */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <div className="bg-white rounded-xl shadow p-6 border-l-4 border-primary flex flex-col items-start md:col-span-3">
-            <span className="text-3xl mb-2">📅</span>
-            <span className="text-xl font-bold text-primary">Prochain cours</span>
-            <span className="text-gray-700 mt-1">
-              {nextCourse
-                ? (() => {
-                    const when = `${nextCourse.slot_day} ${formatHourFromSlot(nextCourse.slot_hour)}`;
-                    const prof = teacherMap.get(nextCourse.teacher_id) || nextCourse.teacher_id;
-                    const childNm = studentMap.get(nextCourse.student_id) || 'Enfant';
-                    return `${nextCourse.subject_id || 'Cours'} · ${when} · ${childNm} · avec ${prof}`;
-                  })()
-                : 'Aucun cours confirmé à venir'}
-            </span>
+        <div className="bg-white rounded-xl shadow p-6 border-l-4 border-primary mb-6">
+          <div className="text-3xl mb-2">📅</div>
+          <div className="text-xl font-bold text-primary">Prochain cours</div>
+          <div className="text-gray-700 mt-1">
+            {nextCourse
+              ? (() => {
+                  const sid =
+                    (nextCourse.student_id && studentMap.has(nextCourse.student_id)) ? nextCourse.student_id
+                    : (nextCourse.participant_ids || []).find((id) => studentMap.has(id)) || nextCourse.student_id;
+                  return `${nextCourse.subject_id || 'Cours'} · ${nextCourse.slot_day} ${formatHour(nextCourse.slot_hour)} · ${childNameFor(sid)} · avec ${teacherNameFor(nextCourse.teacher_id)}`;
+                })()
+              : 'Aucun cours confirmé à venir'}
           </div>
         </div>
 
@@ -318,19 +317,37 @@ export default function ParentCourses() {
           <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Chargement…</div>
         ) : (
           <>
-            {/* En attente */}
+            {/* Invitations reçues (par enfant) */}
             <section className="mb-8">
               <div className="flex items-baseline justify-between mb-3">
-                <h3 className="text-lg font-semibold">En attente de confirmation</h3>
-                <span className="text-sm text-gray-500">{booked.length}</span>
+                <h3 className="text-lg font-semibold">Invitations reçues</h3>
+                <span className="text-sm text-gray-500">{invitations.length}</span>
               </div>
-              {booked.length === 0 ? (
-                <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">
-                  Aucun cours en attente.
-                </div>
+              {invitations.length === 0 ? (
+                <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucune invitation.</div>
               ) : (
                 <div className="grid grid-cols-1 gap-4">
-                  {booked.map((c) => <CourseCard key={c.id} c={c} />)}
+                  {invitations.map((c) => (
+                    <div key={c.id} className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between">
+                      <div className="flex-1">
+                        <div className="flex gap-2 items-center mb-1">
+                          <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
+                          <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded">Invitation</span>
+                        </div>
+                        <div className="text-gray-700 text-sm">Enfant : <span className="font-semibold">{childNameFor(c.__child)}</span></div>
+                        <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>
+                        <div className="text-gray-500 text-xs">{c.slot_day} {formatHour(c.slot_hour)}</div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => acceptInvite(c)}>
+                          ✅ Accepter
+                        </button>
+                        <button className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => declineInvite(c)}>
+                          ❌ Refuser
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </section>
@@ -342,9 +359,7 @@ export default function ParentCourses() {
                 <span className="text-sm text-gray-500">{confirmed.length}</span>
               </div>
               {confirmed.length === 0 ? (
-                <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">
-                  Aucun cours confirmé.
-                </div>
+                <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucun cours confirmé.</div>
               ) : (
                 <div className="grid grid-cols-1 gap-4">
                   {confirmed.map((c) => <CourseCard key={c.id} c={c} />)}
@@ -359,9 +374,7 @@ export default function ParentCourses() {
                 <span className="text-sm text-gray-500">{completed.length}</span>
               </div>
               {completed.length === 0 ? (
-                <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">
-                  Aucun cours terminé.
-                </div>
+                <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucun cours terminé.</div>
               ) : (
                 <div className="grid grid-cols-1 gap-4">
                   {completed.map((c) => <CourseCard key={c.id} c={c} />)}
@@ -373,19 +386,8 @@ export default function ParentCourses() {
       </div>
 
       {/* Modals */}
-      <DocumentsModal
-        open={docOpen}
-        onClose={() => setDocOpen(false)}
-        lesson={docLesson}
-        allowUpload={false}
-      />
-
-      <ReviewModal
-        open={reviewOpen}
-        onClose={() => setReviewOpen(false)}
-        lesson={reviewLesson}
-        onSent={() => {}}
-      />
+      <DocumentsModal open={docOpen} onClose={() => setDocOpen(false)} lesson={docLesson} allowUpload={false} />
+      <ReviewModal open={reviewOpen} onClose={() => setReviewOpen(false)} lesson={reviewLesson} onSent={() => {}} />
     </DashboardLayout>
   );
 }
