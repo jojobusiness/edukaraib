@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import {
   doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc,
-  serverTimestamp, arrayUnion,
+  serverTimestamp, arrayUnion, // ← remis pour éviter l’échec silencieux
 } from 'firebase/firestore';
 import BookingModal from '../components/BookingModal';
 
@@ -211,7 +211,7 @@ export default function TeacherProfile() {
           is_group: false,
           capacity: 1,
           participant_ids: [],
-          participantsMap: {},        // (confirmation se fait au niveau du cours)
+          participantsMap: {},        // (confirmation au niveau du cours)
         });
         await addDoc(collection(db, 'notifications'), {
           user_id: teacherId, read: false, created_at: serverTimestamp(),

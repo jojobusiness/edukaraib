@@ -12,6 +12,7 @@ import {
   getDoc,
   updateDoc,
   limit,
+  onSnapshot, // ← temps réel
 } from 'firebase/firestore';
 
 /* ---------- Helpers ---------- */
@@ -103,100 +104,201 @@ export default function ParentCourses() {
   const [teacherMap, setTeacherMap] = useState(new Map());
   const nameCacheRef = useRef(new Map());
 
+  // enfants du parent (temps réel)
+  const [kidIds, setKidIds] = useState([]);
+
   useEffect(() => {
-    const run = async () => {
-      if (!auth.currentUser) return;
-      setLoading(true);
+    if (!auth.currentUser) return;
+    setLoading(true);
 
-      // enfants
-      const kidsSnap = await getDocs(query(collection(db, 'students'), where('parent_id', '==', auth.currentUser.uid)));
-      const kids = kidsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const kidIds = kids.map(k => k.id);
-
-      setStudentMap(new Map(kids.map(k => [k.id, k.full_name || k.fullName || k.name || 'Enfant'])));
-
-      if (kidIds.length === 0) {
-        setCourses([]); setLoading(false); return;
+    // 1) enfants en temps réel
+    const unsubKids = onSnapshot(
+      query(collection(db, 'students'), where('parent_id', '==', auth.currentUser.uid)),
+      async (kidsSnap) => {
+        const kids = kidsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const ids = kids.map(k => k.id);
+        setStudentMap(new Map(kids.map(k => [k.id, k.full_name || k.fullName || k.name || 'Enfant'])));
+        setKidIds(ids);
       }
+    );
 
-      // A) lessons via student_id
-      const map = new Map();
-      for (let i = 0; i < kidIds.length; i += 10) {
-        const chunk = kidIds.slice(i, i + 10);
-        const qA = query(collection(db, 'lessons'), where('student_id', 'in', chunk));
-        const sA = await getDocs(qA);
-        sA.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
-      }
-      // B) lessons via participant_ids
-      for (const kid of kidIds) {
-        const qB = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', kid));
-        const sB = await getDocs(qB);
-        sB.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
-      }
+    return () => {
+      unsubKids();
+    };
+  }, []);
 
-      const data = Array.from(map.values());
+  // 2) leçons des enfants (2 écoutes: student_id in [...] et participant_ids array-contains-any [...])
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    // si pas d’enfants → rien
+    if (!kidIds.length) { setCourses([]); setLoading(false); return; }
 
-      // prof names
-      const tIds = Array.from(new Set(data.map(l => l.teacher_id).filter(Boolean)));
+    setLoading(true);
+    const unsubs = [];
+    const map = new Map(); // id leçon -> leçon
+
+    const upsert = (docId, data) => {
+      map.set(docId, { id: docId, ...data });
+      setCourses(Array.from(map.values()));
+    };
+    const remove = (docId) => {
+      map.delete(docId);
+      setCourses(Array.from(map.values()));
+    };
+
+    // Firestore limite à 10 pour 'in' & 'array-contains-any'
+    const chunks = (arr, n=10) => Array.from({ length: Math.ceil(arr.length / n)}, (_,i)=>arr.slice(i*n,(i+1)*n));
+
+    // A) lessons via student_id
+    for (const chunk of chunks(kidIds, 10)) {
+      const qA = query(collection(db, 'lessons'), where('student_id', 'in', chunk));
+      const unsubA = onSnapshot(qA, (sA) => {
+        sA.docChanges().forEach((ch) => {
+          if (ch.type === 'removed') remove(ch.doc.id);
+          else upsert(ch.doc.id, ch.doc.data());
+        });
+      });
+      unsubs.push(unsubA);
+    }
+
+    // B) lessons via participant_ids
+    for (const chunk of chunks(kidIds, 10)) {
+      const qB = query(collection(db, 'lessons'), where('participant_ids', 'array-contains-any', chunk));
+      const unsubB = onSnapshot(qB, (sB) => {
+        sB.docChanges().forEach((ch) => {
+          if (ch.type === 'removed') remove(ch.doc.id);
+          else upsert(ch.doc.id, ch.doc.data());
+        });
+      });
+      unsubs.push(unsubB);
+    }
+
+    return () => { unsubs.forEach(fn => fn && fn()); setLoading(false); };
+  }, [kidIds]);
+
+  // 3) enrichissements (noms profs)
+  useEffect(() => {
+    (async () => {
+      const tIds = Array.from(new Set(courses.map(l => l.teacher_id).filter(Boolean)));
       const tProfiles = await Promise.all(tIds.map((tid) => fetchUserProfile(tid)));
       setTeacherMap(new Map(tProfiles.filter(Boolean).map(p => [p.id || p.uid, p.fullName || p.name || p.displayName || 'Professeur'])));
-
-      setCourses(data);
-      setLoading(false);
-    };
-    run();
-  }, []);
+    })();
+  }, [courses]);
 
   // prochaines (confirmées)
   const nextCourse = useMemo(() => {
     const now = new Date();
-    const futureConfirmed = courses
-      .filter(l => l.status === 'confirmed' && FR_DAY_CODES.includes(l.slot_day))
+    const kidsSet = new Set(kidIds);
+
+    // Ne garder que les cours où AU MOINS un de mes enfants est confirmé/accepté
+    const eligible = courses.filter((c) => {
+      if (c.status !== 'confirmed' || !FR_DAY_CODES.includes(c.slot_day)) return false;
+      if (c.is_group) {
+        const ids = c.participant_ids || [];
+        const pm = c.participantsMap || {};
+        return ids.some((sid) => kidsSet.has(sid) && (pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed'));
+      } else {
+        return kidsSet.has(c.student_id);
+      }
+    });
+
+    const future = eligible
       .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
       .filter(l => l.startAt && l.startAt > now)
       .sort((a, b) => a.startAt - b.startAt);
-    return futureConfirmed[0] || null;
-  }, [courses]);
+
+    return future[0] || null;
+  }, [courses, kidIds]);
 
   // invitations pour mes enfants (status invited_student)
   const invitations = useMemo(() => {
+    const kidsSet = new Set(kidIds);
     const list = [];
     for (const c of courses) {
       const pm = c.participantsMap || {};
       const ids = c.participant_ids || [];
-      const invitedChild = ids.find((sid) => pm?.[sid]?.status === 'invited_student' && studentMap.has(sid));
+      const invitedChild = ids.find((sid) => kidsSet.has(sid) && pm?.[sid]?.status === 'invited_student');
       if (invitedChild) list.push({ ...c, __child: invitedChild });
     }
     return list;
-  }, [courses, studentMap]);
+  }, [courses, kidIds]);
 
-  // En attente / Confirmés / Refusés / Terminés
-  const booked = useMemo(
-    () => courses.filter(c => c.status === 'booked'),
-    [courses]
-  );
-  const confirmed = useMemo(
-    () => courses.filter(c => c.status === 'confirmed'),
-    [courses]
-  );
-  const rejected = useMemo(
-    () => courses.filter(c => c.status === 'rejected'),
-    [courses]
-  );
-  const completed = useMemo(
-    () => courses.filter(c => c.status === 'completed'),
-    [courses]
-  );
+  // --- Construire les vues par enfant (ATTENTE / CONFIRMÉS / REFUSÉS / TERMINÉS) ---
+  const kidsSet = useMemo(() => new Set(kidIds), [kidIds]);
+
+  // En attente (items par enfant)
+  const pendingItems = useMemo(() => {
+    const out = [];
+    for (const c of courses) {
+      if (c.is_group) {
+        const pm = c.participantsMap || {};
+        const ids = c.participant_ids || [];
+        ids.forEach((sid) => {
+          if (!kidsSet.has(sid)) return;
+          const st = pm?.[sid]?.status;
+          // En attente si pas accepted/confirmed
+          if (st !== 'accepted' && st !== 'confirmed') {
+            out.push({ c, sid });
+          }
+        });
+      } else {
+        if (c.status === 'booked' && kidsSet.has(c.student_id)) {
+          out.push({ c, sid: c.student_id });
+        }
+      }
+    }
+    // Tri simple par jour/heure
+    out.sort((a, b) => (FR_DAY_CODES.indexOf(a.c.slot_day) - FR_DAY_CODES.indexOf(b.c.slot_day)) || ((a.c.slot_hour||0)-(b.c.slot_hour||0)));
+    return out;
+  }, [courses, kidsSet]);
+
+  // Confirmés (cours avec AU MOINS un enfant confirmé/accepté) + on n’affiche QUE ces enfants-là
+  const confirmedCourses = useMemo(() => {
+    const arr = [];
+    for (const c of courses) {
+      if (c.status !== 'confirmed') continue;
+      if (c.is_group) {
+        const pm = c.participantsMap || {};
+        const ids = c.participant_ids || [];
+        const confirmedKids = ids.filter((sid) => kidsSet.has(sid) && (pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed'));
+        if (confirmedKids.length) arr.push({ c, confirmedKids });
+      } else {
+        if (kidsSet.has(c.student_id)) arr.push({ c, confirmedKids: [c.student_id] });
+      }
+    }
+    return arr;
+  }, [courses, kidsSet]);
+
+  // Terminés (même logique que confirmés)
+  const completedCourses = useMemo(() => {
+    const arr = [];
+    for (const c of courses) {
+      if (c.status !== 'completed') continue;
+      if (c.is_group) {
+        const pm = c.participantsMap || {};
+        const ids = c.participant_ids || [];
+        const confirmedKids = ids.filter((sid) => kidsSet.has(sid) && (pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed'));
+        if (confirmedKids.length) arr.push({ c, confirmedKids });
+      } else {
+        if (kidsSet.has(c.student_id)) arr.push({ c, confirmedKids: [c.student_id] });
+      }
+    }
+    return arr;
+  }, [courses, kidsSet]);
+
+  // Refusés (cours rejetés de l’enfant individuel; pour groupe, on n’affiche que si le cours entier est rejeté)
+  const rejectedCourses = useMemo(() => {
+    return courses.filter((c) => c.status === 'rejected' && (
+      (c.is_group && (c.participant_ids || []).some((sid) => kidsSet.has(sid))) ||
+      (!c.is_group && kidsSet.has(c.student_id))
+    ));
+  }, [courses, kidsSet]);
 
   // actions invitations (pour l’enfant)
   async function acceptInvite(c) {
     const sid = c.__child;
     try {
       await updateDoc(doc(db, 'lessons', c.id), { [`participantsMap.${sid}.status`]: 'accepted' });
-      setCourses(prev => prev.map(x => x.id === c.id ? {
-        ...x,
-        participantsMap: { ...(x.participantsMap||{}), [sid]: { ...(x.participantsMap?.[sid]||{}), status: 'accepted' } }
-      } : x));
     } catch (e) {
       console.error(e);
       alert("Impossible d'accepter l'invitation.");
@@ -210,7 +312,6 @@ export default function ParentCourses() {
         participant_ids: newIds,
         [`participantsMap.${sid}`]: null,
       });
-      setCourses(prev => prev.map(x => x.id === c.id ? { ...x, participant_ids: newIds } : x));
     } catch (e) {
       console.error(e);
       alert("Impossible de refuser l'invitation.");
@@ -270,16 +371,37 @@ export default function ParentCourses() {
     );
   }
 
-  function CourseCard({ c }) {
-    const isGroup = !!c.is_group;
+  // Cartes
+  function PendingItemCard({ c, sid }) {
+    return (
+      <div className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
+            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800">En attente</span>
+            {c.is_group && <ParticipantsPopover c={c} />}
+          </div>
+          <div className="text-gray-700 text-sm flex flex-wrap items-center gap-2">
+            <span className="opacity-80">Enfant&nbsp;:</span>
+            <span className="inline-flex items-center gap-2 bg-gray-50 px-2 py-0.5 rounded-full border">
+              <span className="font-semibold">{childNameFor(sid)}</span>
+              {paymentBadgeForChild(c, sid)}
+            </span>
+          </div>
+          <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>
+          <div className="text-gray-500 text-xs">{c.slot_day} {formatHour(c.slot_hour)}</div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => { setDocLesson(c); setDocOpen(true); }}>
+            📄 Documents
+          </button>
+        </div>
+      </div>
+    );
+  }
 
-    // enfants concernés (tous ceux du parent présents sur ce cours)
-    const kidsOfParent = Array.from(studentMap.keys());
-    const childrenInCourse = [
-      ...(c.student_id && kidsOfParent.includes(c.student_id) ? [c.student_id] : []),
-      ...((c.participant_ids || []).filter((sid) => kidsOfParent.includes(sid)))
-    ];
-    const uniqueChildren = Array.from(new Set(childrenInCourse));
+  function CourseCard({ c, kids }) {
+    const isGroup = !!c.is_group;
 
     return (
       <div className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between">
@@ -290,10 +412,10 @@ export default function ParentCourses() {
             {isGroup && <ParticipantsPopover c={c} />}
           </div>
 
-          {/* Enfants (côte à côte) */}
+          {/* Enfants (côte à côte) — uniquement ceux confirmés/acceptés fournis par l’appelant */}
           <div className="text-gray-700 text-sm flex flex-wrap items-center gap-2">
             <span className="opacity-80">Enfant(s)&nbsp;:</span>
-            {uniqueChildren.length ? uniqueChildren.map((sid) => (
+            {kids && kids.length ? kids.map((sid) => (
               <span key={sid} className="inline-flex items-center gap-2 bg-gray-50 px-2 py-0.5 rounded-full border">
                 <span className="font-semibold">{childNameFor(sid)}</span>
                 {paymentBadgeForChild(c, sid)}
@@ -323,23 +445,22 @@ export default function ParentCourses() {
       <div className="max-w-3xl mx-auto">
         <h2 className="text-2xl font-bold text-primary mb-6">📚 Suivi des cours (enfants)</h2>
 
-        {/* Prochain cours */}
+        {/* Prochain cours (uniquement si au moins un enfant confirmé/accepté) */}
         <div className="bg-white rounded-xl shadow p-6 border-l-4 border-primary mb-6">
           <div className="text-3xl mb-2">📅</div>
           <div className="text-xl font-bold text-primary">Prochain cours</div>
           <div className="text-gray-700 mt-1">
             {nextCourse
               ? (() => {
-                  const kidsOfParent = Array.from(studentMap.keys());
-                  const childrenInCourse = [
-                    ...(nextCourse.student_id && kidsOfParent.includes(nextCourse.student_id) ? [nextCourse.student_id] : []),
-                    ...((nextCourse.participant_ids || []).filter((id) => kidsOfParent.includes(id)))
-                  ];
-                  const uniqueChildren = Array.from(new Set(childrenInCourse));
-                  const childrenLabel = uniqueChildren.length > 1
-                    ? `Participants: ${uniqueChildren.map((id) => childNameFor(id)).join(', ')}`
-                    : childNameFor(uniqueChildren[0] || nextCourse.student_id);
-                  return `${nextCourse.subject_id || 'Cours'} · ${nextCourse.slot_day} ${formatHour(nextCourse.slot_hour)} · ${childrenLabel} · avec ${teacherNameFor(nextCourse.teacher_id)}`;
+                  const c = nextCourse;
+                  const pm = c.participantsMap || {};
+                  const kidsConfirmed = c.is_group
+                    ? (c.participant_ids || []).filter((sid) => kidsSet.has(sid) && (pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed'))
+                    : (c.student_id ? [c.student_id] : []);
+                  const childrenLabel = kidsConfirmed.length > 1
+                    ? `Participants: ${kidsConfirmed.map((id) => studentMap.get(id) || id).join(', ')}`
+                    : (studentMap.get(kidsConfirmed[0]) || c.student_id);
+                  return `${c.subject_id || 'Cours'} · ${c.slot_day} ${formatHour(c.slot_hour)} · ${childrenLabel} · avec ${teacherNameFor(c.teacher_id)}`;
                 })()
               : 'Aucun cours confirmé à venir'}
           </div>
@@ -366,7 +487,7 @@ export default function ParentCourses() {
                           <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
                           <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded">Invitation</span>
                         </div>
-                        <div className="text-gray-700 text-sm">Enfant : <span className="font-semibold">{childNameFor(c.__child)}</span></div>
+                        <div className="text-gray-700 text-sm">Enfant : <span className="font-semibold">{studentMap.get(c.__child) || c.__child}</span></div>
                         <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>
                         <div className="text-gray-500 text-xs">{c.slot_day} {formatHour(c.slot_hour)}</div>
                       </div>
@@ -384,17 +505,19 @@ export default function ParentCourses() {
               )}
             </section>
 
-            {/* En attente de confirmation */}
+            {/* En attente (par enfant) */}
             <section className="mb-8">
               <div className="flex items-baseline justify-between mb-3">
                 <h3 className="text-lg font-semibold">En attente de confirmation</h3>
-                <span className="text-sm text-gray-500">{booked.length}</span>
+                <span className="text-sm text-gray-500">{pendingItems.length}</span>
               </div>
-              {booked.length === 0 ? (
+              {pendingItems.length === 0 ? (
                 <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucun cours en attente.</div>
               ) : (
                 <div className="grid grid-cols-1 gap-4">
-                  {booked.map((c) => <CourseCard key={c.id} c={c} />)}
+                  {pendingItems.map(({ c, sid }) => (
+                    <PendingItemCard key={`${c.id}:${sid}`} c={c} sid={sid} />
+                  ))}
                 </div>
               )}
             </section>
@@ -403,28 +526,36 @@ export default function ParentCourses() {
             <section className="mb-8">
               <div className="flex items-baseline justify-between mb-3">
                 <h3 className="text-lg font-semibold">Cours confirmés</h3>
-                <span className="text-sm text-gray-500">{confirmed.length}</span>
+                <span className="text-sm text-gray-500">{confirmedCourses.length}</span>
               </div>
-              {confirmed.length === 0 ? (
+              {confirmedCourses.length === 0 ? (
                 <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucun cours confirmé.</div>
               ) : (
                 <div className="grid grid-cols-1 gap-4">
-                  {confirmed.map((c) => <CourseCard key={c.id} c={c} />)}
+                  {confirmedCourses.map(({ c, confirmedKids }) => (
+                    <CourseCard key={c.id} c={c} kids={confirmedKids} />
+                  ))}
                 </div>
               )}
             </section>
 
-            {/* Refusés */}
+            {/* Refusés (simplifié) */}
             <section className="mb-8">
               <div className="flex items-baseline justify-between mb-3">
                 <h3 className="text-lg font-semibold">Cours refusés</h3>
-                <span className="text-sm text-gray-500">{rejected.length}</span>
+                <span className="text-sm text-gray-500">{rejectedCourses.length}</span>
               </div>
-              {rejected.length === 0 ? (
+              {rejectedCourses.length === 0 ? (
                 <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucun cours refusé.</div>
               ) : (
                 <div className="grid grid-cols-1 gap-4">
-                  {rejected.map((c) => <CourseCard key={c.id} c={c} />)}
+                  {rejectedCourses.map((c) => (
+                    <CourseCard key={c.id} c={c} kids={
+                      c.is_group
+                        ? (c.participant_ids || []).filter((sid) => kidsSet.has(sid))
+                        : (kidsSet.has(c.student_id) ? [c.student_id] : [])
+                    } />
+                  ))}
                 </div>
               )}
             </section>
@@ -433,13 +564,15 @@ export default function ParentCourses() {
             <section className="mb-8">
               <div className="flex items-baseline justify-between mb-3">
                 <h3 className="text-lg font-semibold">Cours terminés</h3>
-                <span className="text-sm text-gray-500">{completed.length}</span>
+                <span className="text-sm text-gray-500">{completedCourses.length}</span>
               </div>
-              {completed.length === 0 ? (
+              {completedCourses.length === 0 ? (
                 <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucun cours terminé.</div>
               ) : (
                 <div className="grid grid-cols-1 gap-4">
-                  {completed.map((c) => <CourseCard key={c.id} c={c} />)}
+                  {completedCourses.map(({ c, confirmedKids }) => (
+                    <CourseCard key={c.id} c={c} kids={confirmedKids} />
+                  ))}
                 </div>
               )}
             </section>
