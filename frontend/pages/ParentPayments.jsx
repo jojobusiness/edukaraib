@@ -12,33 +12,16 @@ import {
 import DashboardLayout from '../components/DashboardLayout';
 import fetchWithAuth from '../utils/fetchWithAuth';
 
-// ----- helpers -----
 const fmtDateTime = (start_datetime, slot_day, slot_hour) => {
-  if (start_datetime?.toDate) {
-    try { return start_datetime.toDate().toLocaleString('fr-FR'); } catch {}
-  }
-  if (typeof start_datetime?.seconds === 'number') {
-    return new Date(start_datetime.seconds * 1000).toLocaleString('fr-FR');
-  }
-  if (slot_day && (slot_hour || slot_hour === 0)) {
-    return `${slot_day} • ${String(slot_hour).padStart(2, '0')}:00`;
-  }
+  if (start_datetime?.toDate) { try { return start_datetime.toDate().toLocaleString('fr-FR'); } catch {} }
+  if (typeof start_datetime?.seconds === 'number') return new Date(start_datetime.seconds * 1000).toLocaleString('fr-FR');
+  if (slot_day && (slot_hour || slot_hour === 0)) return `${slot_day} • ${String(slot_hour).padStart(2, '0')}:00`;
   return '—';
 };
-
-const toNumber = (v) => {
-  const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v);
-  return Number.isFinite(n) ? n : 0;
-};
-
+const toNumber = (v) => { const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v); return Number.isFinite(n) ? n : 0; };
 const getAmount = (l) =>
-  toNumber(l.total_amount) ||
-  toNumber(l.total_price) ||
-  toNumber(l.amount_paid) ||
-  toNumber(l.amount) ||
-  toNumber(l.price_per_hour);
+  toNumber(l.total_amount) || toNumber(l.total_price) || toNumber(l.amount_paid) || toNumber(l.amount) || toNumber(l.price_per_hour);
 
-// payé pour un enfant donné
 const isPaidForStudent = (lesson, studentId) => {
   if (!lesson) return false;
   if (lesson.participantsMap && studentId) {
@@ -49,9 +32,8 @@ const isPaidForStudent = (lesson, studentId) => {
   return false;
 };
 
-// ----- page -----
 export default function ParentPayments() {
-  const [toPay, setToPay] = useState([]);   // { lesson, forStudent, teacherName, childName }
+  const [toPay, setToPay] = useState([]);   // [{ lesson, forStudent, teacherName, childName }]
   const [paid, setPaid] = useState([]);
   const [loading, setLoading] = useState(true);
   const [payingId, setPayingId] = useState(null);
@@ -74,30 +56,22 @@ export default function ParentPayments() {
       return name;
     } catch { return uid; }
   };
-
   const childNameOf = async (idOrUid) => {
     if (!idOrUid) return 'Enfant';
     const cache = childNameCacheRef.current;
     if (cache.has(idOrUid)) return cache.get(idOrUid);
-
-    // students/{id}
     try {
       const s = await getDoc(doc(db, 'students', idOrUid));
       if (s.exists()) {
-        const d = s.data();
-        const nm = d.full_name || d.name || idOrUid;
-        cache.set(idOrUid, nm);
-        return nm;
+        const d = s.data(); const nm = d.full_name || d.name || idOrUid;
+        cache.set(idOrUid, nm); return nm;
       }
     } catch {}
-    // users/{uid}
     try {
       const s = await getDoc(doc(db, 'users', idOrUid));
       if (s.exists()) {
-        const d = s.data();
-        const nm = d.fullName || d.name || d.displayName || idOrUid;
-        cache.set(idOrUid, nm);
-        return nm;
+        const d = s.data(); const nm = d.fullName || d.name || d.displayName || idOrUid;
+        cache.set(idOrUid, nm); return nm;
       }
     } catch {}
     cache.set(idOrUid, idOrUid);
@@ -109,11 +83,9 @@ export default function ParentPayments() {
     if (!user) { setLoading(false); return; }
     setLoading(true);
 
-    // 1) Récupère les enfants de ce parent
     (async () => {
-      const kidsSnap = await getDocs(
-        query(collection(db, 'students'), where('parent_id', '==', user.uid))
-      );
+      // 1) Liste des enfants du parent (ids utilisables pour student_id ou participant_ids)
+      const kidsSnap = await getDocs(query(collection(db, 'students'), where('parent_id', '==', user.uid)));
       const kids = kidsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
       const childIds = [];
       kids.forEach((k) => {
@@ -127,75 +99,60 @@ export default function ParentPayments() {
         return;
       }
 
-      // 2) Abonnements : (a) legacy student_id IN chunk(s)
-      const chunks = [];
-      for (let i = 0; i < childIds.length; i += 10) chunks.push(childIds.slice(i, i + 10));
-
+      // 2) Abonnements: legacy student_id IN (par lot) + groupes array-contains (par enfant)
+      const chunks = []; for (let i = 0; i < childIds.length; i += 10) chunks.push(childIds.slice(i, i + 10));
       let combined = new Map();
+      const unsubs = [];
 
-      const buildAndRender = async () => {
-        // transforme en lignes spécifiques parent (identifier l'enfant concerné)
-        const raw = Array.from(combined.values());
-
+      const rebuildRows = async () => {
+        const lessons = Array.from(combined.values());
         const rows = [];
-        for (const l of raw) {
-          // trouve l'enfant de CE parent sur cette leçon
-          let childForThisParent = null;
 
-          if (Array.isArray(l.participant_ids) && l.participant_ids.length) {
-            // le premier enfant de ce parent présent dans la liste
-            childForThisParent = l.participant_ids.find((id) => childIds.includes(id)) || null;
-          } else if (l.student_id && childIds.includes(l.student_id)) {
-            childForThisParent = l.student_id;
+        for (const l of lessons) {
+          // IDs des enfants de CE parent dans cette leçon
+          const presentIds = new Set();
+          if (l.student_id && childIds.includes(l.student_id)) presentIds.add(l.student_id);
+          if (Array.isArray(l.participant_ids)) {
+            l.participant_ids.forEach((id) => { if (childIds.includes(id)) presentIds.add(id); });
           }
-
-          if (!childForThisParent) continue;
-
-          const [teacherName, childName] = await Promise.all([
-            teacherNameOf(l.teacher_id),
-            childNameOf(childForThisParent),
-          ]);
-
-          rows.push({
-            lesson: l,
-            forStudent: childForThisParent,
-            teacherName,
-            childName,
-          });
+          // Une ligne PAR enfant présent
+          for (const sid of presentIds) {
+            const [teacherName, childName] = await Promise.all([
+              teacherNameOf(l.teacher_id),
+              childNameOf(sid),
+            ]);
+            rows.push({ lesson: l, forStudent: sid, teacherName, childName });
+          }
         }
 
-        // Filtrer “confirmés”
+        // Confirmés uniquement pour le paiement
         const confirmed = rows.filter((r) => r.lesson.status === 'confirmed');
-
         const unpaid = confirmed.filter((r) => !isPaidForStudent(r.lesson, r.forStudent));
         const alreadyPaid = rows.filter((r) => isPaidForStudent(r.lesson, r.forStudent));
 
-        // Tri par date décroissante
-        const getTs = (l) =>
-          (l.start_datetime?.toDate?.() && l.start_datetime.toDate().getTime()) ||
-          (l.start_datetime?.seconds && l.start_datetime.seconds * 1000) || 0;
+        const getTs = (r) =>
+          (r.lesson.start_datetime?.toDate?.() && r.lesson.start_datetime.toDate().getTime()) ||
+          (r.lesson.start_datetime?.seconds && r.lesson.start_datetime.seconds * 1000) || 0;
 
-        setToPay(unpaid.sort((a, b) => getTs(a.lesson) - getTs(b.lesson)));
-        setPaid(alreadyPaid.sort((a, b) => getTs(b.lesson) - getTs(a.lesson)));
+        setToPay(unpaid.sort((a, b) => getTs(a) - getTs(b)));
+        setPaid(alreadyPaid.sort((a, b) => getTs(b) - getTs(a)));
         setLoading(false);
       };
 
-      // (a) legacy
-      const unsubs = [];
+      // Legacy: student_id IN
       for (const c of chunks) {
         const qLegacy = query(collection(db, 'lessons'), where('student_id', 'in', c));
         unsubs.push(onSnapshot(qLegacy, (snap) => {
           snap.docs.forEach((d) => combined.set(d.id, { id: d.id, ...d.data() }));
-          buildAndRender();
+          rebuildRows();
         }, (e) => { console.error(e); setLoading(false); }));
       }
-
-      // (b) groupe : participant_ids array-contains (1 q par enfant)
+      // Groupes: array-contains par enfant
       childIds.forEach((cid) => {
         const qGroup = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', cid));
         unsubs.push(onSnapshot(qGroup, (snap) => {
           snap.docs.forEach((d) => combined.set(d.id, { id: d.id, ...d.data() }));
-          buildAndRender();
+          rebuildRows();
         }, (e) => { console.error(e); setLoading(false); }));
       });
 
@@ -212,23 +169,9 @@ export default function ParentPayments() {
   const handlePay = async (row) => {
     try {
       setPayingId(row.lesson.id);
-
-      // diagnostic
-      const diag = await fetchWithAuth('/api/pay/diag', {
-        method: 'POST',
-        body: JSON.stringify({ lessonId: row.lesson.id, forStudent: row.forStudent }),
-      });
-      if (!diag?.ok) {
-        alert('Diagnostic paiement : ' + (diag?.error || 'inconnu'));
-        setPayingId(null);
-        return;
-      }
-
-      // session Stripe
-      const data = await fetchWithAuth('/api/pay/create-checkout-session', {
-        method: 'POST',
-        body: JSON.stringify({ lessonId: row.lesson.id, forStudent: row.forStudent }),
-      });
+      const diag = await fetchWithAuth('/api/pay/diag', { method: 'POST', body: JSON.stringify({ lessonId: row.lesson.id, forStudent: row.forStudent }) });
+      if (!diag?.ok) { alert('Diagnostic paiement : ' + (diag?.error || 'inconnu')); setPayingId(null); return; }
+      const data = await fetchWithAuth('/api/pay/create-checkout-session', { method: 'POST', body: JSON.stringify({ lessonId: row.lesson.id, forStudent: row.forStudent }) });
       if (!data?.url) throw new Error('Lien de paiement introuvable.');
       window.location.href = data.url;
     } catch (e) {
@@ -248,9 +191,7 @@ export default function ParentPayments() {
         <div className="mb-8">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-bold text-secondary">Paiements à effectuer</h3>
-            {!loading && (
-              <span className="text-xs text-gray-600">Total à régler : {totals.due.toFixed(2)} €</span>
-            )}
+            {!loading && <span className="text-xs text-gray-600">Total à régler : {totals.due.toFixed(2)} €</span>}
           </div>
 
           {loading ? (
@@ -294,9 +235,7 @@ export default function ParentPayments() {
         <div className="bg-white p-6 rounded-xl shadow border">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-bold text-primary">Historique des paiements</h3>
-            {!loading && (
-              <span className="text-xs text-gray-600">Total payé : {totals.paid.toFixed(2)} €</span>
-            )}
+            {!loading && <span className="text-xs text-gray-600">Total payé : {totals.paid.toFixed(2)} €</span>}
           </div>
 
           {loading ? (
@@ -311,9 +250,7 @@ export default function ParentPayments() {
                   className="border rounded-lg px-4 py-2 flex flex-col md:flex-row md:items-center gap-2 bg-gray-50"
                 >
                   <span className="font-bold text-primary">{r.lesson.subject_id || 'Matière'}</span>
-                  <span className="text-xs text-gray-600">
-                    {fmtDateTime(r.lesson.start_datetime, r.lesson.slot_day, r.lesson.slot_hour)}
-                  </span>
+                  <span className="text-xs text-gray-600">{fmtDateTime(r.lesson.start_datetime, r.lesson.slot_day, r.lesson.slot_hour)}</span>
                   <span className="text-xs text-gray-600">Enfant : {r.childName || r.forStudent}</span>
                   <span className="text-xs text-gray-600">Prof : {r.teacherName || r.lesson.teacher_id}</span>
                   <span className="text-green-600 text-xs font-semibold md:ml-auto">Payé</span>
