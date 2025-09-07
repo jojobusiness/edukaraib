@@ -270,9 +270,6 @@ export default function TeacherLessons() {
     <DashboardLayout role="teacher">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-primary">📚 Mes cours</h2>
-        <p className="text-gray-600 text-sm">
-          Les “en attente” n’apparaissent pas dans les participants. Confirme individuellement les élèves des groupes.
-        </p>
       </div>
 
       {/* Demandes à valider */}
