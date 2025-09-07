@@ -113,14 +113,24 @@ function chunk(arr, size = 10) {
   return out;
 }
 
+// Petite bulle nom
+function NameChip({ children }) {
+  return (
+    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-800 text-xs font-medium">
+      {children}
+    </span>
+  );
+}
+
 export default function ParentCalendar() {
   const [lessons, setLessons] = useState([]);
-  const [studentMap, setStudentMap] = useState(new Map());
-  const [teacherMap, setTeacherMap] = useState(new Map());
-  const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map()); // lessonId -> [names]
+  const [studentMap, setStudentMap] = useState(new Map()); // id enfant -> nom enfant
+  const [teacherMap, setTeacherMap] = useState(new Map()); // (laissé pour compat, non affiché)
+  const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map()); // lessonId -> [names] (autres participants)
   const [openGroupId, setOpenGroupId] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const [kidIds, setKidIds] = useState([]); // liste des enfants du parent (ids)
   const nameCacheRef = useRef(new Map());
 
   useEffect(() => {
@@ -133,6 +143,8 @@ export default function ParentCalendar() {
         query(collection(db, 'students'), where('parent_id', '==', auth.currentUser.uid))
       );
       const kids = kidsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const kidIdsLocal = kids.map(k => k.id);
+      setKidIds(kidIdsLocal);
 
       if (kids.length === 0) {
         setLessons([]);
@@ -145,8 +157,7 @@ export default function ParentCalendar() {
       }
 
       // 2) Cours où l’enfant est dans student_id (in par lots)
-      const kidIds = kids.map(k => k.id);
-      const lessonChunks = chunk(kidIds, 10);
+      const lessonChunks = chunk(kidIdsLocal, 10);
       const map = new Map();
 
       for (const c of lessonChunks) {
@@ -156,7 +167,7 @@ export default function ParentCalendar() {
       }
 
       // 3) Cours où l’enfant est dans participant_ids (array-contains -> 1 requête par enfant)
-      for (const kid of kidIds) {
+      for (const kid of kidIdsLocal) {
         const qPart = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', kid));
         const snapP = await getDocs(qPart);
         snapP.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
@@ -175,7 +186,7 @@ export default function ParentCalendar() {
       );
       setStudentMap(sMap);
 
-      // 6) Profils profs
+      // 6) Profils profs (gardé mais non affiché)
       const teacherUids = Array.from(new Set(allLessons.map(l => l.teacher_id).filter(Boolean)));
       const profiles = await Promise.all(teacherUids.map(uid => fetchUserProfile(uid)));
       const tMap = new Map(
@@ -191,7 +202,7 @@ export default function ParentCalendar() {
       );
       setTeacherMap(tMap);
 
-      // 7) Participants (noms)
+      // 7) Participants (noms, pour popover si besoin)
       const idSet = new Set();
       allLessons.forEach(l => {
         if (l.is_group) {
@@ -240,6 +251,21 @@ export default function ParentCalendar() {
     return m;
   }, [week, lessons]);
 
+  // Récupère les noms des enfants du parent impliqués dans une leçon
+  const childNamesForLesson = (l) => {
+    const ids = new Set();
+    if (l.student_id && kidIds.includes(l.student_id)) ids.add(l.student_id);
+    if (Array.isArray(l.participant_ids)) {
+      l.participant_ids.forEach(id => { if (kidIds.includes(id)) ids.add(id); });
+    }
+    const list = Array.from(ids);
+    if (list.length === 0 && l.student_id && studentMap.has(l.student_id)) {
+      // fallback legacy (cours individuel où l'enfant est dans student_id)
+      list.push(l.student_id);
+    }
+    return list.map(id => studentMap.get(id) || id);
+  };
+
   // Prochain cours (confirmé futur)
   const nextCourse = useMemo(() => {
     const now = new Date();
@@ -263,21 +289,26 @@ export default function ParentCalendar() {
       <div className="max-w-3xl mx-auto">
         <h2 className="text-2xl font-bold text-primary mb-6">🗓️ Planning hebdo des enfants</h2>
 
-        {/* Prochain cours */}
+        {/* Prochain cours — n'affiche QUE les enfants (si plusieurs : côte à côte) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           <div className="bg-white rounded-xl shadow p-6 border-l-4 border-primary flex flex-col items-start md:col-span-3">
             <span className="text-3xl mb-2">📅</span>
             <span className="text-xl font-bold text-primary">Prochain cours</span>
-            <span className="text-gray-700 mt-1">
-              {nextCourse
-                ? (() => {
-                    const childName = studentMap.get(nextCourse.student_id) || 'Enfant';
-                    const teacher = teacherMap.get(nextCourse.teacher_id) || {};
-                    const when = `${nextCourse.slot_day} ${String(nextCourse.slot_hour).padStart(2,'0')}h`;
-                    return `${nextCourse.subject_id || 'Cours'} · ${when} · avec ${teacher.name || nextCourse.teacher_id} · ${childName}`;
-                  })()
-                : 'Aucun cours confirmé à venir'}
-            </span>
+            <div className="text-gray-700 mt-2 flex flex-wrap gap-2 items-center">
+              {nextCourse ? (
+                <>
+                  <span className="text-xs text-gray-600">
+                    {nextCourse.slot_day} {String(nextCourse.slot_hour).padStart(2,'0')}h
+                  </span>
+                  {/* Enfants du parent concernés */}
+                  {childNamesForLesson(nextCourse).map((nm, i) => (
+                    <NameChip key={`nc:${i}`}>{nm}</NameChip>
+                  ))}
+                </>
+              ) : (
+                <span className="text-gray-700">Aucun cours confirmé à venir</span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -301,16 +332,14 @@ export default function ParentCalendar() {
                       .filter(l => l.status === 'confirmed' || l.status === 'completed')
                       .sort((a, b) => (Number(a.slot_hour) || 0) - (Number(b.slot_hour) || 0))
                       .map(l => {
-                        const childName = studentMap.get(l.student_id) || 'Enfant';
-                        const teacher = teacherMap.get(l.teacher_id) || {};
                         const isGroup = !!l.is_group;
-                        const groupNames = groupNamesByLesson.get(l.id) || [];
                         const open = openGroupId === l.id;
+                        const kidsNames = childNamesForLesson(l); // <= tous les enfants du parent sur ce cours
 
                         return (
                           <li
                             key={l.id}
-                            className="relative flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border"
+                            className="relative flex items-center gap-3 bg-gray-50 px-3 py-2 rounded-lg border"
                           >
                             <span
                               className={`px-3 py-1 rounded-full text-xs font-semibold ${
@@ -320,41 +349,37 @@ export default function ParentCalendar() {
                               {l.status === 'confirmed' ? 'Confirmé' : l.status === 'completed' ? 'Terminé' : l.status}
                             </span>
 
-                            <span className="font-bold text-primary">{childName}</span>
-                            <span className="font-bold text-secondary">{l.subject_id || 'Matière'}</span>
+                            {/* NOMS DES ENFANTS UNIQUEMENT (côte à côte) */}
+                            <div className="flex flex-wrap gap-2">
+                              {kidsNames.length ? (
+                                kidsNames.map((nm, i) => <NameChip key={`kid:${l.id}:${i}`}>{nm}</NameChip>)
+                              ) : (
+                                <span className="text-xs text-gray-500">—</span>
+                              )}
+                            </div>
 
-                            <span className="text-xs text-gray-600 flex items-center gap-2">
-                              {teacher.avatar ? (
-                                <img
-                                  src={teacher.avatar}
-                                  alt={teacher.name}
-                                  className="w-5 h-5 rounded-full object-cover border"
-                                />
-                              ) : null}
-                              {teacher.name || l.teacher_id}
+                            {/* Heure à droite */}
+                            <span className="text-xs text-gray-500 ml-auto">
+                              {formatHourFromSlot(l.slot_hour)}
                             </span>
 
+                            {/* (Optionnel) Voir les autres participants du groupe — on garde le popover mais il montre tous les élèves du groupe (pas que tes enfants) */}
                             {isGroup && (
                               <button
                                 className="ml-2 text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100"
                                 onClick={() => setOpenGroupId(open ? null : l.id)}
                                 title="Voir les élèves du groupe"
                               >
-                                👥 {groupNames.length}
+                                👥
                               </button>
                             )}
 
-                            <span className="text-xs text-gray-500 ml-auto">
-                              {formatHourFromSlot(l.slot_hour)}
-                            </span>
-
-                            {/* Mini-fenêtre participants (noms uniquement) */}
                             {isGroup && open && (
                               <div className="absolute top-full mt-2 left-3 z-10 bg-white border rounded-lg shadow p-3 w-64">
-                                <div className="text-xs font-semibold mb-1">Élèves du groupe</div>
-                                {groupNames.length ? (
+                                <div className="text-xs font-semibold mb-1">Tous les élèves du groupe</div>
+                                {Array.isArray(groupNamesByLesson.get(l.id)) && groupNamesByLesson.get(l.id).length ? (
                                   <ul className="text-sm text-gray-700 list-disc pl-4 space-y-1">
-                                    {groupNames.map((nm, i) => (
+                                    {groupNamesByLesson.get(l.id).map((nm, i) => (
                                       <li key={i}>{nm}</li>
                                     ))}
                                   </ul>

@@ -43,7 +43,7 @@ async function searchStudentsByName(termRaw) {
   const MAX = 12;
   const out = [];
 
-  // 1) STUDENTS avec index prefix (si dispo)
+  // 1) STUDENTS (index prefix si dispo)
   try {
     const qs = query(
       collection(db, 'students'),
@@ -55,11 +55,9 @@ async function searchStudentsByName(termRaw) {
     snap.forEach((d) =>
       out.push({ id: d.id, name: pickStudentName(d.data()), source: 'students' })
     );
-  } catch {
-    /* ignore (si index pas créé) */
-  }
+  } catch {}
 
-  // 2) Fallback STUDENTS (petit scan + filtre client)
+  // 2) Fallback STUDENTS
   if (out.length === 0) {
     let filled = false;
     for (const key of ['full_name', 'name', '__name__']) {
@@ -74,9 +72,7 @@ async function searchStudentsByName(termRaw) {
           }
         });
         filled = out.length > 0;
-      } catch {
-        /* ignore */
-      }
+      } catch {}
     }
     if (out.length === 0) {
       try {
@@ -92,7 +88,7 @@ async function searchStudentsByName(termRaw) {
     }
   }
 
-  // 3) USERS (au cas où certains élèves existent dans users)
+  // 3) USERS (rôle élève)
   try {
     const qu = query(collection(db, 'users'), where('role', 'in', ['student', 'child']), limit(120));
     const snapU = await getDocs(qu);
@@ -128,7 +124,7 @@ async function searchStudentsByName(termRaw) {
     } catch {}
   }
 
-  // Déduplique + tri simple pertinence
+  // Déduplique + tri
   const seen = new Set();
   const uniq = [];
   for (const r of out) {
@@ -154,30 +150,16 @@ function countConfirmed(participant_ids = [], participantsMap = {}) {
   for (const id of participant_ids) {
     const st = participantsMap?.[id]?.status || 'confirmed';
     if (st === 'confirmed') acc += 1;
+    if (st === 'accepted') acc += 1;
   }
   return acc;
 }
 
-/* ===== badges ===== */
-const statusBadge = (st = 'accepted') => {
-  const label =
-    st === 'invited_student' ? 'Invité'
-      : st === 'accepted' ? 'Accepté'
-      : st === 'confirmed' ? 'Confirmé'
-      : st === 'rejected' ? 'Refusé'
-      : st;
-  const cls =
-    st === 'invited_student' ? 'bg-indigo-50 text-indigo-700'
-      : st === 'accepted' ? 'bg-amber-50 text-amber-700'
-      : st === 'confirmed' ? 'bg-green-100 text-green-700'
-      : 'bg-red-100 text-red-700';
-  return <span className={`text-[11px] px-2 py-0.5 rounded-full ${cls}`}>{label}</span>;
-};
-
-function Chip({ children, onRemove }) {
+/* ===== Chip ===== */
+function Chip({ children, onRemove, title }) {
   return (
     <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-100 text-gray-800 text-sm">
-      {children}
+      <span title={title}>{children}</span>
       {onRemove && (
         <button
           onClick={onRemove}
@@ -192,7 +174,7 @@ function Chip({ children, onRemove }) {
 }
 
 /* ====================================================
-   GroupSettingsModal (AFFICHE TOUS les participants)
+   GroupSettingsModal (bulles + sections)
    ==================================================== */
 export default function GroupSettingsModal({ open, onClose, lesson }) {
   const [capacity, setCapacity] = useState(lesson?.capacity || 1);
@@ -219,7 +201,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
         if (!snap.exists()) return;
         const data = snap.data();
 
-        // migration legacy au premier affichage (si besoin)
+        // migration legacy (si besoin)
         if (
           !migrated &&
           data.is_group &&
@@ -395,20 +377,14 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     }
   }
 
-  // Confirmer / Refuser un participant (depuis le modal si besoin)
-  async function setParticipantStatus(id, newStatus) {
-    try {
-      await updateDoc(doc(db, 'lessons', lesson.id), {
-        [`participantsMap.${id}.status`]: newStatus,
-      });
-    } catch (e) {
-      console.error(e);
-      alert("Action impossible pour l'élève.");
-    }
-  }
-
-  // Liste pour affichage unique : TOUS les participants
-  const allParticipantIds = participantIds || [];
+  // --- Listes d'affichage ---
+  const allIds = participantIds || [];
+  const acceptedOrConfirmed = allIds.filter((sid) => {
+    const st = participantsMap?.[sid]?.status || 'confirmed';
+    return st === 'accepted' || st === 'confirmed';
+  });
+  const invited = allIds.filter((sid) => participantsMap?.[sid]?.status === 'invited_student');
+  const pendingTeacher = allIds.filter((sid) => participantsMap?.[sid]?.status === 'pending_teacher');
 
   if (!open || !lesson) return null;
 
@@ -423,9 +399,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
 
         {/* Body */}
         <div className="p-5 space-y-6">
-          {loading && (
-            <div className="text-sm text-gray-500">Chargement du groupe…</div>
-          )}
+          {loading && <div className="text-sm text-gray-500">Chargement du groupe…</div>}
 
           {/* Capacité */}
           <div className="flex items-center gap-3">
@@ -466,11 +440,11 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
                     key={`pick:${r.id}`}
                     className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center justify-between"
                     onClick={() => addByPick(r)}
-                    disabled={participantIds.includes(r.id)}
+                    disabled={allIds.includes(r.id)}
                     title={r.source}
                   >
                     <span>{r.name}</span>
-                    {participantIds.includes(r.id) && (
+                    {allIds.includes(r.id) && (
                       <span className="text-xs text-green-600">déjà listé</span>
                     )}
                   </button>
@@ -482,48 +456,61 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
             )}
           </div>
 
-          {/* Participants : TOUS les élèves (invités / acceptés / confirmés / refusés) */}
+          {/* Participants (acceptés/confirmés) */}
           <div className="border rounded-lg p-3">
             <div className="font-medium mb-2">Participants</div>
-            {allParticipantIds.length === 0 ? (
-              <div className="text-sm text-gray-500">Aucun élève dans le groupe.</div>
+            {acceptedOrConfirmed.length === 0 ? (
+              <div className="text-sm text-gray-500">Aucun participant confirmé/accepté.</div>
             ) : (
-              <div className="space-y-2">
-                {allParticipantIds.map((sid) => {
-                  const st = participantsMap?.[sid]?.status || 'confirmed';
+              <div className="flex flex-wrap gap-2">
+                {acceptedOrConfirmed.map((sid) => {
+                  const ent = participantsMap?.[sid] || {};
+                  const paid = !!ent.is_paid;
+                  const payLabel = paid ? '€ payé' : '€ à payer';
+                  const payTitle = paid ? 'Paiement reçu' : 'Paiement non réglé';
                   return (
-                    <div key={`p:${sid}`} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{nameMap[sid] || sid}</span>
-                        {statusBadge(st)}
-                      </div>
-                      <div className="flex gap-2">
-                        {st !== 'confirmed' && st !== 'rejected' && (
-                          <button
-                            className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700"
-                            onClick={() => setParticipantStatus(sid, 'confirmed')}
-                          >
-                            Confirmer
-                          </button>
-                        )}
-                        {st !== 'rejected' && (
-                          <button
-                            className="px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700"
-                            onClick={() => setParticipantStatus(sid, 'rejected')}
-                          >
-                            Refuser
-                          </button>
-                        )}
-                        <button className="px-3 py-1 rounded bg-gray-200" onClick={() => removeStudent(sid)}>
-                          Retirer
-                        </button>
-                      </div>
-                    </div>
+                    <Chip
+                      key={`ac:${sid}`}
+                      onRemove={() => removeStudent(sid)}
+                      title={payTitle}
+                    >
+                      {nameMap[sid] || sid} · <span className={paid ? 'text-green-700' : 'text-amber-700'}>{payLabel}</span>
+                    </Chip>
                   );
                 })}
               </div>
             )}
           </div>
+
+          {/* Invitations envoyées */}
+          <div className="border rounded-lg p-3">
+            <div className="font-medium mb-2">Invitations envoyées</div>
+            {invited.length === 0 ? (
+              <div className="text-sm text-gray-500">Aucune invitation en cours.</div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {invited.map((sid) => (
+                  <Chip key={`inv:${sid}`} onRemove={() => removeStudent(sid)}>
+                    {nameMap[sid] || sid} · <span className="text-indigo-700">invité</span>
+                  </Chip>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Demandes à valider par le prof (issues des élèves) */}
+          {pendingTeacher.length > 0 && (
+            <div className="border rounded-lg p-3">
+              <div className="font-medium mb-2">Demandes à valider</div>
+              <div className="flex flex-wrap gap-2">
+                {pendingTeacher.map((sid) => (
+                  <Chip key={`pend:${sid}`} onRemove={() => removeStudent(sid)}>
+                    {nameMap[sid] || sid} · <span className="text-amber-700">en attente</span>
+                  </Chip>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}

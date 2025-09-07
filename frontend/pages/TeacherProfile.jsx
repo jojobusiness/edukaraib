@@ -23,7 +23,7 @@ function countAccepted(l) {
   const ids = Array.isArray(l.participant_ids) ? l.participant_ids : [];
   let accepted = 0;
   for (const id of ids) {
-    if (pm?.[id]?.status === 'accepted') accepted += 1;
+    if (pm?.[id]?.status === 'accepted' || pm?.[id]?.status === 'confirmed') accepted += 1;
   }
   return accepted;
 }
@@ -45,7 +45,7 @@ export default function TeacherProfile() {
   const [children, setChildren] = useState([]);
   const [selectedStudentId, setSelectedStudentId] = useState('');
 
-  // -------- Fetch teacher + reviews + busy slots (group-aware on ACCEPTED only)
+  // -------- Fetch teacher + reviews + busy slots (group-aware on ACCEPTED/CONFIRMED only)
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -65,9 +65,9 @@ export default function TeacherProfile() {
         const noHour = l.slot_hour === null || l.slot_hour === undefined;
         if (!l.slot_day || noHour) return;
 
-        // On considère “occupé” uniquement si:
-        // - cours individuel confirmé (status === 'confirmed')
-        // - groupe où accepted >= capacity
+        // Occupé si :
+        // - individuel confirmé
+        // - groupe où accepted/confirmed >= capacity
         if (!l.is_group) {
           if (l.status === 'confirmed') {
             const key = `${l.slot_day}|${String(l.slot_hour)}`;
@@ -128,7 +128,7 @@ export default function TeacherProfile() {
   const meUid = auth.currentUser?.uid;
   const isParent = currentRole === 'parent';
 
-  // -------- Booking (group-aware + parent flux + approbations)
+  // -------- Booking (crée toujours une DEMANDE à valider par le prof)
   const handleBookingSlot = async (slot) => {
     if (!auth.currentUser) return navigate('/login');
 
@@ -139,7 +139,7 @@ export default function TeacherProfile() {
     setIsBooking(true);
     setConfirmationMsg('');
     try {
-      // 1) Tenter de rejoindre un groupe existant: créer une DEMANDE (status participant = 'pending_teacher')
+      // 1) Essayer de rejoindre un groupe existant → status participant = 'pending_teacher'
       const qExisting = query(
         collection(db, 'lessons'),
         where('teacher_id', '==', teacherId),
@@ -152,10 +152,8 @@ export default function TeacherProfile() {
       let createdRequest = false;
       for (const d of existSnap.docs) {
         const l = d.data();
-        const pm = l.participantsMap || {};
         const current = Array.isArray(l.participant_ids) ? l.participant_ids : [];
 
-        // déjà présent sous une forme ?
         if (current.includes(targetStudentId)) {
           setBooked(true);
           setShowBooking(false);
@@ -164,7 +162,6 @@ export default function TeacherProfile() {
           break;
         }
 
-        // on autorise la demande même si plein; l’acceptation restera impossible si capacité atteinte
         const ref = doc(db, 'lessons', d.id);
         await updateDoc(ref, {
           participant_ids: arrayUnion(targetStudentId),
@@ -174,21 +171,21 @@ export default function TeacherProfile() {
             is_paid: false,
             paid_by: null,
             paid_at: null,
-            status: 'pending_teacher',   // <<< élève a demandé, attente validation prof
+            status: 'pending_teacher',   // ⇐ demande en attente d'acceptation
             added_at: serverTimestamp(),
           },
         });
 
-        // petite notif prof (optionnel)
+        // Notif prof
         try {
           await addDoc(collection(db, 'notifications'), {
             user_id: teacherId,
             read: false,
             created_at: serverTimestamp(),
-            type: 'group_join_request',
+            type: 'lesson_request',
             lesson_id: d.id,
             requester_id: targetStudentId,
-            message: `Nouvelle demande pour ${slot.day} ${slot.hour}h`,
+            message: `Demande de rejoindre le groupe (${slot.day} ${slot.hour}h).`,
           });
         } catch {}
 
@@ -205,7 +202,7 @@ export default function TeacherProfile() {
 
       if (createdRequest) return;
 
-      // 2) Pas de groupe existant: créer une séance (individuelle ou groupe selon préférences prof)
+      // 2) Pas de groupe existant → créer une séance (toujours en demande à valider)
       const groupEnabled = !!teacher?.group_enabled;
       const defaultCap =
         typeof teacher?.group_capacity === 'number' && teacher.group_capacity > 1
@@ -215,14 +212,14 @@ export default function TeacherProfile() {
       const willBeGroup = groupEnabled && defaultCap > 1;
 
       if (willBeGroup) {
-        // Créer un groupe avec le 1er participant déjà "accepted" (c’est l’initiateur)
-        await addDoc(collection(db, 'lessons'), {
+        // Créer un groupe → 1er participant en 'pending_teacher'
+        const newDoc = await addDoc(collection(db, 'lessons'), {
           teacher_id: teacherId,
           student_id: null,
           parent_id: bookingFor === 'child' ? me.uid : null,
           booked_by: me.uid,
           booked_for: bookingFor,
-          status: 'booked',
+          status: 'booked', // ⇐ cours à valider par le prof
           created_at: serverTimestamp(),
           subject_id: Array.isArray(teacher?.subjects) ? teacher.subjects.join(', ') : teacher?.subjects || '',
           price_per_hour: teacher?.price_per_hour || 0,
@@ -238,28 +235,41 @@ export default function TeacherProfile() {
               is_paid: false,
               paid_by: null,
               paid_at: null,
-              status: 'accepted', // l’initiateur du nouveau groupe est accepté d’office
+              status: 'pending_teacher', // ⇐ attente validation prof
               added_at: serverTimestamp(),
             },
           },
         });
 
+        // Notif prof
+        try {
+          await addDoc(collection(db, 'notifications'), {
+            user_id: teacherId,
+            read: false,
+            created_at: serverTimestamp(),
+            type: 'lesson_request',
+            lesson_id: newDoc.id,
+            requester_id: targetStudentId,
+            message: `Nouvelle demande de groupe (${slot.day} ${slot.hour}h).`,
+          });
+        } catch {}
+
         setBooked(true);
         setShowBooking(false);
         setConfirmationMsg(
           bookingFor === 'child'
-            ? `Groupe créé (${slot.day} à ${slot.hour}h). Votre enfant est inscrit.`
-            : `Groupe créé (${slot.day} à ${slot.hour}h). Vous êtes inscrit.`
+            ? `Demande envoyée pour ${slot.day} à ${slot.hour}h (groupe).`
+            : `Demande envoyée pour ${slot.day} à ${slot.hour}h (groupe).`
         );
       } else {
-        // Individuel classique
-        await addDoc(collection(db, 'lessons'), {
+        // Individuel classique → 'booked' + notif prof
+        const newDoc = await addDoc(collection(db, 'lessons'), {
           teacher_id: teacherId,
           student_id: targetStudentId,
           parent_id: bookingFor === 'child' ? me.uid : null,
           booked_by: me.uid,
           booked_for: bookingFor,
-          status: 'booked',
+          status: 'booked', // ⇐ à valider par le prof
           created_at: serverTimestamp(),
           subject_id: Array.isArray(teacher?.subjects) ? teacher.subjects.join(', ') : teacher?.subjects || '',
           price_per_hour: teacher?.price_per_hour || 0,
@@ -270,6 +280,18 @@ export default function TeacherProfile() {
           participant_ids: [],
           participantsMap: {},
         });
+
+        try {
+          await addDoc(collection(db, 'notifications'), {
+            user_id: teacherId,
+            read: false,
+            created_at: serverTimestamp(),
+            type: 'lesson_request',
+            lesson_id: newDoc.id,
+            requester_id: targetStudentId,
+            message: `Demande de cours (${slot.day} ${slot.hour}h).`,
+          });
+        } catch {}
 
         setBooked(true);
         setShowBooking(false);
