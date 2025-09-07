@@ -1,342 +1,163 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import DashboardLayout from '../components/DashboardLayout';
 import { auth, db } from '../lib/firebase';
 import {
-  collection,
-  onSnapshot,
-  query,
-  where,
-  doc,
-  getDoc,
-  updateDoc,
-  addDoc,
-  serverTimestamp,
+  collection, query, where, getDocs, onSnapshot, doc, updateDoc,
+  arrayRemove, deleteField,
 } from 'firebase/firestore';
+import DashboardLayout from '../components/DashboardLayout';
 
-import DocumentsModal from '../components/lessons/DocumentsModal';
-import GroupSettingsModal from '../components/lessons/GroupSettingsModal';
-import { createPaymentDueNotificationsForLesson } from '../lib/paymentNotifications';
+const FR_DAY_ORDER = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
-/* ---------- UI helpers ---------- */
-const statusColors = {
-  booked: 'bg-yellow-100 text-yellow-800',
-  confirmed: 'bg-green-100 text-green-800',
-  rejected: 'bg-red-100 text-red-700',
-  completed: 'bg-gray-200 text-gray-700',
+const bySlot = (a, b) => {
+  const da = (FR_DAY_ORDER.indexOf(a.slot_day) + 7) % 7;
+  const dbi = (FR_DAY_ORDER.indexOf(b.slot_day) + 7) % 7;
+  if (da !== dbi) return da - dbi;
+  return (Number(a.slot_hour) || 0) - (Number(b.slot_hour) || 0);
 };
 
-const fmtTime = (ms) =>
-  new Date(ms).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+const pickName = (x) =>
+  x?.full_name || x?.fullName || x?.name || x?.displayName || 'Élève';
 
-const fmtFromSlot = (slot_day, slot_hour) =>
-  `${slot_day || ''} ${slot_hour != null ? `• ${String(slot_hour).padStart(2, '0')}:00` : ''}`.trim();
-
-function When({ lesson }) {
-  const ts = lesson?.start_datetime;
-  if (ts?.toDate) {
-    try {
-      return <span>📅 {ts.toDate().toLocaleString('fr-FR')}</span>;
-    } catch {}
-  }
-  if (typeof ts?.seconds === 'number') return <span>📅 {fmtTime(ts.seconds * 1000)}</span>;
-  if (lesson.slot_day || lesson.slot_hour != null) return <span>📅 {fmtFromSlot(lesson.slot_day, lesson.slot_hour)}</span>;
-  return null;
-}
-
-function StatusPill({ status }) {
-  const label =
-    status === 'booked' ? 'En attente' :
-    status === 'confirmed' ? 'Confirmé' :
-    status === 'rejected' ? 'Refusé' :
-    status === 'completed' ? 'Terminé' : status;
-
-  return (
-    <span className={`px-3 py-1 rounded-full text-xs font-semibold ml-2 ${statusColors[status] || 'bg-gray-200'}`}>
-      {label}
-    </span>
-  );
-}
-
-function SmallStatus({ s }) {
-  const label =
-    s === 'invited_student' ? 'invité' :
-    s === 'accepted' ? 'accepté' :
-    s === 'confirmed' ? 'confirmé' :
-    s === 'rejected' ? 'refusé' : s || '—';
-  const color =
-    s === 'invited_student' ? 'bg-amber-50 text-amber-700' :
-    s === 'accepted' ? 'bg-blue-50 text-blue-700' :
-    s === 'confirmed' ? 'bg-green-50 text-green-700' :
-    s === 'rejected' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-700';
-  return <span className={`text-[11px] px-2 py-0.5 rounded-full ${color}`}>{label}</span>;
-}
-
-/* ---------- data helpers ---------- */
-async function resolvePersonName(id, cache) {
-  if (!id) return '';
-  if (cache.has(id)) return cache.get(id);
-
-  try {
-    const u = await getDoc(doc(db, 'users', id));
-    if (u.exists()) {
-      const d = u.data();
-      const nm = d.fullName || d.name || d.displayName || id;
-      cache.set(id, nm);
-      return nm;
-    }
-  } catch {}
-
-  try {
-    const s = await getDoc(doc(db, 'students', id));
-    if (s.exists()) {
-      const d = s.data();
-      const nm = d.full_name || d.name || id;
-      cache.set(id, nm);
-      return nm;
-    }
-  } catch {}
-
-  cache.set(id, id);
-  return id;
-}
-
-async function notifyUsers(userIds = [], payloadBase = {}) {
-  const now = serverTimestamp();
-  const writes = userIds.filter(Boolean).map((uid) =>
-    addDoc(collection(db, 'notifications'), {
-      user_id: uid,
-      read: false,
-      created_at: now,
-      ...payloadBase,
-    })
-  );
-  await Promise.all(writes);
-}
-
-/* =================== PAGE =================== */
 export default function TeacherLessons() {
-  const [lessons, setLessons] = useState([]);
+  const [pendingIndiv, setPendingIndiv] = useState([]);   // leçons is_group:false, status: booked
+  const [pendingGroup, setPendingGroup] = useState([]);   // [{lessonId, lesson, studentId, studentName}]
+  const [confirmed, setConfirmed] = useState([]);         // leçons confirmées
+  const [names, setNames] = useState(new Map());          // id -> nom
   const [loading, setLoading] = useState(true);
 
-  // Docs
-  const [docOpen, setDocOpen] = useState(false);
-  const [docLesson, setDocLesson] = useState(null);
-
-  // Group
-  const [groupOpen, setGroupOpen] = useState(false);
-  const [groupLesson, setGroupLesson] = useState(null);
-
-  // participants popover
-  const [openParticipantsFor, setOpenParticipantsFor] = useState(null);
-
-  // cache noms
+  const userId = auth.currentUser?.uid;
   const nameCacheRef = useRef(new Map());
 
   useEffect(() => {
-    const uid = auth.currentUser?.uid;
-    if (!uid) {
-      setLessons([]);
-      setLoading(false);
-      return;
-    }
-
+    if (!userId) return;
     setLoading(true);
-    const qLessons = query(collection(db, 'lessons'), where('teacher_id', '==', uid));
 
-    const unsub = onSnapshot(qLessons, async (snap) => {
-      const raw = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-      // enrichir noms + détails participants (paiement + statut)
-      const enriched = await Promise.all(
-        raw.map(async (l) => {
-          // élève principal (legacy)
-          let studentName = '';
-          if (l.student_id) studentName = await resolvePersonName(l.student_id, nameCacheRef.current);
-
-          // participants (liste + statut + paiement)
-          let participantDetails = [];
-          if (Array.isArray(l.participant_ids) && l.participant_ids.length > 0) {
-            const pm = l.participantsMap || {};
-            participantDetails = await Promise.all(
-              l.participant_ids.map(async (sid) => ({
-                id: sid,
-                name: await resolvePersonName(sid, nameCacheRef.current),
-                is_paid: !!pm?.[sid]?.is_paid,
-                status: pm?.[sid]?.status || 'accepted',
-              }))
-            );
+    // Abonnement live à toutes les leçons du prof
+    const qAll = query(collection(db, 'lessons'), where('teacher_id', '==', userId));
+    const unsub = onSnapshot(qAll, async (snap) => {
+      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Confirmés
+      const confirmedLessons = all.filter(l => l.status === 'confirmed');
+      // Pending individuel (cours “booked”)
+      const pendingInd = all.filter(l => !l.is_group && l.status === 'booked');
+      // Pending groupe (élèves en 'pending_teacher')
+      const pendingG = [];
+      all.filter(l => !!l.is_group).forEach(l => {
+        const ids = Array.isArray(l.participant_ids) ? l.participant_ids : [];
+        const map = l.participantsMap || {};
+        ids.forEach((sid) => {
+          if (map?.[sid]?.status === 'pending_teacher') {
+            pendingG.push({ lessonId: l.id, lesson: l, studentId: sid });
           }
-
-          return { ...l, studentName, participantDetails };
-        })
-      );
-
-      // tri par date décroissante
-      enriched.sort((a, b) => {
-        const aTs =
-          (a.start_datetime?.toDate?.() && a.start_datetime.toDate().getTime()) ||
-          (a.start_datetime?.seconds && a.start_datetime.seconds * 1000) ||
-          (a.created_at?.toDate?.() && a.created_at.toDate().getTime()) || 0;
-        const bTs =
-          (b.start_datetime?.toDate?.() && b.start_datetime.toDate().getTime()) ||
-          (b.start_datetime?.seconds && b.start_datetime.seconds * 1000) ||
-          (b.created_at?.toDate?.() && b.created_at.toDate().getTime()) || 0;
-        return bTs - aTs;
+        });
       });
 
-      setLessons(enriched);
+      setConfirmed(confirmedLessons.sort(bySlot));
+      setPendingIndiv(pendingInd.sort(bySlot));
+      setPendingGroup(pendingG.sort((a, b) => bySlot(a.lesson, b.lesson)));
+
+      // Charger les noms nécessaires
+      const idSet = new Set();
+      // élèves des pending group
+      pendingG.forEach(p => idSet.add(p.studentId));
+      // élèves de participants confirmés
+      confirmedLessons.forEach(l => {
+        const ids = Array.isArray(l.participant_ids) ? l.participant_ids : [];
+        const map = l.participantsMap || {};
+        ids.forEach((sid) => {
+          const st = map?.[sid]?.status || 'confirmed';
+          if (st === 'accepted' || st === 'confirmed') idSet.add(sid);
+        });
+        if (!l.is_group && l.student_id) idSet.add(l.student_id);
+      });
+
+      // resolve names
+      const pairs = [];
+      for (const id of idSet) {
+        if (nameCacheRef.current.has(id)) {
+          pairs.push([id, nameCacheRef.current.get(id)]);
+        } else {
+          const nm = await resolveName(id);
+          nameCacheRef.current.set(id, nm);
+          pairs.push([id, nm]);
+        }
+      }
+      setNames(new Map(pairs));
       setLoading(false);
-    }, (err) => {
-      console.error(err);
-      setLessons([]);
+    }, (e) => {
+      console.error(e);
       setLoading(false);
     });
 
     return () => unsub();
-  }, []);
+  }, [userId]);
 
-  const demandes = useMemo(() => lessons.filter((l) => l.status === 'booked'), [lessons]);
-  const confirmes = useMemo(() => lessons.filter((l) => l.status === 'confirmed'), [lessons]);
-  const termines = useMemo(() => lessons.filter((l) => l.status === 'completed'), [lessons]);
-
-  const openDocs = (lesson) => { setDocLesson(lesson); setDocOpen(true); };
-  const openGroup = (lesson) => { setGroupLesson(lesson); setGroupOpen(true); };
-
-  async function handleStatus(lesson, status) {
+  async function resolveName(id) {
+    // students/id en priorité
     try {
-      const ref = doc(db, 'lessons', lesson.id);
-      await updateDoc(ref, { status, ...(status === 'completed' ? { completed_at: serverTimestamp() } : {}) });
-
-      // MAJ optimiste
-      setLessons((prev) => prev.map((x) => (x.id === lesson.id ? { ...x, status } : x)));
-
-      // nom prof
-      let profName = 'Votre professeur';
-      try {
-        const me = await getDoc(doc(db, 'users', auth.currentUser.uid));
-        if (me.exists()) profName = me.data().fullName || profName;
-      } catch {}
-
-      // destinataires
-      const recipients = new Set();
-      if (lesson.student_id) recipients.add(lesson.student_id);
-      (lesson.participant_ids || []).forEach((sid) => recipients.add(sid));
-
-      let notifType = '', message = '';
-      if (status === 'confirmed') {
-        notifType = 'cours_accepted';
-        message = `Votre cours ${lesson.subject_id || ''} avec ${profName} a été accepté.`;
-      } else if (status === 'rejected') {
-        notifType = 'cours_rejected';
-        message = `Votre cours ${lesson.subject_id || ''} avec ${profName} a été refusé.`;
-      } else if (status === 'completed') {
-        notifType = 'cours_completed';
-        message = `Votre cours ${lesson.subject_id || ''} avec ${profName} est terminé.`;
-      } else return;
-
-      await notifyUsers(Array.from(recipients), {
-        type: notifType,
-        with_id: auth.currentUser.uid,
-        withName: profName,
-        lesson_id: lesson.id,
-        message,
-      });
-
-      // Paiement en attente (création des notifs) quand confirmé
-      if (status === 'confirmed') {
-        const snap = await getDoc(ref);
-        const current = snap.exists() ? { id: snap.id, ...snap.data() } : { ...lesson, status: 'confirmed' };
-        await createPaymentDueNotificationsForLesson(current);
-      }
-    } catch (e) {
-      console.error(e);
-      alert("Impossible de modifier le statut.");
-    }
+      const s = await getDocs(query(collection(db, 'students'), where('__name__', '==', id)));
+      if (!s.empty) return pickName(s.docs[0].data());
+    } catch {}
+    // users/id fallback
+    try {
+      const u = await getDocs(query(collection(db, 'users'), where('__name__', '==', id)));
+      if (!u.empty) return pickName(u.docs[0].data());
+    } catch {}
+    return id;
   }
 
-  const Card = ({ lesson, showActionsForPending }) => {
-    const isGroup = Array.isArray(lesson.participant_ids) && lesson.participant_ids.length > 0;
-    const capacity = lesson.capacity || (isGroup ? lesson.participant_ids.length : 1);
-    const used = isGroup ? lesson.participant_ids.length : (lesson.student_id ? 1 : 0);
-    const showList = openParticipantsFor === lesson.id;
+  // ——— Actions : individuel ———
+  const acceptIndividual = async (lessonId) => {
+    await updateDoc(doc(db, 'lessons', lessonId), { status: 'confirmed' });
+  };
+  const rejectIndividual = async (lessonId) => {
+    await updateDoc(doc(db, 'lessons', lessonId), { status: 'rejected' });
+  };
 
-    return (
-      <div className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between relative">
-        <div className="flex-1">
-          <div className="flex gap-2 items-center mb-1">
-            <span className="font-bold text-primary">{lesson.subject_id || 'Matière'}</span>
-            <StatusPill status={lesson.status} />
-            {isGroup && (
-              <>
-                <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded ml-1">👥 {used}/{capacity}</span>
-                <button
-                  className="text-xs ml-1 bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100"
-                  onClick={() => setOpenParticipantsFor(showList ? null : lesson.id)}
-                >
-                  Participants
-                </button>
-              </>
-            )}
-          </div>
+  // ——— Actions : groupe (par élève) ———
+  const acceptGroupStudent = async (lessonId, studentId) => {
+    await updateDoc(doc(db, 'lessons', lessonId), {
+      [`participantsMap.${studentId}.status`]: 'confirmed',
+    });
+  };
+  const rejectGroupStudent = async (lessonId, studentId) => {
+    await updateDoc(doc(db, 'lessons', lessonId), {
+      participant_ids: arrayRemove(studentId),
+      [`participantsMap.${studentId}`]: deleteField(),
+    });
+  };
 
-          {/* Popover participants: nom + statut + paiement */}
-          {isGroup && showList && (
-            <div className="absolute top-full mt-2 left-6 z-10 bg-white border rounded-lg shadow p-3 w-80">
-              <div className="text-xs font-semibold mb-2">Élèves du groupe</div>
-              {lesson.participantDetails?.length ? (
-                <ul className="text-sm text-gray-700 space-y-2">
-                  {lesson.participantDetails.map((p) => (
-                    <li key={p.id} className="flex items-center justify-between gap-2">
-                      <span className="truncate mr-2">{p.name}</span>
-                      <div className="flex items-center gap-2">
-                        <SmallStatus s={p.status} />
-                        <span className={`text-[11px] px-2 py-0.5 rounded-full ${p.is_paid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                          {p.is_paid ? 'Payé' : 'À payer'}
-                        </span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="text-xs text-gray-500">Aucun participant.</div>
-              )}
-            </div>
-          )}
-
-          <div className="text-gray-700 mt-1">
-            {isGroup
-              ? 'Cours groupé'
-              : <>Élève : <span className="font-semibold">{lesson.studentName || '—'}</span></>}
-          </div>
-          <div className="text-gray-500 text-sm"><When lesson={lesson} /></div>
+  const ParticipantChips = ({ lesson }) => {
+    const ids = Array.isArray(lesson.participant_ids) ? lesson.participant_ids : [];
+    const map = lesson.participantsMap || {};
+    const confirmedIds = ids.filter((sid) => {
+      const st = map?.[sid]?.status || 'confirmed';
+      return st === 'accepted' || st === 'confirmed';
+    });
+    if (!lesson.is_group) {
+      // Individuel confirmé : montre l'élève principal
+      return (
+        <div className="flex flex-wrap gap-2">
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-800 text-xs font-medium">
+            {names.get(lesson.student_id) || lesson.student_id || 'Élève'}
+          </span>
         </div>
-
-        {showActionsForPending ? (
-          <div className="flex gap-2">
-            <button className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => handleStatus(lesson, 'confirmed')}>
-              ✅ Accepter
-            </button>
-            <button className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => handleStatus(lesson, 'rejected')}>
-              ❌ Refuser
-            </button>
-          </div>
+      );
+    }
+    return (
+      <div className="flex flex-wrap gap-2">
+        {confirmedIds.length === 0 ? (
+          <span className="text-xs text-gray-500">Aucun participant confirmé.</span>
         ) : (
-          <div className="flex flex-wrap gap-2">
-            <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => openDocs(lesson)}>
-              📄 Documents
-            </button>
-            <button className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => openGroup(lesson)} title="Gérer capacité et participants">
-              👥 Gérer le groupe
-            </button>
-            <button
-              className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded shadow font-semibold"
-              onClick={() => handleStatus(lesson, 'completed')}
-              disabled={lesson.status === 'completed'}
-              title={lesson.status === 'completed' ? 'Déjà terminé' : 'Marquer comme terminé'}
+          confirmedIds.map((sid) => (
+            <span
+              key={`${lesson.id}:${sid}`}
+              className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-800 text-xs font-medium"
+              title="Participant confirmé"
             >
-              ✅ Terminé
-            </button>
-          </div>
+              {names.get(sid) || sid}
+            </span>
+          ))
         )}
       </div>
     );
@@ -344,84 +165,116 @@ export default function TeacherLessons() {
 
   return (
     <DashboardLayout role="teacher">
-      <div className="max-w-5xl mx-auto">
-        <h2 className="text-2xl font-bold text-primary mb-6">Cours — Professeur</h2>
-
-        {/* Demandes */}
-        <section className="mb-10">
-          <div className="flex items-baseline justify-between mb-4">
-            <h3 className="text-xl font-semibold">Demandes de cours</h3>
-            <span className="text-sm text-gray-500">{demandes.length} en attente</span>
-          </div>
-          {loading ? (
-            <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Chargement…</div>
-          ) : demandes.length === 0 ? (
-            <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucune demande de cours pour le moment.</div>
-          ) : (
-            <div className="grid grid-cols-1 gap-5">
-              {demandes.map((l) => <Card key={l.id} lesson={l} showActionsForPending />)}
-            </div>
-          )}
-        </section>
-
-        {/* Confirmés */}
-        <section className="mb-10">
-          <div className="flex items-baseline justify-between mb-4">
-            <h3 className="text-xl font-semibold">Gestion des cours</h3>
-            <span className="text-sm text-gray-500">{confirmes.length} confirmés</span>
-          </div>
-          {loading ? (
-            <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Chargement…</div>
-          ) : confirmes.length === 0 ? (
-            <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucun cours confirmé pour le moment.</div>
-          ) : (
-            <div className="grid grid-cols-1 gap-5">
-              {confirmes.map((l) => <Card key={l.id} lesson={l} showActionsForPending={false} />)}
-            </div>
-          )}
-        </section>
-
-        {/* Terminés */}
-        <section>
-          <div className="flex items-baseline justify-between mb-4">
-            <h3 className="text-xl font-semibold">Cours terminés</h3>
-            <span className="text-sm text-gray-500">{termines.length} terminé(s)</span>
-          </div>
-          {loading ? (
-            <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Chargement…</div>
-          ) : termines.length === 0 ? (
-            <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucun cours terminé récemment.</div>
-          ) : (
-            <div className="grid grid-cols-1 gap-5">
-              {termines.map((l) => (
-                <div key={l.id} className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between">
-                  <div className="flex-1">
-                    <div className="flex gap-2 items-center mb-1">
-                      <span className="font-bold text-primary">{l.subject_id || 'Matière'}</span>
-                      <StatusPill status="completed" />
-                    </div>
-                    <div className="text-gray-700">
-                      {(Array.isArray(l.participant_ids) && l.participant_ids.length > 0)
-                        ? `Élèves (👥 ${l.participant_ids.length}/${l.capacity || l.participant_ids.length})`
-                        : <>Élève : <span className="font-semibold">{l.studentName || '—'}</span></>}
-                    </div>
-                    <div className="text-gray-500 text-sm"><When lesson={l} /></div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => openDocs(l)}>
-                      📄 Documents
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold text-primary">📚 Mes cours</h2>
+        <p className="text-gray-600 text-sm">
+          Validez ou refusez les demandes. Les élèves en attente n’apparaissent pas dans les participants confirmés.
+        </p>
       </div>
 
-      {/* Modals */}
-      <DocumentsModal open={docOpen} onClose={() => setDocOpen(false)} lesson={docLesson} allowUpload />
-      <GroupSettingsModal open={groupOpen} onClose={() => setGroupOpen(false)} lesson={groupLesson} />
+      {/* Demandes à valider */}
+      <div className="bg-white rounded-xl shadow border p-5 mb-8">
+        <h3 className="font-bold text-secondary mb-3">📝 Demandes à valider</h3>
+
+        {loading && <div className="text-gray-500 text-sm">Chargement…</div>}
+
+        {!loading && pendingIndiv.length === 0 && pendingGroup.length === 0 && (
+          <div className="text-gray-500 text-sm">Aucune demande en attente.</div>
+        )}
+
+        {/* Individuel */}
+        {pendingIndiv.length > 0 && (
+          <div className="mb-6">
+            <div className="font-semibold text-sm mb-2">Cours individuels</div>
+            <ul className="space-y-2">
+              {pendingIndiv.sort(bySlot).map((l) => (
+                <li key={l.id} className="border rounded-lg px-3 py-2 flex items-center gap-3">
+                  <span className="text-xs text-gray-600">
+                    {l.slot_day} {String(l.slot_hour).padStart(2, '0')}h
+                  </span>
+                  <span className="text-sm font-medium">{l.subject_id || 'Cours'}</span>
+                  <span className="text-xs text-gray-600">• Élève : {names.get(l.student_id) || l.student_id}</span>
+                  <div className="ml-auto flex items-center gap-2">
+                    <button
+                      className="px-3 py-1 rounded bg-green-600 text-white text-xs"
+                      onClick={() => acceptIndividual(l.id)}
+                    >
+                      Accepter
+                    </button>
+                    <button
+                      className="px-3 py-1 rounded bg-red-600 text-white text-xs"
+                      onClick={() => rejectIndividual(l.id)}
+                    >
+                      Refuser
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Groupe (par élève) */}
+        {pendingGroup.length > 0 && (
+          <div>
+            <div className="font-semibold text-sm mb-2">Groupes</div>
+            <ul className="space-y-2">
+              {pendingGroup.map(({ lessonId, lesson, studentId }) => (
+                <li key={`${lessonId}:${studentId}`} className="border rounded-lg px-3 py-2 flex items-center gap-3">
+                  <span className="text-xs text-gray-600">
+                    {lesson.slot_day} {String(lesson.slot_hour).padStart(2, '0')}h
+                  </span>
+                  <span className="text-sm font-medium">{lesson.subject_id || 'Cours'}</span>
+                  <span className="text-xs text-gray-600">• Élève : {names.get(studentId) || studentId}</span>
+                  <div className="ml-auto flex items-center gap-2">
+                    <button
+                      className="px-3 py-1 rounded bg-green-600 text-white text-xs"
+                      onClick={() => acceptGroupStudent(lessonId, studentId)}
+                    >
+                      Accepter
+                    </button>
+                    <button
+                      className="px-3 py-1 rounded bg-red-600 text-white text-xs"
+                      onClick={() => rejectGroupStudent(lessonId, studentId)}
+                    >
+                      Refuser
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      {/* Cours confirmés */}
+      <div className="bg-white rounded-xl shadow border p-5">
+        <h3 className="font-bold text-primary mb-3">✅ Cours confirmés</h3>
+        {loading ? (
+          <div className="text-gray-500 text-sm">Chargement…</div>
+        ) : confirmed.length === 0 ? (
+          <div className="text-gray-500 text-sm">Aucun cours confirmé.</div>
+        ) : (
+          <ul className="space-y-2">
+            {confirmed.map((l) => (
+              <li key={l.id} className="border rounded-lg px-3 py-2">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-gray-600">
+                    {l.slot_day} {String(l.slot_hour).padStart(2, '0')}h
+                  </span>
+                  <span className="text-sm font-medium">{l.subject_id || 'Cours'}</span>
+                  <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800">Confirmé</span>
+                </div>
+
+                <div className="mt-2">
+                  <div className="text-xs font-semibold text-gray-700 mb-1">Participants</div>
+                  <ParticipantChips lesson={l} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </DashboardLayout>
   );
 }
