@@ -92,7 +92,7 @@ async function resolveNamesForParticipants(lessons) {
 
 export default function StudentDashboard() {
   const [nextCourse, setNextCourse] = useState(null);
-  const [confirmedList, setConfirmedList] = useState([]);
+  const [confirmedList, setConfirmedList] = useState([]); // gardé pour les noms de participants du "gros bloc"
   const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map());
   const [openRowId, setOpenRowId] = useState(null);
 
@@ -190,7 +190,7 @@ export default function StudentDashboard() {
       }
       setNextCourse(nextCourseWithProf);
 
-      // Liste confirmés (pour le bouton 👥)
+      // Liste confirmés (uniquement pour pouvoir afficher les participants sur le gros bloc)
       const confirmed = allLessons
         .filter(l => l.status === 'confirmed' && FR_DAY_CODES.includes(l.slot_day))
         .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
@@ -199,7 +199,7 @@ export default function StudentDashboard() {
 
       setConfirmedList(confirmed);
 
-      // Noms pour les groupes
+      // Noms pour les groupes (requis par le bouton 👥 du gros bloc)
       const namesMap = await resolveNamesForParticipants(confirmed);
       const gMap = new Map();
       confirmed.forEach(l => {
@@ -212,19 +212,6 @@ export default function StudentDashboard() {
         gMap.set(l.id, uniq.map(id => namesMap.get(id) || 'Élève'));
       });
       setGroupNamesByLesson(gMap);
-
-      // Profs récents (sur base des confirmés/sinon tous)
-      const base = confirmed.length ? confirmed : allLessons;
-      const uniqueTeacherIds = Array.from(new Set(base.map(l => l.teacher_id))).slice(0, 5);
-      const tProfiles = await Promise.all(uniqueTeacherIds.map(uid => fetchUserProfile(uid)));
-      setRecentTeachers(
-        tProfiles.filter(Boolean).map(p => ({
-          uid: p.uid || p.id,
-          name: p.fullName || p.name || p.displayName || 'Professeur',
-          avatar: p.avatarUrl || p.avatar_url || p.photoURL || '',
-          subjects: Array.isArray(p.subjects) ? p.subjects.join(', ') : (p.subjects || ''),
-        }))
-      );
     })();
   }, [userId]);
 
@@ -299,7 +286,7 @@ export default function StudentDashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-        {/* Prochain cours */}
+        {/* Prochain cours (gros bloc conservé) */}
         <div className="bg-white rounded-xl shadow p-6 border-l-4 border-primary flex flex-col items-start">
           <span className="text-3xl mb-2">📅</span>
           <span className="text-xl font-bold text-primary">Prochain cours</span>
@@ -371,46 +358,7 @@ export default function StudentDashboard() {
         </div>
       </div>
 
-      {/* Liste des cours confirmés (avec bouton 👥) */}
-      <div className="bg-white rounded-xl shadow p-5">
-        <h3 className="font-bold text-primary mb-3">Cours confirmés</h3>
-        <ul className="text-gray-700 space-y-2">
-          {confirmedList.length === 0 && <li>Aucun cours confirmé pour le moment.</li>}
-          {confirmedList.map((l) => {
-            const isGroup = !!l.is_group;
-            const size = (Array.isArray(l.participant_ids) ? l.participant_ids.length : 0) + (l.student_id ? 1 : 0);
-            const cap = l.capacity || (isGroup ? size : 1);
-            const labelBase = `${l.subject_id || 'Cours'} — ${l.slot_day} ${String(l.slot_hour).padStart(2,'0')}h`;
-            return (
-              <li key={l.id} className="flex items-start justify-between gap-2">
-                <div>📅 {labelBase} {isGroup ? `— Groupe (${size}/${cap})` : null}</div>
-                {isGroup && (
-                  <div className="relative">
-                    <button
-                      onClick={() => setOpenRowId(openRowId === l.id ? null : l.id)}
-                      className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100"
-                    >
-                      👥 Participants
-                    </button>
-                    {openRowId === l.id && (
-                      <div className="absolute right-0 mt-2 bg-white border rounded-lg shadow p-3 w-72 z-10">
-                        <div className="text-xs font-semibold mb-1">Élèves du groupe</div>
-                        {(groupNamesByLesson.get(l.id) || []).length ? (
-                          <ul className="text-sm text-gray-700 list-disc pl-4 space-y-1">
-                            {(groupNamesByLesson.get(l.id) || []).map((nm, i) => <li key={i}>{nm}</li>)}
-                          </ul>
-                        ) : (
-                          <div className="text-xs text-gray-500">Aucun participant.</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+      {/* Section "Cours confirmés" retirée pour éviter la répétition */}
 
       <div className="bg-white rounded-xl shadow p-5 mt-6">
         <h3 className="font-bold text-primary mb-3">Notifications</h3>

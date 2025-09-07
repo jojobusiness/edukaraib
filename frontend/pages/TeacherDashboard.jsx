@@ -156,7 +156,7 @@ export default function TeacherDashboard() {
         .filter(l => l.startAt && l.startAt > now)
         .sort((a, b) => a.startAt - b.startAt);
 
-      setUpcomingCourses(enriched.slice(0, 10)); // petite liste
+      setUpcomingCourses(enriched.slice(0, 10)); // utilisé pour le gros bloc "Prochain cours"
 
       // 5) Demandes en attente
       setPending(lessons.filter(l => l.status === 'booked').length);
@@ -238,33 +238,6 @@ export default function TeacherDashboard() {
   const [openListId, setOpenListId] = useState(null);
   const nextOne = upcomingCourses[0] || null;
 
-  // Liste "cours à venir" prête à afficher
-  const upcomingList = useMemo(
-    () =>
-      upcomingCourses.map(c => {
-        const isGroup = !!c.is_group;
-        const size = (Array.isArray(c.participant_ids) ? c.participant_ids.length : 0) + (c.student_id ? 1 : 0);
-        const cap = c.capacity || (isGroup ? size : 1);
-        const base = `${formatDate(c.startAt)} ${formatTime(c.startAt)} : ${c.subject_id || 'Cours'}`;
-
-        let withWho = '';
-        if (isGroup) {
-          withWho = ` — Groupe (${size}/${cap})`;
-        } else {
-          const nm = studentMap.get(c.student_id) || 'Élève';
-          withWho = ` — avec ${nm}`;
-        }
-
-        return {
-          id: c.id,
-          label: base + withWho,
-          when: c.startAt,
-          isGroup,
-        };
-      }),
-    [upcomingCourses, studentMap]
-  );
-
   return (
     <DashboardLayout role="teacher">
       <div className="mb-8">
@@ -276,7 +249,7 @@ export default function TeacherDashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-        {/* Prochain cours */}
+        {/* Prochain cours (gros bloc conservé) */}
         <div className="bg-white rounded-xl shadow p-6 border-l-4 border-primary flex flex-col items-start">
           <span className="text-3xl mb-2">📅</span>
           <span className="text-xl font-bold text-primary">Prochain cours</span>
@@ -332,54 +305,19 @@ export default function TeacherDashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Cours à venir */}
-        <div className="bg-white rounded-xl shadow p-5">
-          <h3 className="font-bold text-primary mb-3">Cours à venir</h3>
-          <ul className="text-gray-700 space-y-2">
-            {upcomingList.map((c) => (
-              <li key={c.id} className="flex items-start justify-between gap-2">
-                <div>📅 {c.label}</div>
-                {c.isGroup && (
-                  <div className="relative">
-                    <button
-                      onClick={() => setOpenListId(openListId === c.id ? null : c.id)}
-                      className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100"
-                    >
-                      👥 Participants
-                    </button>
-                    {openListId === c.id && (
-                      <div className="absolute right-0 mt-2 bg-white border rounded-lg shadow p-3 w-72 z-10">
-                        <div className="text-xs font-semibold mb-1">Élèves du groupe</div>
-                        {(groupNamesByLesson.get(c.id) || []).length ? (
-                          <ul className="text-sm text-gray-700 list-disc pl-4 space-y-1">
-                            {(groupNamesByLesson.get(c.id) || []).map((nm, i) => <li key={i}>{nm}</li>)}
-                          </ul>
-                        ) : (
-                          <div className="text-xs text-gray-500">Aucun participant.</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </li>
-            ))}
-            {upcomingList.length === 0 && <li>Aucun cours à venir.</li>}
-          </ul>
-        </div>
+      {/* Section "Cours à venir" retirée pour éviter la répétition */}
 
-        {/* Derniers avis reçus */}
-        <div className="bg-white rounded-xl shadow p-5">
-          <h3 className="font-bold text-primary mb-3">Derniers avis reçus</h3>
-          <ul className="text-gray-700 space-y-2">
-            {reviews.map((r, idx) => (
-              <li key={idx}>
-                {"🌟".repeat(r.stars || r.rating || 5)} “{r.comment || 'Pas d\'avis.'}”
-              </li>
-            ))}
-            {reviews.length === 0 && <li>Aucun avis pour le moment.</li>}
-          </ul>
-        </div>
+      {/* Derniers avis reçus */}
+      <div className="bg-white rounded-xl shadow p-5">
+        <h3 className="font-bold text-primary mb-3">Derniers avis reçus</h3>
+        <ul className="text-gray-700 space-y-2">
+          {reviews.map((r, idx) => (
+            <li key={idx}>
+              {"🌟".repeat(r.stars || r.rating || 5)} “{r.comment || 'Pas d\'avis.'}”
+            </li>
+          ))}
+          {reviews.length === 0 && <li>Aucun avis pour le moment.</li>}
+        </ul>
       </div>
     </DashboardLayout>
   );

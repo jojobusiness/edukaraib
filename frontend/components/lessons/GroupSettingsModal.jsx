@@ -158,7 +158,22 @@ function countConfirmed(participant_ids = [], participantsMap = {}) {
   return acc;
 }
 
-/* ===== Chip ===== */
+/* ===== badges ===== */
+const statusBadge = (st = 'accepted') => {
+  const label =
+    st === 'invited_student' ? 'Invité'
+      : st === 'accepted' ? 'Accepté'
+      : st === 'confirmed' ? 'Confirmé'
+      : st === 'rejected' ? 'Refusé'
+      : st;
+  const cls =
+    st === 'invited_student' ? 'bg-indigo-50 text-indigo-700'
+      : st === 'accepted' ? 'bg-amber-50 text-amber-700'
+      : st === 'confirmed' ? 'bg-green-100 text-green-700'
+      : 'bg-red-100 text-red-700';
+  return <span className={`text-[11px] px-2 py-0.5 rounded-full ${cls}`}>{label}</span>;
+};
+
 function Chip({ children, onRemove }) {
   return (
     <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gray-100 text-gray-800 text-sm">
@@ -177,7 +192,7 @@ function Chip({ children, onRemove }) {
 }
 
 /* ====================================================
-   GroupSettingsModal (confirmé/invité seulement)
+   GroupSettingsModal (AFFICHE TOUS les participants)
    ==================================================== */
 export default function GroupSettingsModal({ open, onClose, lesson }) {
   const [capacity, setCapacity] = useState(lesson?.capacity || 1);
@@ -343,7 +358,6 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
           message: `Invitation à rejoindre le cours ${lesson.subject_id || ''} (${lesson.slot_day} ${lesson.slot_hour}h).`,
         });
       } catch {}
-      // local (l’abonnement onSnapshot va repasser de toute façon)
       setParticipantIds((prev) => [...prev, id]);
       setParticipantsMap((prev) => ({ ...prev, [id]: { ...patch, added_at: new Date() } }));
       setNameMap((prev) => ({ ...prev, [id]: p.name }));
@@ -355,7 +369,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     }
   }
 
-  // Supprimer (annuler invitation / retirer participant)
+  // Supprimer (retirer participant)
   async function removeStudent(id) {
     const ok = window.confirm('Retirer cet élève de la liste ?');
     if (!ok) return;
@@ -381,22 +395,20 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     }
   }
 
-  /* -------- Filtrages pour l’affichage (UNIQUEMENT 2 sections) -------- */
-  const invitedIds = useMemo(
-    () =>
-      (participantIds || []).filter(
-        (id) => (participantsMap?.[id]?.status || 'confirmed') === 'invited_student'
-      ),
-    [participantIds, participantsMap]
-  );
+  // Confirmer / Refuser un participant (depuis le modal si besoin)
+  async function setParticipantStatus(id, newStatus) {
+    try {
+      await updateDoc(doc(db, 'lessons', lesson.id), {
+        [`participantsMap.${id}.status`]: newStatus,
+      });
+    } catch (e) {
+      console.error(e);
+      alert("Action impossible pour l'élève.");
+    }
+  }
 
-  const confirmedIds = useMemo(
-    () =>
-      (participantIds || []).filter(
-        (id) => (participantsMap?.[id]?.status || 'confirmed') === 'confirmed'
-      ),
-    [participantIds, participantsMap]
-  );
+  // Liste pour affichage unique : TOUS les participants
+  const allParticipantIds = participantIds || [];
 
   if (!open || !lesson) return null;
 
@@ -470,39 +482,45 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
             )}
           </div>
 
-          {/* Invitations envoyées (attente élève) */}
-          <div className="border rounded-lg p-3">
-            <div className="font-medium mb-2">Invitations envoyées (attente élève)</div>
-            {invitedIds.length === 0 ? (
-              <div className="text-sm text-gray-500">Aucune invitation en attente.</div>
-            ) : (
-              <div className="space-y-2">
-                {invitedIds.map((id) => (
-                  <div key={`is:${id}`} className="flex items-center justify-between">
-                    <span>{nameMap[id] || id}</span>
-                    <div className="flex gap-2">
-                      <button className="px-3 py-1 rounded bg-gray-200" onClick={() => removeStudent(id)}>
-                        Annuler l’invitation
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Participants (confirmés) */}
+          {/* Participants : TOUS les élèves (invités / acceptés / confirmés / refusés) */}
           <div className="border rounded-lg p-3">
             <div className="font-medium mb-2">Participants</div>
-            {confirmedIds.length === 0 ? (
-              <div className="text-sm text-gray-500">Aucun élève confirmé.</div>
+            {allParticipantIds.length === 0 ? (
+              <div className="text-sm text-gray-500">Aucun élève dans le groupe.</div>
             ) : (
-              <div className="flex flex-wrap gap-2">
-                {confirmedIds.map((sid) => (
-                  <Chip key={`cf:${sid}`} onRemove={() => removeStudent(sid)}>
-                    {nameMap[sid] || sid}
-                  </Chip>
-                ))}
+              <div className="space-y-2">
+                {allParticipantIds.map((sid) => {
+                  const st = participantsMap?.[sid]?.status || 'confirmed';
+                  return (
+                    <div key={`p:${sid}`} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{nameMap[sid] || sid}</span>
+                        {statusBadge(st)}
+                      </div>
+                      <div className="flex gap-2">
+                        {st !== 'confirmed' && st !== 'rejected' && (
+                          <button
+                            className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700"
+                            onClick={() => setParticipantStatus(sid, 'confirmed')}
+                          >
+                            Confirmer
+                          </button>
+                        )}
+                        {st !== 'rejected' && (
+                          <button
+                            className="px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700"
+                            onClick={() => setParticipantStatus(sid, 'rejected')}
+                          >
+                            Refuser
+                          </button>
+                        )}
+                        <button className="px-3 py-1 rounded bg-gray-200" onClick={() => removeStudent(sid)}>
+                          Retirer
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

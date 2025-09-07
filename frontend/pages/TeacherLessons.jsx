@@ -57,6 +57,20 @@ function StatusPill({ status }) {
   );
 }
 
+function SmallStatus({ s }) {
+  const label =
+    s === 'invited_student' ? 'invité' :
+    s === 'accepted' ? 'accepté' :
+    s === 'confirmed' ? 'confirmé' :
+    s === 'rejected' ? 'refusé' : s || '—';
+  const color =
+    s === 'invited_student' ? 'bg-amber-50 text-amber-700' :
+    s === 'accepted' ? 'bg-blue-50 text-blue-700' :
+    s === 'confirmed' ? 'bg-green-50 text-green-700' :
+    s === 'rejected' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-700';
+  return <span className={`text-[11px] px-2 py-0.5 rounded-full ${color}`}>{label}</span>;
+}
+
 /* ---------- data helpers ---------- */
 async function resolvePersonName(id, cache) {
   if (!id) return '';
@@ -132,14 +146,14 @@ export default function TeacherLessons() {
     const unsub = onSnapshot(qLessons, async (snap) => {
       const raw = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-      // enrichir noms + détails participants (paiement temps réel via onSnapshot global)
+      // enrichir noms + détails participants (paiement + statut)
       const enriched = await Promise.all(
         raw.map(async (l) => {
           // élève principal (legacy)
           let studentName = '';
           if (l.student_id) studentName = await resolvePersonName(l.student_id, nameCacheRef.current);
 
-          // participants (liste + statut paiement)
+          // participants (liste + statut + paiement)
           let participantDetails = [];
           if (Array.isArray(l.participant_ids) && l.participant_ids.length > 0) {
             const pm = l.participantsMap || {};
@@ -265,18 +279,21 @@ export default function TeacherLessons() {
             )}
           </div>
 
-          {/* Popover participants + statut paiement (temps réel via onSnapshot) */}
+          {/* Popover participants: nom + statut + paiement */}
           {isGroup && showList && (
-            <div className="absolute top-full mt-2 left-6 z-10 bg-white border rounded-lg shadow p-3 w-72">
+            <div className="absolute top-full mt-2 left-6 z-10 bg-white border rounded-lg shadow p-3 w-80">
               <div className="text-xs font-semibold mb-2">Élèves du groupe</div>
               {lesson.participantDetails?.length ? (
-                <ul className="text-sm text-gray-700 space-y-1">
+                <ul className="text-sm text-gray-700 space-y-2">
                   {lesson.participantDetails.map((p) => (
-                    <li key={p.id} className="flex items-center justify-between">
+                    <li key={p.id} className="flex items-center justify-between gap-2">
                       <span className="truncate mr-2">{p.name}</span>
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full ${p.is_paid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                        {p.is_paid ? 'Payé' : 'À payer'}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <SmallStatus s={p.status} />
+                        <span className={`text-[11px] px-2 py-0.5 rounded-full ${p.is_paid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                          {p.is_paid ? 'Payé' : 'À payer'}
+                        </span>
+                      </div>
                     </li>
                   ))}
                 </ul>

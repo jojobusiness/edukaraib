@@ -98,9 +98,6 @@ export default function ParentCourses() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewLesson, setReviewLesson] = useState(null);
 
-  // Group popup
-  const [openGroupId, setOpenGroupId] = useState(null);
-
   // maps
   const [studentMap, setStudentMap] = useState(new Map());
   const [teacherMap, setTeacherMap] = useState(new Map());
@@ -173,9 +170,23 @@ export default function ParentCourses() {
     return list;
   }, [courses, studentMap]);
 
-  // confirmés/terminés (on exclut les en attente comme demandé)
-  const confirmed = useMemo(() => courses.filter(c => c.status === 'confirmed'), [courses]);
-  const completed = useMemo(() => courses.filter(c => c.status === 'completed'), [courses]);
+  // En attente / Confirmés / Refusés / Terminés
+  const booked = useMemo(
+    () => courses.filter(c => c.status === 'booked'),
+    [courses]
+  );
+  const confirmed = useMemo(
+    () => courses.filter(c => c.status === 'confirmed'),
+    [courses]
+  );
+  const rejected = useMemo(
+    () => courses.filter(c => c.status === 'rejected'),
+    [courses]
+  );
+  const completed = useMemo(
+    () => courses.filter(c => c.status === 'completed'),
+    [courses]
+  );
 
   // actions invitations (pour l’enfant)
   async function acceptInvite(c) {
@@ -254,16 +265,21 @@ export default function ParentCourses() {
   function statusBadge(st) {
     return (
       <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[st] || 'bg-gray-200'}`}>
-        {st === 'confirmed' ? 'Confirmé' : st === 'completed' ? 'Terminé' : st === 'booked' ? 'En attente' : st}
+        {st === 'confirmed' ? 'Confirmé' : st === 'completed' ? 'Terminé' : st === 'booked' ? 'En attente' : st === 'rejected' ? 'Refusé' : st}
       </span>
     );
   }
 
   function CourseCard({ c }) {
     const isGroup = !!c.is_group;
-    // élève concerné :
-    const studentId = (c.student_id && studentMap.has(c.student_id)) ? c.student_id
-      : (c.participant_ids || []).find((sid) => studentMap.has(sid)) || c.student_id;
+
+    // enfants concernés (tous ceux du parent présents sur ce cours)
+    const kidsOfParent = Array.from(studentMap.keys());
+    const childrenInCourse = [
+      ...(c.student_id && kidsOfParent.includes(c.student_id) ? [c.student_id] : []),
+      ...((c.participant_ids || []).filter((sid) => kidsOfParent.includes(sid)))
+    ];
+    const uniqueChildren = Array.from(new Set(childrenInCourse));
 
     return (
       <div className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between">
@@ -273,10 +289,20 @@ export default function ParentCourses() {
             {statusBadge(c.status)}
             {isGroup && <ParticipantsPopover c={c} />}
           </div>
-          <div className="text-gray-700 text-sm">Enfant : <span className="font-semibold">{childNameFor(studentId)}</span></div>
+
+          {/* Enfants (côte à côte) */}
+          <div className="text-gray-700 text-sm flex flex-wrap items-center gap-2">
+            <span className="opacity-80">Enfant(s)&nbsp;:</span>
+            {uniqueChildren.length ? uniqueChildren.map((sid) => (
+              <span key={sid} className="inline-flex items-center gap-2 bg-gray-50 px-2 py-0.5 rounded-full border">
+                <span className="font-semibold">{childNameFor(sid)}</span>
+                {paymentBadgeForChild(c, sid)}
+              </span>
+            )) : <span className="font-semibold">—</span>}
+          </div>
+
           <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>
           <div className="text-gray-500 text-xs">{c.slot_day} {formatHour(c.slot_hour)}</div>
-          <div className="mt-1">{paymentBadgeForChild(c, studentId)}</div>
         </div>
         <div className="flex flex-wrap gap-2">
           <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => { setDocLesson(c); setDocOpen(true); }}>
@@ -304,10 +330,16 @@ export default function ParentCourses() {
           <div className="text-gray-700 mt-1">
             {nextCourse
               ? (() => {
-                  const sid =
-                    (nextCourse.student_id && studentMap.has(nextCourse.student_id)) ? nextCourse.student_id
-                    : (nextCourse.participant_ids || []).find((id) => studentMap.has(id)) || nextCourse.student_id;
-                  return `${nextCourse.subject_id || 'Cours'} · ${nextCourse.slot_day} ${formatHour(nextCourse.slot_hour)} · ${childNameFor(sid)} · avec ${teacherNameFor(nextCourse.teacher_id)}`;
+                  const kidsOfParent = Array.from(studentMap.keys());
+                  const childrenInCourse = [
+                    ...(nextCourse.student_id && kidsOfParent.includes(nextCourse.student_id) ? [nextCourse.student_id] : []),
+                    ...((nextCourse.participant_ids || []).filter((id) => kidsOfParent.includes(id)))
+                  ];
+                  const uniqueChildren = Array.from(new Set(childrenInCourse));
+                  const childrenLabel = uniqueChildren.length > 1
+                    ? `Participants: ${uniqueChildren.map((id) => childNameFor(id)).join(', ')}`
+                    : childNameFor(uniqueChildren[0] || nextCourse.student_id);
+                  return `${nextCourse.subject_id || 'Cours'} · ${nextCourse.slot_day} ${formatHour(nextCourse.slot_hour)} · ${childrenLabel} · avec ${teacherNameFor(nextCourse.teacher_id)}`;
                 })()
               : 'Aucun cours confirmé à venir'}
           </div>
@@ -352,6 +384,21 @@ export default function ParentCourses() {
               )}
             </section>
 
+            {/* En attente de confirmation */}
+            <section className="mb-8">
+              <div className="flex items-baseline justify-between mb-3">
+                <h3 className="text-lg font-semibold">En attente de confirmation</h3>
+                <span className="text-sm text-gray-500">{booked.length}</span>
+              </div>
+              {booked.length === 0 ? (
+                <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucun cours en attente.</div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                  {booked.map((c) => <CourseCard key={c.id} c={c} />)}
+                </div>
+              )}
+            </section>
+
             {/* Confirmés */}
             <section className="mb-8">
               <div className="flex items-baseline justify-between mb-3">
@@ -363,6 +410,21 @@ export default function ParentCourses() {
               ) : (
                 <div className="grid grid-cols-1 gap-4">
                   {confirmed.map((c) => <CourseCard key={c.id} c={c} />)}
+                </div>
+              )}
+            </section>
+
+            {/* Refusés */}
+            <section className="mb-8">
+              <div className="flex items-baseline justify-between mb-3">
+                <h3 className="text-lg font-semibold">Cours refusés</h3>
+                <span className="text-sm text-gray-500">{rejected.length}</span>
+              </div>
+              {rejected.length === 0 ? (
+                <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucun cours refusé.</div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                  {rejected.map((c) => <CourseCard key={c.id} c={c} />)}
                 </div>
               )}
             </section>

@@ -178,6 +178,7 @@ export default function ParentDashboard() {
         <p className="text-gray-600">Bienvenue sur votre espace parent. Suivez vos enfants, leurs cours et paiements ici.</p>
       </div>
 
+      {/* Cartes de stats (on a retiré la carte "Prochains cours") */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
         <div className="bg-white rounded-xl shadow p-6 border-l-4 border-primary flex flex-col items-start">
           <span className="text-3xl mb-2">👧</span>
@@ -190,48 +191,14 @@ export default function ParentDashboard() {
           </ul>
         </div>
 
-        <div className="bg-white rounded-xl shadow p-6 border-l-4 border-yellow-400 flex flex-col items-start">
-          <span className="text-3xl mb-2">📅</span>
-          <span className="text-xl font-bold text-yellow-600">Prochains cours</span>
-          <ul className="text-gray-700 mt-1 space-y-1">
-            {upcoming.length === 0 && <li>Aucun cours confirmé à venir.</li>}
-            {upcoming.map((c) => (
-              <li key={c.id} className="flex items-start justify-between gap-2">
-                <div>{c.info}</div>
-                {c.isGroup && (
-                  <div className="relative">
-                    <button
-                      onClick={() => setOpenRowId(openRowId === c.id ? null : c.id)}
-                      className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100"
-                    >
-                      👥 Participants
-                    </button>
-                    {openRowId === c.id && (
-                      <div className="absolute right-0 mt-2 bg-white border rounded-lg shadow p-3 w-72 z-10">
-                        <div className="text-xs font-semibold mb-1">Élèves du groupe</div>
-                        {(groupNamesByLesson.get(c.id) || []).length ? (
-                          <ul className="text-sm text-gray-700 list-disc pl-4 space-y-1">
-                            {(groupNamesByLesson.get(c.id) || []).map((nm, i) => <li key={i}>{nm}</li>)}
-                          </ul>
-                        ) : (
-                          <div className="text-xs text-gray-500">Aucun participant.</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="bg-white rounded-xl shadow p-6 border-l-4 border-secondary flex flex-col items-start">
+        <div className="bg-white rounded-xl shadow p-6 border-l-4 border-secondary flex flex-col items-start md:col-span-2">
           <span className="text-3xl mb-2">💳</span>
           <span className="text-xl font-bold text-secondary">Paiements à régler</span>
           <span className="text-gray-700 mt-1">{unpaid} cours à régler</span>
         </div>
       </div>
 
+      {/* Gros bloc conservé : Prochain cours */}
       <div className="bg-white rounded-xl shadow p-5 mb-6">
         <h3 className="font-bold text-primary mb-2">Prochain cours</h3>
         <div className="text-gray-700">

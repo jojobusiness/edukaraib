@@ -67,6 +67,32 @@ async function resolveTeacherName(id, cache) {
   cache.current.set(id, nm);
   return nm;
 }
+async function resolvePersonName(id, cache) {
+  if (!id) return id;
+  if (cache.current.has(id)) return cache.current.get(id);
+  // users
+  try {
+    const u = await getDoc(doc(db, 'users', id));
+    if (u.exists()) {
+      const d = u.data();
+      const nm = d.fullName || d.name || d.displayName || id;
+      cache.current.set(id, nm);
+      return nm;
+    }
+  } catch {}
+  // students
+  try {
+    const s = await getDoc(doc(db, 'students', id));
+    if (s.exists()) {
+      const d = s.data();
+      const nm = d.full_name || d.name || id;
+      cache.current.set(id, nm);
+      return nm;
+    }
+  } catch {}
+  cache.current.set(id, id);
+  return id;
+}
 
 /* =================== PAGE =================== */
 export default function MyCourses() {
@@ -79,9 +105,6 @@ export default function MyCourses() {
 
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewLesson, setReviewLesson] = useState(null);
-
-  // UI group
-  const [openGroupId, setOpenGroupId] = useState(null);
 
   const nameCache = useRef(new Map());
 
@@ -137,6 +160,7 @@ export default function MyCourses() {
 
   const booked = useMemo(() => courses.filter(c => c.status === 'booked'), [courses]);
   const confirmed = useMemo(() => courses.filter(c => c.status === 'confirmed'), [courses]);
+  const rejected = useMemo(() => courses.filter(c => c.status === 'rejected'), [courses]);
   const completed = useMemo(() => courses.filter(c => c.status === 'completed'), [courses]);
 
   function teacherNameFor(id) {
@@ -167,7 +191,7 @@ export default function MyCourses() {
     try {
       await updateDoc(doc(db, 'lessons', lesson.id), {
         participant_ids: (lesson.participant_ids || []).filter(x => x !== uid),
-        [`participantsMap.${uid}`]: null, // Firestore ne supprime pas avec null, mais on garde l'UX locale
+        [`participantsMap.${uid}`]: null,
       });
       setCourses(prev => prev.filter(c => !(c.id === lesson.id && (c.participant_ids||[]).includes(uid))));
     } catch (e) {
@@ -178,7 +202,7 @@ export default function MyCourses() {
 
   const statusBadge = (st) => (
     <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[st] || 'bg-gray-200'}`}>
-      {st === 'booked' ? 'En attente' : st === 'confirmed' ? 'Confirmé' : st === 'completed' ? 'Terminé' : st}
+      {st === 'booked' ? 'En attente' : st === 'confirmed' ? 'Confirmé' : st === 'completed' ? 'Terminé' : st === 'rejected' ? 'Refusé' : st}
     </span>
   );
 
@@ -197,7 +221,15 @@ export default function MyCourses() {
 
   function ParticipantsPopover({ c }) {
     const [open, setOpen] = useState(false);
-    const names = c.participant_ids || [];
+    const [names, setNames] = useState([]);
+    useEffect(() => {
+      if (!open) return;
+      (async () => {
+        const ids = (c.participant_ids || []).slice(0, 50);
+        const nm = await Promise.all(ids.map((id) => resolvePersonName(id, nameCache)));
+        setNames(nm);
+      })();
+    }, [open, c]);
     return (
       <>
         <button
@@ -205,18 +237,15 @@ export default function MyCourses() {
           onClick={() => setOpen(v => !v)}
           title="Voir les élèves du groupe"
         >
-          👥 {names.length}
+          👥 {(c.participant_ids || []).length}
         </button>
         {open && (
           <div className="mt-2 bg-white border rounded-lg shadow p-3 w-64">
             <div className="text-xs font-semibold mb-1">Élèves du groupe</div>
             {names.length ? (
               <ul className="text-sm text-gray-700 list-disc pl-4 space-y-1">
-                {names.map((sid) => (
-                  <li key={sid}>
-                    {sid}
-                    {/* si tu veux enrichir avec noms, branche un cache comme côté prof */}
-                  </li>
+                {names.map((nm, i) => (
+                  <li key={i}>{nm}</li>
                 ))}
               </ul>
             ) : (
@@ -339,6 +368,21 @@ export default function MyCourses() {
               ) : (
                 <div className="grid grid-cols-1 gap-4">
                   {confirmed.map((c) => <CourseCard key={c.id} c={c} />)}
+                </div>
+              )}
+            </section>
+
+            {/* Refusés */}
+            <section className="mb-8">
+              <div className="flex items-baseline justify-between mb-3">
+                <h3 className="text-lg font-semibold">Cours refusés</h3>
+                <span className="text-sm text-gray-500">{rejected.length}</span>
+              </div>
+              {rejected.length === 0 ? (
+                <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucun cours refusé.</div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                  {rejected.map((c) => <CourseCard key={c.id} c={c} />)}
                 </div>
               )}
             </section>
