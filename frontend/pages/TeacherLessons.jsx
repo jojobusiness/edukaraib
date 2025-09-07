@@ -13,11 +13,10 @@ import {
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
 
-// >>> remis comme demandé
+// Imports demandés — inchangés
 import DocumentsModal from '../components/lessons/DocumentsModal';
 import GroupSettingsModal from '../components/lessons/GroupSettingsModal';
 import { createPaymentDueNotificationsForLesson } from '../lib/paymentNotifications';
-// <<<
 
 const FR_DAY_ORDER = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
@@ -45,6 +44,9 @@ export default function TeacherLessons() {
 
   const [openManage, setOpenManage] = useState(false);
   const [manageLesson, setManageLesson] = useState(null);
+
+  // Toggle "voir participants" (confirmés/terminés)
+  const [openParticipantsByLesson, setOpenParticipantsByLesson] = useState(() => new Set());
 
   const userId = auth.currentUser?.uid;
   const nameCacheRef = useRef(new Map());
@@ -133,7 +135,6 @@ export default function TeacherLessons() {
   // Actions individuel
   const acceptIndividual = async (lessonId) => {
     await updateDoc(doc(db, 'lessons', lessonId), { status: 'confirmed' });
-    // créer les notifications de paiement pour ce cours
     try { await createPaymentDueNotificationsForLesson(lessonId); } catch (e) { console.warn('payment notifications (indiv):', e); }
   };
   const rejectIndividual = async (lessonId) => {
@@ -145,7 +146,6 @@ export default function TeacherLessons() {
     await updateDoc(doc(db, 'lessons', lessonId), {
       [`participantsMap.${studentId}.status`]: 'confirmed',
     });
-    // créer la notif paiement uniquement pour cet élève
     try { await createPaymentDueNotificationsForLesson(lessonId, { onlyForStudentId: studentId }); } catch (e) { console.warn('payment notifications (group):', e); }
   };
   const rejectGroupStudent = async (lessonId, studentId) => {
@@ -190,7 +190,7 @@ export default function TeacherLessons() {
     );
   };
 
-  // Boutons qui ouvrent les modals (pas d'autres imports)
+  // Boutons utilitaires
   const DocumentsBtn = ({ lesson }) => (
     <button
       className="ml-2 text-xs bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-1 rounded"
@@ -211,6 +211,26 @@ export default function TeacherLessons() {
       </button>
     ) : null;
 
+  const ToggleParticipantsBtn = ({ lesson }) => {
+    const opened = openParticipantsByLesson.has(lesson.id);
+    return (
+      <button
+        className="ml-2 text-xs bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-1 rounded"
+        onClick={() => {
+          setOpenParticipantsByLesson((prev) => {
+            const n = new Set(prev);
+            if (n.has(lesson.id)) n.delete(lesson.id);
+            else n.add(lesson.id);
+            return n;
+          });
+        }}
+        title="Voir les participants"
+      >
+        👥 Participants {opened ? '▾' : '▸'}
+      </button>
+    );
+  };
+
   return (
     <DashboardLayout role="teacher">
       <div className="mb-6">
@@ -229,7 +249,7 @@ export default function TeacherLessons() {
           <div className="text-gray-500 text-sm">Aucune demande en attente.</div>
         )}
 
-        {/* Individuel */}
+        {/* Individuel — (Documents/Gérer retirés ici) */}
         {pendingIndiv.length > 0 && (
           <div className="mb-6">
             <div className="font-semibold text-sm mb-2">Cours individuels</div>
@@ -255,7 +275,7 @@ export default function TeacherLessons() {
                       >
                         Refuser
                       </button>
-                      <DocumentsBtn lesson={l} />
+                      {/* Pas de Documents / Gérer ici */}
                     </div>
                   </div>
                 </li>
@@ -264,7 +284,7 @@ export default function TeacherLessons() {
           </div>
         )}
 
-        {/* Groupes (par élève) */}
+        {/* Groupes (par élève) — (Documents/Gérer retirés ici) */}
         {pendingGroup.length > 0 && (
           <div>
             <div className="font-semibold text-sm mb-2">Groupes</div>
@@ -290,8 +310,7 @@ export default function TeacherLessons() {
                       >
                         Refuser
                       </button>
-                      <DocumentsBtn lesson={lesson} />
-                      <ManageGroupBtn lesson={lesson} />
+                      {/* Pas de Documents / Gérer ici */}
                     </div>
                   </div>
                 </li>
@@ -310,29 +329,30 @@ export default function TeacherLessons() {
           <div className="text-gray-500 text-sm">Aucun cours confirmé.</div>
         ) : (
           <ul className="space-y-2">
-            {confirmed.map((l) => (
-              <li key={l.id} className="border rounded-lg px-3 py-2">
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-gray-600">
-                    {l.slot_day} {String(l.slot_hour).padStart(2, '0')}h
-                  </span>
-                  <span className="text-sm font-medium">{l.subject_id || 'Cours'}</span>
-                  <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800">Confirmé</span>
-                  <button
-                    className="ml-2 text-xs bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-1 rounded"
-                    title="Documents du cours"
-                    onClick={() => { setDocsLesson(l); setOpenDocs(true); }}
-                  >
-                    Documents
-                  </button>
-                  <ManageGroupBtn lesson={l} />
-                </div>
-                <div className="mt-2">
-                  <div className="text-xs font-semibold text-gray-700 mb-1">Participants</div>
-                  <ParticipantChips lesson={l} />
-                </div>
-              </li>
-            ))}
+            {confirmed.map((l) => {
+              const opened = openParticipantsByLesson.has(l.id);
+              return (
+                <li key={l.id} className="border rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-gray-600">
+                      {l.slot_day} {String(l.slot_hour).padStart(2, '0')}h
+                    </span>
+                    <span className="text-sm font-medium">{l.subject_id || 'Cours'}</span>
+                    <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800">Confirmé</span>
+                    <DocumentsBtn lesson={l} />
+                    <ManageGroupBtn lesson={l} />
+                    <ToggleParticipantsBtn lesson={l} />
+                  </div>
+
+                  {opened && (
+                    <div className="mt-2">
+                      <div className="text-xs font-semibold text-gray-700 mb-1">Participants</div>
+                      <ParticipantChips lesson={l} />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
@@ -346,29 +366,30 @@ export default function TeacherLessons() {
           <div className="text-gray-500 text-sm">Aucun cours terminé.</div>
         ) : (
           <ul className="space-y-2">
-            {completed.map((l) => (
-              <li key={l.id} className="border rounded-lg px-3 py-2">
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-gray-600">
-                    {l.slot_day} {String(l.slot_hour).padStart(2, '0')}h
-                  </span>
-                  <span className="text-sm font-medium">{l.subject_id || 'Cours'}</span>
-                  <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">Terminé</span>
-                  <button
-                    className="ml-2 text-xs bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-1 rounded"
-                    title="Documents du cours"
-                    onClick={() => { setDocsLesson(l); setOpenDocs(true); }}
-                  >
-                    Documents
-                  </button>
-                  <ManageGroupBtn lesson={l} />
-                </div>
-                <div className="mt-2">
-                  <div className="text-xs font-semibold text-gray-700 mb-1">Participants</div>
-                  <ParticipantChips lesson={l} />
-                </div>
-              </li>
-            ))}
+            {completed.map((l) => {
+              const opened = openParticipantsByLesson.has(l.id);
+              return (
+                <li key={l.id} className="border rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-gray-600">
+                      {l.slot_day} {String(l.slot_hour).padStart(2, '0')}h
+                    </span>
+                    <span className="text-sm font-medium">{l.subject_id || 'Cours'}</span>
+                    <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">Terminé</span>
+                    <DocumentsBtn lesson={l} />
+                    <ManageGroupBtn lesson={l} />
+                    <ToggleParticipantsBtn lesson={l} />
+                  </div>
+
+                  {opened && (
+                    <div className="mt-2">
+                      <div className="text-xs font-semibold text-gray-700 mb-1">Participants</div>
+                      <ParticipantChips lesson={l} />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
