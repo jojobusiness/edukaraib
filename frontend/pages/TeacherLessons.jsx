@@ -30,9 +30,21 @@ const bySlot = (a, b) => {
 const pickName = (x) =>
   x?.full_name || x?.fullName || x?.name || x?.displayName || 'Élève';
 
+const PENDING_SET = new Set([
+  'pending_teacher',
+  'pending_parent',
+  'invited_student',
+  'invited_parent',
+  'requested',
+  'pending',
+  'awaiting_confirmation',
+  'reinvited',
+  'awaiting', // tolérance large
+]);
+
 export default function TeacherLessons() {
   const [pendingIndiv, setPendingIndiv] = useState([]);   // is_group:false, status: booked
-  const [pendingGroup, setPendingGroup] = useState([]);   // [{lessonId, lesson, studentId}]
+  const [pendingGroup, setPendingGroup] = useState([]);   // [{lessonId, lesson, studentId, status}]
   const [confirmed, setConfirmed] = useState([]);         // status: confirmed
   const [completed, setCompleted] = useState([]);         // status: completed
   const [names, setNames] = useState(new Map());          // id -> name
@@ -63,13 +75,19 @@ export default function TeacherLessons() {
       const completedLessons = all.filter((l) => l.status === 'completed');
       const pendingInd = all.filter((l) => !l.is_group && l.status === 'booked');
 
+      // ——— PENDING GROUP (afficher TOUT ce qui n'est PAS accepté/confirmé) ———
       const pendingG = [];
       all.filter((l) => !!l.is_group).forEach((l) => {
-        const ids = Array.isArray(l.participant_ids) ? l.participant_ids : [];
+        const ids = Array.isArray(l.participant_ids) ? Array.from(new Set(l.participant_ids)) : [];
         const map = l.participantsMap || {};
+
         ids.forEach((sid) => {
-          if (map?.[sid]?.status === 'pending_teacher') {
-            pendingG.push({ lessonId: l.id, lesson: l, studentId: sid });
+          const st = map?.[sid]?.status;
+          // Si pas 'accepted' / 'confirmed' → c'est en attente et DOIT être visible
+          if (!st || PENDING_SET.has(String(st)) || (st !== 'accepted' && st !== 'confirmed')) {
+            // On évite d'inclure ceux explicitement refusés/supprimés si tu as ce statut
+            if (st === 'rejected' || st === 'removed' || st === 'deleted') return;
+            pendingG.push({ lessonId: l.id, lesson: l, studentId: sid, status: st || 'pending_teacher' });
           }
         });
       });
@@ -77,7 +95,10 @@ export default function TeacherLessons() {
       setConfirmed(confirmedLessons.sort(bySlot));
       setCompleted(completedLessons.sort(bySlot));
       setPendingIndiv(pendingInd.sort(bySlot));
-      setPendingGroup(pendingG.sort((a, b) => bySlot(a.lesson, b.lesson)));
+      setPendingGroup(
+        pendingG
+          .sort((a, b) => bySlot(a.lesson, b.lesson))
+      );
 
       // Noms nécessaires :
       const idSet = new Set();
@@ -190,7 +211,7 @@ export default function TeacherLessons() {
     );
   };
 
-  // Boutons utilitaires
+  // Boutons utilitaires (Confirmés/Terminés uniquement)
   const DocumentsBtn = ({ lesson }) => (
     <button
       className="ml-2 text-xs bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-1 rounded"
@@ -228,6 +249,20 @@ export default function TeacherLessons() {
       >
         👥 Participants {opened ? '▾' : '▸'}
       </button>
+    );
+  };
+
+  const PendingStatusBadge = ({ status }) => {
+    const st = (status || '').toString();
+    let label = 'En attente';
+    if (st === 'pending_teacher') label = 'En attente prof';
+    else if (st === 'pending_parent') label = 'En attente parent';
+    else if (st === 'invited_student' || st === 'invited_parent') label = 'Invitation envoyée';
+    else if (st && st !== 'accepted' && st !== 'confirmed') label = st.replace(/_/g, ' ');
+    return (
+      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+        {label}
+      </span>
     );
   };
 
@@ -284,12 +319,12 @@ export default function TeacherLessons() {
           </div>
         )}
 
-        {/* Groupes (par élève) — (Documents/Gérer retirés ici) */}
+        {/* Groupes (par élève) — maintenant TOUT ce qui n'est pas accepté/confirmé est visible */}
         {pendingGroup.length > 0 && (
           <div>
             <div className="font-semibold text-sm mb-2">Groupes</div>
             <ul className="space-y-2">
-              {pendingGroup.map(({ lessonId, lesson, studentId }) => (
+              {pendingGroup.map(({ lessonId, lesson, studentId, status }) => (
                 <li key={`${lessonId}:${studentId}`} className="border rounded-lg px-3 py-2">
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-gray-600">
@@ -297,6 +332,7 @@ export default function TeacherLessons() {
                     </span>
                     <span className="text-sm font-medium">{lesson.subject_id || 'Cours'}</span>
                     <span className="text-xs text-gray-600">• Élève : {names.get(studentId) || studentId}</span>
+                    <PendingStatusBadge status={status} />
                     <div className="ml-auto flex items-center gap-2">
                       <button
                         className="px-3 py-1 rounded bg-green-600 text-white text-xs"
