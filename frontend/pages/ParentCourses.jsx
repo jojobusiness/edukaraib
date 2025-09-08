@@ -12,7 +12,7 @@ import {
   getDoc,
   updateDoc,
   limit,
-  onSnapshot, // ← temps réel
+  onSnapshot,
 } from 'firebase/firestore';
 
 /* ---------- Helpers ---------- */
@@ -107,11 +107,11 @@ export default function ParentCourses() {
   // enfants du parent (temps réel)
   const [kidIds, setKidIds] = useState([]);
 
+  // --- Enfants (temps réel) ---
   useEffect(() => {
-    if (!auth.currentUser) return;
+    if (!auth.currentUser) { setLoading(false); return; } // <-- éviter blocage si non connecté
     setLoading(true);
 
-    // 1) enfants en temps réel
     const unsubKids = onSnapshot(
       query(collection(db, 'students'), where('parent_id', '==', auth.currentUser.uid)),
       async (kidsSnap) => {
@@ -119,7 +119,9 @@ export default function ParentCourses() {
         const ids = kids.map(k => k.id);
         setStudentMap(new Map(kids.map(k => [k.id, k.full_name || k.fullName || k.name || 'Enfant'])));
         setKidIds(ids);
-      }
+        // ne pas setLoading(false) ici : la suite (listeners des leçons) s'en charge
+      },
+      () => { setLoading(false); } // en cas d'erreur, éviter le blocage
     );
 
     return () => {
@@ -127,10 +129,9 @@ export default function ParentCourses() {
     };
   }, []);
 
-  // 2) leçons des enfants (2 écoutes: student_id in [...] et participant_ids array-contains-any [...])
+  // --- Leçons des enfants (temps réel) ---
   useEffect(() => {
-    if (!auth.currentUser) return;
-    // si pas d’enfants → rien
+    if (!auth.currentUser) { setLoading(false); return; }
     if (!kidIds.length) { setCourses([]); setLoading(false); return; }
 
     setLoading(true);
@@ -146,34 +147,53 @@ export default function ParentCourses() {
       setCourses(Array.from(map.values()));
     };
 
-    // Firestore limite à 10 pour 'in' & 'array-contains-any'
     const chunks = (arr, n=10) => Array.from({ length: Math.ceil(arr.length / n)}, (_,i)=>arr.slice(i*n,(i+1)*n));
 
+    const chunksA = chunks(kidIds, 10);
+    const chunksB = chunks(kidIds, 10);
+    const totalListeners = chunksA.length + chunksB.length;
+    let readyCount = 0;
+
+    const onFirstSnapshot = () => {
+      readyCount += 1;
+      if (readyCount >= totalListeners) setLoading(false); // <-- éteindre le loading après 1er passage de tous les listeners
+    };
+
     // A) lessons via student_id
-    for (const chunk of chunks(kidIds, 10)) {
+    for (const chunk of chunksA) {
       const qA = query(collection(db, 'lessons'), where('student_id', 'in', chunk));
-      const unsubA = onSnapshot(qA, (sA) => {
-        sA.docChanges().forEach((ch) => {
-          if (ch.type === 'removed') remove(ch.doc.id);
-          else upsert(ch.doc.id, ch.doc.data());
-        });
-      });
+      const unsubA = onSnapshot(
+        qA,
+        (sA) => {
+          sA.docChanges().forEach((ch) => {
+            if (ch.type === 'removed') remove(ch.doc.id);
+            else upsert(ch.doc.id, ch.doc.data());
+          });
+          onFirstSnapshot();
+        },
+        () => { onFirstSnapshot(); } // en cas d'erreur, on ne bloque pas le loader
+      );
       unsubs.push(unsubA);
     }
 
     // B) lessons via participant_ids
-    for (const chunk of chunks(kidIds, 10)) {
+    for (const chunk of chunksB) {
       const qB = query(collection(db, 'lessons'), where('participant_ids', 'array-contains-any', chunk));
-      const unsubB = onSnapshot(qB, (sB) => {
-        sB.docChanges().forEach((ch) => {
-          if (ch.type === 'removed') remove(ch.doc.id);
-          else upsert(ch.doc.id, ch.doc.data());
-        });
-      });
+      const unsubB = onSnapshot(
+        qB,
+        (sB) => {
+          sB.docChanges().forEach((ch) => {
+            if (ch.type === 'removed') remove(ch.doc.id);
+            else upsert(ch.doc.id, ch.doc.data());
+          });
+          onFirstSnapshot();
+        },
+        () => { onFirstSnapshot(); }
+      );
       unsubs.push(unsubB);
     }
 
-    return () => { unsubs.forEach(fn => fn && fn()); setLoading(false); };
+    return () => { unsubs.forEach(fn => fn && fn()); };
   }, [kidIds]);
 
   // 3) enrichissements (noms profs)
@@ -188,17 +208,16 @@ export default function ParentCourses() {
   // prochaines (confirmées)
   const nextCourse = useMemo(() => {
     const now = new Date();
-    const kidsSet = new Set(kidIds);
+    const kidsSetLocal = new Set(kidIds);
 
-    // Ne garder que les cours où AU MOINS un de mes enfants est confirmé/accepté
     const eligible = courses.filter((c) => {
       if (c.status !== 'confirmed' || !FR_DAY_CODES.includes(c.slot_day)) return false;
       if (c.is_group) {
         const ids = c.participant_ids || [];
         const pm = c.participantsMap || {};
-        return ids.some((sid) => kidsSet.has(sid) && (pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed'));
+        return ids.some((sid) => kidsSetLocal.has(sid) && (pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed'));
       } else {
-        return kidsSet.has(c.student_id);
+        return kidsSetLocal.has(c.student_id);
       }
     });
 
@@ -212,12 +231,12 @@ export default function ParentCourses() {
 
   // invitations pour mes enfants (status invited_student)
   const invitations = useMemo(() => {
-    const kidsSet = new Set(kidIds);
+    const kidsSetLocal = new Set(kidIds);
     const list = [];
     for (const c of courses) {
       const pm = c.participantsMap || {};
       const ids = c.participant_ids || [];
-      const invitedChild = ids.find((sid) => kidsSet.has(sid) && pm?.[sid]?.status === 'invited_student');
+      const invitedChild = ids.find((sid) => kidsSetLocal.has(sid) && pm?.[sid]?.status === 'invited_student');
       if (invitedChild) list.push({ ...c, __child: invitedChild });
     }
     return list;
@@ -236,7 +255,6 @@ export default function ParentCourses() {
         ids.forEach((sid) => {
           if (!kidsSet.has(sid)) return;
           const st = pm?.[sid]?.status;
-          // En attente si pas accepted/confirmed
           if (st !== 'accepted' && st !== 'confirmed') {
             out.push({ c, sid });
           }
@@ -247,7 +265,6 @@ export default function ParentCourses() {
         }
       }
     }
-    // Tri simple par jour/heure
     out.sort((a, b) => (FR_DAY_CODES.indexOf(a.c.slot_day) - FR_DAY_CODES.indexOf(b.c.slot_day)) || ((a.c.slot_hour||0)-(b.c.slot_hour||0)));
     return out;
   }, [courses, kidsSet]);
@@ -286,7 +303,7 @@ export default function ParentCourses() {
     return arr;
   }, [courses, kidsSet]);
 
-  // Refusés (cours rejetés de l’enfant individuel; pour groupe, on n’affiche que si le cours entier est rejeté)
+  // Refusés (simplifié)
   const rejectedCourses = useMemo(() => {
     return courses.filter((c) => c.status === 'rejected' && (
       (c.is_group && (c.participant_ids || []).some((sid) => kidsSet.has(sid))) ||
@@ -412,7 +429,7 @@ export default function ParentCourses() {
             {isGroup && <ParticipantsPopover c={c} />}
           </div>
 
-          {/* Enfants (côte à côte) — uniquement ceux confirmés/acceptés fournis par l’appelant */}
+          {/* Enfants (côte à côte) — uniquement ceux confirmés/acceptés */}
           <div className="text-gray-700 text-sm flex flex-wrap items-center gap-2">
             <span className="opacity-80">Enfant(s)&nbsp;:</span>
             {kids && kids.length ? kids.map((sid) => (
