@@ -105,23 +105,40 @@ export default function ParentDashboard() {
         .filter(l => l.startAt);
       setCourses(enriched);
 
-      // Compteur "à régler" (par enfant)
+      // Compteur "à régler" (par enfant) — uniquement cours CONFIRMÉS, par enfant, et seulement si l'enfant est accepté/confirmé
       const unpaidCount = lessons.reduce((acc, l) => {
+        // On aligne sur ParentPayments : on ne compte que les confirmed (pas booked/pending_teacher/rejected)
+        if (l.status !== 'confirmed') return acc;
+
         if (l.is_group) {
-          const map = l.participantsMap || {};
-          const anyChildUnpaid = kidIds.some((cid) => {
-            const entry = map[cid];
-            return entry && !(entry.is_paid || entry.paid_at);
+          const pm = l.participantsMap || {};
+          const ids = Array.isArray(l.participant_ids) ? l.participant_ids : [];
+          let addForThisLesson = 0;
+
+          ids.forEach((cid) => {
+            if (!kidIds.includes(cid)) return; // seulement les enfants de CE parent
+            const st = pm?.[cid]?.status;
+            // ne compter que les enfants effectivement acceptés/confirmés dans le groupe
+            const isConfirmedKid = st === 'accepted' || st === 'confirmed';
+            if (!isConfirmedKid) return;
+
+            const isPaid = !!pm?.[cid]?.is_paid || !!pm?.[cid]?.paid_at;
+            if (!isPaid) addForThisLesson += 1; // ✅ compter par enfant
           });
-          return acc + (anyChildUnpaid ? 1 : 0);
+
+          return acc + addForThisLesson;
         }
-        // individuel
+
+        // Individuel
         if (kidIds.includes(l.student_id)) {
-          return acc + (l.is_paid || l.paid_at ? 0 : 1);
+          const isPaid = !!l.is_paid || !!l.paid_at;
+          return acc + (isPaid ? 0 : 1);
         }
+
         return acc;
       }, 0);
       setUnpaid(unpaidCount);
+
 
       // Noms pour bouton 👥
       const idSet = new Set();
