@@ -104,24 +104,41 @@ export default function ParentCourses() {
   const [teacherMap, setTeacherMap] = useState(new Map());
   const nameCacheRef = useRef(new Map());
 
-  // enfants du parent (temps réel)
+  // enfants du parent (temps réel) + parent lui-même
   const [kidIds, setKidIds] = useState([]);
 
   // --- Enfants (temps réel) ---
   useEffect(() => {
-    if (!auth.currentUser) { setLoading(false); return; } // <-- éviter blocage si non connecté
+    const me = auth.currentUser;
+    if (!me) { setLoading(false); return; }
     setLoading(true);
 
     const unsubKids = onSnapshot(
-      query(collection(db, 'students'), where('parent_id', '==', auth.currentUser.uid)),
+      query(collection(db, 'students'), where('parent_id', '==', me.uid)),
       async (kidsSnap) => {
         const kids = kidsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         const ids = kids.map(k => k.id);
-        setStudentMap(new Map(kids.map(k => [k.id, k.full_name || k.fullName || k.name || 'Enfant'])));
-        setKidIds(ids);
-        // ne pas setLoading(false) ici : la suite (listeners des leçons) s'en charge
+
+        // nom du parent
+        let parentLabel = 'Moi (parent)';
+        try {
+          const meSnap = await getDoc(doc(db, 'users', me.uid));
+          if (meSnap.exists()) {
+            const d = meSnap.data();
+            parentLabel = d.fullName || d.name || 'Moi (parent)';
+          }
+        } catch {}
+
+        const newMap = new Map(kids.map(k => [k.id, k.full_name || k.fullName || k.name || 'Enfant']));
+        newMap.set(me.uid, parentLabel); // ajouter le parent dans la map des “élèves” suivis
+        setStudentMap(newMap);
+
+        // suivre aussi le parent
+        setKidIds([...ids, me.uid]);
+
+        // (loading s'éteint dans les listeners des leçons)
       },
-      () => { setLoading(false); } // en cas d'erreur, éviter le blocage
+      () => { setLoading(false); } // en cas d'erreur
     );
 
     return () => {
@@ -129,9 +146,10 @@ export default function ParentCourses() {
     };
   }, []);
 
-  // --- Leçons des enfants (temps réel) ---
+  // --- Leçons des enfants + parent (temps réel) ---
   useEffect(() => {
-    if (!auth.currentUser) { setLoading(false); return; }
+    const me = auth.currentUser;
+    if (!me) { setLoading(false); return; }
     if (!kidIds.length) { setCourses([]); setLoading(false); return; }
 
     setLoading(true);
@@ -156,7 +174,7 @@ export default function ParentCourses() {
 
     const onFirstSnapshot = () => {
       readyCount += 1;
-      if (readyCount >= totalListeners) setLoading(false); // <-- éteindre le loading après 1er passage de tous les listeners
+      if (readyCount >= totalListeners) setLoading(false);
     };
 
     // A) lessons via student_id
@@ -171,7 +189,7 @@ export default function ParentCourses() {
           });
           onFirstSnapshot();
         },
-        () => { onFirstSnapshot(); } // en cas d'erreur, on ne bloque pas le loader
+        () => { onFirstSnapshot(); }
       );
       unsubs.push(unsubA);
     }
@@ -229,7 +247,7 @@ export default function ParentCourses() {
     return future[0] || null;
   }, [courses, kidIds]);
 
-  // invitations pour mes enfants (status invited_student)
+  // invitations pour mes enfants/parent (status invited_student pour groupe)
   const invitations = useMemo(() => {
     const kidsSetLocal = new Set(kidIds);
     const list = [];
@@ -242,10 +260,10 @@ export default function ParentCourses() {
     return list;
   }, [courses, kidIds]);
 
-  // --- Construire les vues par enfant (ATTENTE / CONFIRMÉS / REFUSÉS / TERMINÉS) ---
+  // --- Construire les vues par “élève” suivi (enfants + parent) ---
   const kidsSet = useMemo(() => new Set(kidIds), [kidIds]);
 
-  // En attente (items par enfant)
+  // En attente (items par enfant/parent) — pas de bouton Participants ni pastille "À payer"
   const pendingItems = useMemo(() => {
     const out = [];
     for (const c of courses) {
@@ -269,7 +287,7 @@ export default function ParentCourses() {
     return out;
   }, [courses, kidsSet]);
 
-  // Confirmés (cours avec AU MOINS un enfant confirmé/accepté) + on n’affiche QUE ces enfants-là
+  // Confirmés — on n’affiche QUE les sid confirmés/acceptés (donc les en attente ne sont pas comptés ni affichés)
   const confirmedCourses = useMemo(() => {
     const arr = [];
     for (const c of courses) {
@@ -286,7 +304,7 @@ export default function ParentCourses() {
     return arr;
   }, [courses, kidsSet]);
 
-  // Terminés (même logique que confirmés)
+  // Terminés — même logique
   const completedCourses = useMemo(() => {
     const arr = [];
     for (const c of courses) {
@@ -303,7 +321,7 @@ export default function ParentCourses() {
     return arr;
   }, [courses, kidsSet]);
 
-  // Refusés (simplifié)
+  // Refusés (cours entiers rejetés)
   const rejectedCourses = useMemo(() => {
     return courses.filter((c) => c.status === 'rejected' && (
       (c.is_group && (c.participant_ids || []).some((sid) => kidsSet.has(sid))) ||
@@ -311,7 +329,7 @@ export default function ParentCourses() {
     ));
   }, [courses, kidsSet]);
 
-  // actions invitations (pour l’enfant)
+  // actions invitations (pour l’enfant/parent)
   async function acceptInvite(c) {
     const sid = c.__child;
     try {
@@ -338,13 +356,34 @@ export default function ParentCourses() {
   function teacherNameFor(id) { return teacherMap.get(id) || id; }
   function childNameFor(id) { return studentMap.get(id) || id; }
 
-  function paymentBadgeForChild(c, sid) {
-    const isGroup = !!c.is_group;
-    const paid = isGroup ? !!c.participantsMap?.[sid]?.is_paid : !!c.is_paid;
+  // --- UI ---
+
+  // ⚠️ Version "En attente" SANS bouton Participants et SANS pastille "À payer"
+  function PendingItemCard({ c, sid }) {
     return (
-      <span className={`text-[11px] px-2 py-0.5 rounded-full ${paid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-        {paid ? 'Payé' : 'À payer'}
-      </span>
+      <div className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
+            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800">En attente</span>
+            {/* (retiré) {c.is_group && <ParticipantsPopover c={c} />} */}
+          </div>
+          <div className="text-gray-700 text-sm flex flex-wrap items-center gap-2">
+            <span className="opacity-80">Élève&nbsp;:</span>
+            <span className="inline-flex items-center gap-2 bg-gray-50 px-2 py-0.5 rounded-full border">
+              <span className="font-semibold">{childNameFor(sid)}</span>
+              {/* (retiré) {paymentBadgeForChild(c, sid)} */}
+            </span>
+          </div>
+          <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>
+          <div className="text-gray-500 text-xs">{c.slot_day} {formatHour(c.slot_hour)}</div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => { setDocLesson(c); setDocOpen(true); }}>
+            📄 Documents
+          </button>
+        </div>
+      </div>
     );
   }
 
@@ -388,32 +427,13 @@ export default function ParentCourses() {
     );
   }
 
-  // Cartes
-  function PendingItemCard({ c, sid }) {
+  function paymentBadgeForChild(c, sid) {
+    const isGroup = !!c.is_group;
+    const paid = isGroup ? !!c.participantsMap?.[sid]?.is_paid : !!c.is_paid;
     return (
-      <div className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
-            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800">En attente</span>
-            {c.is_group && <ParticipantsPopover c={c} />}
-          </div>
-          <div className="text-gray-700 text-sm flex flex-wrap items-center gap-2">
-            <span className="opacity-80">Enfant&nbsp;:</span>
-            <span className="inline-flex items-center gap-2 bg-gray-50 px-2 py-0.5 rounded-full border">
-              <span className="font-semibold">{childNameFor(sid)}</span>
-              {paymentBadgeForChild(c, sid)}
-            </span>
-          </div>
-          <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>
-          <div className="text-gray-500 text-xs">{c.slot_day} {formatHour(c.slot_hour)}</div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => { setDocLesson(c); setDocOpen(true); }}>
-            📄 Documents
-          </button>
-        </div>
-      </div>
+      <span className={`text-[11px] px-2 py-0.5 rounded-full ${paid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+        {paid ? 'Payé' : 'À payer'}
+      </span>
     );
   }
 
@@ -431,7 +451,7 @@ export default function ParentCourses() {
 
           {/* Enfants (côte à côte) — uniquement ceux confirmés/acceptés */}
           <div className="text-gray-700 text-sm flex flex-wrap items-center gap-2">
-            <span className="opacity-80">Enfant(s)&nbsp;:</span>
+            <span className="opacity-80">Élève(s)&nbsp;:</span>
             {kids && kids.length ? kids.map((sid) => (
               <span key={sid} className="inline-flex items-center gap-2 bg-gray-50 px-2 py-0.5 rounded-full border">
                 <span className="font-semibold">{childNameFor(sid)}</span>
@@ -460,9 +480,9 @@ export default function ParentCourses() {
   return (
     <DashboardLayout role="parent">
       <div className="max-w-3xl mx-auto">
-        <h2 className="text-2xl font-bold text-primary mb-6">📚 Suivi des cours (enfants)</h2>
+        <h2 className="text-2xl font-bold text-primary mb-6">📚 Suivi des cours</h2>
 
-        {/* Prochain cours (uniquement si au moins un enfant confirmé/accepté) */}
+        {/* Prochain cours (uniquement si au moins un confirmé/accepté) */}
         <div className="bg-white rounded-xl shadow p-6 border-l-4 border-primary mb-6">
           <div className="text-3xl mb-2">📅</div>
           <div className="text-xl font-bold text-primary">Prochain cours</div>
@@ -487,7 +507,7 @@ export default function ParentCourses() {
           <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Chargement…</div>
         ) : (
           <>
-            {/* Invitations reçues (par enfant) */}
+            {/* Invitations reçues */}
             <section className="mb-8">
               <div className="flex items-baseline justify-between mb-3">
                 <h3 className="text-lg font-semibold">Invitations reçues</h3>
@@ -504,7 +524,7 @@ export default function ParentCourses() {
                           <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
                           <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded">Invitation</span>
                         </div>
-                        <div className="text-gray-700 text-sm">Enfant : <span className="font-semibold">{studentMap.get(c.__child) || c.__child}</span></div>
+                        <div className="text-gray-700 text-sm">Élève : <span className="font-semibold">{studentMap.get(c.__child) || c.__child}</span></div>
                         <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>
                         <div className="text-gray-500 text-xs">{c.slot_day} {formatHour(c.slot_hour)}</div>
                       </div>
@@ -522,7 +542,7 @@ export default function ParentCourses() {
               )}
             </section>
 
-            {/* En attente (par enfant) */}
+            {/* En attente (par élève : parent + enfants) */}
             <section className="mb-8">
               <div className="flex items-baseline justify-between mb-3">
                 <h3 className="text-lg font-semibold">En attente de confirmation</h3>
@@ -556,7 +576,7 @@ export default function ParentCourses() {
               )}
             </section>
 
-            {/* Refusés (simplifié) */}
+            {/* Refusés */}
             <section className="mb-8">
               <div className="flex items-baseline justify-between mb-3">
                 <h3 className="text-lg font-semibold">Cours refusés</h3>

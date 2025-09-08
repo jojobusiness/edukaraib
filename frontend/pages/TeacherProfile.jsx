@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import {
   doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc,
-  serverTimestamp, arrayUnion, // ← remis pour éviter l’échec silencieux
+  serverTimestamp, arrayUnion,
 } from 'firebase/firestore';
 import BookingModal from '../components/BookingModal';
 
@@ -112,7 +112,43 @@ export default function TeacherProfile() {
     setIsBooking(true);
     setConfirmationMsg('');
     try {
-      // 1) Rejoindre un groupe existant à ce créneau → élève en attente
+      // 🔒 0) Anti-doublon global au même créneau (groupe OU individuel)
+      //    - même prof, même slot_day + slot_hour, même enfant/parent
+      const dupIndQ = query(
+        collection(db, 'lessons'),
+        where('teacher_id', '==', teacherId),
+        where('slot_day', '==', slot.day),
+        where('slot_hour', '==', slot.hour),
+        where('is_group', '==', false),
+        where('student_id', '==', targetStudentId)
+      );
+      const dupGrpQ = query(
+        collection(db, 'lessons'),
+        where('teacher_id', '==', teacherId),
+        where('slot_day', '==', slot.day),
+        where('slot_hour', '==', slot.hour),
+        where('is_group', '==', true),
+        where('participant_ids', 'array-contains', targetStudentId)
+      );
+      const [dupIndSnap, dupGrpSnap] = await Promise.all([getDocs(dupIndQ), getDocs(dupGrpQ)]);
+
+      const hasDup =
+        dupIndSnap.docs.some((d) => (d.data()?.status || 'booked') !== 'rejected') ||
+        dupGrpSnap.docs.some((d) => {
+          const dat = d.data();
+          const st = dat?.participantsMap?.[targetStudentId]?.status;
+          // Si l'élève est présent et pas explicitement supprimé/rejeté
+          return st !== 'removed' && st !== 'deleted' && st !== 'rejected';
+        });
+
+      if (hasDup) {
+        setBooked(true);
+        setShowBooking(false);
+        setConfirmationMsg(`Tu es déjà inscrit(e) sur ce créneau (${slot.day} ${slot.hour}h) pour ce professeur.`);
+        return;
+      }
+
+      // 1) Rejoindre un groupe existant à ce créneau → élève en attente (avec garde anti-doublon local)
       const qExisting = query(
         collection(db, 'lessons'),
         where('teacher_id', '==', teacherId),
