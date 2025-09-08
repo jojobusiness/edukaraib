@@ -390,28 +390,41 @@ export default function ParentCourses() {
   function ParticipantsPopover({ c }) {
     const [open, setOpen] = useState(false);
     const [names, setNames] = useState([]);
+
+    const pm = c.participantsMap || {};
+    const allIds = Array.isArray(c.participant_ids) ? c.participant_ids : [];
+    // ✅ Ne garder que les élèves acceptés/confirmés
+    const visibleIds = allIds.filter(
+      (sid) => pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed'
+    );
+
     useEffect(() => {
       if (!open) return;
       (async () => {
-        const ids = (c.participant_ids || []).slice(0, 40);
-        const nm = await Promise.all(ids.map((id) => resolvePersonName(id, nameCacheRef)));
+        const nm = await Promise.all(visibleIds.slice(0, 40).map((id) => resolvePersonName(id, nameCacheRef)));
         setNames(nm);
       })();
-    }, [open, c]);
+    }, [open, c.id]); // on se base sur l'ouverture et l'id du cours
+
     return (
       <>
-        <button className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100" onClick={() => setOpen(v => !v)}>
-          👥 {(c.participant_ids || []).length}
+        <button
+          className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100"
+          onClick={() => setOpen((v) => !v)}
+          title="Participants confirmés"
+        >
+          👥 {visibleIds.length}
         </button>
+
         {open && (
           <div className="mt-2 bg-white border rounded-lg shadow p-3 w-64">
-            <div className="text-xs font-semibold mb-1">Élèves du groupe</div>
+            <div className="text-xs font-semibold mb-1">Élèves confirmés</div>
             {names.length ? (
               <ul className="text-sm text-gray-700 list-disc pl-4 space-y-1">
                 {names.map((nm, i) => <li key={i}>{nm}</li>)}
               </ul>
             ) : (
-              <div className="text-xs text-gray-500">Aucun participant.</div>
+              <div className="text-xs text-gray-500">Aucun participant confirmé.</div>
             )}
           </div>
         )}
