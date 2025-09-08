@@ -84,7 +84,7 @@ export default function ParentPayments() {
     setLoading(true);
 
     (async () => {
-      // 1) Liste des enfants du parent (ids utilisables pour student_id ou participant_ids)
+      // 1) Enfants du parent (ids utilisables pour student_id ou participant_ids)
       const kidsSnap = await getDocs(query(collection(db, 'students'), where('parent_id', '==', user.uid)));
       const kids = kidsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
       const childIds = [];
@@ -125,17 +125,27 @@ export default function ParentPayments() {
           }
         }
 
-        // Confirmés uniquement pour le paiement
-        const confirmed = rows.filter((r) => r.lesson.status === 'confirmed');
-        const unpaid = confirmed.filter((r) => !isPaidForStudent(r.lesson, r.forStudent));
-        const alreadyPaid = rows.filter((r) => isPaidForStudent(r.lesson, r.forStudent));
+        // ✅ EXCLURE TOUT ce qui est 'pending_teacher' (ne doit pas apparaître)
+        const notPendingTeacher = (r) => r.lesson.status !== 'pending_teacher';
+
+        // Paiements à faire : uniquement CONFIRMÉS (pas d'en attente)
+        const confirmedOnly = rows.filter((r) => r.lesson.status === 'confirmed' && notPendingTeacher(r));
+
+        // Historique payé : payé ET pas 'pending_teacher' (on accepte confirmed/completed)
+        const paidEligible = rows.filter((r) =>
+          isPaidForStudent(r.lesson, r.forStudent) &&
+          (r.lesson.status === 'confirmed' || r.lesson.status === 'completed') &&
+          notPendingTeacher(r)
+        );
+
+        const unpaid = confirmedOnly.filter((r) => !isPaidForStudent(r.lesson, r.forStudent));
 
         const getTs = (r) =>
           (r.lesson.start_datetime?.toDate?.() && r.lesson.start_datetime.toDate().getTime()) ||
           (r.lesson.start_datetime?.seconds && r.lesson.start_datetime.seconds * 1000) || 0;
 
         setToPay(unpaid.sort((a, b) => getTs(a) - getTs(b)));
-        setPaid(alreadyPaid.sort((a, b) => getTs(b) - getTs(a)));
+        setPaid(paidEligible.sort((a, b) => getTs(b) - getTs(a)));
         setLoading(false);
       };
 
