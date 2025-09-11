@@ -170,12 +170,13 @@ export default function StudentPayments() {
 
         {/* À régler (confirmés uniquement) */}
         <div className="mb-8">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-1">
             <h3 className="font-bold text-secondary">Paiements à effectuer</h3>
             {!loading && (
               <span className="text-xs text-gray-600">Total à régler : {totals.due.toFixed(2)} €</span>
             )}
           </div>
+          <div className="text-[11px] text-gray-500 mb-3">Le montant affiché inclut <strong>10 € de frais plateforme</strong>.</div>
 
           {loading ? (
             <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Chargement…</div>
