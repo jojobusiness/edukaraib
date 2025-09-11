@@ -1,4 +1,3 @@
-// frontend/pages/TeacherEarnings.jsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import { auth, db } from '../lib/firebase';
@@ -9,14 +8,42 @@ import EarningsSummary from '../components/earnings/EarningsSummary';
 import EarningsChart from '../components/earnings/EarningsChart';
 import PaymentsTable from '../components/earnings/PaymentsTable';
 
-import {
-  COMMISSION_RATE,
-  fmtEUR,
-  getRevenueDate,
-  getPaidAmount,
-  monthLabel,
-} from '../utils/earnings';
-import { resolveUserName, resolveStudentDisplayName } from '../utils/nameResolvers';
+// ===== Plus de 5% : on passe à un FORFAIT =====
+const SITE_FEE_EUR = 10; // frais fixes par paiement
+
+// Helpers locaux (remplacent l'ancien utils/earnings basé sur un taux)
+const fmtEUR = (n) =>
+  new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(n);
+
+const toNumber = (v) => {
+  const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+const getPaidAmount = (l) =>
+  toNumber(l.total_amount) ||
+  toNumber(l.total_price) ||
+  toNumber(l.amount_paid) ||
+  toNumber(l.amount) ||
+  toNumber(l.price_per_hour);
+
+const getRevenueDate = (l) => {
+  // date de revenu = date de paiement si dispo, sinon date du cours
+  if (l.paid_at?.toDate) {
+    try { return l.paid_at.toDate(); } catch {}
+  }
+  if (typeof l.paid_at?.seconds === 'number') {
+    return new Date(l.paid_at.seconds * 1000);
+  }
+  if (l.start_datetime?.toDate) {
+    try { return l.start_datetime.toDate(); } catch {}
+  }
+  if (typeof l.start_datetime?.seconds === 'number') {
+    return new Date(l.start_datetime.seconds * 1000);
+  }
+  return new Date();
+};
+const monthLabel = (i) =>
+  new Date(2000, i, 1).toLocaleDateString('fr-FR', { month: 'short' });
 
 export default function TeacherEarnings() {
   const [uid, setUid] = useState(auth.currentUser?.uid || null);
@@ -87,6 +114,7 @@ export default function TeacherEarnings() {
     toFetchStudents.forEach((id) => studentRequestedRef.current.add(id));
 
     if (toFetchUsers.length) {
+      const { resolveUserName } = await import('../utils/nameResolvers');
       const entries = await Promise.all(
         toFetchUsers.map(async (id) => [id, await resolveUserName(id)])
       );
@@ -94,6 +122,7 @@ export default function TeacherEarnings() {
     }
 
     if (toFetchStudents.length) {
+      const { resolveStudentDisplayName } = await import('../utils/nameResolvers');
       const entries = await Promise.all(
         toFetchStudents.map(async (id) => [id, await resolveStudentDisplayName(id)])
       );
@@ -113,7 +142,7 @@ export default function TeacherEarnings() {
   }, [lessons]);
 
   useEffect(() => {
-    if (!years.includes(selectedYear)) {
+    if (years.length && !years.includes(selectedYear)) {
       setSelectedYear(years[0]);
     }
   }, [years, selectedYear]);
@@ -128,6 +157,7 @@ export default function TeacherEarnings() {
     }));
 
     let gross = 0;
+    let commission = 0;
 
     lessons.forEach((l) => {
       if (!l.is_paid) return;
@@ -135,14 +165,15 @@ export default function TeacherEarnings() {
       if (d.getFullYear() !== selectedYear) return;
 
       const mIdx = d.getMonth();
-      const amount = getPaidAmount(l);
+      const amount = getPaidAmount(l);  // montant payé par l'élève (hors/avec frais — selon stockage)
+      const fee = Math.min(SITE_FEE_EUR, amount); // évite net négatif si petit montant
       base[mIdx].gains += amount;
-      base[mIdx].net += amount * (1 - COMMISSION_RATE);
+      base[mIdx].net += Math.max(0, amount - fee);
       gross += amount;
+      commission += fee;
     });
 
-    const commission = gross * COMMISSION_RATE;
-    const net = gross - commission;
+    const net = Math.max(0, gross - commission);
 
     return {
       chartData: base,
@@ -159,13 +190,15 @@ export default function TeacherEarnings() {
       .map((l) => {
         const date = getRevenueDate(l);
         const amount = getPaidAmount(l);
+        const fee = Math.min(SITE_FEE_EUR, amount);
+        const net = Math.max(0, amount - fee);
 
         let payerId = l.paid_by || (l.parent_id && l.booked_for === 'child' ? l.parent_id : l.booked_by);
         const payerName = (payerId && userNames[payerId]) || payerId || '—';
 
         const studentName =
           (l.student_id && studentNames[l.student_id]) ||
-          l.student_name || l.studentIdName || // éventuels champs déjà stockés
+          l.student_name || l.studentIdName ||
           l.student_id || '—';
 
         return {
@@ -176,8 +209,8 @@ export default function TeacherEarnings() {
           studentName,
           subject: l.subject_id || '—',
           gross: amount,
-          fee: amount * COMMISSION_RATE,
-          net: amount * (1 - COMMISSION_RATE),
+          fee,
+          net,
         };
       })
       .sort((a, b) => b.date - a.date);
@@ -211,8 +244,10 @@ export default function TeacherEarnings() {
             totalGross={totalGross}
             totalCommission={totalCommission}
             totalNet={totalNet}
-            commissionRate={COMMISSION_RATE}
+            // Ancien prop pourcentage → on peut l’ignorer côté composant
+            commissionRate={0}
             loading={loading}
+            subtitle="Frais plateforme fixes : 10 € / paiement"
           />
         </div>
 
@@ -220,9 +255,10 @@ export default function TeacherEarnings() {
         <div className="bg-white rounded-xl shadow p-6 border">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-bold text-primary">Évolution sur l’année</h3>
-            <span className="text-xs text-gray-500">Brut vs Net ({Math.round((1 - COMMISSION_RATE) * 100)}%)</span>
+            <span className="text-xs text-gray-500">Brut vs Net (−10 € par paiement)</span>
           </div>
-          <EarningsChart chartData={chartData} commissionRate={COMMISSION_RATE} />
+          {/* chartData contient déjà gains et net */}
+          <EarningsChart chartData={chartData} commissionRate={0} />
         </div>
 
         {/* Historique */}

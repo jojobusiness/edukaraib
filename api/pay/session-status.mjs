@@ -46,6 +46,9 @@ export default async function handler(req, res) {
     for_student: forStudent,
     payment_intent: typeof pi === 'object' ? pi.id : pi,
     amount_cents: session.amount_total || (typeof pi === 'object' ? (pi.amount || 0) : 0),
+    // ✅ ventilation (prof / site)
+    teacher_amount_cents: Number(session.metadata?.teacher_amount_cents || (typeof pi === 'object' ? (pi?.metadata?.teacher_amount_cents || 0) : 0)),
+    site_fee_cents: Number(session.metadata?.site_fee_cents || (typeof pi === 'object' ? (pi?.metadata?.site_fee_cents || 0) : 0)),
     lesson: lessonData,
   });
 }

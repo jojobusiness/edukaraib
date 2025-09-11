@@ -2,45 +2,63 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { auth, db } from '../lib/firebase';
 import {
   collection,
-  getDocs,
+  doc,
+  getDoc,
   onSnapshot,
   query,
   where,
-  doc,
-  getDoc,
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
-import fetchWithAuth from '../utils/fetchWithAuth';
+import fetchWithAuth from '../utils/fetchWithAuth'; // default export
 
+// ----- helpers -----
 const fmtDateTime = (start_datetime, slot_day, slot_hour) => {
-  if (start_datetime?.toDate) { try { return start_datetime.toDate().toLocaleString('fr-FR'); } catch {} }
-  if (typeof start_datetime?.seconds === 'number') return new Date(start_datetime.seconds * 1000).toLocaleString('fr-FR');
-  if (slot_day && (slot_hour || slot_hour === 0)) return `${slot_day} • ${String(slot_hour).padStart(2, '0')}:00`;
+  if (start_datetime?.toDate) {
+    try { return start_datetime.toDate().toLocaleString('fr-FR'); } catch {}
+  }
+  if (typeof start_datetime?.seconds === 'number') {
+    return new Date(start_datetime.seconds * 1000).toLocaleString('fr-FR');
+  }
+  if (slot_day != null && (slot_hour || slot_hour === 0)) {
+    return `${slot_day} • ${String(slot_hour).padStart(2, '0')}:00`;
+  }
   return '—';
 };
-const toNumber = (v) => { const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v); return Number.isFinite(n) ? n : 0; };
-const getAmount = (l) =>
-  toNumber(l.total_amount) || toNumber(l.total_price) || toNumber(l.amount_paid) || toNumber(l.amount) || toNumber(l.price_per_hour);
 
+const toNumber = (v) => {
+  const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const getAmount = (l) =>
+  toNumber(l.total_amount) ||
+  toNumber(l.total_price) ||
+  toNumber(l.amount_paid) ||
+  toNumber(l.amount) ||
+  toNumber(l.price_per_hour);
+
+// payé pour un élève (legacy ou groupe)
 const isPaidForStudent = (lesson, studentId) => {
   if (!lesson) return false;
   if (lesson.participantsMap && studentId) {
     const ent = lesson.participantsMap[studentId];
     if (ent && ent.is_paid === true) return true;
   }
+  // legacy (cours 1-élève)
   if (lesson.student_id === studentId && lesson.is_paid === true) return true;
   return false;
 };
 
-export default function ParentPayments() {
-  const [toPay, setToPay] = useState([]);   // [{ lesson, forStudent, teacherName, childName }]
+// ----- page -----
+export default function StudentPayments() {
+  const [toPay, setToPay] = useState([]);
   const [paid, setPaid] = useState([]);
   const [loading, setLoading] = useState(true);
   const [payingId, setPayingId] = useState(null);
-
   const teacherCacheRef = useRef(new Map());
-  const childNameCacheRef = useRef(new Map());
+  const [uid, setUid] = useState(auth.currentUser?.uid || null);
 
+  // résout le nom prof (cache)
   const teacherNameOf = async (uid) => {
     if (!uid) return 'Professeur';
     const cache = teacherCacheRef.current;
@@ -56,132 +74,85 @@ export default function ParentPayments() {
       return name;
     } catch { return uid; }
   };
-  const childNameOf = async (idOrUid) => {
-    if (!idOrUid) return 'Enfant';
-    const cache = childNameCacheRef.current;
-    if (cache.has(idOrUid)) return cache.get(idOrUid);
-    try {
-      const s = await getDoc(doc(db, 'students', idOrUid));
-      if (s.exists()) {
-        const d = s.data(); const nm = d.full_name || d.name || idOrUid;
-        cache.set(idOrUid, nm); return nm;
-      }
-    } catch {}
-    try {
-      const s = await getDoc(doc(db, 'users', idOrUid));
-      if (s.exists()) {
-        const d = s.data(); const nm = d.fullName || d.name || d.displayName || idOrUid;
-        cache.set(idOrUid, nm); return nm;
-      }
-    } catch {}
-    cache.set(idOrUid, idOrUid);
-    return idOrUid;
-  };
 
+  // 2 abonnements: legacy (student_id == uid) et groupe (participant_ids array-contains uid)
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) { setLoading(false); return; }
+    setUid(user.uid);
     setLoading(true);
 
-    (async () => {
-      // 1) Enfants du parent (ids utilisables pour student_id ou participant_ids)
-      const kidsSnap = await getDocs(query(collection(db, 'students'), where('parent_id', '==', user.uid)));
-      const kids = kidsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      const childIds = [];
-      kids.forEach((k) => {
-        childIds.push(k.id);
-        if (k.user_id) childIds.push(k.user_id);
-        if (k.uid) childIds.push(k.uid);
-      });
+    const qLegacy = query(collection(db, 'lessons'), where('student_id', '==', user.uid));
+    const qGroup  = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', user.uid));
 
-      if (childIds.length === 0) {
-        setToPay([]); setPaid([]); setLoading(false);
-        return;
-      }
+    let combined = new Map();
 
-      // 2) Abonnements: legacy student_id IN (par lot) + groupes array-contains (par enfant)
-      const chunks = []; for (let i = 0; i < childIds.length; i += 10) chunks.push(childIds.slice(i, i + 10));
-      let combined = new Map();
-      const unsubs = [];
+    const upsertAndRender = async () => {
+      // enrichir noms prof + filtrages
+      const rows = Array.from(combined.values());
 
-      const rebuildRows = async () => {
-        const lessons = Array.from(combined.values());
-        const rows = [];
+      // hydrate teacherName
+      const enriched = await Promise.all(rows.map(async (l) => ({
+        ...l,
+        teacherName: await teacherNameOf(l.teacher_id),
+      })));
 
-        for (const l of lessons) {
-          // IDs des enfants de CE parent dans cette leçon
-          const presentIds = new Set();
-          if (l.student_id && childIds.includes(l.student_id)) presentIds.add(l.student_id);
-          if (Array.isArray(l.participant_ids)) {
-            l.participant_ids.forEach((id) => { if (childIds.includes(id)) presentIds.add(id); });
-          }
-          // Une ligne PAR enfant présent
-          for (const sid of presentIds) {
-            const [teacherName, childName] = await Promise.all([
-              teacherNameOf(l.teacher_id),
-              childNameOf(sid),
-            ]);
-            rows.push({ lesson: l, forStudent: sid, teacherName, childName });
-          }
-        }
+      // on n’affiche que les leçons “confirmées”
+      const confirmed = enriched.filter((l) => l.status === 'confirmed');
 
-        // ✅ EXCLURE TOUT ce qui est 'pending_teacher' (ne doit pas apparaître)
-        const notPendingTeacher = (r) => r.lesson.status !== 'pending_teacher';
+      const unpaid = confirmed.filter((l) => !isPaidForStudent(l, user.uid));
+      const paidOnes = enriched.filter((l) => isPaidForStudent(l, user.uid));
 
-        // Paiements à faire : uniquement CONFIRMÉS (pas d'en attente)
-        const confirmedOnly = rows.filter((r) => r.lesson.status === 'confirmed' && notPendingTeacher(r));
+      // tri
+      const keyTime = (l) =>
+        (l.start_datetime?.toDate?.() && l.start_datetime.toDate().getTime()) ||
+        (l.start_datetime?.seconds && l.start_datetime.seconds * 1000) ||
+        (Number.isFinite(l.slot_hour) ? l.slot_hour : 9_999_999);
 
-        // Historique payé : payé ET pas 'pending_teacher' (on accepte confirmed/completed)
-        const paidEligible = rows.filter((r) =>
-          isPaidForStudent(r.lesson, r.forStudent) &&
-          (r.lesson.status === 'confirmed' || r.lesson.status === 'completed') &&
-          notPendingTeacher(r)
-        );
+      setToPay(unpaid.sort((a, b) => keyTime(a) - keyTime(b)));
+      setPaid(paidOnes.sort((a, b) => keyTime(b) - keyTime(a)));
+      setLoading(false);
+    };
 
-        const unpaid = confirmedOnly.filter((r) => !isPaidForStudent(r.lesson, r.forStudent));
+    const unsubLegacy = onSnapshot(qLegacy, (snap) => {
+      snap.docs.forEach((d) => combined.set(d.id, { id: d.id, ...d.data() }));
+      upsertAndRender();
+    }, (e) => { console.error(e); setLoading(false); });
 
-        const getTs = (r) =>
-          (r.lesson.start_datetime?.toDate?.() && r.lesson.start_datetime.toDate().getTime()) ||
-          (r.lesson.start_datetime?.seconds && r.lesson.start_datetime.seconds * 1000) || 0;
+    const unsubGroup = onSnapshot(qGroup, (snap) => {
+      snap.docs.forEach((d) => combined.set(d.id, { id: d.id, ...d.data() }));
+      upsertAndRender();
+    }, (e) => { console.error(e); setLoading(false); });
 
-        setToPay(unpaid.sort((a, b) => getTs(a) - getTs(b)));
-        setPaid(paidEligible.sort((a, b) => getTs(b) - getTs(a)));
-        setLoading(false);
-      };
-
-      // Legacy: student_id IN
-      for (const c of chunks) {
-        const qLegacy = query(collection(db, 'lessons'), where('student_id', 'in', c));
-        unsubs.push(onSnapshot(qLegacy, (snap) => {
-          snap.docs.forEach((d) => combined.set(d.id, { id: d.id, ...d.data() }));
-          rebuildRows();
-        }, (e) => { console.error(e); setLoading(false); }));
-      }
-      // Groupes: array-contains par enfant
-      childIds.forEach((cid) => {
-        const qGroup = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', cid));
-        unsubs.push(onSnapshot(qGroup, (snap) => {
-          snap.docs.forEach((d) => combined.set(d.id, { id: d.id, ...d.data() }));
-          rebuildRows();
-        }, (e) => { console.error(e); setLoading(false); }));
-      });
-
-      // cleanup
-      return () => unsubs.forEach((u) => u && u());
-    })();
+    return () => { unsubLegacy(); unsubGroup(); };
   }, []);
 
   const totals = useMemo(() => {
-    const sum = (arr) => arr.reduce((acc, r) => acc + getAmount(r.lesson), 0);
+    const sum = (arr) => arr.reduce((acc, l) => acc + getAmount(l), 0);
     return { due: sum(toPay), paid: sum(paid) };
   }, [toPay, paid]);
 
-  const handlePay = async (row) => {
+  const handlePay = async (lesson) => {
     try {
-      setPayingId(row.lesson.id);
-      const diag = await fetchWithAuth('/api/pay/diag', { method: 'POST', body: JSON.stringify({ lessonId: row.lesson.id, forStudent: row.forStudent }) });
-      if (!diag?.ok) { alert('Diagnostic paiement : ' + (diag?.error || 'inconnu')); setPayingId(null); return; }
-      const data = await fetchWithAuth('/api/pay/create-checkout-session', { method: 'POST', body: JSON.stringify({ lessonId: row.lesson.id, forStudent: row.forStudent }) });
+      if (!uid) return;
+      setPayingId(lesson.id);
+
+      // Diagnostic (optionnel mais utile)
+      const diag = await fetchWithAuth('/api/pay/diag', {
+        method: 'POST',
+        body: JSON.stringify({ lessonId: lesson.id, forStudent: uid }),
+      });
+      if (!diag?.ok) {
+        alert('Diagnostic paiement : ' + (diag?.error || 'inconnu'));
+        setPayingId(null);
+        return;
+      }
+
+      // Créer la session de paiement
+      const data = await fetchWithAuth('/api/pay/create-checkout-session', {
+        method: 'POST',
+        body: JSON.stringify({ lessonId: lesson.id, forStudent: uid }),
+      });
       if (!data?.url) throw new Error('Lien de paiement introuvable.');
       window.location.href = data.url;
     } catch (e) {
@@ -193,16 +164,19 @@ export default function ParentPayments() {
   };
 
   return (
-    <DashboardLayout role="parent">
+    <DashboardLayout role="student">
       <div className="max-w-2xl mx-auto">
-        <h2 className="text-2xl font-bold text-primary mb-6">💳 Paiements (Parent)</h2>
+        <h2 className="text-2xl font-bold text-primary mb-6">💳 Mes paiements</h2>
 
-        {/* À régler */}
+        {/* À régler (confirmés uniquement) */}
         <div className="mb-8">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-1">
             <h3 className="font-bold text-secondary">Paiements à effectuer</h3>
-            {!loading && <span className="text-xs text-gray-600">Total à régler : {totals.due.toFixed(2)} €</span>}
+            {!loading && (
+              <span className="text-xs text-gray-600">Total à régler : {totals.due.toFixed(2)} €</span>
+            )}
           </div>
+          <div className="text-[11px] text-gray-500 mb-3">Le montant affiché inclut <strong>10 € de frais plateforme</strong>.</div>
 
           {loading ? (
             <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Chargement…</div>
@@ -210,30 +184,29 @@ export default function ParentPayments() {
             <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucun paiement en attente !</div>
           ) : (
             <div className="grid grid-cols-1 gap-4">
-              {toPay.map((r) => (
+              {toPay.map((l) => (
                 <div
-                  key={`${r.lesson.id}:${r.forStudent}`}
+                  key={l.id}
                   className="bg-white p-5 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between"
                 >
                   <div>
                     <div className="font-bold text-primary">
-                      {r.lesson.subject_id || 'Matière'}{' '}
+                      {l.subject_id || 'Matière'}{' '}
                       <span className="text-gray-600 text-xs ml-2">
-                        {getAmount(r.lesson) ? `${getAmount(r.lesson).toFixed(2)} €` : ''}
+                        {getAmount(l) ? `${getAmount(l).toFixed(2)} €` : ''}
                       </span>
                     </div>
-                    <div className="text-xs text-gray-500">Professeur : {r.teacherName || r.lesson.teacher_id}</div>
-                    <div className="text-xs text-gray-500">Enfant : {r.childName || r.forStudent}</div>
-                    <div className="text-xs text-gray-500">📅 {fmtDateTime(r.lesson.start_datetime, r.lesson.slot_day, r.lesson.slot_hour)}</div>
+                    <div className="text-xs text-gray-500">Professeur : {l.teacherName || l.teacher_id}</div>
+                    <div className="text-xs text-gray-500">📅 {fmtDateTime(l.start_datetime, l.slot_day, l.slot_hour)}</div>
                   </div>
 
                   <button
                     className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded font-semibold shadow disabled:opacity-60"
-                    onClick={() => handlePay(r)}
-                    disabled={payingId === r.lesson.id}
-                    aria-busy={payingId === r.lesson.id}
+                    onClick={() => handlePay(l)}
+                    disabled={payingId === l.id}
+                    aria-busy={payingId === l.id}
                   >
-                    {payingId === r.lesson.id ? 'Redirection…' : 'Payer maintenant'}
+                    {payingId === l.id ? 'Redirection…' : 'Payer maintenant'}
                   </button>
                 </div>
               ))}
@@ -245,7 +218,9 @@ export default function ParentPayments() {
         <div className="bg-white p-6 rounded-xl shadow border">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-bold text-primary">Historique des paiements</h3>
-            {!loading && <span className="text-xs text-gray-600">Total payé : {totals.paid.toFixed(2)} €</span>}
+            {!loading && (
+              <span className="text-xs text-gray-600">Total payé : {totals.paid.toFixed(2)} €</span>
+            )}
           </div>
 
           {loading ? (
@@ -254,15 +229,14 @@ export default function ParentPayments() {
             <div className="text-gray-400 text-sm">Aucun paiement effectué.</div>
           ) : (
             <div className="flex flex-col gap-3">
-              {paid.map((r) => (
+              {paid.map((l) => (
                 <div
-                  key={`${r.lesson.id}:${r.forStudent}`}
+                  key={l.id}
                   className="border rounded-lg px-4 py-2 flex flex-col md:flex-row md:items-center gap-2 bg-gray-50"
                 >
-                  <span className="font-bold text-primary">{r.lesson.subject_id || 'Matière'}</span>
-                  <span className="text-xs text-gray-600">{fmtDateTime(r.lesson.start_datetime, r.lesson.slot_day, r.lesson.slot_hour)}</span>
-                  <span className="text-xs text-gray-600">Enfant : {r.childName || r.forStudent}</span>
-                  <span className="text-xs text-gray-600">Prof : {r.teacherName || r.lesson.teacher_id}</span>
+                  <span className="font-bold text-primary">{l.subject_id || 'Matière'}</span>
+                  <span className="text-xs text-gray-600">{fmtDateTime(l.start_datetime, l.slot_day, l.slot_hour)}</span>
+                  <span className="text-xs text-gray-600">Prof : {l.teacherName || l.teacher_id}</span>
                   <span className="text-green-600 text-xs font-semibold md:ml-auto">Payé</span>
                 </div>
               ))}
