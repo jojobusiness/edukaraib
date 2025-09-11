@@ -86,6 +86,14 @@ export default function Search() {
 
 // Carte stylée pour un prof
 function TeacherCard({ teacher, navigate }) {
+  // helper: prix final = prix prof + 10 €
+  const finalHourlyPrice = (() => {
+    const raw = teacher?.price_per_hour;
+    const n = typeof raw === 'string' ? Number(raw.replace(',', '.')) : Number(raw);
+    if (!Number.isFinite(n) || n < 0) return null;
+    return n + 10; // +10 € de frais de site, toujours
+  })();
+
   // Fonction pour contacter le prof
   const handleContact = async () => {
     if (!auth.currentUser) {
@@ -98,28 +106,25 @@ function TeacherCard({ teacher, navigate }) {
 
     // Vérifie s'il existe déjà une conversation (participants = [userId, teacherId] OU [teacherId, userId])
     const convRef = collection(db, 'conversations');
-    // Recherche toutes les convos où les participants incluent l'utilisateur connecté
     const q = query(convRef, where('participants', 'array-contains', userId));
     const snap = await getDocs(q);
-    // On cherche si une des conversations a aussi le prof comme participant
+
     let existing = snap.docs
       .map(doc => ({ id: doc.id, ...doc.data() }))
-      .find(conv =>
-        conv.participants.includes(teacherUid)
-      );
+      .find(conv => conv.participants.includes(teacherUid));
+
     let convId = null;
     if (existing) {
       convId = existing.id;
     } else {
-      // Sinon on crée une nouvelle conversation
       const convDoc = await addDoc(convRef, {
         participants: [userId, teacherUid],
         created_at: new Date()
       });
       convId = convDoc.id;
     }
-    // Redirige vers la conversation
-    navigate(`/chat/${teacherUid}`);
+    // Redirige vers la conversation (on utilise l'id de conversation)
+    navigate(`/chat/${convId}`);
   };
 
   return (
@@ -134,9 +139,18 @@ function TeacherCard({ teacher, navigate }) {
         <div className="text-gray-700 mb-1">{teacher.subjects || "Matière non précisée"}</div>
         <div className="text-xs text-gray-500 mb-1">{teacher.city}</div>
         <div className="text-sm text-gray-600 mb-2 line-clamp-2">{teacher.bio}</div>
-        <span className="inline-block text-yellow-700 font-semibold">
-          {teacher.price_per_hour ? `${teacher.price_per_hour} € /h` : "Prix non précisé"}
-        </span>
+
+        {finalHourlyPrice == null ? (
+          <span className="inline-block text-yellow-700 font-semibold">
+            Prix non précisé
+          </span>
+        ) : (
+          <div className="flex flex-col">
+            <span className="inline-block text-yellow-700 font-semibold">
+              {finalHourlyPrice.toFixed(2)} € /h
+            </span>
+          </div>
+        )}
       </div>
       <div className="flex flex-col gap-2">
         <Link
