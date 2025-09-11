@@ -42,6 +42,17 @@ const statusColors = {
   rejected: 'bg-red-100 text-red-700',
 };
 
+// Statuts “en attente” (pour les cours individuels)
+const PENDING_LESSON_STATUSES = new Set([
+  'booked',
+  'pending_teacher',
+  'pending_parent',
+  'requested',
+  'pending',
+  'awaiting_confirmation',
+  'awaiting',
+]);
+
 /* ---------- noms ---------- */
 async function fetchUserProfile(uid) {
   if (!uid) return null;
@@ -94,6 +105,27 @@ async function resolvePersonName(id, cache) {
   return id;
 }
 
+/* ---------- logique “confirmé/pending” PAR PARTICIPANT ---------- */
+function isGroupLesson(l) {
+  return Array.isArray(l?.participant_ids) && l.participant_ids.length > 0;
+}
+function isConfirmedForUser(l, uid) {
+  if (isGroupLesson(l)) {
+    const st = l?.participantsMap?.[uid]?.status;
+    return st === 'accepted' || st === 'confirmed';
+  }
+  return l?.student_id === uid && l?.status === 'confirmed';
+}
+function isPendingForUser(l, uid) {
+  if (isGroupLesson(l)) {
+    const st = l?.participantsMap?.[uid]?.status;
+    // pending si pas 'accepted' / 'confirmed' et pas explicitement rejeté/retiré
+    return !['accepted', 'confirmed', 'rejected', 'removed', 'deleted'].includes(String(st || ''));
+  }
+  if (l?.student_id !== uid) return false;
+  return PENDING_LESSON_STATUSES.has(String(l?.status || ''));
+}
+
 /* =================== PAGE =================== */
 export default function MyCourses() {
   const [courses, setCourses] = useState([]);
@@ -136,11 +168,12 @@ export default function MyCourses() {
     })();
   }, []);
 
-  // prochain confirmé (toi)
+  // prochain confirmé (toi) — basé sur “confirmé pour moi” (participantsMap OU status global)
   const nextCourse = useMemo(() => {
     const now = new Date();
+    const uid = auth.currentUser?.uid;
     const list = courses
-      .filter(l => l.status === 'confirmed' && FR_DAY_CODES.includes(l.slot_day))
+      .filter(l => isConfirmedForUser(l, uid) && FR_DAY_CODES.includes(l.slot_day))
       .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
       .filter(l => l.startAt && l.startAt > now)
       .sort((a, b) => a.startAt - b.startAt);
@@ -152,14 +185,16 @@ export default function MyCourses() {
     const uid = auth.currentUser?.uid;
     return courses.filter(l => {
       const pm = l.participantsMap || {};
-      return Array.isArray(l.participant_ids)
+      return isGroupLesson(l)
         && l.participant_ids.includes(uid)
         && pm?.[uid]?.status === 'invited_student';
     });
   }, [courses]);
 
-  const booked = useMemo(() => courses.filter(c => c.status === 'booked'), [courses]);
-  const confirmed = useMemo(() => courses.filter(c => c.status === 'confirmed'), [courses]);
+  // Listes “en attente / confirmés / …” PAR UTILISATEUR
+  const uid = auth.currentUser?.uid;
+  const booked = useMemo(() => courses.filter(c => isPendingForUser(c, uid)), [courses, uid]);
+  const confirmed = useMemo(() => courses.filter(c => isConfirmedForUser(c, uid)), [courses, uid]);
   const rejected = useMemo(() => courses.filter(c => c.status === 'rejected'), [courses]);
   const completed = useMemo(() => courses.filter(c => c.status === 'completed'), [courses]);
 
@@ -208,10 +243,8 @@ export default function MyCourses() {
 
   function paymentBadgeForMe(c) {
     const uid = auth.currentUser?.uid;
-    const isGroup = !!c.is_group;
-    const paid = isGroup
-      ? !!c.participantsMap?.[uid]?.is_paid
-      : !!c.is_paid;
+    const group = isGroupLesson(c);
+    const paid = group ? !!c.participantsMap?.[uid]?.is_paid : !!c.is_paid;
     return (
       <span className={`text-[11px] px-2 py-0.5 rounded-full ${paid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
         {paid ? 'Payé' : 'À payer'}
@@ -259,14 +292,14 @@ export default function MyCourses() {
 
   function CourseCard({ c, showDocs = true, showReview = false }) {
     const when = (c.slot_day || c.slot_hour != null) ? `${c.slot_day} ${formatHour(c.slot_hour)}` : '';
-    const isGroup = !!c.is_group;
+    const group = isGroupLesson(c);
     return (
       <div className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
             {statusBadge(c.status)}
-            {isGroup && <ParticipantsPopover c={c} />}
+            {group && <ParticipantsPopover c={c} />}
           </div>
           <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>
           <div className="text-gray-500 text-xs">{when}</div>
@@ -342,7 +375,7 @@ export default function MyCourses() {
               )}
             </section>
 
-            {/* En attente */}
+            {/* En attente (pour MOI) */}
             <section className="mb-8">
               <div className="flex items-baseline justify-between mb-3">
                 <h3 className="text-lg font-semibold">En attente de confirmation</h3>
@@ -357,7 +390,7 @@ export default function MyCourses() {
               )}
             </section>
 
-            {/* Confirmés */}
+            {/* Confirmés (pour MOI) */}
             <section className="mb-8">
               <div className="flex items-baseline justify-between mb-3">
                 <h3 className="text-lg font-semibold">Cours confirmés</h3>

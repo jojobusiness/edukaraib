@@ -226,8 +226,20 @@ export default function TeacherLessons() {
     return () => unsub();
   }, []);
 
+  // Helper : y a-t-il au moins un participant confirmé/accepté ?
+  const hasAnyConfirmedParticipant = (l) => {
+    if (!Array.isArray(l.participantDetails)) return false;
+    return l.participantDetails.some((p) => p.status === 'accepted' || p.status === 'confirmed');
+  };
+
   // vues confirmés/terminés
-  const confirmes = useMemo(() => lessons.filter((l) => l.status === 'confirmed'), [lessons]);
+  const confirmes = useMemo(() => {
+    return lessons.filter((l) => {
+      if (l.is_group) return hasAnyConfirmedParticipant(l) || l.status === 'confirmed';
+      return l.status === 'confirmed';
+    });
+  }, [lessons]);
+
   const termines = useMemo(() => lessons.filter((l) => l.status === 'completed'), [lessons]);
 
   const openDocs = (lesson) => { setDocLesson(lesson); setDocOpen(true); };
@@ -435,7 +447,7 @@ export default function TeacherLessons() {
             <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucune demande de cours pour le moment.</div>
           ) : (
             <>
-              {/* Individuel — même Card/visuel que le haut */}
+              {/* Individuel */}
               {demandesIndividuelles.length > 0 && (
                 <div className="grid grid-cols-1 gap-5 mb-6">
                   {demandesIndividuelles.map((l) => (
@@ -444,7 +456,7 @@ export default function TeacherLessons() {
                 </div>
               )}
 
-              {/* Groupes — liste par élève (UI compact, à l’intérieur d’un panneau) */}
+              {/* Groupes — liste par élève */}
               {demandesGroupes.length > 0 && (
                 <div className="bg-white p-4 rounded-xl shadow border">
                   <div className="font-semibold text-sm mb-3">Groupes — demandes par élève</div>
