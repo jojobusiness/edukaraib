@@ -155,7 +155,7 @@ export default function TeacherProfile() {
               {avgRating || '—'} ({reviews.length} avis)
             </div>
 
-            {/* Bouton réserver */}
+            {/* Bouton réserver (design d'avant) */}
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
                 className="bg-primary text-white px-5 py-2 rounded-lg font-semibold shadow hover:bg-primary-dark transition"

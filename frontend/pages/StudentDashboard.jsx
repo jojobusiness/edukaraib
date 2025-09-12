@@ -154,7 +154,7 @@ export default function StudentDashboard() {
     })();
   }, [userId]);
 
-  // -------- Cours / Prochain cours (incl. groupes) --------
+  // -------- Cours / Prochain cours (incl. groupes) + Profs récents --------
   useEffect(() => {
     if (!userId) return;
     (async () => {
@@ -222,6 +222,25 @@ export default function StudentDashboard() {
         gMap.set(l.id, uniq.map(id => namesMap.get(id) || 'Élève'));
       });
       setGroupNamesByLesson(gMap);
+
+      // === Profs récents : TOUS les profs avec qui l'élève a eu cours (confirmé ou terminé) ===
+      const teacherIds = new Set();
+      allLessons.forEach((l) => {
+        if (!l.teacher_id) return;
+        if (l.status === 'completed' || isConfirmedForMe(l, userId)) {
+          teacherIds.add(l.teacher_id);
+        }
+      });
+      const teacherProfiles = await Promise.all(Array.from(teacherIds).map(uid => fetchUserProfile(uid)));
+      const recents = teacherProfiles
+        .filter(Boolean)
+        .map(p => ({
+          uid: p.uid || p.id,
+          name: p.fullName || p.name || p.displayName || 'Professeur',
+          avatar: p.avatarUrl || p.avatar_url || p.photoURL || '',
+          subjects: Array.isArray(p.subjects) ? p.subjects.join(', ') : (p.subjects || ''),
+        }));
+      setRecentTeachers(recents);
     })();
   }, [userId]);
 

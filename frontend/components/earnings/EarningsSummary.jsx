@@ -1,11 +1,10 @@
 import React from 'react';
 import { fmtEUR } from '../../utils/earnings';
 
-export default function EarningsSummary({ totalGross, totalCommission, totalNet, commissionRate, loading }) {
+export default function EarningsSummary({ totalGross, totalCommission, totalNet, loading, subtitle }) {
   if (loading) {
     return <p className="text-gray-500">Calcul en cours…</p>;
   }
-  const pct = Math.round(commissionRate * 100);
 
   return (
     <>
@@ -16,7 +15,7 @@ export default function EarningsSummary({ totalGross, totalCommission, totalNet,
         </div>
         <div className="p-4 rounded-lg bg-orange-50 border">
           <div className="text-xs uppercase text-orange-700 font-semibold">
-            Commission ({pct}%)
+            Commission (10 € / cours)
           </div>
           <div className="text-xl font-bold">{fmtEUR(totalCommission)}</div>
         </div>
@@ -25,8 +24,9 @@ export default function EarningsSummary({ totalGross, totalCommission, totalNet,
           <div className="text-xl font-bold">{fmtEUR(totalNet)}</div>
         </div>
       </div>
+
       <p className="text-xs text-gray-500 mt-3">
-        La commission plateforme est fixée à <b>{pct}%</b> et est déduite à chaque paiement reçu.
+        La commission plateforme est <b>fixe : 10 € par cours/paiement</b>. {subtitle ? `(${subtitle})` : ''}
       </p>
     </>
   );

@@ -238,9 +238,10 @@ export default function TeacherLessons() {
     return l.participantDetails.some((p) => p.status === 'accepted' || p.status === 'confirmed');
   };
 
-  // vues confirmés/terminés
+  // vues confirmés/terminés (⚠ exclure 'completed' des confirmés)
   const confirmes = useMemo(() => {
     return lessons.filter((l) => {
+      if (l.status === 'completed') return false; // ✅ ne pas dupliquer
       if (l.is_group) return hasAnyConfirmedParticipant(l) || l.status === 'confirmed';
       return l.status === 'confirmed';
     });
@@ -328,7 +329,6 @@ export default function TeacherLessons() {
 
   const Card = ({ lesson, showActionsForPending }) => {
     const isGroup = !!lesson.is_group || (Array.isArray(lesson.participant_ids) && lesson.participant_ids.length > 1);
-    // n’afficher/compter que les participants confirmés/acceptés
     const confirmedParticipants = (lesson.participantDetails || []).filter(
       (p) => p.status === 'accepted' || p.status === 'confirmed'
     );
@@ -338,12 +338,19 @@ export default function TeacherLessons() {
 
     const showList = openParticipantsFor === lesson.id;
 
+    // ✅ Si la leçon est terminée, la pastille doit être "Terminé", même si des participants étaient confirmés
+    const displayedStatus = lesson.status === 'completed'
+      ? 'completed'
+      : (Array.isArray(lesson.participantDetails) && lesson.participantDetails.some(p => p.status === 'accepted' || p.status === 'confirmed'))
+        ? 'confirmed'
+        : lesson.status;
+
     return (
       <div className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between relative">
         <div className="flex-1">
           <div className="flex gap-2 items-center mb-1">
             <span className="font-bold text-primary">{lesson.subject_id || 'Matière'}</span>
-            <StatusPill status={(Array.isArray(lesson.participantDetails) && lesson.participantDetails.some(p => p.status === 'accepted' || p.status === 'confirmed')) ? 'confirmed' : lesson.status} />
+            <StatusPill status={displayedStatus} />
             {isGroup && (
               <>
                 <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded ml-1">👥 {used}/{capacity}</span>
@@ -417,14 +424,13 @@ export default function TeacherLessons() {
     );
   };
 
-  // Demandes (UI du haut + notre logique)
+  // Demandes
   const demandesIndividuelles = useMemo(
     () => pendingIndiv, [pendingIndiv]
   );
 
   const demandesGroupes = useMemo(
     () => pendingGroup.sort((a, b) => {
-      // tri visuel par slot
       const aKey = `${a.lesson.slot_day || ''}|${String(a.lesson.slot_hour || 0).padStart(2,'0')}`;
       const bKey = `${b.lesson.slot_day || ''}|${String(b.lesson.slot_hour || 0).padStart(2,'0')}`;
       return aKey.localeCompare(bKey);
@@ -452,7 +458,6 @@ export default function TeacherLessons() {
             <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucune demande de cours pour le moment.</div>
           ) : (
             <>
-              {/* Individuel */}
               {demandesIndividuelles.length > 0 && (
                 <div className="grid grid-cols-1 gap-5 mb-6">
                   {demandesIndividuelles.map((l) => (
@@ -461,7 +466,6 @@ export default function TeacherLessons() {
                 </div>
               )}
 
-              {/* Groupes — liste par élève */}
               {demandesGroupes.length > 0 && (
                 <div className="bg-white p-4 rounded-xl shadow border">
                   <div className="font-semibold text-sm mb-3">Groupes — demandes par élève</div>
@@ -472,9 +476,7 @@ export default function TeacherLessons() {
                           {lesson.slot_day} {String(lesson.slot_hour).padStart(2, '0')}h
                         </span>
                         <span className="text-sm font-medium">{lesson.subject_id || 'Cours'}</span>
-                        <span className="text-xs text-gray-600">
-                          • Élève : {nameCacheRef.current.get(studentId) || studentId}
-                        </span>
+                        <span className="text-xs text-gray-600">• Élève : {nameCacheRef.current.get(studentId) || studentId}</span>
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
                           {status === 'pending_teacher' ? 'En attente prof' :
                            status === 'pending_parent' ? 'En attente parent' :
@@ -482,18 +484,8 @@ export default function TeacherLessons() {
                            'En attente'}
                         </span>
                         <div className="ml-auto flex items-center gap-2">
-                          <button
-                            className="px-3 py-1 rounded bg-green-600 text-white text-xs"
-                            onClick={() => acceptGroupStudent(lessonId, studentId)}
-                          >
-                            Accepter
-                          </button>
-                          <button
-                            className="px-3 py-1 rounded bg-red-600 text-white text-xs"
-                            onClick={() => rejectGroupStudent(lessonId, studentId)}
-                          >
-                            Refuser
-                          </button>
+                          <button className="px-3 py-1 rounded bg-green-600 text-white text-xs" onClick={() => acceptGroupStudent(lessonId, studentId)}>Accepter</button>
+                          <button className="px-3 py-1 rounded bg-red-600 text-white text-xs" onClick={() => rejectGroupStudent(lessonId, studentId)}>Refuser</button>
                         </div>
                       </li>
                     ))}

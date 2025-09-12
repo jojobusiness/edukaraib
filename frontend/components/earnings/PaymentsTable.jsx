@@ -21,7 +21,7 @@ export default function PaymentsTable({ rows }) {
                 <th className="py-2 pr-4">Élève</th>
                 <th className="py-2 pr-4">Matière</th>
                 <th className="py-2 pr-4 text-right">Brut</th>
-                <th className="py-2 pr-4 text-right">Commission</th>
+                <th className="py-2 pr-4 text-right">Commission (10 € / cours)</th>
                 <th className="py-2 pr-0 text-right">Net</th>
               </tr>
             </thead>
@@ -41,10 +41,6 @@ export default function PaymentsTable({ rows }) {
           </table>
         </div>
       )}
-
-      {/*<p className="text-xs text-gray-400 mt-3">
-        * Le “Payer” est déterminé par <code>paid_by</code> si présent, sinon <code>parent_id</code> (si réservation pour enfant), sinon <code>booked_by</code>.
-      </p>*/}
     </div>
   );
 }

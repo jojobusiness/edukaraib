@@ -19,6 +19,9 @@ import {
 const isConfirmedForMe = (lesson, uid) => {
   if (!uid || !lesson) return false;
 
+  // ✅ Ne pas considérer “confirmé” si la leçon est terminée
+  if (lesson.status === 'completed') return false;
+
   // Cours groupé: je suis "accepted" ou "confirmed" dans participantsMap
   if (lesson.is_group) {
     const st = lesson?.participantsMap?.[uid]?.status;
@@ -124,6 +127,7 @@ function isGroupLesson(l) {
   return Array.isArray(l?.participant_ids) && l.participant_ids.length > 0;
 }
 function isConfirmedForUser(l, uid) {
+  if (l?.status === 'completed') return false; // ✅ exclure les terminés
   if (isGroupLesson(l)) {
     const st = l?.participantsMap?.[uid]?.status;
     return st === 'accepted' || st === 'confirmed';
@@ -133,7 +137,6 @@ function isConfirmedForUser(l, uid) {
 function isPendingForUser(l, uid) {
   if (isGroupLesson(l)) {
     const st = l?.participantsMap?.[uid]?.status;
-    // pending si pas 'accepted' / 'confirmed' et pas explicitement rejeté/retiré
     return !['accepted', 'confirmed', 'rejected', 'removed', 'deleted'].includes(String(st || ''));
   }
   if (l?.student_id !== uid) return false;
@@ -307,12 +310,18 @@ export default function MyCourses() {
   function CourseCard({ c, showDocs = true, showReview = false }) {
     const when = (c.slot_day || c.slot_hour != null) ? `${c.slot_day} ${formatHour(c.slot_hour)}` : '';
     const group = isGroupLesson(c);
+
+    // ✅ priorité à “Terminé”
+    const displayedStatus = c.status === 'completed'
+      ? 'completed'
+      : (isConfirmedForMe(c, auth.currentUser?.uid) ? 'confirmed' : c.status);
+
     return (
       <div className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
-            {statusBadge(isConfirmedForMe(c, auth.currentUser?.uid) ? 'confirmed' : c.status)}
+            {statusBadge(displayedStatus)}
             {group && <ParticipantsPopover c={c} />}
           </div>
           <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>

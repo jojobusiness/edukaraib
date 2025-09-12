@@ -110,6 +110,36 @@ function hasAnyConfirmedParticipant(lesson) {
   });
 }
 
+// --- helpers "demandes en attente" ---
+const PENDING_SET = new Set([
+  'booked',
+  'pending_teacher',
+  'pending_parent',
+  'invited_student',
+  'invited_parent',
+  'requested',
+  'pending',
+  'awaiting_confirmation',
+  'reinvited',
+  'awaiting',
+]);
+function countPendingRequests(lessons) {
+  let count = 0;
+  for (const l of lessons) {
+    if (l.is_group) {
+      const ids = Array.isArray(l.participant_ids) ? l.participant_ids : [];
+      const pm = l.participantsMap || {};
+      ids.forEach((sid) => {
+        const st = pm?.[sid]?.status;
+        if (!st || PENDING_SET.has(String(st))) count += 1;
+      });
+    } else {
+      if (l.status === 'booked' || l.status === 'pending_teacher') count += 1;
+    }
+  }
+  return count;
+}
+
 export default function TeacherDashboard() {
   const [upcomingCourses, setUpcomingCourses] = useState([]); // confirmés, futur (incl. groupes confirmés côté participants)
   const [revenues, setRevenues] = useState(0);
@@ -176,8 +206,8 @@ export default function TeacherDashboard() {
 
       setUpcomingCourses(enriched.slice(0, 10)); // utilisé pour le gros bloc "Prochain cours"
 
-      // 5) Demandes en attente
-      setPending(lessons.filter(l => l.status === 'booked').length);
+      // 5) Demandes en attente — corrigé
+      setPending(countPendingRequests(lessons));
 
       // 6) Revenus du mois
       let monthRevenue = 0;

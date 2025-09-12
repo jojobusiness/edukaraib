@@ -63,7 +63,6 @@ async function fetchUserProfile(uid) {
 async function resolvePersonName(id, cacheRef) {
   if (!id) return '';
   if (cacheRef.current.has(id)) return cacheRef.current.get(id);
-  // users
   try {
     const u = await getDoc(doc(db, 'users', id));
     if (u.exists()) {
@@ -73,7 +72,6 @@ async function resolvePersonName(id, cacheRef) {
       return nm;
     }
   } catch {}
-  // students
   try {
     const s = await getDoc(doc(db, 'students', id));
     if (s.exists()) {
@@ -93,6 +91,7 @@ function isGroupLesson(l) {
 }
 function isConfirmedForChild(l, sid) {
   if (!sid) return false;
+  if (l?.status === 'completed') return false; // ✅ exclure terminés
   if (isGroupLesson(l)) {
     const st = l?.participantsMap?.[sid]?.status;
     return st === 'accepted' || st === 'confirmed';
@@ -143,15 +142,12 @@ export default function ParentCourses() {
         } catch {}
 
         const newMap = new Map(kids.map(k => [k.id, k.full_name || k.fullName || k.name || 'Enfant']));
-        newMap.set(me.uid, parentLabel); // ajouter le parent dans la map des “élèves” suivis
+        newMap.set(me.uid, parentLabel);
         setStudentMap(newMap);
 
-        // suivre aussi le parent
         setKidIds([...ids, me.uid]);
-
-        // (loading s'éteint dans les listeners des leçons)
       },
-      () => { setLoading(false); } // en cas d'erreur
+      () => { setLoading(false); }
     );
 
     return () => {
@@ -236,13 +232,14 @@ export default function ParentCourses() {
     })();
   }, [courses]);
 
-  // prochaines (confirmées pour au moins un enfant/parent)
+  // prochaines (confirmées pour au moins un enfant/parent) — exclure terminées
   const nextCourse = useMemo(() => {
     const now = new Date();
     const kidsSetLocal = new Set(kidIds);
 
     const eligible = courses.filter((c) => {
       if (!FR_DAY_CODES.includes(c.slot_day)) return false;
+      if (c.status === 'completed') return false; // ✅ exclure terminé
       if (isGroupLesson(c)) {
         const ids = c.participant_ids || [];
         const pm = c.participantsMap || {};
@@ -260,7 +257,7 @@ export default function ParentCourses() {
     return future[0] || null;
   }, [courses, kidIds]);
 
-  // invitations pour mes enfants/parent (status invited_student pour groupe)
+  // invitations
   const invitations = useMemo(() => {
     const kidsSetLocal = new Set(kidIds);
     const list = [];
@@ -274,9 +271,10 @@ export default function ParentCourses() {
   }, [courses, kidIds]);
 
   // --- Construire les vues par “élève” suivi (enfants + parent) ---
+
   const kidsSet = useMemo(() => new Set(kidIds), [kidIds]);
 
-  // En attente (items par enfant/parent) — pas de bouton Participants ni pastille "À payer"
+  // En attente
   const pendingItems = useMemo(() => {
     const out = [];
     for (const c of courses) {
@@ -300,10 +298,11 @@ export default function ParentCourses() {
     return out;
   }, [courses, kidsSet]);
 
-  // Confirmés — inclure groupes confirmés/acceptés par enfant, OU individuels status=confirmed
+  // Confirmés — exclure les cours terminés
   const confirmedCourses = useMemo(() => {
     const arr = [];
     for (const c of courses) {
+      if (c.status === 'completed') continue; // ✅ ne pas dupliquer
       if (isGroupLesson(c)) {
         const pm = c.participantsMap || {};
         const ids = c.participant_ids || [];
@@ -316,7 +315,7 @@ export default function ParentCourses() {
     return arr;
   }, [courses, kidsSet]);
 
-  // Terminés — inchangé
+  // Terminés
   const completedCourses = useMemo(() => {
     const arr = [];
     for (const c of courses) {
@@ -333,7 +332,7 @@ export default function ParentCourses() {
     return arr;
   }, [courses, kidsSet]);
 
-  // Refusés — inchangé
+  // Refusés
   const rejectedCourses = useMemo(() => {
     return courses.filter((c) => c.status === 'rejected' && (
       (isGroupLesson(c) && (c.participant_ids || []).some((sid) => kidsSet.has(sid))) ||
@@ -341,7 +340,7 @@ export default function ParentCourses() {
     ));
   }, [courses, kidsSet]);
 
-  // actions invitations (pour l’enfant/parent)
+  // actions invitations
   async function acceptInvite(c) {
     const sid = c.__child;
     try {
@@ -370,7 +369,6 @@ export default function ParentCourses() {
 
   // --- UI ---
 
-  // ⚠️ Version "En attente" SANS bouton Participants et SANS pastille "À payer"
   function PendingItemCard({ c, sid }) {
     return (
       <div className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between">
@@ -403,7 +401,6 @@ export default function ParentCourses() {
 
     const pm = c.participantsMap || {};
     const allIds = Array.isArray(c.participant_ids) ? c.participant_ids : [];
-    // ✅ Ne garder que les élèves acceptés/confirmés
     const visibleIds = allIds.filter(
       (sid) => pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed'
     );
@@ -414,7 +411,7 @@ export default function ParentCourses() {
         const nm = await Promise.all(visibleIds.slice(0, 40).map((id) => resolvePersonName(id, nameCacheRef)));
         setNames(nm);
       })();
-    }, [open, c.id]); // on se base sur l'ouverture et l'id du cours
+    }, [open, c.id]);
 
     return (
       <>
@@ -463,16 +460,21 @@ export default function ParentCourses() {
   function CourseCard({ c, kids }) {
     const group = isGroupLesson(c);
 
+    // ✅ priorité à “Terminé”
+    const displayedStatus = c.status === 'completed'
+      ? 'completed'
+      : ((c.is_group && (kids?.length > 0)) ? 'confirmed' : c.status);
+
     return (
       <div className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
-            {statusBadge((c.is_group && (kids?.length > 0)) ? 'confirmed' : c.status)}
+            {statusBadge(displayedStatus)}
             {group && <ParticipantsPopover c={c} />}
           </div>
 
-          {/* Enfants (côte à côte) — uniquement ceux confirmés/acceptés */}
+          {/* Enfants confirmés/acceptés */}
           <div className="text-gray-700 text-sm flex flex-wrap items-center gap-2">
             <span className="opacity-80">Élève(s)&nbsp;:</span>
             {kids && kids.length ? kids.map((sid) => (
@@ -505,7 +507,7 @@ export default function ParentCourses() {
       <div className="max-w-3xl mx-auto">
         <h2 className="text-2xl font-bold text-primary mb-6">📚 Suivi des cours</h2>
 
-        {/* Prochain cours (confirmé pour au moins un enfant/parent) */}
+        {/* Prochain cours */}
         <div className="bg-white rounded-xl shadow p-6 border-l-4 border-primary mb-6">
           <div className="text-3xl mb-2">📅</div>
           <div className="text-xl font-bold text-primary">Prochain cours</div>
@@ -565,7 +567,7 @@ export default function ParentCourses() {
               )}
             </section>
 
-            {/* En attente (par élève : parent + enfants) */}
+            {/* En attente */}
             <section className="mb-8">
               <div className="flex items-baseline justify-between mb-3">
                 <h3 className="text-lg font-semibold">En attente de confirmation</h3>
@@ -582,7 +584,7 @@ export default function ParentCourses() {
               )}
             </section>
 
-            {/* Confirmés (par enfant/parent) */}
+            {/* Confirmés */}
             <section className="mb-8">
               <div className="flex items-baseline justify-between mb-3">
                 <h3 className="text-lg font-semibold">Cours confirmés</h3>

@@ -36,6 +36,17 @@ function isKidConfirmed(lesson, kidId) {
   const st = lesson?.participantsMap?.[kidId]?.status;
   return st === 'accepted' || st === 'confirmed';
 }
+// --- helper : payé pour cet enfant ? ---
+function isPaidForKid(lesson, kidId) {
+  if (!lesson) return false;
+  if (lesson.is_group) {
+    return !!lesson?.participantsMap?.[kidId]?.is_paid || !!lesson?.participantsMap?.[kidId]?.paid_at;
+  }
+  if (lesson.student_id && String(lesson.student_id) === String(kidId)) {
+    return !!lesson.is_paid || !!lesson.paid_at;
+  }
+  return false;
+}
 
 export default function ParentDashboard() {
   const [children, setChildren] = useState([]);
@@ -111,10 +122,12 @@ export default function ParentDashboard() {
         .filter(l => l.startAt);
       setCourses(enriched);
 
-      // Compteur "à régler" (par enfant) — uniquement cours CONFIRMÉS, par enfant, et seulement si l'enfant est accepté/confirmé
+      // Compteur "à régler" — **aligné avec ParentPayments**
+      // - exclut `pending_teacher`
+      // - groupe: enfants acceptés/confirmés ET non payés (par enfant)
+      // - individuel: confirmed ET non payé (par enfant)
       const unpaidCount = lessons.reduce((acc, l) => {
-        // On aligne sur ParentPayments : on ne compte que les confirmed (pas booked/pending_teacher/rejected)
-        if (l.status !== 'confirmed') return acc;
+        if (l.status === 'pending_teacher') return acc;
 
         if (l.is_group) {
           const pm = l.participantsMap || {};
@@ -124,12 +137,10 @@ export default function ParentDashboard() {
           ids.forEach((cid) => {
             if (!kidIds.includes(cid)) return; // seulement les enfants de CE parent
             const st = pm?.[cid]?.status;
-            // ne compter que les enfants effectivement acceptés/confirmés dans le groupe
             const isConfirmedKid = st === 'accepted' || st === 'confirmed';
             if (!isConfirmedKid) return;
-
-            const isPaid = !!pm?.[cid]?.is_paid || !!pm?.[cid]?.paid_at;
-            if (!isPaid) addForThisLesson += 1; // ✅ compter par enfant
+            const paid = !!pm?.[cid]?.is_paid || !!pm?.[cid]?.paid_at;
+            if (!paid) addForThisLesson += 1; // ✅ compter par enfant
           });
 
           return acc + addForThisLesson;
@@ -137,14 +148,14 @@ export default function ParentDashboard() {
 
         // Individuel
         if (kidIds.includes(l.student_id)) {
-          const isPaid = !!l.is_paid || !!l.paid_at;
-          return acc + (isPaid ? 0 : 1);
+          const isConfirmed = l.status === 'confirmed';
+          const paid = !!l.is_paid || !!l.paid_at;
+          return acc + (isConfirmed && !paid ? 1 : 0);
         }
 
         return acc;
       }, 0);
       setUnpaid(unpaidCount);
-
 
       // Noms pour bouton 👥
       const idSet = new Set();
@@ -191,12 +202,6 @@ export default function ParentDashboard() {
     return sorted[0] || null;
   }, [courses, children]);
 
-  // Pour le bandeau mois (en haut à gauche du bloc)
-  const monthLabel = useMemo(() => {
-    if (!nextOne) return '';
-    return nextOne.startAt.toLocaleDateString('fr-FR', { month: 'long' });
-  }, [nextOne]);
-
   return (
     <DashboardLayout role="parent">
       <div className="mb-8">
@@ -207,7 +212,7 @@ export default function ParentDashboard() {
         <p className="text-gray-600">Bienvenue sur votre espace parent. Suivez vos enfants, leurs cours et paiements ici.</p>
       </div>
 
-      {/* Cartes de stats (on a retiré la carte "Prochains cours") */}
+      {/* Cartes de stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
         <div className="bg-white rounded-xl shadow p-6 border-l-4 border-primary flex flex-col items-start">
           <span className="text-3xl mb-2">👧</span>
@@ -227,15 +232,8 @@ export default function ParentDashboard() {
         </div>
       </div>
 
-      {/* Gros bloc conservé : Prochain cours */}
+      {/* Prochain cours — design aligné élève/prof (badge mois retiré) */}
       <div className="bg-white rounded-xl shadow p-5 mb-6">
-        {/* Mois en haut à gauche (petit badge) */}
-        {nextOne && (
-          <div className="text-[11px] inline-block px-2 py-1 rounded bg-gray-100 text-gray-600 uppercase tracking-wide mb-1">
-            {monthLabel}
-          </div>
-        )}
-
         <h3 className="font-bold text-primary mb-2">Prochain cours</h3>
         <div className="text-gray-700">
           {nextOne
