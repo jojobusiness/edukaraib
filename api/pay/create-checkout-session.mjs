@@ -196,8 +196,8 @@ export default async function handler(req, res) {
       is_group: String(!!isGroup),
     },
     ...(transferData ? { payment_intent_data: { transfer_data: transferData } } : {}),
-    success_url: `${origin}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${origin}/payment-cancel`,
+    success_url: `${origin}/pay/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${origin}/pay/cancel`,
   });
 
   return res.json({ url: session.url });
