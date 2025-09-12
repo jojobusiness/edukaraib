@@ -194,6 +194,12 @@ export default function TeacherLessons() {
             );
           }
 
+          // fallback : si pas de student_id mais un seul participant, utiliser son nom
+          if (!studentName && Array.isArray(l.participant_ids) && l.participant_ids.length === 1) {
+            studentName = participantDetails[0]?.name
+              || await resolvePersonName(l.participant_ids[0], nameCacheRef.current);
+          }
+
           return { ...l, studentName, participantDetails };
         })
       );
@@ -321,8 +327,7 @@ export default function TeacherLessons() {
   }
 
   const Card = ({ lesson, showActionsForPending }) => {
-    const isGroup = Array.isArray(lesson.participant_ids) && lesson.participant_ids.length > 0;
-
+    const isGroup = !!lesson.is_group || (Array.isArray(lesson.participant_ids) && lesson.participant_ids.length > 1);
     // n’afficher/compter que les participants confirmés/acceptés
     const confirmedParticipants = (lesson.participantDetails || []).filter(
       (p) => p.status === 'accepted' || p.status === 'confirmed'
@@ -338,7 +343,7 @@ export default function TeacherLessons() {
         <div className="flex-1">
           <div className="flex gap-2 items-center mb-1">
             <span className="font-bold text-primary">{lesson.subject_id || 'Matière'}</span>
-            <StatusPill status={lesson.status} />
+            <StatusPill status={(Array.isArray(lesson.participantDetails) && lesson.participantDetails.some(p => p.status === 'accepted' || p.status === 'confirmed')) ? 'confirmed' : lesson.status} />
             {isGroup && (
               <>
                 <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded ml-1">👥 {used}/{capacity}</span>

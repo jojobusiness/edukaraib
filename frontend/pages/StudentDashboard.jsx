@@ -90,6 +90,16 @@ async function resolveNamesForParticipants(lessons) {
   return map;
 }
 
+// --- helper : confirmé pour MOI (élève) ---
+function isConfirmedForMe(l, uid) {
+  if (!uid) return false;
+  if (l?.is_group) {
+    const st = l?.participantsMap?.[uid]?.status;
+    return st === 'accepted' || st === 'confirmed';
+  }
+  return l?.status === 'confirmed';
+}
+
 export default function StudentDashboard() {
   const [nextCourse, setNextCourse] = useState(null);
   const [confirmedList, setConfirmedList] = useState([]); // gardé pour les noms de participants du "gros bloc"
@@ -172,10 +182,10 @@ export default function StudentDashboard() {
 
       setTotalCourses(allLessons.length);
 
-      // Prochain confirmé
+      // Prochain cours confirmé POUR MOI (groupe accepté/confirmé OU individuel confirmé)
       const now = new Date();
       const enriched = allLessons
-        .filter(l => l.status === 'confirmed' && FR_DAY_CODES.includes(l.slot_day))
+        .filter(l => FR_DAY_CODES.includes(l.slot_day) && isConfirmedForMe(l, userId))
         .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
         .filter(l => l.startAt && l.startAt > now)
         .sort((a, b) => a.startAt - b.startAt);
@@ -190,9 +200,9 @@ export default function StudentDashboard() {
       }
       setNextCourse(nextCourseWithProf);
 
-      // Liste confirmés (uniquement pour pouvoir afficher les participants sur le gros bloc)
+      // Liste confirmés pour l’affichage des participants (même règle que ci-dessus)
       const confirmed = allLessons
-        .filter(l => l.status === 'confirmed' && FR_DAY_CODES.includes(l.slot_day))
+        .filter(l => FR_DAY_CODES.includes(l.slot_day) && isConfirmedForMe(l, userId))
         .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
         .filter(l => l.startAt)
         .sort((a, b) => a.startAt - b.startAt);

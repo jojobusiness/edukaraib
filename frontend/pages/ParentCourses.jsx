@@ -468,7 +468,7 @@ export default function ParentCourses() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
-            {statusBadge(c.status)}
+            {statusBadge((c.is_group && (kids?.length > 0)) ? 'confirmed' : c.status)}
             {group && <ParticipantsPopover c={c} />}
           </div>
 

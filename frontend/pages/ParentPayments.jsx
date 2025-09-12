@@ -12,6 +12,8 @@ import {
 import DashboardLayout from '../components/DashboardLayout';
 import fetchWithAuth from '../utils/fetchWithAuth';
 
+const SITE_FEE_EUR = 10; // +10 € frais plateforme (affichage & totaux)
+
 const fmtDateTime = (start_datetime, slot_day, slot_hour) => {
   if (start_datetime?.toDate) { try { return start_datetime.toDate().toLocaleString('fr-FR'); } catch {} }
   if (typeof start_datetime?.seconds === 'number') return new Date(start_datetime.seconds * 1000).toLocaleString('fr-FR');
@@ -19,8 +21,12 @@ const fmtDateTime = (start_datetime, slot_day, slot_hour) => {
   return '—';
 };
 const toNumber = (v) => { const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v); return Number.isFinite(n) ? n : 0; };
-const getAmount = (l) =>
+const getBaseAmount = (l) =>
   toNumber(l.total_amount) || toNumber(l.total_price) || toNumber(l.amount_paid) || toNumber(l.amount) || toNumber(l.price_per_hour);
+const getDisplayAmount = (l) => {
+  const base = getBaseAmount(l);
+  return (Number.isFinite(base) ? base : 0) + SITE_FEE_EUR;
+};
 
 const isPaidForStudent = (lesson, studentId) => {
   if (!lesson) return false;
@@ -30,6 +36,18 @@ const isPaidForStudent = (lesson, studentId) => {
   }
   if (lesson.student_id === studentId && lesson.is_paid === true) return true;
   return false;
+};
+
+// confirmé POUR L’ENFANT concerné :
+// - individuel => lesson.status === 'confirmed'
+// - groupé     => status du participant ∈ {accepted, confirmed}
+const isConfirmedForChild = (lesson, childId) => {
+  if (!childId || !lesson) return false;
+  if (lesson.is_group) {
+    const st = lesson?.participantsMap?.[childId]?.status;
+    return st === 'accepted' || st === 'confirmed';
+  }
+  return lesson.status === 'confirmed' && lesson.student_id === childId;
 };
 
 export default function ParentPayments() {
@@ -125,20 +143,20 @@ export default function ParentPayments() {
           }
         }
 
-        // ✅ EXCLURE TOUT ce qui est 'pending_teacher' (ne doit pas apparaître)
         const notPendingTeacher = (r) => r.lesson.status !== 'pending_teacher';
 
-        // Paiements à faire : uniquement CONFIRMÉS (pas d'en attente)
-        const confirmedOnly = rows.filter((r) => r.lesson.status === 'confirmed' && notPendingTeacher(r));
-
-        // Historique payé : payé ET pas 'pending_teacher' (on accepte confirmed/completed)
-        const paidEligible = rows.filter((r) =>
-          isPaidForStudent(r.lesson, r.forStudent) &&
-          (r.lesson.status === 'confirmed' || r.lesson.status === 'completed') &&
+        // ✅ À régler : confirmé pour l'enfant (inclut groupe accepté/confirmé), non payé, pas pending_teacher
+        const unpaid = rows.filter((r) =>
+          isConfirmedForChild(r.lesson, r.forStudent) &&
+          !isPaidForStudent(r.lesson, r.forStudent) &&
           notPendingTeacher(r)
         );
 
-        const unpaid = confirmedOnly.filter((r) => !isPaidForStudent(r.lesson, r.forStudent));
+        // ✅ Payé : payé pour l'enfant, pas pending_teacher (peut être confirmed ou completed)
+        const paidEligible = rows.filter((r) =>
+          isPaidForStudent(r.lesson, r.forStudent) &&
+          notPendingTeacher(r)
+        );
 
         const getTs = (r) =>
           (r.lesson.start_datetime?.toDate?.() && r.lesson.start_datetime.toDate().getTime()) ||
@@ -172,7 +190,7 @@ export default function ParentPayments() {
   }, []);
 
   const totals = useMemo(() => {
-    const sum = (arr) => arr.reduce((acc, r) => acc + getAmount(r.lesson), 0);
+    const sum = (arr) => arr.reduce((acc, r) => acc + getDisplayAmount(r.lesson), 0);
     return { due: sum(toPay), paid: sum(paid) };
   }, [toPay, paid]);
 
@@ -220,7 +238,7 @@ export default function ParentPayments() {
                     <div className="font-bold text-primary">
                       {r.lesson.subject_id || 'Matière'}{' '}
                       <span className="text-gray-600 text-xs ml-2">
-                        {getAmount(r.lesson) ? `${getAmount(r.lesson).toFixed(2)} €` : ''}
+                        {getDisplayAmount(r.lesson) ? `${getDisplayAmount(r.lesson).toFixed(2)} €` : ''}
                       </span>
                     </div>
                     <div className="text-xs text-gray-500">Professeur : {r.teacherName || r.lesson.teacher_id}</div>

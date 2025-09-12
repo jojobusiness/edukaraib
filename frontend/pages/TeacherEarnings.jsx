@@ -165,7 +165,7 @@ export default function TeacherEarnings() {
       if (d.getFullYear() !== selectedYear) return;
 
       const mIdx = d.getMonth();
-      const amount = getPaidAmount(l);  // montant payé par l'élève (hors/avec frais — selon stockage)
+      const amount = getPaidAmount(l);  // montant payé par l'élève (peut déjà inclure le +10 selon stockage)
       const fee = Math.min(SITE_FEE_EUR, amount); // évite net négatif si petit montant
       base[mIdx].gains += amount;
       base[mIdx].net += Math.max(0, amount - fee);
@@ -236,6 +236,13 @@ export default function TeacherEarnings() {
               ))}
             </select>
           </div>
+        </div>
+
+        {/* 🚩 Information claire sur la commission fixe */}
+        <div className="text-[12px] text-gray-600 mb-4">
+          <strong>Info :</strong> les montants <em>bruts</em> correspondent à ce que l’élève paie
+          (prix du prof <strong>+ 10&nbsp;€</strong> de frais plateforme). La commission est
+          <strong> fixe : 10&nbsp;€ par cours/paiement</strong>.
         </div>
 
         {/* Résumé */}

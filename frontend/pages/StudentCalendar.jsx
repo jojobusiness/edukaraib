@@ -138,14 +138,23 @@ export default function StudentCalendar() {
       snapA.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
       snapB.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
 
-      // Confirmés/terminés uniquement
-      const data = Array.from(map.values()).filter(
-        l => l.status === 'confirmed' || l.status === 'completed'
-      );
+      const all = Array.from(map.values());
+
+      // ✅ Filtrage éligible :
+      // - Individuel: confirmed ou completed
+      // - Groupe: inclure si JE suis accepted|confirmed (completed toujours inclus)
+      const data = all.filter((l) => {
+        if (l.status === 'completed') return true;
+        if (l.is_group) {
+          const st = l?.participantsMap?.[uid]?.status;
+          return st === 'accepted' || st === 'confirmed';
+        }
+        return l.status === 'confirmed';
+      });
 
       setLessons(data);
 
-      // 2) Profils profs
+      // 2) Profils profs (sur l’ensemble affiché)
       const teacherUids = Array.from(new Set(data.map(l => l.teacher_id).filter(Boolean)));
       const profiles = await Promise.all(teacherUids.map(uid => fetchUserProfile(uid)));
       const tmap = new Map(
@@ -203,15 +212,15 @@ export default function StudentCalendar() {
     return m;
   }, [week, lessons]);
 
-  // Prochain cours (confirmé)
+  // 👉 Prochain cours : on exclut juste les "completed" et on prend le plus proche (groupé ou individuel)
   const nextCourse = useMemo(() => {
     const now = new Date();
-    const futureConfirmed = lessons
-      .filter(l => l.status === 'confirmed' && FR_DAY_CODES.includes(l.slot_day))
+    const future = lessons
+      .filter(l => l.status !== 'completed' && FR_DAY_CODES.includes(l.slot_day))
       .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
       .filter(l => l.startAt && l.startAt > now)
       .sort((a, b) => a.startAt - b.startAt);
-    return futureConfirmed[0] || null;
+    return future[0] || null;
   }, [lessons]);
 
   const statusColors = {
@@ -260,7 +269,6 @@ export default function StudentCalendar() {
                 ) : (
                   <ul className="flex flex-col gap-2">
                     {lessonsByDay[code]
-                      .filter(l => l.status === 'confirmed' || l.status === 'completed')
                       .sort((a, b) => (Number(a.slot_hour) || 0) - (Number(b.slot_hour) || 0))
                       .map(l => {
                         const prof = teacherMap.get(l.teacher_id) || {};
@@ -273,14 +281,17 @@ export default function StudentCalendar() {
                             key={l.id}
                             className="relative flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border"
                           >
-                            <span
-                              className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                                statusColors[l.status] || 'bg-gray-200'
-                              }`}
-                            >
-                              {l.status === 'confirmed' ? 'Confirmé' : l.status === 'completed' ? 'Terminé' : l.status}
-                            </span>
-
+                          {(() => {
+                            const me = auth.currentUser?.uid;
+                            const ds = (l?.is_group && (l?.participantsMap?.[me]?.status === 'accepted' || l?.participantsMap?.[me]?.status === 'confirmed'))
+                              ? (l.status === 'completed' ? 'completed' : 'confirmed')
+                              : l.status;
+                            return (
+                              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[ds] || 'bg-gray-200'}`}>
+                                {ds === 'confirmed' ? 'Confirmé' : ds === 'completed' ? 'Terminé' : ds}
+                              </span>
+                            );
+                          })()}
                             <span className="font-bold text-primary">
                               {l.subject_id || 'Matière'}
                             </span>

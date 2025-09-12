@@ -122,6 +122,7 @@ export default function ParentCalendar() {
         setOpenGroupId(null); setLoading(false); return;
       }
 
+      // Récup toutes les leçons liées aux enfants (élève principal OU participant)
       const map = new Map();
       for (const c of chunk(kidIdsLocal, 10)) {
         const qLessons = query(collection(db, 'lessons'), where('student_id', 'in', c));
@@ -132,11 +133,26 @@ export default function ParentCalendar() {
         (await getDocs(qPart)).docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
       }
 
-      const allLessons = Array.from(map.values()).filter(l => l.status === 'confirmed' || l.status === 'completed');
-      setLessons(allLessons);
+      const allLessons = Array.from(map.values());
+
+      // ✅ Filtrage éligible :
+      // - Individuel: confirmed ou completed (et l'enfant est bien l'élève)
+      // - Groupe: inclure si AU MOINS un de mes enfants est accepted|confirmed (completed toujours inclus)
+      const kidSet = new Set(kidIdsLocal);
+      const eligible = allLessons.filter((l) => {
+        if (l.status === 'completed') return true;
+        if (l.is_group) {
+          const ids = Array.isArray(l.participant_ids) ? l.participant_ids : [];
+          const pm = l.participantsMap || {};
+          return ids.some((sid) => kidSet.has(sid) && (pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed'));
+        }
+        return l.status === 'confirmed' && kidSet.has(l.student_id);
+      });
+
+      setLessons(eligible);
 
       setStudentMap(new Map(kids.map(k => [k.id, k.full_name || k.fullName || k.name || 'Enfant'])));
-      const teacherUids = Array.from(new Set(allLessons.map(l => l.teacher_id).filter(Boolean)));
+      const teacherUids = Array.from(new Set(eligible.map(l => l.teacher_id).filter(Boolean)));
       const profiles = await Promise.all(teacherUids.map(uid => fetchUserProfile(uid)));
       setTeacherMap(new Map(
         profiles.filter(Boolean).map(p => [
@@ -145,8 +161,9 @@ export default function ParentCalendar() {
         ])
       ));
 
+      // Noms des participants pour les cours groupés
       const idSet = new Set();
-      allLessons.forEach(l => {
+      eligible.forEach(l => {
         if (!l.is_group) return;
         (Array.isArray(l.participant_ids) ? l.participant_ids : []).forEach(id => id && idSet.add(id));
         if (l.student_id) idSet.add(l.student_id);
@@ -155,7 +172,7 @@ export default function ParentCalendar() {
       const names = await Promise.all(ids.map(id => resolvePersonName(id, nameCacheRef)));
       const idToName = new Map(ids.map((id, i) => [id, names[i]]));
       const mapByLesson = new Map();
-      allLessons.forEach(l => {
+      eligible.forEach(l => {
         if (!l.is_group) return;
         const idsForLesson = [
           ...(Array.isArray(l.participant_ids) ? l.participant_ids : []),
@@ -166,7 +183,7 @@ export default function ParentCalendar() {
       });
       setGroupNamesByLesson(mapByLesson);
 
-      if (openGroupId && !allLessons.some(l => l.id === openGroupId)) setOpenGroupId(null);
+      if (openGroupId && !eligible.some(l => l.id === openGroupId)) setOpenGroupId(null);
       setLoading(false);
     };
     run();
@@ -189,14 +206,15 @@ export default function ParentCalendar() {
     return list.map(id => studentMap.get(id) || id);
   };
 
+  // 👉 Prochain cours : on exclut juste les "completed" et on prend le plus proche (groupé ou individuel)
   const nextCourse = useMemo(() => {
     const now = new Date();
-    const futureConfirmed = lessons
-      .filter(l => l.status === 'confirmed' && FR_DAY_CODES.includes(l.slot_day))
+    const future = lessons
+      .filter(l => l.status !== 'completed' && FR_DAY_CODES.includes(l.slot_day))
       .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
       .filter(l => l.startAt && l.startAt > now)
       .sort((a, b) => a.startAt - b.startAt);
-    return futureConfirmed[0] || null;
+    return future[0] || null;
   }, [lessons]);
 
   const statusColors = {
@@ -252,7 +270,6 @@ export default function ParentCalendar() {
                 ) : (
                   <ul className="flex flex-col gap-2">
                     {lessonsByDay[code]
-                      .filter(l => l.status === 'confirmed' || l.status === 'completed')
                       .sort((a, b) => (Number(a.slot_hour) || 0) - (Number(b.slot_hour) || 0))
                       .map(l => {
                         const isGroup = !!l.is_group;
@@ -260,15 +277,24 @@ export default function ParentCalendar() {
                         const kidsNames = childNamesForLesson(l);
                         return (
                           <li key={l.id} className="relative flex items-center gap-3 bg-gray-50 px-3 py-2 rounded-lg border">
-                            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[l.status] || 'bg-gray-200'}`}>
-                              {l.status === 'confirmed' ? 'Confirmé' : l.status === 'completed' ? 'Terminé' : l.status}
-                            </span>
-
+                            {(() => {
+                              const ds = (l?.is_group && Array.isArray(l.participant_ids) &&
+                                l.participant_ids.some(sid => kidIds.includes(sid) && (
+                                  l.participantsMap?.[sid]?.status === 'accepted' || l.participantsMap?.[sid]?.status === 'confirmed'
+                                )))
+                                ? (l.status === 'completed' ? 'completed' : 'confirmed')
+                                : l.status;
+                              return (
+                                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[ds] || 'bg-gray-200'}`}>
+                                  {ds === 'confirmed' ? 'Confirmé' : ds === 'completed' ? 'Terminé' : ds}
+                                </span>
+                              );
+                            })()}
                             {/* Matière — Prof */}
                             <span className="text-sm font-medium">{subjectOf(l)}</span>
                             <span className="text-xs text-gray-500">— Prof : {teacherNameOf(l.teacher_id)}</span>
 
-                            {/* Enfants concernés (côte à côte) */}
+                            {/* Enfants concernés */}
                             <div className="flex flex-wrap gap-2 ml-2">
                               {kidsNames.length ? kidsNames.map((nm, i) => <NameChip key={`kid:${l.id}:${i}`}>{nm}</NameChip>) : (
                                 <span className="text-xs text-gray-500">—</span>

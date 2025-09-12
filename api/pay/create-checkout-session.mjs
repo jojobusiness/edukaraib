@@ -32,7 +32,7 @@ export default async function handler(req, res) {
   if (!snap.exists) return res.status(404).json({ error: 'LESSON_NOT_FOUND' });
   const lesson = snap.data();
 
-  // Autorisations minimales côté serveur (payer = élève ou parent de l'élève)
+  // Déterminer le participant ciblé
   let targetStudent = forStudent || lesson.student_id || null;
   const isGroup = Array.isArray(lesson.participant_ids) && lesson.participant_ids.length > 0;
 
@@ -48,6 +48,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'STUDENT_NOT_RESOLVED' });
   }
 
+  // Vérifie qu'il est bien participant
   const isParticipant = isGroup
     ? lesson.participant_ids.includes(targetStudent)
     : (lesson.student_id === targetStudent);
@@ -56,8 +57,27 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: 'NOT_PARTICIPANT' });
   }
 
-  if (lesson.status !== 'confirmed') {
-    return res.status(400).json({ error: 'LESSON_NOT_CONFIRMED' });
+  // Éligibilité au paiement
+  // - Individuel : leçon confirmée
+  // - Groupe     : participant accepted/confirmed (même si la leçon entière n'est pas "confirmed")
+  const participantStatus = lesson?.participantsMap?.[targetStudent]?.status;
+  const participantPaid =
+    lesson?.participantsMap?.[targetStudent]?.is_paid ??
+    (lesson.student_id === targetStudent ? lesson.is_paid : false);
+
+  if (participantPaid) {
+    return res.status(400).json({ error: 'ALREADY_PAID' });
+  }
+
+  if (isGroup) {
+    const ok = participantStatus === 'accepted' || participantStatus === 'confirmed';
+    if (!ok) {
+      return res.status(400).json({ error: 'PARTICIPANT_NOT_CONFIRMED' });
+    }
+  } else {
+    if (lesson.status !== 'confirmed') {
+      return res.status(400).json({ error: 'LESSON_NOT_CONFIRMED' });
+    }
   }
 
   // Montants
@@ -71,10 +91,10 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'INVALID_AMOUNT' });
   }
 
-  // Récupère (si disponible) le compte Stripe du prof pour transfert
+  // Récupère (si dispo) le compte Stripe du prof pour transfert
   let transferData = undefined;
   try {
-    if (lesson.teacher_id) {
+    if (lesson.teacher_id && teacherAmountCents > 0) {
       const u = await adminDb.collection('users').doc(lesson.teacher_id).get();
       if (u.exists) {
         const d = u.data();
@@ -88,7 +108,7 @@ export default async function handler(req, res) {
       }
     }
   } catch {
-    // silencieux, on fera sans transfert si indispo
+    // silencieux
   }
 
   // URLs
@@ -115,11 +135,11 @@ export default async function handler(req, res) {
     ],
     metadata: {
       lesson_id: lessonId,
-      for_student: targetStudent,
+      for_student: String(targetStudent),
       teacher_amount_cents: String(teacherAmountCents),
       site_fee_cents: String(siteFeeCents),
+      is_group: String(!!isGroup),
     },
-    // Si on a un compte connecté, on fait un destination charge avec transfert du montant prof
     ...(transferData ? { payment_intent_data: { transfer_data: transferData } } : {}),
     success_url: `${origin}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/payment-cancel`,

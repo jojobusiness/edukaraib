@@ -298,7 +298,7 @@ export default function MyCourses() {
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
-            {statusBadge(c.status)}
+            {statusBadge(isConfirmedForMe(c, auth.currentUser?.uid) ? 'confirmed' : c.status)}
             {group && <ParticipantsPopover c={c} />}
           </div>
           <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>

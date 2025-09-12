@@ -31,6 +31,12 @@ async function resolveName(id) {
   return 'Élève';
 }
 
+// --- helper : un enfant est confirmé/accepté sur un cours groupé ? ---
+function isKidConfirmed(lesson, kidId) {
+  const st = lesson?.participantsMap?.[kidId]?.status;
+  return st === 'accepted' || st === 'confirmed';
+}
+
 export default function ParentDashboard() {
   const [children, setChildren] = useState([]);
   const [courses, setCourses] = useState([]);
@@ -164,26 +170,32 @@ export default function ParentDashboard() {
     })();
   }, [userId]);
 
-  // Prochains cours confirmés (quelques-uns)
-  const upcoming = useMemo(() => {
+  // Prochain cours (seul) — inclure groupe si au moins un enfant est accepté/confirmé
+  const nextOne = useMemo(() => {
     const now = new Date();
-    return courses
-      .filter(l => l.status === 'confirmed' && l.startAt > now)
-      .sort((a, b) => a.startAt - b.startAt)
-      .slice(0, 5)
-      .map(l => {
-        const datePart = l.startAt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
-        const timePart = l.startAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-        const who = l.is_group ? 'Groupe' : 'Cours';
-        return {
-          id: l.id,
-          info: `${l.subject_id || 'Cours'} — ${datePart} ${timePart} — ${who}`,
-          isGroup: !!l.is_group
-        };
-      });
-  }, [courses]);
+    const kidIds = children.map(c => c.id);
+    const kidSet = new Set(kidIds);
 
-  const nextOne = upcoming[0] || null;
+    const eligible = courses.filter((l) => {
+      if (!FR_DAY_CODES.includes(l.slot_day) || !(l.startAt > now)) return false;
+
+      if (l.is_group) {
+        const ids = Array.isArray(l.participant_ids) ? l.participant_ids : [];
+        return ids.some((sid) => kidSet.has(sid) && isKidConfirmed(l, sid));
+      }
+      // individuel
+      return l.status === 'confirmed' && kidSet.has(l.student_id);
+    });
+
+    const sorted = eligible.sort((a, b) => a.startAt - b.startAt);
+    return sorted[0] || null;
+  }, [courses, children]);
+
+  // Pour le bandeau mois (en haut à gauche du bloc)
+  const monthLabel = useMemo(() => {
+    if (!nextOne) return '';
+    return nextOne.startAt.toLocaleDateString('fr-FR', { month: 'long' });
+  }, [nextOne]);
 
   return (
     <DashboardLayout role="parent">
@@ -217,11 +229,25 @@ export default function ParentDashboard() {
 
       {/* Gros bloc conservé : Prochain cours */}
       <div className="bg-white rounded-xl shadow p-5 mb-6">
+        {/* Mois en haut à gauche (petit badge) */}
+        {nextOne && (
+          <div className="text-[11px] inline-block px-2 py-1 rounded bg-gray-100 text-gray-600 uppercase tracking-wide mb-1">
+            {monthLabel}
+          </div>
+        )}
+
         <h3 className="font-bold text-primary mb-2">Prochain cours</h3>
         <div className="text-gray-700">
-          {nextOne ? nextOne.info : 'Aucun cours confirmé à venir'}
+          {nextOne
+            ? (() => {
+                const datePart = nextOne.startAt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
+                const timePart = nextOne.startAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+                const who = nextOne.is_group ? 'Groupe' : 'Cours';
+                return `${nextOne.subject_id || 'Cours'} — ${datePart} ${timePart} — ${who}`;
+              })()
+            : 'Aucun cours confirmé à venir'}
         </div>
-        {nextOne?.isGroup && (
+        {nextOne?.is_group && (
           <div className="mt-3">
             <button
               onClick={() => setOpenRowId(openRowId === nextOne.id ? null : nextOne.id)}

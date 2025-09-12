@@ -12,6 +12,8 @@ import DashboardLayout from '../components/DashboardLayout';
 import fetchWithAuth from '../utils/fetchWithAuth'; // default export
 
 // ----- helpers -----
+const SITE_FEE_EUR = 10; // +10 € frais plateforme (affichage & totaux)
+
 const fmtDateTime = (start_datetime, slot_day, slot_hour) => {
   if (start_datetime?.toDate) {
     try { return start_datetime.toDate().toLocaleString('fr-FR'); } catch {}
@@ -30,12 +32,17 @@ const toNumber = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const getAmount = (l) =>
+const getBaseAmount = (l) =>
   toNumber(l.total_amount) ||
   toNumber(l.total_price) ||
   toNumber(l.amount_paid) ||
   toNumber(l.amount) ||
   toNumber(l.price_per_hour);
+
+const getDisplayAmount = (l) => {
+  const base = getBaseAmount(l);
+  return (Number.isFinite(base) ? base : 0) + SITE_FEE_EUR;
+};
 
 // payé pour un élève (legacy ou groupe)
 const isPaidForStudent = (lesson, studentId) => {
@@ -47,6 +54,18 @@ const isPaidForStudent = (lesson, studentId) => {
   // legacy (cours 1-élève)
   if (lesson.student_id === studentId && lesson.is_paid === true) return true;
   return false;
+};
+
+// confirmé POUR MOI :
+// - individuel => lesson.status === 'confirmed'
+// - groupé     => status du participant ∈ {accepted, confirmed}
+const isConfirmedForMe = (lesson, uid) => {
+  if (!uid) return false;
+  if (lesson?.is_group) {
+    const st = lesson?.participantsMap?.[uid]?.status;
+    return st === 'accepted' || st === 'confirmed';
+  }
+  return lesson?.status === 'confirmed';
 };
 
 // ----- page -----
@@ -97,10 +116,10 @@ export default function StudentPayments() {
         teacherName: await teacherNameOf(l.teacher_id),
       })));
 
-      // on n’affiche que les leçons “confirmées”
-      const confirmed = enriched.filter((l) => l.status === 'confirmed');
+      // ➜ On affiche les leçons confirmées pour MOI (inclut les groupes acceptés/confirmés)
+      const confirmedForMe = enriched.filter((l) => isConfirmedForMe(l, user.uid));
 
-      const unpaid = confirmed.filter((l) => !isPaidForStudent(l, user.uid));
+      const unpaid = confirmedForMe.filter((l) => !isPaidForStudent(l, user.uid));
       const paidOnes = enriched.filter((l) => isPaidForStudent(l, user.uid));
 
       // tri
@@ -128,7 +147,7 @@ export default function StudentPayments() {
   }, []);
 
   const totals = useMemo(() => {
-    const sum = (arr) => arr.reduce((acc, l) => acc + getAmount(l), 0);
+    const sum = (arr) => arr.reduce((acc, l) => acc + getDisplayAmount(l), 0);
     return { due: sum(toPay), paid: sum(paid) };
   }, [toPay, paid]);
 
@@ -168,7 +187,7 @@ export default function StudentPayments() {
       <div className="max-w-2xl mx-auto">
         <h2 className="text-2xl font-bold text-primary mb-6">💳 Mes paiements</h2>
 
-        {/* À régler (confirmés uniquement) */}
+        {/* À régler (confirmés pour moi) */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-1">
             <h3 className="font-bold text-secondary">Paiements à effectuer</h3>
@@ -176,7 +195,9 @@ export default function StudentPayments() {
               <span className="text-xs text-gray-600">Total à régler : {totals.due.toFixed(2)} €</span>
             )}
           </div>
-          <div className="text-[11px] text-gray-500 mb-3">Le montant affiché inclut <strong>10 € de frais plateforme</strong>.</div>
+          <div className="text-[11px] text-gray-500 mb-3">
+            Le montant affiché inclut <strong>10 € de frais plateforme</strong>.
+          </div>
 
           {loading ? (
             <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Chargement…</div>
@@ -193,7 +214,7 @@ export default function StudentPayments() {
                     <div className="font-bold text-primary">
                       {l.subject_id || 'Matière'}{' '}
                       <span className="text-gray-600 text-xs ml-2">
-                        {getAmount(l) ? `${getAmount(l).toFixed(2)} €` : ''}
+                        {getDisplayAmount(l) ? `${getDisplayAmount(l).toFixed(2)} €` : ''}
                       </span>
                     </div>
                     <div className="text-xs text-gray-500">Professeur : {l.teacherName || l.teacher_id}</div>

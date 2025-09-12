@@ -100,8 +100,18 @@ function coerceAmount(val) {
   return 0;
 }
 
+// --- helper confirmation groupe (au moins un accepté/confirmé) ---
+function hasAnyConfirmedParticipant(lesson) {
+  const pm = lesson?.participantsMap || {};
+  const ids = Array.isArray(lesson?.participant_ids) ? lesson.participant_ids : [];
+  return ids.some((sid) => {
+    const st = pm?.[sid]?.status;
+    return st === 'accepted' || st === 'confirmed';
+  });
+}
+
 export default function TeacherDashboard() {
-  const [upcomingCourses, setUpcomingCourses] = useState([]); // confirmés, futur
+  const [upcomingCourses, setUpcomingCourses] = useState([]); // confirmés, futur (incl. groupes confirmés côté participants)
   const [revenues, setRevenues] = useState(0);
   const [pending, setPending] = useState(0);
   const [reviews, setReviews] = useState([]);
@@ -148,10 +158,18 @@ export default function TeacherDashboard() {
       });
       setGroupNamesByLesson(gMap);
 
-      // 4) Cours à venir (confirmés) via slot_day/slot_hour
+      // 4) Cours à venir — inclure:
+      //    - individuels: status === 'confirmed'
+      //    - groupes: au moins un participant accepted/confirmed
       const now = new Date();
       const enriched = lessons
-        .filter(l => l.status === 'confirmed' && FR_DAY_CODES.includes(l.slot_day))
+        .filter((l) =>
+          FR_DAY_CODES.includes(l.slot_day) &&
+          (
+            (!l.is_group && l.status === 'confirmed') ||
+            (l.is_group && hasAnyConfirmedParticipant(l))
+          )
+        )
         .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
         .filter(l => l.startAt && l.startAt > now)
         .sort((a, b) => a.startAt - b.startAt);

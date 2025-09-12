@@ -35,32 +35,24 @@ export default async function handler(req, res) {
   if (!snap.exists) return res.status(404).json({ ok: false, error: 'LESSON_NOT_FOUND' });
   const lesson = snap.data();
 
-  // 4) Doit être confirmé
-  if (lesson.status !== 'confirmed') {
-    return res.json({ ok: false, error: 'Leçon non confirmée' });
-  }
-
-  // 5) Déterminer le participant ciblé
+  // 4) Déterminer le participant ciblé
   let targetStudent = forStudent || lesson.student_id || null;
+  const isGroup = Array.isArray(lesson.participant_ids) && lesson.participant_ids.length > 0;
 
-  if (Array.isArray(lesson.participant_ids) && lesson.participant_ids.length) {
-    // cours de groupe
-    if (!targetStudent) {
-      // si l'utilisateur est lui-même élève et présent dans le groupe, on peut l’inférer
-      if (lesson.participant_ids.includes(uid)) {
-        targetStudent = uid;
-      } else {
-        return res.json({ ok: false, error: 'FOR_STUDENT_REQUIRED' });
-      }
+  if (isGroup && !targetStudent) {
+    // si l'utilisateur est lui-même élève et présent dans le groupe, on peut l’inférer
+    if (lesson.participant_ids.includes(uid)) {
+      targetStudent = uid;
+    } else {
+      return res.json({ ok: false, error: 'FOR_STUDENT_REQUIRED' });
     }
   }
-
   if (!targetStudent) {
     return res.json({ ok: false, error: 'STUDENT_NOT_RESOLVED' });
   }
 
-  // 6) Vérifier que cet élève est bien inscrit à la leçon
-  const isParticipant = Array.isArray(lesson.participant_ids)
+  // 5) Vérifier que cet élève est bien inscrit à la leçon
+  const isParticipant = isGroup
     ? lesson.participant_ids.includes(targetStudent)
     : (!lesson.participant_ids && lesson.student_id === targetStudent);
 
@@ -68,7 +60,7 @@ export default async function handler(req, res) {
     return res.json({ ok: false, error: 'Élève non inscrit à ce cours' });
   }
 
-  // 7) Contrôle d’accès payeur :
+  // 6) Contrôle d’accès payeur :
   //    - l’élève lui-même
   //    - ou le parent associé au participant (participantsMap[target].parent_id)
   //    - ou (legacy) lesson.parent_id (si réservé pour enfant)
@@ -81,7 +73,7 @@ export default async function handler(req, res) {
     return res.status(403).json({ ok: false, error: 'NOT_ALLOWED' });
   }
 
-  // 8) Déjà payé pour ce participant ?
+  // 7) Déjà payé ?
   const alreadyPaid =
     lesson.participantsMap?.[targetStudent]?.is_paid ??
     (lesson.student_id === targetStudent ? lesson.is_paid : false);
@@ -90,11 +82,21 @@ export default async function handler(req, res) {
     return res.json({ ok: false, error: 'Déjà payé' });
   }
 
+  // 8) Éligible au paiement ?
+  if (isGroup) {
+    const st = lesson?.participantsMap?.[targetStudent]?.status;
+    const ok = st === 'accepted' || st === 'confirmed';
+    if (!ok) return res.json({ ok: false, error: 'Participant non confirmé' });
+  } else {
+    if (lesson.status !== 'confirmed') {
+      return res.json({ ok: false, error: 'Leçon non confirmée' });
+    }
+  }
+
   // 9) Montant OK ?
   const pricePerHour = toNum(lesson.price_per_hour);
   const hours = toNum(lesson.duration_hours) || 1;
   const grossCents = Math.round(pricePerHour * hours * 100);
-
   if (!(grossCents > 0)) {
     return res.json({ ok: false, error: 'Montant invalide' });
   }
