@@ -15,6 +15,80 @@ const toNum = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+// ---- mêmes helpers de résolution d'ID que dans diag ------------------------
+async function resolveEquivalentStudentIds(targetId) {
+  const out = new Set([String(targetId)]);
+  try {
+    const st = await adminDb.collection('students').doc(String(targetId)).get();
+    if (st.exists) {
+      const d = st.data() || {};
+      if (d.user_id) out.add(String(d.user_id));
+      if (d.uid) out.add(String(d.uid));
+    }
+  } catch {}
+  try {
+    const q = await adminDb.collection('students').where('user_id', '==', String(targetId)).limit(1).get();
+    if (!q.empty) {
+      const doc = q.docs[0];
+      out.add(String(doc.id));
+      const d = doc.data() || {};
+      if (d.uid) out.add(String(d.uid));
+      if (d.user_id) out.add(String(d.user_id));
+    }
+  } catch {}
+  try {
+    const q = await adminDb.collection('students').where('uid', '==', String(targetId)).limit(1).get();
+    if (!q.empty) {
+      const doc = q.docs[0];
+      out.add(String(doc.id));
+      const d = doc.data() || {};
+      if (d.user_id) out.add(String(d.user_id));
+      if (d.uid) out.add(String(d.uid));
+    }
+  } catch {}
+  return Array.from(out);
+}
+function anyAliasInArray(aliases, arr = []) {
+  const s = new Set((arr || []).map(String));
+  return aliases.find((a) => s.has(String(a))) || null;
+}
+function anyAliasInObjectKeys(aliases, obj = {}) {
+  const keys = new Set(Object.keys(obj || {}).map(String));
+  return aliases.find((a) => keys.has(String(a))) || null;
+}
+function resolveParticipantInLesson(lesson, aliases) {
+  const pm = lesson?.participantsMap || {};
+  const isGroup = Array.isArray(lesson?.participant_ids) && lesson.participant_ids.length > 0;
+
+  if (isGroup) {
+    const hitArray = anyAliasInArray(aliases, lesson.participant_ids);
+    if (hitArray) return String(hitArray);
+    const hitMap = anyAliasInObjectKeys(aliases, pm);
+    if (hitMap) return String(hitMap);
+    return null;
+  }
+
+  if (lesson.student_id && aliases.some((a) => String(a) === String(lesson.student_id))) {
+    return String(lesson.student_id);
+  }
+  const hitMap = anyAliasInObjectKeys(aliases, pm);
+  if (hitMap) return String(hitMap);
+
+  return null;
+}
+function isAlreadyPaid(lesson, participantId) {
+  const pm = lesson?.participantsMap || {};
+  const isGroup = Array.isArray(lesson?.participant_ids) && lesson.participant_ids.length > 0;
+  if (isGroup) return !!pm?.[participantId]?.is_paid;
+  if (String(lesson.student_id) === String(participantId)) return !!lesson.is_paid;
+  return !!pm?.[participantId]?.is_paid;
+}
+function participantStatus(lesson, participantId) {
+  return lesson?.participantsMap?.[participantId]?.status || null;
+}
+
+// ----------------------------------------------------------------------------
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
@@ -27,51 +101,41 @@ export default async function handler(req, res) {
   const { lessonId, forStudent } = readBody(req);
   if (!lessonId) return res.status(400).json({ error: 'MISSING_LESSON_ID' });
 
-  // Charge la leçon
-  const snap = await adminDb.collection('lessons').doc(lessonId).get();
+  // Leçon
+  const snap = await adminDb.collection('lessons').doc(String(lessonId)).get();
   if (!snap.exists) return res.status(404).json({ error: 'LESSON_NOT_FOUND' });
   const lesson = snap.data();
 
-  // Déterminer le participant ciblé
-  let targetStudent = forStudent || lesson.student_id || null;
-  const isGroup = Array.isArray(lesson.participant_ids) && lesson.participant_ids.length > 0;
+  // Participant visé
+  const rawTarget = forStudent || lesson.student_id || null;
+  if (!rawTarget) return res.status(400).json({ error: 'STUDENT_NOT_RESOLVED' });
+  const aliases = await resolveEquivalentStudentIds(String(rawTarget));
 
-  if (isGroup && !targetStudent) {
-    // si payeur est l’élève, on peut l’inférer
-    if (lesson.participant_ids.includes(uid)) {
-      targetStudent = uid;
-    } else {
-      return res.status(400).json({ error: 'FOR_STUDENT_REQUIRED' });
-    }
-  }
-  if (!targetStudent) {
-    return res.status(400).json({ error: 'STUDENT_NOT_RESOLVED' });
-  }
-
-  // Vérifie qu'il est bien participant
-  const isParticipant = isGroup
-    ? lesson.participant_ids.includes(targetStudent)
-    : (lesson.student_id === targetStudent);
-
-  if (!isParticipant) {
+  const participantId = resolveParticipantInLesson(lesson, aliases);
+  if (!participantId) {
     return res.status(403).json({ error: 'NOT_PARTICIPANT' });
   }
 
-  // Éligibilité au paiement
-  // - Individuel : leçon confirmée
-  // - Groupe     : participant accepted/confirmed (même si la leçon entière n'est pas "confirmed")
-  const participantStatus = lesson?.participantsMap?.[targetStudent]?.status;
-  const participantPaid =
-    lesson?.participantsMap?.[targetStudent]?.is_paid ??
-    (lesson.student_id === targetStudent ? lesson.is_paid : false);
+  // Accès payeur : élève lui-même ou parent lié
+  const payerIsStudent = aliases.some((a) => String(a) === String(uid));
+  const payerIsParent =
+    (lesson.participantsMap?.[participantId]?.parent_id &&
+      String(lesson.participantsMap[participantId].parent_id) === String(uid)) ||
+    (lesson.parent_id && String(lesson.parent_id) === String(uid));
+  if (!payerIsStudent && !payerIsParent) {
+    return res.status(403).json({ error: 'NOT_ALLOWED' });
+  }
 
-  if (participantPaid) {
+  // Déjà payé ?
+  if (isAlreadyPaid(lesson, participantId)) {
     return res.status(400).json({ error: 'ALREADY_PAID' });
   }
 
+  // Éligible ?
+  const isGroup = Array.isArray(lesson?.participant_ids) && lesson.participant_ids.length > 0;
   if (isGroup) {
-    const ok = participantStatus === 'accepted' || participantStatus === 'confirmed';
-    if (!ok) {
+    const st = participantStatus(lesson, participantId);
+    if (!(st === 'accepted' || st === 'confirmed')) {
       return res.status(400).json({ error: 'PARTICIPANT_NOT_CONFIRMED' });
     }
   } else {
@@ -80,43 +144,34 @@ export default async function handler(req, res) {
     }
   }
 
-  // Montants
+  // Montant = prof + 10€
   const pricePerHour = toNum(lesson.price_per_hour);
   const hours = toNum(lesson.duration_hours) || 1;
-  const teacherAmountCents = Math.max(0, Math.round(pricePerHour * hours * 100)); // ce que le prof doit toucher
-  const siteFeeCents = 1000; // +10€ fixes
+  const teacherAmountCents = Math.max(0, Math.round(pricePerHour * hours * 100));
+  const siteFeeCents = 1000; // +10€
   const totalCents = teacherAmountCents + siteFeeCents;
+  if (!(totalCents > 0)) return res.status(400).json({ error: 'INVALID_AMOUNT' });
 
-  if (!(totalCents > 0)) {
-    return res.status(400).json({ error: 'INVALID_AMOUNT' });
-  }
-
-  // Récupère (si dispo) le compte Stripe du prof pour transfert
+  // Transfert vers le compte du prof (si connecté)
   let transferData = undefined;
   try {
     if (lesson.teacher_id && teacherAmountCents > 0) {
-      const u = await adminDb.collection('users').doc(lesson.teacher_id).get();
+      const u = await adminDb.collection('users').doc(String(lesson.teacher_id)).get();
       if (u.exists) {
         const d = u.data();
         if (d?.stripeAccountId) {
-          // destination charge : on transfère exactement le montant prof au compte connecté
-          transferData = {
-            destination: d.stripeAccountId,
-            amount: teacherAmountCents,
-          };
+          transferData = { destination: d.stripeAccountId, amount: teacherAmountCents };
         }
       }
     }
-  } catch {
-    // silencieux
-  }
+  } catch {}
 
   // URLs
   const origin =
     req.headers?.origin ||
     `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}`;
 
-  // Crée la session Checkout
+  // Session Checkout
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
     payment_method_types: ['card'],
@@ -134,8 +189,8 @@ export default async function handler(req, res) {
       },
     ],
     metadata: {
-      lesson_id: lessonId,
-      for_student: String(targetStudent),
+      lesson_id: String(lessonId),
+      for_student: String(participantId), // identifiant normalisé qui MATCHE la leçon
       teacher_amount_cents: String(teacherAmountCents),
       site_fee_cents: String(siteFeeCents),
       is_group: String(!!isGroup),
