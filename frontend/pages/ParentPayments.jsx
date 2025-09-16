@@ -38,16 +38,16 @@ const isPaidForStudent = (lesson, studentId) => {
   return false;
 };
 
-// confirmé POUR L’ENFANT concerné :
-// - individuel => lesson.status === 'confirmed'
-// - groupé     => status du participant ∈ {accepted, confirmed}
-const isConfirmedForChild = (lesson, childId) => {
+// ✅ éligible au paiement POUR L’ENFANT concerné :
+// - individuel => statut ∈ {confirmed, completed} ET l’élève correspond
+// - groupé     => statut du participant ∈ {accepted, confirmed}
+const isEligibleForChildPayment = (lesson, childId) => {
   if (!childId || !lesson) return false;
   if (lesson.is_group) {
     const st = lesson?.participantsMap?.[childId]?.status;
     return st === 'accepted' || st === 'confirmed';
   }
-  return lesson.status === 'confirmed' && lesson.student_id === childId;
+  return (lesson.status === 'confirmed' || lesson.status === 'completed') && lesson.student_id === childId;
 };
 
 export default function ParentPayments() {
@@ -148,9 +148,10 @@ export default function ParentPayments() {
 
         const notPendingTeacher = (r) => r.lesson.status !== 'pending_teacher';
 
-        // À régler : confirmé pour l'enfant (inclut groupe accepté/confirmé), non payé, pas pending_teacher
+        // À régler : éligible pour l’enfant (inclut confirmed OU completed pour les individuels),
+        // non payé, pas pending_teacher
         const unpaid = rows.filter((r) =>
-          isConfirmedForChild(r.lesson, r.forStudent) &&
+          isEligibleForChildPayment(r.lesson, r.forStudent) &&
           !isPaidForStudent(r.lesson, r.forStudent) &&
           notPendingTeacher(r)
         );

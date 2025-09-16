@@ -56,16 +56,16 @@ const isPaidForStudent = (lesson, studentId) => {
   return false;
 };
 
-// confirmé POUR MOI :
-// - individuel => lesson.status === 'confirmed'
+// ✅ éligible au paiement POUR MOI :
+// - individuel => statut ∈ {confirmed, completed}
 // - groupé     => status du participant ∈ {accepted, confirmed}
-const isConfirmedForMe = (lesson, uid) => {
+const isEligibleForMePayment = (lesson, uid) => {
   if (!uid) return false;
   if (lesson?.is_group) {
     const st = lesson?.participantsMap?.[uid]?.status;
     return st === 'accepted' || st === 'confirmed';
   }
-  return lesson?.status === 'confirmed';
+  return lesson?.status === 'confirmed' || lesson?.status === 'completed';
 };
 
 // ----- page -----
@@ -116,10 +116,10 @@ export default function StudentPayments() {
         teacherName: await teacherNameOf(l.teacher_id),
       })));
 
-      // ➜ On affiche les leçons confirmées pour MOI (inclut les groupes acceptés/confirmés)
-      const confirmedForMe = enriched.filter((l) => isConfirmedForMe(l, user.uid));
+// ➜ On considère éligible : confirmé OU terminé (individuel), et accepté/confirmé (groupe)
+      const eligibleForMe = enriched.filter((l) => isEligibleForMePayment(l, user.uid));
 
-      const unpaid = confirmedForMe.filter((l) => !isPaidForStudent(l, user.uid));
+      const unpaid = eligibleForMe.filter((l) => !isPaidForStudent(l, user.uid));
       const paidOnes = enriched.filter((l) => isPaidForStudent(l, user.uid));
 
       // tri
@@ -156,7 +156,7 @@ export default function StudentPayments() {
       if (!uid) return;
       setPayingId(lesson.id);
 
-      // Diagnostic (optionnel mais utile)
+      // Diagnostic (optionnel)
       const diag = await fetchWithAuth('/api/pay/diag', {
         method: 'POST',
         body: JSON.stringify({ lessonId: lesson.id, forStudent: uid }),
@@ -187,7 +187,7 @@ export default function StudentPayments() {
       <div className="max-w-2xl mx-auto">
         <h2 className="text-2xl font-bold text-primary mb-6">💳 Mes paiements</h2>
 
-        {/* À régler (confirmés pour moi) */}
+        {/* À régler (éligibles pour moi) */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-1">
             <h3 className="font-bold text-secondary">Paiements à effectuer</h3>
