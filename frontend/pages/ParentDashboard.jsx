@@ -21,9 +21,7 @@ function nextOccurrence(slot_day, slot_hour, now = new Date()) { if(!FR_DAY_CODE
 function chunk(arr, size = 10){ const out=[]; for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size)); return out; }
 
 async function resolveName(id) {
-  // users direct
   try { const s = await getDoc(doc(db,'users', id)); if (s.exists()) { const d=s.data(); return d.fullName||d.name||d.displayName||'Élève'; } } catch {}
-  // students
   try {
     const st = await getDoc(doc(db, 'students', id));
     if (st.exists()) { const d=st.data(); return d.full_name||d.name||'Élève'; }
@@ -122,10 +120,10 @@ export default function ParentDashboard() {
         .filter(l => l.startAt);
       setCourses(enriched);
 
-      // Compteur "à régler" — **aligné avec ParentPayments**
+      // Compteur "à régler" — aligné avec ParentPayments :
       // - exclut `pending_teacher`
-      // - groupe: enfants acceptés/confirmés ET non payés (par enfant)
-      // - individuel: confirmed ET non payé (par enfant)
+      // - groupé : enfants acceptés/confirmés ET non payés (compté par enfant)
+      // - individuel : (confirmed OU completed) ET non payé (par enfant)
       const unpaidCount = lessons.reduce((acc, l) => {
         if (l.status === 'pending_teacher') return acc;
 
@@ -135,12 +133,12 @@ export default function ParentDashboard() {
           let addForThisLesson = 0;
 
           ids.forEach((cid) => {
-            if (!kidIds.includes(cid)) return; // seulement les enfants de CE parent
+            if (!kidIds.includes(cid)) return;
             const st = pm?.[cid]?.status;
-            const isConfirmedKid = st === 'accepted' || st === 'confirmed';
-            if (!isConfirmedKid) return;
+            const kidIsConfirmed = st === 'accepted' || st === 'confirmed';
+            if (!kidIsConfirmed) return;
             const paid = !!pm?.[cid]?.is_paid || !!pm?.[cid]?.paid_at;
-            if (!paid) addForThisLesson += 1; // ✅ compter par enfant
+            if (!paid) addForThisLesson += 1;
           });
 
           return acc + addForThisLesson;
@@ -148,9 +146,9 @@ export default function ParentDashboard() {
 
         // Individuel
         if (kidIds.includes(l.student_id)) {
-          const isConfirmed = l.status === 'confirmed';
+          const isEligible = (l.status === 'confirmed' || l.status === 'completed'); // ✅ inclut completed
           const paid = !!l.is_paid || !!l.paid_at;
-          return acc + (isConfirmed && !paid ? 1 : 0);
+          return acc + (isEligible && !paid ? 1 : 0);
         }
 
         return acc;
@@ -214,7 +212,7 @@ export default function ParentDashboard() {
 
       {/* Cartes de stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-        <div className="bg-white rounded-xl shadow p-6 border-l-4 border-primary flex flex-col items-start">
+        <div className="bg-white rounded-2xl shadow p-6 border border-gray-100 border-l-4 border-primary flex flex-col items-start">
           <span className="text-3xl mb-2">👧</span>
           <span className="text-xl font-bold text-primary">Enfants enregistrés</span>
           <ul className="text-gray-700 mt-1">
@@ -225,23 +223,27 @@ export default function ParentDashboard() {
           </ul>
         </div>
 
-        <div className="bg-white rounded-xl shadow p-6 border-l-4 border-secondary flex flex-col items-start md:col-span-2">
+        <div className="bg-white rounded-2xl shadow p-6 border border-gray-100 border-l-4 border-secondary flex flex-col items-start md:col-span-2">
           <span className="text-3xl mb-2">💳</span>
           <span className="text-xl font-bold text-secondary">Paiements à régler</span>
           <span className="text-gray-700 mt-1">{unpaid} cours à régler</span>
+          <span className="text-[11px] text-gray-500 mt-1">Le montant de chaque paiement inclut 10 € de frais plateforme.</span>
         </div>
       </div>
 
-      {/* Prochain cours — design aligné élève/prof (badge mois retiré) */}
-      <div className="bg-white rounded-xl shadow p-5 mb-6">
-        <h3 className="font-bold text-primary mb-2">Prochain cours</h3>
+      {/* Prochain cours — même forme que l'élève (carte blanche, bordure, bouton Participants) */}
+      <div className="bg-white rounded-2xl shadow p-6 border border-gray-100 border-l-4 border-primary mb-6">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-3xl">📅</span>
+          <h3 className="font-bold text-primary text-lg">Prochain cours</h3>
+        </div>
         <div className="text-gray-700">
           {nextOne
             ? (() => {
                 const datePart = nextOne.startAt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
                 const timePart = nextOne.startAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
                 const who = nextOne.is_group ? 'Groupe' : 'Cours';
-                return `${nextOne.subject_id || 'Cours'} — ${datePart} ${timePart} — ${who}`;
+                return `${who} (${nextOne.subject_id || 'Matière'}) — ${datePart} ${timePart}`;
               })()
             : 'Aucun cours confirmé à venir'}
         </div>
@@ -269,7 +271,7 @@ export default function ParentDashboard() {
         )}
       </div>
 
-      <div className="bg-white rounded-xl shadow p-5">
+      <div className="bg-white rounded-2xl shadow p-6 border border-gray-100">
         <h3 className="font-bold text-primary mb-3">Notifications</h3>
         <NotifList notifications={notifications} />
       </div>
