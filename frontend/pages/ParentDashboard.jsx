@@ -227,7 +227,6 @@ export default function ParentDashboard() {
           <span className="text-3xl mb-2">💳</span>
           <span className="text-xl font-bold text-secondary">Paiements à régler</span>
           <span className="text-gray-700 mt-1">{unpaid} cours à régler</span>
-          <span className="text-[11px] text-gray-500 mt-1">Le montant de chaque paiement inclut 10 € de frais plateforme.</span>
         </div>
       </div>
 
