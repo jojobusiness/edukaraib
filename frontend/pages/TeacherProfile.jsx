@@ -308,9 +308,11 @@ export default function TeacherProfile() {
           <div className="text-xs text-gray-500 mb-1">{teacher.location || teacher.city || ''}</div>
           <div className="text-sm text-gray-600 mb-2 text-center">{teacher.bio}</div>
 
-          <span className="inline-block text-yellow-700 font-semibold mb-4">
-            {teacher.price_per_hour ? `${teacher.price_per_hour} € /h` : 'Prix non précisé'}
-          </span>
+            <span className="inline-block text-yellow-700 font-semibold mb-4">
+              {teacher.price_per_hour !== undefined && teacher.price_per_hour !== null && teacher.price_per_hour !== ''
+                ? `${(Number(String(teacher.price_per_hour).replace(',', '.')) + 10).toFixed(2)} € /h`
+                : 'Prix non précisé'}
+            </span>
 
           {currentRole === 'parent' && (
             <div className="w-full bg-gray-50 border rounded-lg p-3 mb-4">
