@@ -210,28 +210,8 @@ export default function ParentDashboard() {
         <p className="text-gray-600">Bienvenue sur votre espace parent. Suivez vos enfants, leurs cours et paiements ici.</p>
       </div>
 
-      {/* Cartes de stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-        <div className="bg-white rounded-2xl shadow p-6 border border-gray-100 border-l-4 border-primary flex flex-col items-start">
-          <span className="text-3xl mb-2">👧</span>
-          <span className="text-xl font-bold text-primary">Enfants enregistrés</span>
-          <ul className="text-gray-700 mt-1">
-            {children.length === 0 && <li>Aucun enfant enregistré.</li>}
-            {children.map((c) => (
-              <li key={c.id}>{c.full_name || c.fullName || c.name} ({c.school_level || "Niveau inconnu"})</li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow p-6 border border-gray-100 border-l-4 border-secondary flex flex-col items-start md:col-span-2">
-          <span className="text-3xl mb-2">💳</span>
-          <span className="text-xl font-bold text-secondary">Paiements à régler</span>
-          <span className="text-gray-700 mt-1">{unpaid} cours à régler</span>
-        </div>
-      </div>
-
-      {/* Prochain cours — même forme que l'élève (carte blanche, bordure, bouton Participants) */}
-      <div className="bg-white rounded-2xl shadow p-6 border border-gray-100 border-l-4 border-primary mb-6">
+      {/* 👉 Prochain cours tout en haut, tout à gauche */}
+      <div className="bg-white rounded-2xl shadow p-6 border border-gray-100 border-l-4 border-primary mb-10">
         <div className="flex items-center gap-2 mb-2">
           <span className="text-3xl">📅</span>
           <h3 className="font-bold text-primary text-lg">Prochain cours</h3>
@@ -268,6 +248,27 @@ export default function ParentDashboard() {
             )}
           </div>
         )}
+      </div>
+
+      {/* Cartes de stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+        <div className="bg-white rounded-2xl shadow p-6 border border-gray-100 border-l-4 border-primary flex flex-col items-start">
+          <span className="text-3xl mb-2">👧</span>
+          <span className="text-xl font-bold text-primary">Enfants enregistrés</span>
+          <ul className="text-gray-700 mt-1">
+            {children.length === 0 && <li>Aucun enfant enregistré.</li>}
+            {children.map((c) => (
+              <li key={c.id}>{c.full_name || c.fullName || c.name} ({c.school_level || "Niveau inconnu"})</li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow p-6 border border-gray-100 border-l-4 border-secondary flex flex-col items-start md:col-span-2">
+          <span className="text-3xl mb-2">💳</span>
+          <span className="text-xl font-bold text-secondary">Paiements à régler</span>
+          <span className="text-gray-700 mt-1">{unpaid} cours à régler</span>
+          <span className="text-[11px] text-gray-500 mt-1">Le montant de chaque paiement inclut 10 € de frais plateforme.</span>
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl shadow p-6 border border-gray-100">
