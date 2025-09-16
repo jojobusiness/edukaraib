@@ -10,6 +10,7 @@
     "build": "chmod +x ./node_modules/.bin/vite && vite build"
   },
   "dependencies": {
+    "@vercel/analytics": "^1.5.0",
     "firebase": "^10.14.1",
     "firebase-admin": "^12.7.0",
     "lucide-react": "^0.534.0",
