@@ -42,8 +42,8 @@ async function resolveEquivalentStudentIds(targetId) {
       const doc = q.docs[0];
       out.add(String(doc.id));
       const d = doc.data() || {};
-      if (d.user_id) out.add(String(d.user_id));
       if (d.uid) out.add(String(d.uid));
+      if (d.user_id) out.add(String(d.user_id));
     }
   } catch {}
   return Array.from(out);
@@ -96,7 +96,7 @@ export default async function handler(req, res) {
 
   const auth = await verifyAuth(req, res);
   if (!auth) return;
-  const uid = auth.uid;
+  const payerUid = auth.uid;
 
   const { lessonId, forStudent } = readBody(req);
   if (!lessonId) return res.status(400).json({ error: 'MISSING_LESSON_ID' });
@@ -117,11 +117,11 @@ export default async function handler(req, res) {
   }
 
   // Accès payeur : élève lui-même ou parent lié
-  const payerIsStudent = aliases.some((a) => String(a) === String(uid));
+  const payerIsStudent = aliases.some((a) => String(a) === String(payerUid));
   const payerIsParent =
     (lesson.participantsMap?.[participantId]?.parent_id &&
-      String(lesson.participantsMap[participantId].parent_id) === String(uid)) ||
-    (lesson.parent_id && String(lesson.parent_id) === String(uid));
+      String(lesson.participantsMap[participantId].parent_id) === String(payerUid)) ||
+    (lesson.parent_id && String(lesson.parent_id) === String(payerUid));
   if (!payerIsStudent && !payerIsParent) {
     return res.status(403).json({ error: 'NOT_ALLOWED' });
   }
@@ -131,7 +131,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'ALREADY_PAID' });
   }
 
-  // Éligible ?
+  // Éligible à payer ?
   const isGroup = Array.isArray(lesson?.participant_ids) && lesson.participant_ids.length > 0;
   if (isGroup) {
     const st = participantStatus(lesson, participantId);
@@ -139,7 +139,8 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'PARTICIPANT_NOT_CONFIRMED' });
     }
   } else {
-    if (lesson.status !== 'confirmed') {
+    if (!(lesson.status === 'confirmed' || lesson.status === 'completed')) {
+      // on autorise aussi si déjà completed (paiement en retard)
       return res.status(400).json({ error: 'LESSON_NOT_CONFIRMED' });
     }
   }
@@ -152,26 +153,25 @@ export default async function handler(req, res) {
   const totalCents = teacherAmountCents + siteFeeCents;
   if (!(totalCents > 0)) return res.status(400).json({ error: 'INVALID_AMOUNT' });
 
-  // Transfert vers le compte du prof (si connecté)
-  let transferData = undefined;
-  try {
-    if (lesson.teacher_id && teacherAmountCents > 0) {
-      const u = await adminDb.collection('users').doc(String(lesson.teacher_id)).get();
-      if (u.exists) {
-        const d = u.data();
-        if (d?.stripeAccountId) {
-          transferData = { destination: d.stripeAccountId, amount: teacherAmountCents };
-        }
-      }
-    }
-  } catch {}
+  // (Option A) — Encaissement sur la plateforme (PAS de transfer_data)
+  // On enverra l'argent au prof plus tard via un cron/CF (Stripe Transfers).
 
   // URLs
   const origin =
     req.headers?.origin ||
     `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}`;
 
-  // Session Checkout
+  // Métadonnées (sur la Session ET sur le PaymentIntent)
+  const commonMetadata = {
+    lesson_id: String(lessonId),
+    for_student: String(participantId),           // élève ciblé (clé pour maj participantsMap)
+    teacher_uid: String(lesson.teacher_id || ''), // prof
+    teacher_amount_cents: String(teacherAmountCents),
+    site_fee_cents: String(siteFeeCents),
+    is_group: String(!!isGroup),
+    payer_uid: String(payerUid || ''),
+  };
+
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
     payment_method_types: ['card'],
@@ -188,17 +188,25 @@ export default async function handler(req, res) {
         quantity: 1,
       },
     ],
-    metadata: {
-      lesson_id: String(lessonId),
-      for_student: String(participantId), // identifiant normalisé qui MATCHE la leçon
-      teacher_amount_cents: String(teacherAmountCents),
-      site_fee_cents: String(siteFeeCents),
-      is_group: String(!!isGroup),
-    },
-    ...(transferData ? { payment_intent_data: { transfer_data: transferData } } : {}),
+    currency: 'eur',
+    metadata: commonMetadata,               // lisible depuis checkout.session.completed
+    payment_intent_data: { metadata: commonMetadata }, // lisible depuis payment_intent.succeeded
     success_url: `${origin}/pay/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/pay/cancel`,
   });
+
+  // Pré-écrire un suivi "payments" => status 'pending' (passera à 'held' au webhook)
+  await adminDb.collection('payments').doc(session.id).set({
+    session_id: session.id,
+    lesson_id: String(lessonId),
+    for_student: String(participantId),
+    teacher_uid: String(lesson.teacher_id || ''),
+    gross_eur: totalCents / 100,
+    fee_eur: siteFeeCents / 100,
+    net_to_teacher_eur: teacherAmountCents / 100,
+    status: 'pending',
+    created_at: new Date(),
+  }, { merge: true });
 
   return res.json({ url: session.url });
 }

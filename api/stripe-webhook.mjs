@@ -21,16 +21,14 @@ export default async function handler(req, res) {
   try {
     switch (event.type) {
       case 'checkout.session.completed': {
-        // On peut lire session -> payment_intent puis récupérer tous les metadata
         const session = event.data.object;
-        const piId = session.payment_intent;
-        const pi = await stripe.paymentIntents.retrieve(piId);
-        await handlePaid(pi);
+        // Peut suffire (les metadata sont sur la Session ET sur le PI via payment_intent_data.metadata)
+        await markPaymentHeldAndUpdateLesson({ sessionId: session.id, paymentIntentId: session.payment_intent }, session.metadata);
         break;
       }
       case 'payment_intent.succeeded': {
         const pi = event.data.object;
-        await handlePaid(pi);
+        await markPaymentHeldAndUpdateLesson({ sessionId: null, paymentIntentId: pi.id }, pi.metadata);
         break;
       }
       default:
@@ -43,35 +41,84 @@ export default async function handler(req, res) {
   }
 }
 
-async function handlePaid(pi) {
-  const md = pi.metadata || {};
-  const lessonId = md.lesson_id;
-  if (!lessonId) return;
+async function markPaymentHeldAndUpdateLesson(refs, metadata) {
+  // Récup métadonnées robustes
+  const md = metadata || {};
+  const lessonId = md.lesson_id || md.lessonId;
+  const forStudent = md.for_student || md.student_id || md.studentId;
+  const teacherUid = md.teacher_uid || md.teacher_id || '';
+  const teacherAmountCents = Number(md.teacher_amount_cents || 0);
+  const siteFeeCents = Number(md.site_fee_cents || 0);
+  const isGroup = String(md.is_group || '') === 'true';
+  const payerUid = md.payer_uid || '';
 
-  const grossCents = pi.amount_received || pi.amount || 0;
-  const feeCents = Number(md.platform_fee_cents || 0); // pas obligatoire ici
-  const payerUserId = md.booked_by || md.parent_id || md.student_id || md.created_by || '';
+  if (!lessonId) return; // rien à faire sans leçon
 
-  // Mise à jour de la leçon
-  const ref = adminDb.collection('lessons').doc(lessonId);
-  await ref.set({
-    is_paid: true,
-    paid_at: new Date(),
-    paid_by: payerUserId || null,
-    total_amount: grossCents / 100,
-    payment_intent_id: pi.id,
-    stripe_charge_id: (pi.charges?.data?.[0]?.id) || null,
-  }, { merge: true });
+  // Récupérer le PaymentIntent complet (pour charge / montants exacts)
+  let pi = null;
+  if (refs.paymentIntentId) {
+    pi = await stripe.paymentIntents.retrieve(refs.paymentIntentId, { expand: ['latest_charge.balance_transaction'] });
+  }
+  const charge = pi?.charges?.data?.[0] || null;
+  const grossCents = pi?.amount_received ?? pi?.amount ?? 0;
 
-  // Optionnel : écrire un enregistrement “payments”
-  await adminDb.collection('payments').add({
-    created_at: new Date(),
-    lesson_id: lessonId,
-    teacher_id: md.teacher_id || null,
-    student_id: md.student_id || null,
-    payer_id: payerUserId || null,
-    model: md.model || 'unknown',
-    amount_cents: grossCents,
-    // La commission exacte de Stripe se trouve dans balance_transaction -> fees ; si besoin, retrieve charge.balance_transaction.
-  });
+  // 1) Mettre à jour la leçon : payé POUR L'ÉLÈVE ciblé, afin d'éviter un double paiement
+  const lessonRef = adminDb.collection('lessons').doc(String(lessonId));
+  const lessonSnap = await lessonRef.get();
+  if (lessonSnap.exists) {
+    if (isGroup && forStudent) {
+      await lessonRef.set({
+        participantsMap: {
+          [String(forStudent)]: {
+            is_paid: true,
+            paid_at: new Date(),
+            paid_by: payerUid || null,
+            ...(lessonSnap.data()?.participantsMap?.[String(forStudent)] || {}),
+          }
+        }
+      }, { merge: true });
+    } else {
+      await lessonRef.set({
+        is_paid: true,
+        paid_at: new Date(),
+        paid_by: payerUid || null,
+        total_amount: (grossCents || 0) / 100,
+        payment_intent_id: pi?.id || null,
+        stripe_charge_id: charge?.id || null,
+      }, { merge: true });
+    }
+  }
+
+  // 2) Marquer le paiement “held” côté payments (en attente de versement prof)
+  const paymentDocId = refs.sessionId || refs.paymentIntentId;
+  if (paymentDocId) {
+    await adminDb.collection('payments').doc(paymentDocId).set({
+      status: 'held',                  // ✅ argent encaissé par la plateforme, pas encore versé au prof
+      updated_at: new Date(),
+      lesson_id: String(lessonId),
+      for_student: forStudent ? String(forStudent) : null,
+      teacher_uid: teacherUid || null,
+      gross_eur: (grossCents || 0) / 100,
+      fee_eur: (siteFeeCents || 0) / 100,
+      net_to_teacher_eur: Math.max(0, teacherAmountCents) / 100,
+      payment_intent_id: pi?.id || refs.paymentIntentId || null,
+      stripe_charge_id: charge?.id || null,
+      // Tu pourras plus tard compléter lors du “release” avec transfer_id, released_at, etc.
+    }, { merge: true });
+  } else {
+    // fallback: ajouter un record si pas de sessionId
+    await adminDb.collection('payments').add({
+      status: 'held',
+      created_at: new Date(),
+      updated_at: new Date(),
+      lesson_id: String(lessonId),
+      for_student: forStudent ? String(forStudent) : null,
+      teacher_uid: teacherUid || null,
+      gross_eur: (grossCents || 0) / 100,
+      fee_eur: (siteFeeCents || 0) / 100,
+      net_to_teacher_eur: Math.max(0, teacherAmountCents) / 100,
+      payment_intent_id: pi?.id || null,
+      stripe_charge_id: charge?.id || null,
+    });
+  }
 }
