@@ -3,8 +3,7 @@ import DashboardLayout from '../components/DashboardLayout';
 import { auth, db, storage } from '../lib/firebase';
 import { doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { ref as sRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { onAuthStateChanged, signOut, sendPasswordResetEmail, deleteUser } from 'firebase/auth';
-
+import { onAuthStateChanged, signOut, sendPasswordResetEmail, deleteUser, EmailAuthProvider, reauthenticateWithCredentia} from 'firebase/auth';
 import TeacherAvailabilityEditor from '../components/TeacherAvailabilityEditor';
 import PaymentStatusCard from '../components/stripe/PaymentStatusCard';
 import StripeConnectButtons from '../components/stripe/StripeConnectButtons';
@@ -161,29 +160,44 @@ export default function Profile() {
     alert('Un email de réinitialisation a été envoyé.');
   };
 
+  async function callDeleteAccount() {
+    const idToken = await auth.currentUser.getIdToken(/* forceRefresh */ true);
+    const r = await fetch('/api/delete-account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+    });
+    const json = await r.json();
+    if (!r.ok) throw new Error(json?.error || 'Deletion failed');
+    return json;
+  }
+
   const handleDeleteAccount = async () => {
-    if (!window.confirm('Êtes-vous sûr de vouloir supprimer votre compte ? Cette action est irréversible.')) return;
-    if (!profile.uid) return;
-    setSaving(true);
+    if (!window.confirm(
+      "Supprimer définitivement votre compte ?\n" +
+      "Cette action supprimera votre profil, vos fichiers et (si prof) votre compte Stripe."
+    )) return;
+
     try {
-      if (profile.avatarUrl) {
-        try {
-          const r = sRef(storage, `avatars/${profile.uid}`);
-          await deleteObject(r);
-        } catch {}
-      }
-      await deleteDoc(doc(db, 'users', profile.uid));
-      await deleteUser(auth.currentUser);
+      await callDeleteAccount();
       alert('Compte supprimé. À bientôt !');
+      // Plus de compte à ce stade (côté serveur on a déjà supprimé Auth)
       window.location.href = '/';
-    } catch (error) {
-      if (String(error?.code || '').includes('requires-recent-login')) {
-        alert('Pour des raisons de sécurité, reconnecte-toi puis réessaie.');
+    } catch (err) {
+      const msg = String(err?.message || err || '');
+      if (msg.includes('requires-recent-login')) {
+        // Réauthentifier
+        const email = auth.currentUser?.email || '';
+        const pwd = window.prompt(`Par sécurité, entrez votre mot de passe (${email}) :`);
+        if (!pwd) return;
+        const cred = EmailAuthProvider.credential(email, pwd);
+        await reauthenticateWithCredential(auth.currentUser, cred);
+        // Réessaye
+        await callDeleteAccount();
+        alert('Compte supprimé. À bientôt !');
+        window.location.href = '/';
       } else {
-        alert('Erreur lors de la suppression : ' + error.message);
+        alert('Erreur de suppression : ' + msg);
       }
-    } finally {
-      setSaving(false);
     }
   };
 
