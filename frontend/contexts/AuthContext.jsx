@@ -9,7 +9,7 @@ export function AuthProvider({ children }) {
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
-    // Persistance locale (onglet/refresh)
+    // ✅ Persistance locale pour ne pas être déconnecté au refresh
     setPersistence(auth, browserLocalPersistence).finally(() => {
       const unsub = onAuthStateChanged(auth, (u) => {
         setUser(u);
