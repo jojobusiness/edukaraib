@@ -4,8 +4,8 @@
 // est atteinte (Option A - payouts différés).
 // -----------------------------------------------------------------------------
 
-import { stripe } from './_stripe.mjs';
-import { adminDb } from './_firebaseAdmin.mjs';
+import { stripe } from './api/_stripe.mjs';
+import { adminDb } from './api/_firebaseAdmin.mjs';
 
 /**
  * Récupère un Date js à partir d'un champ Firestore qui peut être:

@@ -1,16 +1,14 @@
-import { releaseDuePayouts } from './release-payouts-cron.mjs';
+import { releaseDuePayouts } from '../release-payouts-cron.mjs';
 
-// ✅ Endpoint HTTP pour libérer les paiements
 export default async function handler(req, res) {
-  // (Optionnel) protège par une clé secrète
-  const secret = process.env.CRON_SECRET;
   const headerKey = req.headers['x-cron-key'];
+  const qsKey = req.query?.key || req.query?.cron_key; // ✅ fallback pour tests navigateur
+  const secret = process.env.CRON_SECRET;
 
-  if (secret && headerKey !== secret) {
+  if (secret && headerKey !== secret && qsKey !== secret) {
     return res.status(403).json({ error: 'FORBIDDEN' });
   }
 
-  // Exécution
   try {
     await releaseDuePayouts(req, res);
   } catch (e) {
