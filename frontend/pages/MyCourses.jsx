@@ -191,7 +191,7 @@ export default function MyCourses() {
     const uid = auth.currentUser?.uid;
     const list = courses
       .filter(l => isConfirmedForUser(l, uid) && FR_DAY_CODES.includes(l.slot_day))
-      .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
+      .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) } ))
       .filter(l => l.startAt && l.startAt > now)
       .sort((a, b) => a.startAt - b.startAt);
     return list[0] || null;
@@ -335,7 +335,10 @@ export default function MyCourses() {
             </button>
           )}
           {showReview && (
-            <button className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => { setReviewLesson(c); setReviewOpen(true); }}>
+            <button
+              className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded shadow font-semibold"
+              onClick={() => { setReviewLesson(c); setReviewOpen(true); }}
+            >
               ⭐ Laisser un avis
             </button>
           )}
@@ -463,7 +466,18 @@ export default function MyCourses() {
 
       {/* Modals */}
       <DocumentsModal open={docOpen} onClose={() => setDocOpen(false)} lesson={docLesson} allowUpload={false} />
-      <ReviewModal open={reviewOpen} onClose={() => setReviewOpen(false)} lesson={reviewLesson} onSent={() => {}} />
+      {/* 👉 permet plusieurs avis sur le même cours */}
+      <ReviewModal
+        open={reviewOpen}
+        onClose={() => setReviewOpen(false)}
+        lesson={reviewLesson}
+        allowMultiple={true}
+        lessonId={reviewLesson?.id || null}
+        teacherId={reviewLesson?.teacher_id || null}
+        reviewerId={auth.currentUser?.uid || null}
+        key={reviewLesson?.id || 'review-modal'}
+        onSent={() => {}}
+      />
     </DashboardLayout>
   );
 }

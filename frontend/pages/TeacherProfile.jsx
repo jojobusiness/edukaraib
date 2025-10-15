@@ -20,12 +20,34 @@ function countAccepted(l) {
   return accepted;
 }
 
+// Helpers pour afficher le nom / avatar d'un utilisateur ou élève
+function pickDisplayName(x = {}) {
+  return (
+    x.fullName ||
+    x.full_name ||
+    x.name ||
+    x.displayName ||
+    [x.first_name, x.last_name].filter(Boolean).join(' ') ||
+    (x.profile && (x.profile.full_name || x.profile.name)) ||
+    ''
+  );
+}
+function pickAvatar(x = {}) {
+  return x.avatarUrl || x.avatar_url || x.photoURL || (x.profile && x.profile.avatar) || '';
+}
+// Renvoie l'ID du rédacteur de l'avis, selon les champs possibles
+function getReviewerId(r = {}) {
+  return r.reviewer_id || r.author_id || r.user_id || r.student_id || r.created_by || null;
+}
+
 export default function TeacherProfile() {
   const { teacherId } = useParams();
   const navigate = useNavigate();
 
   const [teacher, setTeacher] = useState(null);
   const [reviews, setReviews] = useState([]);
+  const [reviewerInfo, setReviewerInfo] = useState({}); // { reviewerId: {name, avatar} }
+
   const [bookedSlots, setBookedSlots] = useState([]); // [{day,hour}] déjà pleins
   const [showBooking, setShowBooking] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
@@ -43,9 +65,9 @@ export default function TeacherProfile() {
 
       const qReviews = query(collection(db, 'reviews'), where('teacher_id', '==', teacherId));
       const rSnap = await getDocs(qReviews);
-      if (!cancelled) setReviews(rSnap.docs.map((d) => d.data()));
+      if (!cancelled) setReviews(rSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
 
-      // slots occupés (confirmés ou groupes complets seulement)
+      // slots occupés (confirmés, réservés, ou groupes complets)
       const lessonsQ = query(collection(db, 'lessons'), where('teacher_id', '==', teacherId));
       const lessonsSnap = await getDocs(lessonsQ);
       const full = new Map();
@@ -55,9 +77,6 @@ export default function TeacherProfile() {
         if (!l.slot_day && l.slot_hour == null) return;
         const key = `${l.slot_day}|${l.slot_hour}`;
 
-        // ✅ On considère occupé si :
-        // - cours confirmé OU réservé (status booked)
-        // - OU groupe plein
         const isConfirmed = l.status === 'confirmed' || l.status === 'booked';
         const isFullGroup =
           l.is_group &&
@@ -68,14 +87,62 @@ export default function TeacherProfile() {
           full.set(key, true);
         }
       });
-      
-      setBookedSlots(Array.from(full.keys()).map(k => {
-        const [day, hour] = k.split('|');
-        return { day, hour: Number(hour) };
-      }));
+
+      setBookedSlots(
+        Array.from(full.keys()).map((k) => {
+          const [day, hour] = k.split('|');
+          return { day, hour: Number(hour) };
+        })
+      );
     })();
     return () => { cancelled = true; };
   }, [teacherId]);
+
+  // Récupération des infos (nom + avatar) des auteurs des avis
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const ids = Array.from(
+        new Set(
+          reviews
+            .map((r) => getReviewerId(r))
+            .filter(Boolean)
+        )
+      ).filter((id) => !(id in reviewerInfo));
+
+      if (ids.length === 0) return;
+
+      const entries = await Promise.all(ids.map(async (id) => {
+        try {
+          // On tente d'abord dans users
+          const u = await getDoc(doc(db, 'users', id));
+          if (u.exists()) {
+            const ux = u.data();
+            return [id, { name: pickDisplayName(ux) || 'Utilisateur', avatar: pickAvatar(ux) || '' }];
+          }
+        } catch {}
+        try {
+          // Puis dans students (si l'avis a été laissé avec un compte élève distinct)
+          const s = await getDoc(doc(db, 'students', id));
+          if (s.exists()) {
+            const sx = s.data();
+            return [id, { name: pickDisplayName(sx) || 'Élève', avatar: pickAvatar(sx) || '' }];
+          }
+        } catch {}
+        return [id, { name: 'Utilisateur', avatar: '' }];
+      }));
+
+      if (!cancelled) {
+        setReviewerInfo((prev) => {
+          const next = { ...prev };
+          entries.forEach(([id, val]) => { next[id] = val; });
+          return next;
+        });
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [reviews]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let cancelled = false;
@@ -288,7 +355,7 @@ export default function TeacherProfile() {
 
     const me = auth.currentUser;
     const targetStudentId = selectedStudentId || me.uid;
-    const bookingFor = isParent && targetStudentId !== me.uid ? 'child' : 'self';
+    const bookingFor = currentRole === 'parent' && targetStudentId !== me.uid ? 'child' : 'self';
 
     const slots = Array.isArray(selected) ? selected : [selected];
 
@@ -436,24 +503,53 @@ export default function TeacherProfile() {
           <BookingModal
             availability={teacher.availability || {}}
             bookedSlots={bookedSlots}
-            // ✅ nouveau comportement : accepte un tableau de slots OU un slot unique
+            // ✅ accepte un tableau de slots OU un slot unique
             onBook={handleBooking}
             onClose={() => setShowBooking(false)}
             orderDays={DAYS_ORDER}
-            // ⬇️ Indice pour ton composant modal (si tu le fais évoluer)
             multiSelect={true}
           />
         )}
 
         <h3 className="text-lg font-bold text-secondary mt-6 mb-3">Avis</h3>
         <div className="flex flex-col gap-3">
-          {reviews.length === 0 && <div className="text-gray-400 text-sm">Aucun avis pour ce professeur.</div>}
-          {reviews.map((r, idx) => (
-            <div key={idx} className="bg-gray-50 border rounded-xl px-4 py-3">
-              <span className="text-yellow-500 mr-2">{'★'.repeat(r.rating || 0)}</span>
-              <span className="italic">{r.comment}</span>
-            </div>
-          ))}
+          {reviews.length === 0 && (
+            <div className="text-gray-400 text-sm">Aucun avis pour ce professeur.</div>
+          )}
+
+          {reviews.map((r) => {
+            const rid = getReviewerId(r);
+            const info = (rid && reviewerInfo[rid]) || {};
+            const name = info.name || 'Utilisateur';
+            const avatar = info.avatar || '/avatar-default.png';
+            const rating = r.rating || 0;
+            return (
+              <div key={r.id} className="bg-gray-50 border rounded-xl px-4 py-3">
+                {/* En-tête auteur de l'avis */}
+                <div className="flex items-center gap-3 mb-2">
+                  <img
+                    src={avatar}
+                    alt={name}
+                    className="w-8 h-8 rounded-full object-cover border"
+                  />
+                  <div className="flex flex-col">
+                    <span className="text-sm font-semibold text-gray-800">{name}</span>
+                    {r.created_at?.toDate && (
+                      <span className="text-xs text-gray-400">
+                        {r.created_at.toDate().toLocaleDateString('fr-FR')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Note + commentaire */}
+                <div className="flex items-start gap-2">
+                  <span className="text-yellow-500">{'★'.repeat(Math.min(5, Math.max(0, Math.round(rating))))}</span>
+                  <span className="italic text-gray-700">{r.comment}</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

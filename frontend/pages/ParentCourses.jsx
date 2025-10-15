@@ -493,7 +493,10 @@ export default function ParentCourses() {
             📄 Documents
           </button>
           {c.status === 'completed' && (
-            <button className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => { setReviewLesson(c); setReviewOpen(true); }}>
+            <button
+              className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded shadow font-semibold"
+              onClick={() => { setReviewLesson(c); setReviewOpen(true); }}
+            >
               ⭐ Laisser un avis
             </button>
           )}
@@ -644,7 +647,22 @@ export default function ParentCourses() {
 
       {/* Modals */}
       <DocumentsModal open={docOpen} onClose={() => setDocOpen(false)} lesson={docLesson} allowUpload={false} />
-      <ReviewModal open={reviewOpen} onClose={() => setReviewOpen(false)} lesson={reviewLesson} onSent={() => {}} />
+      {/* 👉 autorise plusieurs avis, y compris 1 par enfant */}
+      <ReviewModal
+        open={reviewOpen}
+        onClose={() => setReviewOpen(false)}
+        lesson={reviewLesson}
+        allowMultiple={true}
+        lessonId={reviewLesson?.id || null}
+        teacherId={reviewLesson?.teacher_id || null}
+        reviewerIds={
+          // enfants concernés par cette leçon (ou vide)
+          (reviewLesson?.participant_ids && reviewLesson.participant_ids.filter((id) => kidIds.includes(id))) ||
+          (reviewLesson?.student_id ? [reviewLesson.student_id] : [])
+        }
+        key={reviewLesson?.id || 'review-modal'}
+        onSent={() => {}}
+      />
     </DashboardLayout>
   );
 }
