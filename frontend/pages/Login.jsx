@@ -93,6 +93,11 @@ export default function Login() {
           Pas encore de compte ?{" "}
           <Link to="/register" className="text-primary font-semibold hover:underline">Créer un compte</Link>
         </div>
+        <div className="mt-3 text-center">
+          <Link to="/" className="inline-block bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-semibold hover:bg-gray-200 transition">
+          ⬅️ Retour à l’accueil
+          </Link>
+        </div>
       </div>
     </div>
   );

@@ -1,12 +1,60 @@
 import React, { useEffect, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import { auth, db, storage } from '../lib/firebase';
-import { doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { ref as sRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { onAuthStateChanged, signOut, sendPasswordResetEmail, deleteUser, EmailAuthProvider, reauthenticateWithCredentia} from 'firebase/auth';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import {
+  onAuthStateChanged,
+  signOut,
+  sendPasswordResetEmail,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+} from 'firebase/auth';
 import TeacherAvailabilityEditor from '../components/TeacherAvailabilityEditor';
 import PaymentStatusCard from '../components/stripe/PaymentStatusCard';
 import StripeConnectButtons from '../components/stripe/StripeConnectButtons';
+
+/* ====== Contrôles de saisie (alignés avec Register) ====== */
+// Communes officielles de Guyane (22)
+const GUYANE_COMMUNES = [
+  'Apatou',
+  'Awala-Yalimapo',
+  'Camopi',
+  'Cayenne',
+  'Grand-Santi',
+  'Iracoubo',
+  'Kourou',
+  'Macouria',
+  'Mana',
+  'Maripasoula',
+  'Matoury',
+  'Montsinéry-Tonnegrande',
+  'Ouanary',
+  'Papaïchton',
+  'Régina',
+  'Rémire-Montjoly',
+  'Roura',
+  'Saint-Élie',
+  'Saint-Georges',
+  'Saint-Laurent-du-Maroni',
+  'Saül',
+  'Sinnamary',
+];
+const NAME_CHARS_REGEX = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]*$/;  // saisie incrémentale
+const NAME_MIN2_REGEX  = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]{2,}$/; // contrôle final (≥2)
+const PHONE_REGEX = /^[+0-9 ()-]{7,20}$/;
+
+const normalize = (s) =>
+  (s || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .trim();
+
+const existsCity = (city) => {
+  const n = normalize(city);
+  return GUYANE_COMMUNES.some((c) => normalize(c) === n);
+};
 
 export default function Profile() {
   const [userLoaded, setUserLoaded] = useState(false);
@@ -30,7 +78,7 @@ export default function Profile() {
     stripeChargesEnabled: false,
     stripeDetailsSubmitted: false,
 
-    // 🚀 NOUVEAU : paramètres cours de groupe (déjà consommés ailleurs)
+    // paramètres cours de groupe
     group_enabled: false,
     group_capacity: 1,
   });
@@ -68,7 +116,7 @@ export default function Profile() {
     return () => unsub();
   }, []);
 
-  // Champs dynamiques
+  // Champs dynamiques (UI)
   const fields = [
     { name: 'fullName', label: 'Nom complet', required: true, type: 'text' },
     { name: 'phone', label: 'Téléphone', type: 'tel' },
@@ -94,8 +142,38 @@ export default function Profile() {
     if (f) setAvatarFile(f);
   };
 
+  // ✅ Contrôles au fil de la frappe (similaires à Register)
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
+
+    // Nom complet : autoriser lettres/espaces/-/’ uniquement
+    if (name === 'fullName') {
+      if (NAME_CHARS_REGEX.test(value)) {
+        setProfile((p) => ({ ...p, fullName: value }));
+      }
+      return;
+    }
+
+    // Téléphone : contraindre aux caractères autorisés
+    if (name === 'phone') {
+      if (/^[+0-9 ()-]*$/.test(value)) {
+        setProfile((p) => ({ ...p, phone: value }));
+      }
+      return;
+    }
+
+    // Ville : laisser taper tout, on validera à l'enregistrement
+    if (name === 'city') {
+      setProfile((p) => ({ ...p, city: value }));
+      return;
+    }
+
+    // price_per_hour / group_capacity : laisser faire l'input number (coercion au submit)
+    if (name === 'price_per_hour' || name === 'group_capacity') {
+      setProfile((p) => ({ ...p, [name]: value }));
+      return;
+    }
+
     setProfile((p) => ({
       ...p,
       [name]: type === 'checkbox' ? !!checked : value,
@@ -105,8 +183,38 @@ export default function Profile() {
   const handleSave = async (e) => {
     e.preventDefault();
     if (!profile.uid) return;
+
+    // ✅ Validations finales (anti-fausses valeurs)
+    if (!NAME_MIN2_REGEX.test(profile.fullName || '')) {
+      return alert('Nom complet invalide (2 caractères minimum, lettres/espaces/-/’).');
+    }
+    if (profile.phone && !PHONE_REGEX.test(profile.phone)) {
+      return alert('Numéro de téléphone invalide.');
+    }
+    if (profile.city && !existsCity(profile.city)) {
+      return alert('Ville inconnue : indique une commune de Guyane (liste officielle).');
+    }
+
+    // Prix et capacité : nombres sûrs
+    const priceNum =
+      profile.price_per_hour === '' || profile.price_per_hour === null
+        ? null
+        : Number(profile.price_per_hour);
+    const capacityNum =
+      profile.group_capacity === '' || profile.group_capacity === null
+        ? 1
+        : Number(profile.group_capacity);
+
+    if (priceNum !== null && (Number.isNaN(priceNum) || priceNum < 0)) {
+      return alert("Le prix à l'heure doit être un nombre ≥ 0.");
+    }
+    if (Number.isNaN(capacityNum) || capacityNum < 1) {
+      return alert('La capacité de groupe doit être un entier ≥ 1.');
+    }
+
     setSaving(true);
     try {
+      // Upload avatar si présent
       let avatarUrl = profile.avatarUrl || '';
       if (avatarFile) {
         const path = `avatars/${profile.uid}`;
@@ -117,23 +225,15 @@ export default function Profile() {
 
       const ref = doc(db, 'users', profile.uid);
 
-      // conversions numériques sûres
-      const priceNum =
-        profile.price_per_hour === '' || profile.price_per_hour === null
-          ? null
-          : Number(profile.price_per_hour);
-      const capacityNum =
-        profile.group_capacity === '' || profile.group_capacity === null
-          ? 1
-          : Math.max(1, Number(profile.group_capacity));
-
       const toSave = {
         ...profile,
         avatarUrl,
-        // on réécrit les champs qui doivent être num/boolean
-        price_per_hour: typeof priceNum === 'number' && !Number.isNaN(priceNum) ? priceNum : 0,
+        price_per_hour: priceNum === null || Number.isNaN(priceNum) ? 0 : Number(priceNum),
         group_enabled: !!profile.group_enabled,
-        group_capacity: Number.isNaN(capacityNum) ? 1 : capacityNum,
+        group_capacity: Number.isNaN(capacityNum) ? 1 : Math.max(1, Math.floor(capacityNum)),
+        fullName: (profile.fullName || '').trim(),
+        city: (profile.city || '').trim(),
+        phone: (profile.phone || '').trim(),
       };
       delete toSave.uid; // uid n'est pas stocké dans le doc
 
@@ -180,7 +280,6 @@ export default function Profile() {
     try {
       await callDeleteAccount();
       alert('Compte supprimé. À bientôt !');
-      // Plus de compte à ce stade (côté serveur on a déjà supprimé Auth)
       window.location.href = '/';
     } catch (err) {
       const msg = String(err?.message || err || '');
@@ -256,7 +355,7 @@ export default function Profile() {
             </div>
           ))}
 
-          {/* ⚙️ Réglage des cours de groupe pour PROF */}
+          {/* Réglage des cours de groupe pour PROF */}
           {profile.role === 'teacher' && (
             <div className="rounded-xl border border-gray-200 p-4 space-y-3 bg-gray-50">
               <div className="flex items-center justify-between">
@@ -341,6 +440,7 @@ export default function Profile() {
           >
             Changer de mot de passe
           </button>
+          {/* Suppression de compte : réauthentification déjà gérée si nécessaire via reauthenticateWithCredential */}
           <button
             onClick={handleDeleteAccount}
             className="w-full bg-red-100 text-red-800 font-semibold py-2 rounded-lg hover:bg-red-200 transition"

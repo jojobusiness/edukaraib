@@ -8,11 +8,13 @@ import {
   where,
   doc,
   getDoc,
+  orderBy,
+  limit,
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
 import fetchWithAuth from '../utils/fetchWithAuth';
 
-const SITE_FEE_EUR = 10; // +10 € frais plateforme (affichage & totaux)
+const SITE_FEE_EUR = 10; // montant ajouté au prix prof pour l'affichage & le total
 
 const fmtDateTime = (start_datetime, slot_day, slot_hour) => {
   if (start_datetime?.toDate) { try { return start_datetime.toDate().toLocaleString('fr-FR'); } catch {} }
@@ -38,9 +40,7 @@ const isPaidForStudent = (lesson, studentId) => {
   return false;
 };
 
-// ✅ éligible au paiement POUR L’ENFANT concerné :
-// - individuel => statut ∈ {confirmed, completed} ET l’élève correspond
-// - groupé     => statut du participant ∈ {accepted, confirmed}
+// éligible au paiement pour l’enfant concerné
 const isEligibleForChildPayment = (lesson, childId) => {
   if (!childId || !lesson) return false;
   if (lesson.is_group) {
@@ -55,8 +55,9 @@ export default function ParentPayments() {
   const [paid, setPaid] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // ✅ clé par (leçon, enfant) — évite le bug sur groupes simultanés
+  // clés d’action par ligne
   const [payingKey, setPayingKey] = useState(null);
+  const [refundingKey, setRefundingKey] = useState(null);
 
   const teacherCacheRef = useRef(new Map());
   const childNameCacheRef = useRef(new Map());
@@ -148,15 +149,12 @@ export default function ParentPayments() {
 
         const notPendingTeacher = (r) => r.lesson.status !== 'pending_teacher';
 
-        // À régler : éligible pour l’enfant (inclut confirmed OU completed pour les individuels),
-        // non payé, pas pending_teacher
         const unpaid = rows.filter((r) =>
           isEligibleForChildPayment(r.lesson, r.forStudent) &&
           !isPaidForStudent(r.lesson, r.forStudent) &&
           notPendingTeacher(r)
         );
 
-        // Payé : payé pour l'enfant, pas pending_teacher
         const paidEligible = rows.filter((r) =>
           isPaidForStudent(r.lesson, r.forStudent) &&
           notPendingTeacher(r)
@@ -191,7 +189,6 @@ export default function ParentPayments() {
       });
     })();
 
-    // 🔁 cleanup des subscriptions
     return () => {
       unsubscribers.forEach((u) => u && u());
     };
@@ -231,6 +228,56 @@ export default function ParentPayments() {
     }
   };
 
+  // --- Résolution du paymentId (payments) pour rembourser ---
+  const resolvePaymentId = async (lessonId, forStudent) => {
+    try {
+      // On récupère le plus récent paiement non remboursé pour cet élève et cette leçon
+      let qBase = query(
+        collection(db, 'payments'),
+        where('lesson_id', '==', String(lessonId)),
+        where('for_student', '==', String(forStudent)),
+        where('status', 'in', ['held', 'released'])
+      );
+      // si les règles ne permettent pas 'in', on peut faire 2 requêtes (held puis released)
+
+      qBase = query(qBase, orderBy('created_at', 'desc'), limit(1));
+      const snap = await getDocs(qBase);
+      if (!snap.empty) return snap.docs[0].id;
+
+      // fallback: il peut exister un doc avec session_id = id, mais au cas où
+      return null;
+    } catch (e) {
+      console.error('resolvePaymentId error', e);
+      return null;
+    }
+  };
+
+  const handleRefund = async (row) => {
+    const key = `${row.lesson.id}:${row.forStudent}`;
+    try {
+      setRefundingKey(key);
+      const paymentId = await resolvePaymentId(row.lesson.id, row.forStudent);
+      if (!paymentId) {
+        alert("Impossible de retrouver le paiement pour ce cours.");
+        return;
+      }
+
+      const resp = await fetchWithAuth('/api/refund', {
+        method: 'POST',
+        body: JSON.stringify({ paymentId }),
+      });
+      if (!resp || resp.error) {
+        throw new Error(resp?.error || 'Échec du remboursement');
+      }
+      alert('Demande de remboursement envoyée.');
+    } catch (e) {
+      console.error(e);
+      alert(e.message || 'Remboursement impossible.');
+    } finally {
+      setRefundingKey(null);
+    }
+  };
+
   return (
     <DashboardLayout role="parent">
       <div className="max-w-2xl mx-auto">
@@ -242,7 +289,6 @@ export default function ParentPayments() {
             <h3 className="font-bold text-secondary">Paiements à effectuer</h3>
             {!loading && <span className="text-xs text-gray-600">Total à régler : {totals.due.toFixed(2)} €</span>}
           </div>
-          <div className="text-[11px] text-gray-500 mb-3">Le montant affiché inclut <strong>10 € de frais plateforme</strong>.</div>
 
           {loading ? (
             <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Chargement…</div>
@@ -302,13 +348,26 @@ export default function ParentPayments() {
                 return (
                   <div
                     key={rowKey}
-                    className="border rounded-lg px-4 py-2 flex flex-col md:flex-row md:items-center gap-2 bg-gray-50"
+                    className="border rounded-lg px-4 py-3 flex flex-col gap-2 bg-gray-50"
                   >
-                    <span className="font-bold text-primary">{r.lesson.subject_id || 'Matière'}</span>
-                    <span className="text-xs text-gray-600">{fmtDateTime(r.lesson.start_datetime, r.lesson.slot_day, r.lesson.slot_hour)}</span>
-                    <span className="text-xs text-gray-600">Enfant : {r.childName || r.forStudent}</span>
-                    <span className="text-xs text-gray-600">Prof : {r.teacherName || r.lesson.teacher_id}</span>
-                    <span className="text-green-600 text-xs font-semibold md:ml-auto">Payé</span>
+                    <div className="flex flex-col md:flex-row md:items-center gap-2">
+                      <span className="font-bold text-primary">{r.lesson.subject_id || 'Matière'}</span>
+                      <span className="text-xs text-gray-600">{fmtDateTime(r.lesson.start_datetime, r.lesson.slot_day, r.lesson.slot_hour)}</span>
+                      <span className="text-xs text-gray-600">Enfant : {r.childName || r.forStudent}</span>
+                      <span className="text-xs text-gray-600">Prof : {r.teacherName || r.lesson.teacher_id}</span>
+                      <span className="text-green-600 text-xs font-semibold md:ml-auto">Payé</span>
+                    </div>
+
+                    {/* Bouton remboursement */}
+                    <div className="flex justify-end">
+                      <button
+                        className="text-sm px-3 py-1.5 rounded border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-60"
+                        onClick={() => handleRefund(r)}
+                        disabled={refundingKey === rowKey}
+                      >
+                        {refundingKey === rowKey ? 'Demande en cours…' : 'Demander un remboursement'}
+                      </button>
+                    </div>
                   </div>
                 );
               })}

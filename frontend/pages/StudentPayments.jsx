@@ -7,12 +7,14 @@ import {
   onSnapshot,
   query,
   where,
+  getDocs,
+  orderBy,
+  limit,
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
-import fetchWithAuth from '../utils/fetchWithAuth'; // default export
+import fetchWithAuth from '../utils/fetchWithAuth';
 
-// ----- helpers -----
-const SITE_FEE_EUR = 10; // +10 € frais plateforme (affichage & totaux)
+const SITE_FEE_EUR = 10; // affichage : prix prof + 10 €
 
 const fmtDateTime = (start_datetime, slot_day, slot_hour) => {
   if (start_datetime?.toDate) {
@@ -51,14 +53,11 @@ const isPaidForStudent = (lesson, studentId) => {
     const ent = lesson.participantsMap[studentId];
     if (ent && ent.is_paid === true) return true;
   }
-  // legacy (cours 1-élève)
   if (lesson.student_id === studentId && lesson.is_paid === true) return true;
   return false;
 };
 
-// ✅ éligible au paiement POUR MOI :
-// - individuel => statut ∈ {confirmed, completed}
-// - groupé     => status du participant ∈ {accepted, confirmed}
+// éligible au paiement pour moi
 const isEligibleForMePayment = (lesson, uid) => {
   if (!uid) return false;
   if (lesson?.is_group) {
@@ -68,16 +67,15 @@ const isEligibleForMePayment = (lesson, uid) => {
   return lesson?.status === 'confirmed' || lesson?.status === 'completed';
 };
 
-// ----- page -----
 export default function StudentPayments() {
   const [toPay, setToPay] = useState([]);
   const [paid, setPaid] = useState([]);
   const [loading, setLoading] = useState(true);
   const [payingId, setPayingId] = useState(null);
+  const [refundingId, setRefundingId] = useState(null);
   const teacherCacheRef = useRef(new Map());
   const [uid, setUid] = useState(auth.currentUser?.uid || null);
 
-  // résout le nom prof (cache)
   const teacherNameOf = async (uid) => {
     if (!uid) return 'Professeur';
     const cache = teacherCacheRef.current;
@@ -94,7 +92,6 @@ export default function StudentPayments() {
     } catch { return uid; }
   };
 
-  // 2 abonnements: legacy (student_id == uid) et groupe (participant_ids array-contains uid)
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) { setLoading(false); return; }
@@ -107,22 +104,17 @@ export default function StudentPayments() {
     let combined = new Map();
 
     const upsertAndRender = async () => {
-      // enrichir noms prof + filtrages
       const rows = Array.from(combined.values());
 
-      // hydrate teacherName
       const enriched = await Promise.all(rows.map(async (l) => ({
         ...l,
         teacherName: await teacherNameOf(l.teacher_id),
       })));
 
-// ➜ On considère éligible : confirmé OU terminé (individuel), et accepté/confirmé (groupe)
       const eligibleForMe = enriched.filter((l) => isEligibleForMePayment(l, user.uid));
-
       const unpaid = eligibleForMe.filter((l) => !isPaidForStudent(l, user.uid));
       const paidOnes = enriched.filter((l) => isPaidForStudent(l, user.uid));
 
-      // tri
       const keyTime = (l) =>
         (l.start_datetime?.toDate?.() && l.start_datetime.toDate().getTime()) ||
         (l.start_datetime?.seconds && l.start_datetime.seconds * 1000) ||
@@ -156,7 +148,6 @@ export default function StudentPayments() {
       if (!uid) return;
       setPayingId(lesson.id);
 
-      // Diagnostic (optionnel)
       const diag = await fetchWithAuth('/api/pay/diag', {
         method: 'POST',
         body: JSON.stringify({ lessonId: lesson.id, forStudent: uid }),
@@ -167,7 +158,6 @@ export default function StudentPayments() {
         return;
       }
 
-      // Créer la session de paiement
       const data = await fetchWithAuth('/api/pay/create-checkout-session', {
         method: 'POST',
         body: JSON.stringify({ lessonId: lesson.id, forStudent: uid }),
@@ -179,6 +169,47 @@ export default function StudentPayments() {
       alert(e.message || 'Impossible de démarrer le paiement.');
     } finally {
       setPayingId(null);
+    }
+  };
+
+  // --- Résolution du paymentId (payments) pour rembourser ---
+  const resolvePaymentId = async (lessonId) => {
+    try {
+      let qBase = query(
+        collection(db, 'payments'),
+        where('lesson_id', '==', String(lessonId)),
+        where('for_student', '==', String(uid)),
+        where('status', 'in', ['held', 'released'])
+      );
+      qBase = query(qBase, orderBy('created_at', 'desc'), limit(1));
+      const snap = await getDocs(qBase);
+      if (!snap.empty) return snap.docs[0].id;
+      return null;
+    } catch (e) {
+      console.error('resolvePaymentId error', e);
+      return null;
+    }
+  };
+
+  const handleRefund = async (lesson) => {
+    try {
+      setRefundingId(lesson.id);
+      const paymentId = await resolvePaymentId(lesson.id);
+      if (!paymentId) {
+        alert('Impossible de retrouver le paiement pour ce cours.');
+        return;
+      }
+      const resp = await fetchWithAuth('/api/refund', {
+        method: 'POST',
+        body: JSON.stringify({ paymentId }),
+      });
+      if (!resp || resp.error) throw new Error(resp?.error || 'Échec du remboursement');
+      alert('Demande de remboursement envoyée.');
+    } catch (e) {
+      console.error(e);
+      alert(e.message || 'Remboursement impossible.');
+    } finally {
+      setRefundingId(null);
     }
   };
 
@@ -194,9 +225,6 @@ export default function StudentPayments() {
             {!loading && (
               <span className="text-xs text-gray-600">Total à régler : {totals.due.toFixed(2)} €</span>
             )}
-          </div>
-          <div className="text-[11px] text-gray-500 mb-3">
-            Le montant affiché inclut <strong>10 € de frais plateforme</strong>.
           </div>
 
           {loading ? (
@@ -253,12 +281,25 @@ export default function StudentPayments() {
               {paid.map((l) => (
                 <div
                   key={l.id}
-                  className="border rounded-lg px-4 py-2 flex flex-col md:flex-row md:items-center gap-2 bg-gray-50"
+                  className="border rounded-lg px-4 py-3 flex flex-col gap-2 bg-gray-50"
                 >
-                  <span className="font-bold text-primary">{l.subject_id || 'Matière'}</span>
-                  <span className="text-xs text-gray-600">{fmtDateTime(l.start_datetime, l.slot_day, l.slot_hour)}</span>
-                  <span className="text-xs text-gray-600">Prof : {l.teacherName || l.teacher_id}</span>
-                  <span className="text-green-600 text-xs font-semibold md:ml-auto">Payé</span>
+                  <div className="flex flex-col md:flex-row md:items-center gap-2">
+                    <span className="font-bold text-primary">{l.subject_id || 'Matière'}</span>
+                    <span className="text-xs text-gray-600">{fmtDateTime(l.start_datetime, l.slot_day, l.slot_hour)}</span>
+                    <span className="text-xs text-gray-600">Prof : {l.teacherName || l.teacher_id}</span>
+                    <span className="text-green-600 text-xs font-semibold md:ml-auto">Payé</span>
+                  </div>
+
+                  {/* Bouton remboursement */}
+                  <div className="flex justify-end">
+                    <button
+                      className="text-sm px-3 py-1.5 rounded border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-60"
+                      onClick={() => handleRefund(l)}
+                      disabled={refundingId === l.id}
+                    >
+                      {refundingId === l.id ? 'Demande en cours…' : 'Demander un remboursement'}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
