@@ -87,12 +87,14 @@ export default function Register() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-      // autorise la frappe caractère par caractère (lettres, espaces, tirets, apostrophes)
+
+    if (name === 'firstName' || name === 'lastName') {
+      // ✅ autorise la frappe lettre par lettre, bloque chiffres/symboles
       if (NAME_CHARS_REGEX.test(value)) {
         setForm((f) => ({ ...f, [name]: value }));
       }
       return;
-      }
+    }
     setForm((f) => ({ ...f, [name]: value }));
   };
 
@@ -102,6 +104,7 @@ export default function Register() {
   const startRegister = async (e) => {
     e.preventDefault();
 
+    // ✅ validation finale (≥2 caractères)
     if (!NAME_MIN2_REGEX.test(form.firstName)) return alert("Prénom invalide.");
     if (!NAME_MIN2_REGEX.test(form.lastName)) return alert("Nom invalide.");
     if (!form.email) return alert("Adresse email requise.");
