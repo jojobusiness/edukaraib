@@ -102,7 +102,6 @@ function Chip({ children, onRemove, title }) {
   );
 }
 
-/* --------- libellé simple pour le statut dans Participants --------- */
 function statusLabel(st) {
   switch (st) {
     case 'accepted':
@@ -141,6 +140,9 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
   const debounceRef = useRef(null);
   const [loading, setLoading] = useState(false);
 
+  // ✅ (ajout minimal) mémoriser l'élève d'un cours individuel pour l'afficher dans Participants
+  const [singleStudentId, setSingleStudentId] = useState(null);
+
   useEffect(() => {
     if (!open || !lesson?.id) return;
     const ref = doc(db, 'lessons', lesson.id);
@@ -152,7 +154,6 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
         if (!snap.exists()) return;
         const data = snap.data();
 
-        // on ne touche pas à la logique métier (juste affichage)
         const pIds = Array.isArray(data.participant_ids)
           ? Array.from(new Set(data.participant_ids))
           : [];
@@ -160,10 +161,16 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
         setParticipantIds(pIds);
         setParticipantsMap(data.participantsMap || {});
 
-        // Résoudre noms pour tous les participants
+        // 🔹 conserver l'élève individuel (sans rien changer d'autre)
+        setSingleStudentId(!data.is_group && data.student_id ? data.student_id : null);
+
         const nm = {};
         for (const id of pIds) {
           nm[id] = await resolveName(id);
+        }
+        // 🔹 résoudre aussi le nom de l'individuel pour l'afficher dans Participants
+        if (!data.is_group && data.student_id) {
+          nm[data.student_id] = await resolveName(data.student_id);
         }
         setNameMap(nm);
       },
@@ -193,11 +200,19 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     }, 250);
   }, [search, open]);
 
-  const confirmedCount = useMemo(
+  // ✅ Compteurs affichés en haut : on ajoute +1 si c'est un cours individuel
+  const confirmedBase = useMemo(
     () => countConfirmed(participantIds, participantsMap),
     [participantIds, participantsMap]
   );
-  const free = Math.max((Number(capacity) || 0) - confirmedCount, 0);
+  const confirmedDisplayed = useMemo(
+    () => confirmedBase + (singleStudentId ? 1 : 0),
+    [confirmedBase, singleStudentId]
+  );
+  const freeDisplayed = useMemo(
+    () => Math.max((Number(capacity) || 0) - confirmedDisplayed, 0),
+    [capacity, confirmedDisplayed]
+  );
 
   async function resolveName(id) {
     if (!id) return '';
@@ -281,12 +296,14 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     }
   }
 
-  /* === Participants à afficher (GROUPE UNIQUEMENT) ===
-     Affiche TOUS les participant_ids (quel que soit le statut) */
-  const participantsForRender = useMemo(
-    () => Array.from(new Set(participantIds || [])),
-    [participantIds]
-  );
+  /* === Participants à afficher ===
+     - TOUS les participant_ids (groupe)
+     - + l'élève individuel (si présent), UNIQUEMENT dans l'affichage Participants */
+  const participantsForRender = useMemo(() => {
+    const base = Array.from(new Set(participantIds || []));
+    if (singleStudentId && !base.includes(singleStudentId)) base.push(singleStudentId);
+    return base;
+  }, [participantIds, singleStudentId]);
 
   if (!open || !lesson) return null;
 
@@ -305,7 +322,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
         <div className="p-5 space-y-6">
           {loading && <div className="text-sm text-gray-500">Chargement…</div>}
 
-          {/* Réglages de groupe */}
+          {/* Réglages de groupe (inchangé) */}
           <div className="flex items-center gap-3">
             <label className="font-medium">Capacité (places max)</label>
             <input
@@ -323,11 +340,10 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
             </button>
           </div>
           <div className="text-sm text-gray-600">
-            Confirmés : <b>{countConfirmed(participantIds, participantsMap)}</b> / {capacity} — Places
-            libres : <b>{Math.max(free, 0)}</b>
+            Confirmés : <b>{confirmedDisplayed}</b> / {capacity} — Places libres : <b>{freeDisplayed}</b>
           </div>
 
-          {/* Recherche / invitation */}
+          {/* Recherche / invitation (inchangé) */}
           <div>
             <label className="block text-sm font-medium mb-1">Inviter un élève (par nom)</label>
             <input
@@ -361,7 +377,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
             )}
           </div>
 
-          {/* ✅ Participants — TOUS les participants avec statut & paiement + bouton retirer */}
+          {/* ✅ PARTICIPANTS (inclut aussi l'élève d'un cours individuel, seulement ici) */}
           <div className="border rounded-lg p-3">
             <div className="font-medium mb-2">Participants</div>
             {participantsForRender.length === 0 ? (
@@ -369,13 +385,16 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
             ) : (
               <div className="flex flex-wrap gap-2">
                 {participantsForRender.map((sid) => {
+                  // statut + paiement : pour l'élève individuel on force un rendu "Confirmé"
                   const ent = participantsMap?.[sid] || {};
-                  const st = ent.status || 'pending';
-                  const paid = !!ent.is_paid;
+                  const isVirtualIndividual = singleStudentId === sid && !(participantIds || []).includes(sid);
+                  const st = isVirtualIndividual ? 'confirmed' : (ent.status || 'pending');
+                  const paid = isVirtualIndividual ? !!lesson?.is_paid : !!ent.is_paid;
+
                   return (
                     <Chip
                       key={`pt:${sid}`}
-                      onRemove={() => removeStudent(sid)}
+                      onRemove={isVirtualIndividual ? undefined : () => removeStudent(sid)}
                       title={`Statut : ${statusLabel(st)}`}
                     >
                       {nameMap[sid] || sid}
