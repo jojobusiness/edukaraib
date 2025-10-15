@@ -137,8 +137,8 @@ export default function TeacherLessons() {
   const nameCacheRef = useRef(new Map());
 
   // Pending group entries (par élève)
-  const [pendingGroup, setPendingGroup] = useState([]); // [{lessonId, lesson, studentId, status}]
-  const [pendingIndiv, setPendingIndiv] = useState([]); // lessons individuels en attente
+  const [pendingGroup, setPendingGroup] = useState([]); // [{lessonId, lesson, studentId, status, studentName, requesterName}]
+  const [pendingIndiv, setPendingIndiv] = useState([]); // lessons individuels en attente (enrichis)
 
   useEffect(() => {
     const uid = auth.currentUser?.uid;
@@ -157,10 +157,10 @@ export default function TeacherLessons() {
       const raw = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
       // ----- Construire pendingIndiv (booked + pending_teacher, uniquement non-groupes)
-      const pIndiv = raw.filter((l) => !l.is_group && (l.status === 'booked' || l.status === 'pending_teacher'));
+      const pIndivRaw = raw.filter((l) => !l.is_group && (l.status === 'booked' || l.status === 'pending_teacher'));
 
       // ----- Construire pendingGroup par élève (tout statut != accepted/confirmed)
-      const pGroup = [];
+      const pGroupRaw = [];
       raw.filter((l) => !!l.is_group).forEach((l) => {
         const ids = Array.isArray(l.participant_ids) ? Array.from(new Set(l.participant_ids)) : [];
         const pm = l.participantsMap || {};
@@ -168,12 +168,17 @@ export default function TeacherLessons() {
           const st = pm?.[sid]?.status;
           if (!st || PENDING_SET.has(String(st)) || (st !== 'accepted' && st !== 'confirmed')) {
             if (st === 'rejected' || st === 'removed' || st === 'deleted') return;
-            pGroup.push({ lessonId: l.id, lesson: l, studentId: sid, status: st || 'booked' });
+            pGroupRaw.push({
+              lessonId: l.id,
+              lesson: l,
+              studentId: sid,
+              status: st || 'booked',
+            });
           }
         });
       });
 
-      // enrichir noms + détails participants (confirmés uniquement pour popover)
+      // enrichir noms + détails participants (confirmés uniquement pour popover) + requester
       const enriched = await Promise.all(
         raw.map(async (l) => {
           // élève principal (legacy)
@@ -194,18 +199,49 @@ export default function TeacherLessons() {
             );
           }
 
+          // requester (qui a cliqué) — utile pour affichage des demandes
+          let requesterName = '';
+          const requesterId =
+            (l.participantsMap && l.student_id && l.participantsMap[l.student_id]?.parent_id) ||
+            l.parent_id ||
+            l.booked_by ||
+            null;
+          if (requesterId) {
+            requesterName = await resolvePersonName(requesterId, nameCacheRef.current);
+          }
+
           // fallback : si pas de student_id mais un seul participant, utiliser son nom
           if (!studentName && Array.isArray(l.participant_ids) && l.participant_ids.length === 1) {
             studentName = participantDetails[0]?.name
               || await resolvePersonName(l.participant_ids[0], nameCacheRef.current);
           }
 
-          return { ...l, studentName, participantDetails };
+          return { ...l, studentName, participantDetails, requesterName };
         })
       );
 
-      // tri par date décroissante
-      enriched.sort((a, b) => {
+      // enrichir pendingIndiv avec noms (studentName + requesterName déjà présents dans enriched)
+      const pIndiv = pIndivRaw.map((pi) => {
+        const found = enriched.find((e) => e.id === pi.id);
+        return found || pi;
+      });
+
+      // enrichir pendingGroup avec noms d'élève + "demande faite par"
+      const pGroup = await Promise.all(
+        pGroupRaw.map(async (g) => {
+          const nm = await resolvePersonName(g.studentId, nameCacheRef.current);
+          const pm = g.lesson?.participantsMap || {};
+          const info = pm[g.studentId] || {};
+          const requesterId = info.parent_id || info.booked_by || null;
+          const requesterName = requesterId
+            ? await resolvePersonName(requesterId, nameCacheRef.current)
+            : '';
+          return { ...g, studentName: nm, requesterName };
+        })
+      );
+
+      // tri par date décroissante pour la liste principale
+      const enrichedSorted = [...enriched].sort((a, b) => {
         const aTs =
           (a.start_datetime?.toDate?.() && a.start_datetime.toDate().getTime()) ||
           (a.start_datetime?.seconds && a.start_datetime.seconds * 1000) ||
@@ -217,7 +253,7 @@ export default function TeacherLessons() {
         return bTs - aTs;
       });
 
-      setLessons(enriched);
+      setLessons(enrichedSorted);
       setPendingIndiv(pIndiv);
       setPendingGroup(pGroup);
       setLoading(false);
@@ -386,9 +422,16 @@ export default function TeacherLessons() {
           )}
 
           <div className="text-gray-700 mt-1">
-            {isGroup
-              ? 'Cours groupé'
-              : <>Élève : <span className="font-semibold">{lesson.studentName || '—'}</span></>}
+            {isGroup ? (
+              'Cours groupé'
+            ) : (
+              <>
+                Élève : <span className="font-semibold">{lesson.studentName || '—'}</span>
+                {lesson.requesterName ? (
+                  <span className="text-xs text-gray-500 ml-2">(demande faite par {lesson.requesterName})</span>
+                ) : null}
+              </>
+            )}
           </div>
           <div className="text-gray-500 text-sm"><When lesson={lesson} /></div>
         </div>
@@ -470,13 +513,16 @@ export default function TeacherLessons() {
                 <div className="bg-white p-4 rounded-xl shadow border">
                   <div className="font-semibold text-sm mb-3">Groupes — demandes par élève</div>
                   <ul className="space-y-2">
-                    {demandesGroupes.map(({ lessonId, lesson, studentId, status }) => (
+                    {demandesGroupes.map(({ lessonId, lesson, studentId, status, studentName, requesterName }) => (
                       <li key={`${lessonId}:${studentId}`} className="border rounded-lg px-3 py-2 flex items-center gap-3">
                         <span className="text-xs text-gray-600">
                           {lesson.slot_day} {String(lesson.slot_hour).padStart(2, '0')}h
                         </span>
                         <span className="text-sm font-medium">{lesson.subject_id || 'Cours'}</span>
-                        <span className="text-xs text-gray-600">• Élève : {nameCacheRef.current.get(studentId) || studentId}</span>
+                        <span className="text-xs text-gray-600">
+                          • Élève : <span className="font-medium">{studentName || studentId}</span>
+                          {requesterName ? <span className="text-gray-500"> (demande faite par {requesterName})</span> : null}
+                        </span>
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
                           {status === 'pending_teacher' ? 'En attente prof' :
                            status === 'pending_parent' ? 'En attente parent' :
