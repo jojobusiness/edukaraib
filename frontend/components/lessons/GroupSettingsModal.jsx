@@ -141,9 +141,6 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
   const debounceRef = useRef(null);
   const [loading, setLoading] = useState(false);
 
-  // élève principal pour cours individuel
-  const [singleStudentId, setSingleStudentId] = useState(lesson?.student_id || null);
-
   useEffect(() => {
     if (!open || !lesson?.id) return;
     const ref = doc(db, 'lessons', lesson.id);
@@ -155,21 +152,18 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
         if (!snap.exists()) return;
         const data = snap.data();
 
+        // on ne touche pas à la logique métier (juste affichage)
         const pIds = Array.isArray(data.participant_ids)
           ? Array.from(new Set(data.participant_ids))
           : [];
         setCapacity(Number(data.capacity || 1));
         setParticipantIds(pIds);
         setParticipantsMap(data.participantsMap || {});
-        setSingleStudentId(!data.is_group ? data.student_id || null : null);
 
-        // Résoudre noms pour tous les participants + élève individuel si présent
+        // Résoudre noms pour tous les participants
         const nm = {};
         for (const id of pIds) {
           nm[id] = await resolveName(id);
-        }
-        if (!data.is_group && data.student_id) {
-          nm[data.student_id] = await resolveName(data.student_id);
         }
         setNameMap(nm);
       },
@@ -287,30 +281,12 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     }
   }
 
-  const isGroup = !!lesson?.is_group;
-
-  /* === Affichage unifié des participants (groupe & individuel) ===
-     - Groupe : TOUS les participant_ids (quel que soit le statut)
-     - Individuel : l'élève principal (student_id) traité comme un participant */
-  const participantsForRender = useMemo(() => {
-    if (isGroup) return Array.from(new Set(participantIds || []));
-    return singleStudentId ? [singleStudentId] : [];
-  }, [isGroup, participantIds, singleStudentId]);
-
-  // statut/paid unifiés (même rendu pour groupe & individuel)
-  function participantStatus(id) {
-    if (isGroup) return participantsMap?.[id]?.status || 'pending';
-    // individuel : on mappe le statut de la leçon à un statut participant “proche”
-    const s = lesson?.status || 'booked';
-    if (s === 'confirmed' || s === 'completed') return 'confirmed';
-    if (s === 'rejected') return 'rejected';
-    return 'pending_teacher';
-  }
-  function participantPaid(id) {
-    if (isGroup) return !!participantsMap?.[id]?.is_paid;
-    // individuel : on s’appuie sur lesson.is_paid si présent
-    return !!lesson?.is_paid;
-  }
+  /* === Participants à afficher (GROUPE UNIQUEMENT) ===
+     Affiche TOUS les participant_ids (quel que soit le statut) */
+  const participantsForRender = useMemo(
+    () => Array.from(new Set(participantIds || [])),
+    [participantIds]
+  );
 
   if (!open || !lesson) return null;
 
@@ -319,7 +295,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl">
         <div className="p-5 border-b flex items-center justify-between">
           <h3 className="text-lg font-semibold">
-            {isGroup ? '👥 Groupe' : '👤 Cours individuel'} — {lesson?.subject_id || 'Cours'}
+            👥 Groupe — {lesson?.subject_id || 'Cours'}
           </h3>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
             ✕
@@ -329,67 +305,63 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
         <div className="p-5 space-y-6">
           {loading && <div className="text-sm text-gray-500">Chargement…</div>}
 
-          {/* Réglages de groupe (inchangé) */}
-          {isGroup && (
-            <>
-              <div className="flex items-center gap-3">
-                <label className="font-medium">Capacité (places max)</label>
-                <input
-                  type="number"
-                  min={1}
-                  className="border rounded px-2 py-1 w-24"
-                  value={capacity}
-                  onChange={(e) => setCapacity(Number(e.target.value) || 1)}
-                />
-                <button
-                  onClick={saveCapacity}
-                  className="bg-gray-800 hover:bg-gray-900 text-white px-3 py-1 rounded"
-                >
-                  Enregistrer
-                </button>
-              </div>
-              <div className="text-sm text-gray-600">
-                Confirmés : <b>{countConfirmed(participantIds, participantsMap)}</b> / {capacity} — Places
-                libres : <b>{Math.max((Number(capacity) || 0) - countConfirmed(participantIds, participantsMap), 0)}</b>
-              </div>
+          {/* Réglages de groupe */}
+          <div className="flex items-center gap-3">
+            <label className="font-medium">Capacité (places max)</label>
+            <input
+              type="number"
+              min={1}
+              className="border rounded px-2 py-1 w-24"
+              value={capacity}
+              onChange={(e) => setCapacity(Number(e.target.value) || 1)}
+            />
+            <button
+              onClick={saveCapacity}
+              className="bg-gray-800 hover:bg-gray-900 text-white px-3 py-1 rounded"
+            >
+              Enregistrer
+            </button>
+          </div>
+          <div className="text-sm text-gray-600">
+            Confirmés : <b>{countConfirmed(participantIds, participantsMap)}</b> / {capacity} — Places
+            libres : <b>{Math.max(free, 0)}</b>
+          </div>
 
-              {/* Recherche / invitation */}
-              <div>
-                <label className="block text-sm font-medium mb-1">Inviter un élève (par nom)</label>
-                <input
-                  type="text"
-                  placeholder="Rechercher un élève…"
-                  className="w-full border rounded-lg px-3 py-2"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-                {searching && <div className="text-sm text-gray-500 mt-2">Recherche…</div>}
-                {!searching && results.length > 0 && (
-                  <div className="mt-2 border rounded-lg max-h-56 overflow-auto divide-y">
-                    {results.map((r) => (
-                      <button
-                        key={`pick:${r.id}`}
-                        className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center justify-between"
-                        onClick={() => addByPick(r)}
-                        disabled={(participantIds || []).includes(r.id)}
-                        title={r.source}
-                      >
-                        <span>{r.name}</span>
-                        {(participantIds || []).includes(r.id) && (
-                          <span className="text-xs text-green-600">déjà listé</span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {search.length >= 2 && !searching && results.length === 0 && (
-                  <div className="text-sm text-gray-500 mt-2">Aucun résultat.</div>
-                )}
+          {/* Recherche / invitation */}
+          <div>
+            <label className="block text-sm font-medium mb-1">Inviter un élève (par nom)</label>
+            <input
+              type="text"
+              placeholder="Rechercher un élève…"
+              className="w-full border rounded-lg px-3 py-2"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {searching && <div className="text-sm text-gray-500 mt-2">Recherche…</div>}
+            {!searching && results.length > 0 && (
+              <div className="mt-2 border rounded-lg max-h-56 overflow-auto divide-y">
+                {results.map((r) => (
+                  <button
+                    key={`pick:${r.id}`}
+                    className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center justify-between"
+                    onClick={() => addByPick(r)}
+                    disabled={(participantIds || []).includes(r.id)}
+                    title={r.source}
+                  >
+                    <span>{r.name}</span>
+                    {(participantIds || []).includes(r.id) && (
+                      <span className="text-xs text-green-600">déjà listé</span>
+                    )}
+                  </button>
+                ))}
               </div>
-            </>
-          )}
+            )}
+            {search.length >= 2 && !searching && results.length === 0 && (
+              <div className="text-sm text-gray-500 mt-2">Aucun résultat.</div>
+            )}
+          </div>
 
-          {/* ✅ Participants — rendu IDENTIQUE pour groupe & individuel */}
+          {/* ✅ Participants — TOUS les participants avec statut & paiement + bouton retirer */}
           <div className="border rounded-lg p-3">
             <div className="font-medium mb-2">Participants</div>
             {participantsForRender.length === 0 ? (
@@ -397,16 +369,18 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
             ) : (
               <div className="flex flex-wrap gap-2">
                 {participantsForRender.map((sid) => {
-                  const st = participantStatus(sid);
-                  const paid = participantPaid(sid);
-                  const canRemove = isGroup; // on ne retire pas l’élève d’un cours individuel via ici
+                  const ent = participantsMap?.[sid] || {};
+                  const st = ent.status || 'pending';
+                  const paid = !!ent.is_paid;
                   return (
                     <Chip
                       key={`pt:${sid}`}
-                      onRemove={canRemove ? () => removeStudent(sid) : undefined}
+                      onRemove={() => removeStudent(sid)}
                       title={`Statut : ${statusLabel(st)}`}
                     >
-                      {nameMap[sid] || sid} · <span className="text-gray-700">{statusLabel(st)}</span>
+                      {nameMap[sid] || sid}
+                      {' · '}
+                      <span className="text-gray-700">{statusLabel(st)}</span>
                       {(st === 'accepted' || st === 'confirmed') && (
                         <>
                           {' · '}
@@ -422,32 +396,30 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
             )}
           </div>
 
-          {/* Invitations envoyées — inchangé */}
-          {isGroup && (
-            <div className="border rounded-lg p-3">
-              <div className="font-medium mb-2">Invitations envoyées</div>
-              {(() => {
-                const invitedIds = Array.from(
-                  new Set(
-                    (participantIds || []).filter(
-                      (sid) => participantsMap?.[sid]?.status === 'invited_student'
-                    )
+          {/* Invitations envoyées (inchangé) */}
+          <div className="border rounded-lg p-3">
+            <div className="font-medium mb-2">Invitations envoyées</div>
+            {(() => {
+              const invitedIds = Array.from(
+                new Set(
+                  (participantIds || []).filter(
+                    (sid) => participantsMap?.[sid]?.status === 'invited_student'
                   )
-                );
-                return invitedIds.length === 0 ? (
-                  <div className="text-sm text-gray-500">Aucune invitation en cours.</div>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {invitedIds.map((sid) => (
-                      <Chip key={`inv:${sid}`} onRemove={() => removeStudent(sid)}>
-                        {nameMap[sid] || sid} · <span className="text-indigo-700">invité</span>
-                      </Chip>
-                    ))}
-                  </div>
-                );
-              })()}
-            </div>
-          )}
+                )
+              );
+              return invitedIds.length === 0 ? (
+                <div className="text-sm text-gray-500">Aucune invitation en cours.</div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {invitedIds.map((sid) => (
+                    <Chip key={`inv:${sid}`} onRemove={() => removeStudent(sid)}>
+                      {nameMap[sid] || sid} · <span className="text-indigo-700">invité</span>
+                    </Chip>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
         </div>
 
         <div className="p-4 border-t flex justify-end">
