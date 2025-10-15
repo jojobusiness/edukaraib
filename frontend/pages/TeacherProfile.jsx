@@ -29,7 +29,7 @@ export default function TeacherProfile() {
   const [bookedSlots, setBookedSlots] = useState([]); // [{day,hour}] déjà pleins
   const [showBooking, setShowBooking] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
-  const [booked, setBooked] = useState(false);
+  const [booked, setBooked] = useState(false); // conservé mais n’empêche plus d’autres réservations
   const [confirmationMsg, setConfirmationMsg] = useState('');
 
   const [currentRole, setCurrentRole] = useState(null); // 'student' | 'teacher' | 'parent'
@@ -105,6 +105,13 @@ export default function TeacherProfile() {
   const handleBookingSlot = async (slot) => {
     if (!auth.currentUser) return navigate('/login');
 
+    // 🚫 Empêcher un professeur de réserver ses propres cours
+    if (teacherId === auth.currentUser.uid) {
+      setConfirmationMsg("Tu ne peux pas réserver tes propres cours.");
+      setShowBooking(false);
+      return;
+    }
+
     const me = auth.currentUser;
     const targetStudentId = selectedStudentId || me.uid;
     const bookingFor = isParent && targetStudentId !== me.uid ? 'child' : 'self';
@@ -112,8 +119,7 @@ export default function TeacherProfile() {
     setIsBooking(true);
     setConfirmationMsg('');
     try {
-      // 🔒 0) Anti-doublon global au même créneau (groupe OU individuel)
-      //    - même prof, même slot_day + slot_hour, même enfant/parent
+      // 🔒 0) Anti-doublon au même créneau (jour+heure) pour ce prof et cet élève
       const dupIndQ = query(
         collection(db, 'lessons'),
         where('teacher_id', '==', teacherId),
@@ -148,7 +154,7 @@ export default function TeacherProfile() {
         return;
       }
 
-      // 1) Rejoindre un groupe existant à ce créneau → élève en attente (avec garde anti-doublon local)
+      // 1) Rejoindre un groupe existant à ce créneau
       const qExisting = query(
         collection(db, 'lessons'),
         where('teacher_id', '==', teacherId),
@@ -189,7 +195,7 @@ export default function TeacherProfile() {
         return;
       }
 
-      // 2) Pas de groupe à ce créneau → créer une DEMANDE (jamais auto-acceptée)
+      // 2) Pas de groupe à ce créneau → créer une DEMANDE
       const groupEnabled = !!teacher?.group_enabled;
       const defaultCap =
         typeof teacher?.group_capacity === 'number' && teacher.group_capacity > 1
@@ -231,7 +237,7 @@ export default function TeacherProfile() {
           message: `Demande de créer un groupe (${slot.day} ${slot.hour}h).`,
         });
       } else {
-        // Individuel → leçon “booked” (prof doit confirmer)
+        // Individuel → “booked” (prof doit confirmer)
         const newDoc = await addDoc(collection(db, 'lessons'), {
           teacher_id: teacherId,
           student_id: targetStudentId,
@@ -247,7 +253,7 @@ export default function TeacherProfile() {
           is_group: false,
           capacity: 1,
           participant_ids: [],
-          participantsMap: {},        // (confirmation au niveau du cours)
+          participantsMap: {},
         });
         await addDoc(collection(db, 'notifications'), {
           user_id: teacherId, read: false, created_at: serverTimestamp(),
@@ -337,14 +343,14 @@ export default function TeacherProfile() {
 
           <button
             className="bg-primary text-white px-6 py-3 rounded-lg font-semibold shadow hover:bg-primary-dark transition mb-4 disabled:opacity-60"
-            disabled={isBooking || booked}
+            disabled={isBooking} // ⬅️ On n’empêche plus les réservations suivantes
             onClick={() => {
               if (!auth.currentUser) return navigate('/login');
               setShowBooking(true);
               setConfirmationMsg('');
             }}
           >
-            {booked ? 'Demande envoyée' : isBooking ? 'Envoi…' : 'Réserver un cours'}
+            {isBooking ? 'Envoi…' : 'Réserver un cours'}
           </button>
 
           {confirmationMsg && (
