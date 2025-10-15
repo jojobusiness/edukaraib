@@ -78,6 +78,45 @@ function Chip({ children, onRemove, title }) {
   );
 }
 
+const PENDING_SET = new Set([
+  'booked',
+  'pending_teacher',
+  'pending_parent',
+  'invited_student',
+  'invited_parent',
+  'requested',
+  'pending',
+  'awaiting_confirmation',
+  'reinvited',
+  'awaiting',
+]);
+
+function statusLabel(st) {
+  switch (st) {
+    case 'confirmed':
+    case 'accepted':
+      return 'Confirmé';
+    case 'invited_student':
+    case 'invited_parent':
+      return 'Invité';
+    case 'rejected':
+      return 'Refusé';
+    case 'removed':
+    case 'deleted':
+      return 'Retiré';
+    case 'booked':
+    case 'pending_teacher':
+    case 'pending_parent':
+    case 'requested':
+    case 'pending':
+    case 'awaiting_confirmation':
+    case 'reinvited':
+    case 'awaiting':
+    default:
+      return 'En attente';
+  }
+}
+
 export default function GroupSettingsModal({ open, onClose, lesson }) {
   const [capacity, setCapacity] = useState(lesson?.capacity || 1);
   const [participantIds, setParticipantIds] = useState(lesson?.participant_ids || []);
@@ -89,6 +128,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
   const debounceRef = useRef(null);
   const [loading, setLoading] = useState(false);
   const [migrated, setMigrated] = useState(false);
+  const [singleStudentName, setSingleStudentName] = useState(''); // 👈 nom élève pour cours individuel
 
   useEffect(() => {
     if (!open || !lesson?.id) return;
@@ -99,6 +139,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
       if (!snap.exists()) return;
       const data = snap.data();
 
+      // 🔁 Migration legacy éventuelle
       if (!migrated && data.is_group && data.student_id && !Array.isArray(data.participant_ids)?.includes(data.student_id)) {
         try {
           await updateDoc(ref, {
@@ -120,9 +161,19 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
       setParticipantIds(pIds);
       setParticipantsMap(data.participantsMap || {});
 
+      // 🔎 Résoudre noms : participants + élève individuel éventuel
       const nm = {};
-      for (const id of pIds) { nm[id] = await resolveName(id); }
+      for (const id of pIds) {
+        nm[id] = await resolveName(id);
+      }
       setNameMap(nm);
+
+      if (!data.is_group && data.student_id) {
+        const nmStudent = await resolveName(data.student_id);
+        setSingleStudentName(nmStudent);
+      } else {
+        setSingleStudentName('');
+      }
     }, (err) => { setLoading(false); console.error('onSnapshot(lesson) error:', err); });
     return () => unsub();
   }, [open, lesson?.id, migrated]);
@@ -155,7 +206,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     } catch (e) { console.error(e); alert("Impossible d'enregistrer la capacité."); }
   }
 
-  // Invitation — plus d’optimistic update local (évite doublons)
+  // Invitation — pas d’optimistic update (onSnapshot fait foi)
   async function addByPick(p) {
     if (!p?.id) return;
     const id = p.id;
@@ -175,7 +226,6 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
           message: `Invitation à rejoindre le cours ${lesson.subject_id || ''} (${lesson.slot_day} ${lesson.slot_hour}h).`,
         });
       } catch {}
-      // on ne touche PAS aux états locaux → on laisse onSnapshot rafraîchir (évite les doublons)
       setSearch(''); setResults([]);
     } catch (e) { console.error(e); alert("Impossible d'inviter l'élève."); }
   }
@@ -196,93 +246,155 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     const st = participantsMap?.[sid]?.status || 'confirmed';
     return st === 'accepted' || st === 'confirmed';
   })));
+  const pendingIds = Array.from(new Set(allIds.filter((sid) => {
+    const st = participantsMap?.[sid]?.status || 'pending';
+    return st !== 'accepted' && st !== 'confirmed' && st !== 'rejected' && st !== 'removed' && st !== 'deleted';
+  })));
   const invited = Array.from(new Set(allIds.filter((sid) => participantsMap?.[sid]?.status === 'invited_student')));
 
   if (!open || !lesson) return null;
+
+  const isGroup = !!lesson.is_group;
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl">
         <div className="p-5 border-b flex items-center justify-between">
-          <h3 className="text-lg font-semibold">👥 Groupe — {lesson.subject_id || 'Cours'}</h3>
+          <h3 className="text-lg font-semibold">
+            {isGroup ? '👥 Groupe' : '👤 Cours individuel'} — {lesson.subject_id || 'Cours'}
+          </h3>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
         </div>
 
         <div className="p-5 space-y-6">
-          {loading && <div className="text-sm text-gray-500">Chargement du groupe…</div>}
+          {loading && <div className="text-sm text-gray-500">Chargement…</div>}
 
-          <div className="flex items-center gap-3">
-            <label className="font-medium">Capacité (places max)</label>
-            <input type="number" min={1} className="border rounded px-2 py-1 w-24" value={capacity} onChange={(e) => setCapacity(Number(e.target.value || 1))}/>
-            <button onClick={saveCapacity} className="bg-gray-800 hover:bg-gray-900 text-white px-3 py-1 rounded">Enregistrer</button>
-          </div>
-          <div className="text-sm text-gray-600">
-            Confirmés : <b>{confirmedCount}</b> / {capacity} — Places libres : <b>{Math.max(free, 0)}</b>
-          </div>
-
-          {/* Recherche → Invitation */}
-          <div>
-            <label className="block text-sm font-medium mb-1">Inviter un élève (par nom)</label>
-            <input
-              type="text" placeholder="Rechercher un élève…" className="w-full border rounded-lg px-3 py-2"
-              value={search} onChange={(e) => setSearch(e.target.value)}
-            />
-            {searching && <div className="text-sm text-gray-500 mt-2">Recherche…</div>}
-            {!searching && results.length > 0 && (
-              <div className="mt-2 border rounded-lg max-h-56 overflow-auto divide-y">
-                {results.map((r) => (
-                  <button
-                    key={`pick:${r.id}`} className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center justify-between"
-                    onClick={() => addByPick(r)} disabled={allIds.includes(r.id)} title={r.source}
-                  >
-                    <span>{r.name}</span>
-                    {allIds.includes(r.id) && <span className="text-xs text-green-600">déjà listé</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-            {search.length >= 2 && !searching && results.length === 0 && (
-              <div className="text-sm text-gray-500 mt-2">Aucun résultat.</div>
-            )}
-          </div>
-
-          {/* Participants (acceptés/confirmés) */}
-          <div className="border rounded-lg p-3">
-            <div className="font-medium mb-2">Participants</div>
-            {acceptedOrConfirmed.length === 0 ? (
-              <div className="text-sm text-gray-500">Aucun participant confirmé/accepté.</div>
-            ) : (
+          {/* 🎯 Cours individuel : afficher l'élève */}
+          {!isGroup && (
+            <div className="border rounded-lg p-3">
+              <div className="font-medium mb-2">Élève du cours</div>
               <div className="flex flex-wrap gap-2">
-                {acceptedOrConfirmed.map((sid) => {
-                  const ent = participantsMap?.[sid] || {};
-                  const paid = !!ent.is_paid;
-                  const payLabel = paid ? '€ payé' : '€ à payer';
-                  const payTitle = paid ? 'Paiement reçu' : 'Paiement non réglé';
-                  return (
-                    <Chip key={`ac:${sid}`} onRemove={() => removeStudent(sid)} title={payTitle}>
-                      {nameMap[sid] || sid} · <span className={paid ? 'text-green-700' : 'text-amber-700'}>{payLabel}</span>
-                    </Chip>
-                  );
-                })}
+                <Chip title={`Statut : ${statusLabel(lesson.status)}`}>
+                  {singleStudentName || lesson.student_id || '—'} · <span className="text-gray-700">{statusLabel(lesson.status)}</span>
+                </Chip>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* Invitations envoyées (uniques) */}
-          <div className="border rounded-lg p-3">
-            <div className="font-medium mb-2">Invitations envoyées</div>
-            {invited.length === 0 ? (
-              <div className="text-sm text-gray-500">Aucune invitation en cours.</div>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {invited.map((sid) => (
-                  <Chip key={`inv:${sid}`} onRemove={() => removeStudent(sid)}>
-                    {nameMap[sid] || sid} · <span className="text-indigo-700">invité</span>
-                  </Chip>
-                ))}
+          {/* ⚙️ Réglages de groupe */}
+          {isGroup && (
+            <>
+              <div className="flex items-center gap-3">
+                <label className="font-medium">Capacité (places max)</label>
+                <input type="number" min={1} className="border rounded px-2 py-1 w-24" value={capacity} onChange={(e) => setCapacity(Number(e.target.value || 1))}/>
+                <button onClick={saveCapacity} className="bg-gray-800 hover:bg-gray-900 text-white px-3 py-1 rounded">Enregistrer</button>
               </div>
-            )}
-          </div>
+              <div className="text-sm text-gray-600">
+                Confirmés : <b>{confirmedCount}</b> / {capacity} — Places libres : <b>{Math.max(free, 0)}</b>
+              </div>
+
+              {/* Recherche → Invitation */}
+              <div>
+                <label className="block text-sm font-medium mb-1">Inviter un élève (par nom)</label>
+                <input
+                  type="text" placeholder="Rechercher un élève…" className="w-full border rounded-lg px-3 py-2"
+                  value={search} onChange={(e) => setSearch(e.target.value)}
+                />
+                {searching && <div className="text-sm text-gray-500 mt-2">Recherche…</div>}
+                {!searching && results.length > 0 && (
+                  <div className="mt-2 border rounded-lg max-h-56 overflow-auto divide-y">
+                    {results.map((r) => (
+                      <button
+                        key={`pick:${r.id}`} className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center justify-between"
+                        onClick={() => addByPick(r)} disabled={allIds.includes(r.id)} title={r.source}
+                      >
+                        <span>{r.name}</span>
+                        {allIds.includes(r.id) && <span className="text-xs text-green-600">déjà listé</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {search.length >= 2 && !searching && results.length === 0 && (
+                  <div className="text-sm text-gray-500 mt-2">Aucun résultat.</div>
+                )}
+              </div>
+
+              {/* Participants confirmés/acceptés */}
+              <div className="border rounded-lg p-3">
+                <div className="font-medium mb-2">Participants confirmés/acceptés</div>
+                {acceptedOrConfirmed.length === 0 ? (
+                  <div className="text-sm text-gray-500">Aucun participant confirmé/accepté.</div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {acceptedOrConfirmed.map((sid) => {
+                      const ent = participantsMap?.[sid] || {};
+                      const paid = !!ent.is_paid;
+                      const payLabel = paid ? '€ payé' : '€ à payer';
+                      const payTitle = paid ? 'Paiement reçu' : 'Paiement non réglé';
+                      return (
+                        <Chip key={`ac:${sid}`} onRemove={() => removeStudent(sid)} title={payTitle}>
+                          {nameMap[sid] || sid} · <span className={paid ? 'text-green-700' : 'text-amber-700'}>{payLabel}</span>
+                        </Chip>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* En attente (booked/pending/invited...) */}
+              <div className="border rounded-lg p-3">
+                <div className="font-medium mb-2">Élèves en attente</div>
+                {pendingIds.length === 0 ? (
+                  <div className="text-sm text-gray-500">Aucun élève en attente.</div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {pendingIds.map((sid) => {
+                      const ent = participantsMap?.[sid] || {};
+                      const st = ent.status || 'pending';
+                      return (
+                        <Chip key={`pd:${sid}`} onRemove={() => removeStudent(sid)} title={`Statut : ${statusLabel(st)}`}>
+                          {nameMap[sid] || sid} · <span className="text-amber-700">{statusLabel(st)}</span>
+                        </Chip>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Vue complète (tous les élèves avec leur statut) */}
+              <div className="border rounded-lg p-3">
+                <div className="font-medium mb-2">Tous les élèves (avec statut)</div>
+                {allIds.length === 0 ? (
+                  <div className="text-sm text-gray-500">Aucun élève dans ce cours.</div>
+                ) : (
+                  <ul className="text-sm text-gray-800 space-y-1">
+                    {allIds.map((sid) => {
+                      const ent = participantsMap?.[sid] || {};
+                      const st = ent.status || 'confirmed';
+                      const paid = !!ent.is_paid;
+                      return (
+                        <li key={`all:${sid}`} className="flex items-center gap-2">
+                          <span className="font-medium">{nameMap[sid] || sid}</span>
+                          <span className={`text-[11px] px-2 py-0.5 rounded-full ${
+                            (st === 'accepted' || st === 'confirmed') ? 'bg-green-100 text-green-700'
+                            : (st === 'invited_student' || st === 'invited_parent') ? 'bg-indigo-100 text-indigo-700'
+                            : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            {statusLabel(st)}
+                          </span>
+                          {(st === 'accepted' || st === 'confirmed') && (
+                            <span className={`text-[11px] px-2 py-0.5 rounded-full ${paid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                              {paid ? 'Payé' : 'À payer'}
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         <div className="p-4 border-t flex justify-end">
