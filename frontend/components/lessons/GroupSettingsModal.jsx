@@ -102,6 +102,25 @@ function Chip({ children, onRemove, title }) {
   );
 }
 
+/* --------- libellé simple pour le statut dans Participants --------- */
+function statusLabel(st) {
+  switch (st) {
+    case 'accepted':
+    case 'confirmed':
+      return 'Confirmé';
+    case 'rejected':
+      return 'Refusé';
+    case 'removed':
+    case 'deleted':
+      return 'Retiré';
+    case 'invited_student':
+    case 'invited_parent':
+      return 'Invité';
+    default:
+      return 'En attente';
+  }
+}
+
 /* ---------------- composant principal ---------------- */
 export default function GroupSettingsModal({ open, onClose, lesson }) {
   const [capacity, setCapacity] = useState(lesson?.capacity || 1);
@@ -113,9 +132,10 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
   const [searching, setSearching] = useState(false);
   const debounceRef = useRef(null);
   const [loading, setLoading] = useState(false);
+  const [migrated, setMigrated] = useState(false);
 
-  // ✅ juste pour afficher l’élève d’un cours individuel dans “Participants”
-  const [individualStudent, setIndividualStudent] = useState(null); // { id, name } ou null
+  // pour cours individuel → afficher l’élève dans Participants
+  const [singleStudentId, setSingleStudentId] = useState(lesson?.student_id || null);
 
   useEffect(() => {
     if (!open || !lesson?.id) return;
@@ -128,27 +148,24 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
         if (!snap.exists()) return;
         const data = snap.data();
 
+        // (on ne touche pas à la logique métier)
         const pIds = Array.isArray(data.participant_ids)
           ? Array.from(new Set(data.participant_ids))
           : [];
         setCapacity(Number(data.capacity || 1));
         setParticipantIds(pIds);
         setParticipantsMap(data.participantsMap || {});
+        setSingleStudentId(!data.is_group ? data.student_id || null : null);
 
-        // Résoudre noms pour participants existants
+        // Résoudre noms pour tous les participants + élève individuel si présent
         const nm = {};
         for (const id of pIds) {
           nm[id] = await resolveName(id);
         }
-        setNameMap(nm);
-
-        // ✅ cours individuel → préparer l’élève à afficher en “participant”
         if (!data.is_group && data.student_id) {
-          const nmStudent = await resolveName(data.student_id);
-          setIndividualStudent({ id: data.student_id, name: nmStudent || data.student_id });
-        } else {
-          setIndividualStudent(null);
+          nm[data.student_id] = await resolveName(data.student_id);
         }
+        setNameMap(nm);
       },
       (err) => {
         setLoading(false);
@@ -156,7 +173,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
       }
     );
     return () => unsub();
-  }, [open, lesson?.id]);
+  }, [open, lesson?.id, migrated]);
 
   useEffect(() => {
     if (!open) return;
@@ -266,17 +283,15 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
 
   const isGroup = !!lesson?.is_group;
 
-  const acceptedOrConfirmed = useMemo(() => {
-    const allIds = participantIds || [];
-    return Array.from(
-      new Set(
-        allIds.filter((sid) => {
-          const st = participantsMap?.[sid]?.status || 'confirmed';
-          return st === 'accepted' || st === 'confirmed';
-        })
-      )
-    );
-  }, [participantIds, participantsMap]);
+  /* 🔴🔵 Participants à afficher : 
+     - Groupe : TOUS les participant_ids (quel que soit le statut)
+     - Individuel : l'élève principal (student_id) */
+  const participantsForRender = useMemo(() => {
+    if (isGroup) return Array.from(new Set(participantIds || []));
+    return singleStudentId ? [singleStudentId] : [];
+  }, [isGroup, participantIds, singleStudentId]);
+
+  if (!open || !lesson) return null;
 
   return (
     <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4">
@@ -293,7 +308,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
         <div className="p-5 space-y-6">
           {loading && <div className="text-sm text-gray-500">Chargement…</div>}
 
-          {/* Réglages de groupe (strictement inchangé) */}
+          {/* Réglages de groupe (inchangé) */}
           {isGroup && (
             <>
               <div className="flex items-center gap-3">
@@ -353,36 +368,42 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
             </>
           )}
 
-          {/* Participants — inchangé, avec juste un “chip” virtuel pour l’individuel */}
+          {/* ✅ Participants — affiche TOUS les participants (groupe) ou l’élève (individuel) */}
           <div className="border rounded-lg p-3">
             <div className="font-medium mb-2">Participants</div>
-            {acceptedOrConfirmed.length === 0 && !individualStudent ? (
-              <div className="text-sm text-gray-500">Aucun participant confirmé/accepté.</div>
+            {participantsForRender.length === 0 ? (
+              <div className="text-sm text-gray-500">Aucun participant.</div>
             ) : (
               <div className="flex flex-wrap gap-2">
-                {/* chips habituels (groupes) */}
-                {acceptedOrConfirmed.map((sid) => {
+                {participantsForRender.map((sid) => {
                   const ent = participantsMap?.[sid] || {};
+                  const st = isGroup ? (ent.status || 'pending') : 'confirmed';
                   const paid = !!ent.is_paid;
-                  const payLabel = paid ? '€ payé' : '€ à payer';
-                  const payTitle = paid ? 'Paiement reçu' : 'Paiement non réglé';
+                  const canRemove = isGroup; // on ne retire pas l’élève d’un cours individuel via ici
                   return (
                     <Chip
-                      key={`ac:${sid}`}
-                      onRemove={isGroup ? () => removeStudent(sid) : undefined}
-                      title={payTitle}
+                      key={`pt:${sid}`}
+                      onRemove={canRemove ? () => removeStudent(sid) : undefined}
+                      title={`Statut : ${statusLabel(st)}`}
                     >
-                      {(nameMap[sid] || sid)} · <span className={paid ? 'text-green-700' : 'text-amber-700'}>{payLabel}</span>
+                      {nameMap[sid] || sid}
+                      {isGroup && (
+                        <>
+                          {' · '}
+                          <span className="text-gray-700">{statusLabel(st)}</span>
+                          {(st === 'accepted' || st === 'confirmed') && (
+                            <>
+                              {' · '}
+                              <span className={paid ? 'text-green-700' : 'text-amber-700'}>
+                                {paid ? '€ payé' : '€ à payer'}
+                              </span>
+                            </>
+                          )}
+                        </>
+                      )}
                     </Chip>
                   );
                 })}
-
-                {/* chip virtuel (individuel) — non supprimable et sans impact logique */}
-                {!isGroup && individualStudent && (
-                  <Chip key={`ind:${individualStudent.id}`} title="Cours individuel">
-                    {individualStudent.name} · <span className="text-green-700">Confirmé</span>
-                  </Chip>
-                )}
               </div>
             )}
           </div>
@@ -405,7 +426,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
                   <div className="flex flex-wrap gap-2">
                     {invitedIds.map((sid) => (
                       <Chip key={`inv:${sid}`} onRemove={() => removeStudent(sid)}>
-                        {(nameMap[sid] || sid)} · <span className="text-indigo-700">invité</span>
+                        {nameMap[sid] || sid} · <span className="text-indigo-700">invité</span>
                       </Chip>
                     ))}
                   </div>
