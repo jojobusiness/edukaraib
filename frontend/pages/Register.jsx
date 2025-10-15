@@ -47,7 +47,8 @@ const SCHOOL_LEVELS = [
   'Formation professionnelle','Remise à niveau','Autre',
 ];
 
-const NAME_REGEX = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]{2,}$/;
+const NAME_CHARS_REGEX = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]*$/; // autorise saisie incrémentale
+const NAME_MIN2_REGEX  = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]{2,}$/; // contrôle final (≥2)
 const PHONE_REGEX = /^[+0-9 ()-]{7,20}$/;
 
 // Utils pour comparer sans accents / casse
@@ -86,14 +87,12 @@ export default function Register() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-
-    if (name === 'firstName' || name === 'lastName') {
-      // bloquer chiffres / symboles
-      if (value === '' || NAME_REGEX.test(value)) {
+      // autorise la frappe caractère par caractère (lettres, espaces, tirets, apostrophes)
+      if (NAME_CHARS_REGEX.test(value)) {
         setForm((f) => ({ ...f, [name]: value }));
       }
       return;
-    }
+      }
     setForm((f) => ({ ...f, [name]: value }));
   };
 
@@ -103,8 +102,8 @@ export default function Register() {
   const startRegister = async (e) => {
     e.preventDefault();
 
-    if (!NAME_REGEX.test(form.firstName)) return alert("Prénom invalide.");
-    if (!NAME_REGEX.test(form.lastName)) return alert("Nom invalide.");
+    if (!NAME_MIN2_REGEX.test(form.firstName)) return alert("Prénom invalide.");
+    if (!NAME_MIN2_REGEX.test(form.lastName)) return alert("Nom invalide.");
     if (!form.email) return alert("Adresse email requise.");
     if (!form.password || form.password.length < 6) return alert("Mot de passe trop court (≥6).");
     if (form.phone && !PHONE_REGEX.test(form.phone)) return alert("Numéro de téléphone invalide.");
