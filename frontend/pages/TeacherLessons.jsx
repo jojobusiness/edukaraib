@@ -161,7 +161,9 @@ export default function TeacherLessons() {
 
       // ----- Construire pendingGroup par élève (tout statut != accepted/confirmed)
       const pGroupRaw = [];
-      raw.filter((l) => !!l.is_group).forEach((l) => {
+      raw
+        .filter((l) => !!l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0))
+        .forEach((l) =>  {
         const ids = Array.isArray(l.participant_ids) ? Array.from(new Set(l.participant_ids)) : [];
         const pm = l.participantsMap || {};
         ids.forEach((sid) => {
@@ -364,7 +366,7 @@ export default function TeacherLessons() {
   }
 
   const Card = ({ lesson, showActionsForPending }) => {
-    const isGroup = !!lesson.is_group || (Array.isArray(lesson.participant_ids) && lesson.participant_ids.length > 1);
+    const isGroup = !!lesson.is_group || (Array.isArray(lesson.participant_ids) && lesson.participant_ids.length > 0);
     const confirmedParticipants = (lesson.participantDetails || []).filter(
       (p) => p.status === 'accepted' || p.status === 'confirmed'
     );
