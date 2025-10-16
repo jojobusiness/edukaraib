@@ -408,6 +408,9 @@ export default function TeacherProfile() {
 
       setShowBooking(false);
       setConfirmationMsg(parts.length ? parts.join(' ') : "Demandes envoyées.");
+
+      // ✅ rafraîchir immédiatement les créneaux pris (pour l'affichage en rouge)
+      try { await refreshBookedSlots(teacherId, setBookedSlots); } catch {}
     } catch (e) {
       console.error('Booking error (batch)', e);
       setConfirmationMsg("Erreur lors de la réservation. Réessayez plus tard.");

@@ -14,6 +14,7 @@ import {
   limit,
   onSnapshot
 } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
 
 /* ---------- Helpers ---------- */
 // Helper: un cours est-il confirmé POUR MOI ?
@@ -160,35 +161,52 @@ export default function MyCourses() {
 
   const nameCache = useRef(new Map());
 
+  // ✅ Branche les listeners Firestore quand l'utilisateur est prêt
   useEffect(() => {
-    if (!auth.currentUser) return;
-    const uid = auth.currentUser.uid;
-    setLoading(true);
+    let unsubA = null;
+    let unsubB = null;
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      // Nettoyage des anciens listeners si on change d'utilisateur
+      if (unsubA) { unsubA(); unsubA = null; }
+      if (unsubB) { unsubB(); unsubB = null; }
 
-    const map = new Map();
-    const upsert = (id, data) => { map.set(id, { id, ...data }); setCourses(Array.from(map.values())); };
-    const remove = (id) => { map.delete(id); setCourses(Array.from(map.values())); };
+      if (!user) {
+        setCourses([]);
+        setLoading(false);
+        return;
+      }
+      const uid = user.uid;
+      setLoading(true);
 
-    // A) Cours où je suis l'élève principal (individuel)
-    const qA = query(collection(db, 'lessons'), where('student_id', '==', uid));
-    // B) Cours où je suis listé dans participant_ids (groupé)
-    const qB = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', uid));
+      const map = new Map();
+      const upsert = (id, data) => { map.set(id, { id, ...data }); setCourses(Array.from(map.values())); };
+      const remove = (id) => { map.delete(id); setCourses(Array.from(map.values())); };
 
-    const unsubA = onSnapshot(qA, (snap) => {
-      snap.docChanges().forEach((ch) => (
-        ch.type === 'removed' ? remove(ch.doc.id) : upsert(ch.doc.id, ch.doc.data())
-      ));
-      setLoading(false);
-    }, () => setLoading(false));
+      // A) Cours où je suis l'élève principal (individuel)
+      const qA = query(collection(db, 'lessons'), where('student_id', '==', uid));
+      // B) Cours où je suis listé dans participant_ids (groupé)
+      const qB = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', uid));
 
-    const unsubB = onSnapshot(qB, (snap) => {
-      snap.docChanges().forEach((ch) => (
-        ch.type === 'removed' ? remove(ch.doc.id) : upsert(ch.doc.id, ch.doc.data())
-      ));
-      setLoading(false);
-    }, () => setLoading(false));
+      unsubA = onSnapshot(qA, (snap) => {
+        snap.docChanges().forEach((ch) => (
+          ch.type === 'removed' ? remove(ch.doc.id) : upsert(ch.doc.id, ch.doc.data())
+        ));
+        setLoading(false);
+      }, () => setLoading(false));
 
-    return () => { unsubA(); unsubB(); };
+      unsubB = onSnapshot(qB, (snap) => {
+        snap.docChanges().forEach((ch) => (
+          ch.type === 'removed' ? remove(ch.doc.id) : upsert(ch.doc.id, ch.doc.data())
+        ));
+        setLoading(false);
+      }, () => setLoading(false));
+    });
+
+    return () => {
+      if (unsubA) unsubA();
+      if (unsubB) unsubB();
+      unsubAuth();
+    };
   }, []);
 
   // ⚙️ Précharger les noms des profs quand la liste de cours change

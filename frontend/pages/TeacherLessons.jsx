@@ -15,6 +15,7 @@ import {
   arrayRemove,
   deleteField,
 } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
 
 import DocumentsModal from '../components/lessons/DocumentsModal';
 import GroupSettingsModal from '../components/lessons/GroupSettingsModal';
@@ -140,134 +141,143 @@ export default function TeacherLessons() {
   const [pendingGroup, setPendingGroup] = useState([]); // [{lessonId, lesson, studentId, status, studentName, requesterName}]
   const [pendingIndiv, setPendingIndiv] = useState([]); // lessons individuels en attente (enrichis)
 
+  // ✅ Branche l'écoute Firestore quand auth est prêt
   useEffect(() => {
-    const uid = auth.currentUser?.uid;
-    if (!uid) {
-      setLessons([]);
-      setPendingGroup([]);
-      setPendingIndiv([]);
-      setLoading(false);
-      return;
-    }
+    let unsubLessons = null;
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      if (unsubLessons) { unsubLessons(); unsubLessons = null; }
 
-    setLoading(true);
-    const qLessons = query(collection(db, 'lessons'), where('teacher_id', '==', uid));
+      if (!user) {
+        setLessons([]);
+        setPendingGroup([]);
+        setPendingIndiv([]);
+        setLoading(false);
+        return;
+      }
+      const uid = user.uid;
 
-    const unsub = onSnapshot(qLessons, async (snap) => {
-      const raw = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setLoading(true);
+      const qLessons = query(collection(db, 'lessons'), where('teacher_id', '==', uid));
 
-      // ----- Construire pendingIndiv (booked + pending_teacher, uniquement non-groupes)
-      const pIndivRaw = raw.filter((l) => !l.is_group && PENDING_SET.has(String(l.status || '')));
+      unsubLessons = onSnapshot(qLessons, async (snap) => {
+        const raw = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-      // ----- Construire pendingGroup par élève (tout statut != accepted/confirmed)
-      const pGroupRaw = [];
-      raw
-        .filter((l) => !!l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0))
-        .forEach((l) =>  {
-        const ids = Array.isArray(l.participant_ids) ? Array.from(new Set(l.participant_ids)) : [];
-        const pm = l.participantsMap || {};
-        ids.forEach((sid) => {
-          const st = pm?.[sid]?.status;
-          if (!st || PENDING_SET.has(String(st)) || (st !== 'accepted' && st !== 'confirmed')) {
-            if (st === 'rejected' || st === 'removed' || st === 'deleted') return;
-            pGroupRaw.push({
-              lessonId: l.id,
-              lesson: l,
-              studentId: sid,
-              status: st || 'booked',
-            });
-          }
+        // ----- Construire pendingIndiv (tous statuts “pending”)
+        const pIndivRaw = raw.filter((l) => !l.is_group && PENDING_SET.has(String(l.status || '')));
+
+        // ----- Construire pendingGroup par élève (tout statut != accepted/confirmed)
+        const pGroupRaw = [];
+        raw
+          .filter((l) => !!l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0))
+          .forEach((l) =>  {
+          const ids = Array.isArray(l.participant_ids) ? Array.from(new Set(l.participant_ids)) : [];
+          const pm = l.participantsMap || {};
+          ids.forEach((sid) => {
+            const st = pm?.[sid]?.status;
+            if (!st || PENDING_SET.has(String(st)) || (st !== 'accepted' && st !== 'confirmed')) {
+              if (st === 'rejected' || st === 'removed' || st === 'deleted') return;
+              pGroupRaw.push({
+                lessonId: l.id,
+                lesson: l,
+                studentId: sid,
+                status: st || 'booked',
+              });
+            }
+          });
         });
+
+        // enrichir noms + détails participants (confirmés uniquement pour popover) + requester
+        const enriched = await Promise.all(
+          raw.map(async (l) => {
+            // élève principal (legacy)
+            let studentName = '';
+            if (l.student_id) studentName = await resolvePersonName(l.student_id, nameCacheRef.current);
+
+            // participants (liste + statut paiement)
+            let participantDetails = [];
+            if (Array.isArray(l.participant_ids) && l.participant_ids.length > 0) {
+              const pm = l.participantsMap || {};
+              participantDetails = await Promise.all(
+                l.participant_ids.map(async (sid) => ({
+                  id: sid,
+                  name: await resolvePersonName(sid, nameCacheRef.current),
+                  is_paid: !!pm?.[sid]?.is_paid,
+                  status: pm?.[sid]?.status || 'accepted',
+                }))
+              );
+            }
+
+            // requester (qui a cliqué)
+            let requesterName = '';
+            const requesterId =
+              (l.participantsMap && l.student_id && l.participantsMap[l.student_id]?.parent_id) ||
+              l.parent_id ||
+              l.booked_by ||
+              null;
+            if (requesterId) {
+              requesterName = await resolvePersonName(requesterId, nameCacheRef.current);
+            }
+
+            // fallback : si pas de student_id mais un seul participant, utiliser son nom
+            if (!studentName && Array.isArray(l.participant_ids) && l.participant_ids.length === 1) {
+              studentName = participantDetails[0]?.name
+                || await resolvePersonName(l.participant_ids[0], nameCacheRef.current);
+            }
+
+            return { ...l, studentName, participantDetails, requesterName };
+          })
+        );
+
+        // enrichir pendingIndiv
+        const pIndiv = pIndivRaw.map((pi) => {
+          const found = enriched.find((e) => e.id === pi.id);
+          return found || pi;
+        });
+
+        // enrichir pendingGroup avec noms d'élève + "demande faite par"
+        const pGroup = await Promise.all(
+          pGroupRaw.map(async (g) => {
+            const nm = await resolvePersonName(g.studentId, nameCacheRef.current);
+            const pm = g.lesson?.participantsMap || {};
+            const info = pm[g.studentId] || {};
+            const requesterId = info.parent_id || info.booked_by || null;
+            const requesterName = requesterId
+              ? await resolvePersonName(requesterId, nameCacheRef.current)
+              : '';
+            return { ...g, studentName: nm, requesterName };
+          })
+        );
+
+        // tri par date décroissante pour la liste principale
+        const enrichedSorted = [...enriched].sort((a, b) => {
+          const aTs =
+            (a.start_datetime?.toDate?.() && a.start_datetime.toDate().getTime()) ||
+            (a.start_datetime?.seconds && a.start_datetime.seconds * 1000) ||
+            (a.created_at?.toDate?.() && a.created_at.toDate().getTime()) || 0;
+          const bTs =
+            (b.start_datetime?.toDate?.() && b.start_datetime.toDate().getTime()) ||
+            (b.start_datetime?.seconds && b.start_datetime.seconds * 1000) ||
+            (b.created_at?.toDate?.() && b.created_at.toDate().getTime()) || 0;
+          return bTs - aTs;
+        });
+
+        setLessons(enrichedSorted);
+        setPendingIndiv(pIndiv);
+        setPendingGroup(pGroup);
+        setLoading(false);
+      }, (err) => {
+        console.error(err);
+        setLessons([]);
+        setPendingGroup([]);
+        setPendingIndiv([]);
+        setLoading(false);
       });
-
-      // enrichir noms + détails participants (confirmés uniquement pour popover) + requester
-      const enriched = await Promise.all(
-        raw.map(async (l) => {
-          // élève principal (legacy)
-          let studentName = '';
-          if (l.student_id) studentName = await resolvePersonName(l.student_id, nameCacheRef.current);
-
-          // participants (liste + statut paiement)
-          let participantDetails = [];
-          if (Array.isArray(l.participant_ids) && l.participant_ids.length > 0) {
-            const pm = l.participantsMap || {};
-            participantDetails = await Promise.all(
-              l.participant_ids.map(async (sid) => ({
-                id: sid,
-                name: await resolvePersonName(sid, nameCacheRef.current),
-                is_paid: !!pm?.[sid]?.is_paid,
-                status: pm?.[sid]?.status || 'accepted',
-              }))
-            );
-          }
-
-          // requester (qui a cliqué) — utile pour affichage des demandes
-          let requesterName = '';
-          const requesterId =
-            (l.participantsMap && l.student_id && l.participantsMap[l.student_id]?.parent_id) ||
-            l.parent_id ||
-            l.booked_by ||
-            null;
-          if (requesterId) {
-            requesterName = await resolvePersonName(requesterId, nameCacheRef.current);
-          }
-
-          // fallback : si pas de student_id mais un seul participant, utiliser son nom
-          if (!studentName && Array.isArray(l.participant_ids) && l.participant_ids.length === 1) {
-            studentName = participantDetails[0]?.name
-              || await resolvePersonName(l.participant_ids[0], nameCacheRef.current);
-          }
-
-          return { ...l, studentName, participantDetails, requesterName };
-        })
-      );
-
-      // enrichir pendingIndiv avec noms (studentName + requesterName déjà présents dans enriched)
-      const pIndiv = pIndivRaw.map((pi) => {
-        const found = enriched.find((e) => e.id === pi.id);
-        return found || pi;
-      });
-
-      // enrichir pendingGroup avec noms d'élève + "demande faite par"
-      const pGroup = await Promise.all(
-        pGroupRaw.map(async (g) => {
-          const nm = await resolvePersonName(g.studentId, nameCacheRef.current);
-          const pm = g.lesson?.participantsMap || {};
-          const info = pm[g.studentId] || {};
-          const requesterId = info.parent_id || info.booked_by || null;
-          const requesterName = requesterId
-            ? await resolvePersonName(requesterId, nameCacheRef.current)
-            : '';
-          return { ...g, studentName: nm, requesterName };
-        })
-      );
-
-      // tri par date décroissante pour la liste principale
-      const enrichedSorted = [...enriched].sort((a, b) => {
-        const aTs =
-          (a.start_datetime?.toDate?.() && a.start_datetime.toDate().getTime()) ||
-          (a.start_datetime?.seconds && a.start_datetime.seconds * 1000) ||
-          (a.created_at?.toDate?.() && a.created_at.toDate().getTime()) || 0;
-        const bTs =
-          (b.start_datetime?.toDate?.() && b.start_datetime.toDate().getTime()) ||
-          (b.start_datetime?.seconds && b.start_datetime.seconds * 1000) ||
-          (b.created_at?.toDate?.() && b.created_at.toDate().getTime()) || 0;
-        return bTs - aTs;
-      });
-
-      setLessons(enrichedSorted);
-      setPendingIndiv(pIndiv);
-      setPendingGroup(pGroup);
-      setLoading(false);
-    }, (err) => {
-      console.error(err);
-      setLessons([]);
-      setPendingGroup([]);
-      setPendingIndiv([]);
-      setLoading(false);
     });
 
-    return () => unsub();
+    return () => {
+      if (unsubLessons) unsubLessons();
+      unsubAuth();
+    };
   }, []);
 
   // Helper : y a-t-il au moins un participant confirmé/accepté ?
