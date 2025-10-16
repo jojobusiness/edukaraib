@@ -63,12 +63,13 @@ const statusColors = {
 // Statuts “en attente” (pour les cours individuels)
 const PENDING_LESSON_STATUSES = new Set([
   'booked',
+  'pending',
   'pending_teacher',
   'pending_parent',
   'requested',
-  'pending',
-  'awaiting_confirmation',
   'awaiting',
+  'awaiting_confirmation',
+  'reinvited',
 ]);
 
 /* ---------- noms ---------- */
@@ -148,6 +149,7 @@ function isPendingForUser(l, uid) {
 export default function MyCourses() {
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [namesTick, setNamesTick] = useState(0);
 
   // Modals
   const [docOpen, setDocOpen] = useState(false);
@@ -167,7 +169,9 @@ export default function MyCourses() {
     const upsert = (id, data) => { map.set(id, { id, ...data }); setCourses(Array.from(map.values())); };
     const remove = (id) => { map.delete(id); setCourses(Array.from(map.values())); };
 
+    // A) Cours où je suis l'élève principal (individuel)
     const qA = query(collection(db, 'lessons'), where('student_id', '==', uid));
+    // B) Cours où je suis listé dans participant_ids (groupé)
     const qB = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', uid));
 
     const unsubA = onSnapshot(qA, (snap) => {
@@ -186,6 +190,18 @@ export default function MyCourses() {
 
     return () => { unsubA(); unsubB(); };
   }, []);
+
+  // ⚙️ Précharger les noms des profs quand la liste de cours change
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const ids = Array.from(new Set(courses.map(c => c.teacher_id).filter(Boolean)));
+      if (ids.length === 0) return;
+      await Promise.all(ids.map((id) => resolveTeacherName(id, nameCache)));
+      if (alive) setNamesTick(t => t + 1); // force un re-render pour rafraîchir l'affichage
+    })();
+    return () => { alive = false; };
+  }, [courses]);
 
   // prochain confirmé (toi) — basé sur “confirmé pour moi” (participantsMap OU status global)
   const nextCourse = useMemo(() => {
@@ -212,7 +228,24 @@ export default function MyCourses() {
 
   // Listes “en attente / confirmés / …” PAR UTILISATEUR
   const uid = auth.currentUser?.uid;
-  const booked = useMemo(() => courses.filter(c => isPendingForUser(c, uid)), [courses, uid]);
+
+  const booked = useMemo(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return [];
+    return courses.filter((c) => {
+      // Groupe : si je suis dans participant_ids et que mon statut n'est pas accepté/confirmé/rejeté/retiré
+      if (Array.isArray(c.participant_ids) && c.participant_ids.includes(uid)) {
+        const st = String(c.participantsMap?.[uid]?.status || 'pending');
+        return !['accepted','confirmed','rejected','removed','deleted'].includes(st);
+      }
+      // Individuel : si je suis l'élève et que le statut global est "pending"
+      if (c.student_id === uid) {
+        return PENDING_LESSON_STATUSES.has(String(c.status || ''));
+      }
+      return false;
+    });
+  }, [courses, auth.currentUser?.uid]);
+
   const confirmed = useMemo(() => courses.filter(c => isConfirmedForUser(c, uid)), [courses, uid]);
   const rejected = useMemo(() => courses.filter(c => c.status === 'rejected'), [courses]);
   const completed = useMemo(() => courses.filter(c => c.status === 'completed'), [courses]);

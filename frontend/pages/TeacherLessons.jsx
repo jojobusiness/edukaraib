@@ -157,7 +157,7 @@ export default function TeacherLessons() {
       const raw = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
       // ----- Construire pendingIndiv (booked + pending_teacher, uniquement non-groupes)
-      const pIndivRaw = raw.filter((l) => !l.is_group && (l.status === 'booked' || l.status === 'pending_teacher'));
+      const pIndivRaw = raw.filter((l) => !l.is_group && PENDING_SET.has(String(l.status || '')));
 
       // ----- Construire pendingGroup par élève (tout statut != accepted/confirmed)
       const pGroupRaw = [];
@@ -474,14 +474,15 @@ export default function TeacherLessons() {
     () => pendingIndiv, [pendingIndiv]
   );
 
-  const demandesGroupes = useMemo(
-    () => pendingGroup.sort((a, b) => {
+  const demandesGroupes = useMemo(() => {
+    const list = [...pendingGroup]; // ⚠️ ne pas muter le state
+    list.sort((a, b) => {
       const aKey = `${a.lesson.slot_day || ''}|${String(a.lesson.slot_hour || 0).padStart(2,'0')}`;
       const bKey = `${b.lesson.slot_day || ''}|${String(b.lesson.slot_hour || 0).padStart(2,'0')}`;
       return aKey.localeCompare(bKey);
-    }),
-    [pendingGroup]
-  );
+    });
+    return list;
+  }, [pendingGroup]);
 
   return (
     <DashboardLayout role="teacher">
