@@ -228,11 +228,39 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
   }
 
   async function saveCapacity() {
+    const cap = Number(capacity) || 1;
+    const ref = doc(db, 'lessons', lesson.id);
+
+    // Patch de base
+    const patch = { capacity: cap };
+
+    if (cap <= 1) {
+      // 👉 Rester/repasse en INDIVIDUEL si capacité = 1
+      // Ne touche pas aux participant_ids: l'affichage restera "cours individuel"
+      // (Card considère is_group OU >1 participants pour basculer en "groupé")
+      patch.is_group = false;
+    } else {
+      // 👉 Passer en GROUPE si capacité > 1
+      patch.is_group = true;
+
+      // Si le cours avait déjà un élève individuel, on le remet dans le groupe
+      // pour qu'il réapparaisse immédiatement côté prof.
+      if (singleStudentId && !(participantIds || []).includes(singleStudentId)) {
+        patch.participant_ids = arrayUnion(singleStudentId);
+        patch[`participantsMap.${singleStudentId}`] = {
+          parent_id: lesson.parent_id || null,
+          booked_by: lesson.booked_by || null,
+          is_paid: !!lesson.is_paid,
+          paid_by: null,
+          paid_at: null,
+          status: 'confirmed',            // on l’affiche comme présent
+          added_at: serverTimestamp(),
+        };
+      }
+    }
+
     try {
-      await updateDoc(doc(db, 'lessons', lesson.id), {
-        capacity: Number(capacity) || 1,
-        is_group: true,
-      });
+      await updateDoc(ref, patch);
       alert('Capacité mise à jour.');
     } catch (e) {
       console.error(e);
