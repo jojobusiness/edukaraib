@@ -6,16 +6,23 @@ const HOURS = Array.from({ length: 12 }, (_, i) => i + 8); // 08h → 19h
 
 export default function BookingModal({
   availability = {},        // { 'Lun': [10,11], ... }
-  bookedSlots = [],         // [{day:'Lun', hour:10}, ...]
+  bookedSlots = [],         // [{day:'Lun', hour:10}, ...] (rouge/bloqué)
   onBook,                   // onBook(slot) ou onBook([slots]) selon multiSelect
   onClose,
   orderDays = DEFAULT_DAYS, // option d’ordre de colonnes
-  multiSelect = true        // 🔁 active la multi-sélection
+  multiSelect = true,       // 🔁 active la multi-sélection
+
+  // 👇 nouveau (optionnel) : nombre de places restantes par créneau (clé "Jour:Heure")
+  // ex: { 'Lun:10': 2, 'Mar:14': 0 }
+  remainingBySlot = {},
+
+  // (optionnel) afficher la légende “places restantes”
+  showRemainingLegend = true,
 }) {
   // Tableau de créneaux sélectionnés: [{day, hour}]
-  const [selected, setSelected] = useState([]); 
+  const [selected, setSelected] = useState([]);
 
-  // Map rapide pour savoir si un slot est déjà pris
+  // Map rapide pour savoir si un slot est déjà pris/bloqué
   const bookedMap = useMemo(() => {
     const m = new Map();
     bookedSlots.forEach(({ day, hour }) => {
@@ -27,6 +34,11 @@ export default function BookingModal({
   const isBooked = (day, hour) => bookedMap.get(`${day}:${hour}`) === true;
   const isAvailable = (day, hour) => Array.isArray(availability[day]) && availability[day].includes(hour);
   const isSelected = (day, hour) => selected.some(s => s.day === day && s.hour === hour);
+  const remainingFor = (day, hour) => {
+    const key = `${day}:${hour}`;
+    const val = remainingBySlot?.[key];
+    return typeof val === 'number' ? val : null;
+  };
 
   const toggleSelect = (day, hour) => {
     if (!isAvailable(day, hour) || isBooked(day, hour)) return;
@@ -65,7 +77,7 @@ export default function BookingModal({
         </h3>
 
         {/* Légende */}
-        <div className="flex items-center gap-3 text-xs text-gray-600 mb-3">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600 mb-3">
           <span className="inline-flex items-center gap-1">
             <span className="inline-block w-3 h-3 rounded bg-green-500" /> Libre
           </span>
@@ -78,6 +90,14 @@ export default function BookingModal({
           <span className="inline-flex items-center gap-1">
             <span className="inline-block w-3 h-3 rounded bg-gray-100 border" /> Indisponible
           </span>
+          {showRemainingLegend && (
+            <span className="inline-flex items-center gap-1 ml-auto">
+              <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] text-[10px] rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 px-1">
+                n
+              </span>
+              Places restantes
+            </span>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -98,9 +118,11 @@ export default function BookingModal({
                     const booked = isBooked(day, h);
                     const dispo = isAvailable(day, h);
                     const sel = isSelected(day, h);
+                    const remaining = remainingFor(day, h); // nombre (ou null si non fourni)
 
+                    // Style du bouton
                     let classes =
-                      'w-7 h-7 rounded shadow flex items-center justify-center select-none ';
+                      'relative w-8 h-8 rounded shadow flex items-center justify-center select-none ';
                     if (booked) {
                       classes += 'bg-red-500 text-white cursor-not-allowed';
                     } else if (sel) {
@@ -111,6 +133,13 @@ export default function BookingModal({
                       classes += 'bg-gray-100 text-gray-400 cursor-not-allowed';
                     }
 
+                    // Title (tooltip)
+                    const title = booked
+                      ? 'Créneau déjà réservé'
+                      : dispo
+                      ? (sel ? 'Sélectionné' : 'Disponible')
+                      : 'Indisponible';
+
                     return (
                       <td key={h} className="px-1 py-1">
                         <button
@@ -118,15 +147,24 @@ export default function BookingModal({
                           disabled={!dispo || booked}
                           onClick={() => toggleSelect(day, h)}
                           className={classes}
-                          title={
-                            booked
-                              ? 'Créneau déjà réservé'
-                              : dispo
-                              ? (sel ? 'Sélectionné' : 'Disponible')
-                              : 'Indisponible'
+                          title={title}
+                          aria-label={
+                            remaining !== null
+                              ? `${title}. Places restantes : ${remaining}`
+                              : title
                           }
                         >
                           {booked ? '❌' : sel ? '✔' : ''}
+
+                          {/* 👇 Badge "places restantes" (si fourni) */}
+                          {remaining !== null && !booked && (
+                            <span
+                              className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] leading-[18px] text-center pointer-events-none"
+                              title={`Places restantes : ${remaining}`}
+                            >
+                              {remaining}
+                            </span>
+                          )}
                         </button>
                       </td>
                     );

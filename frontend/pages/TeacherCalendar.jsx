@@ -220,24 +220,39 @@ export default function TeacherCalendar() {
             <div className="font-semibold text-primary mb-2">Prochain cours</div>
             {nextOne ? (
               <div className="flex items-center gap-3">
-              {(() => {
-                const ds = (nextOne?.is_group && Array.isArray(nextOne.participant_ids) &&
-                  nextOne.participant_ids.some(sid => {
-                    const st = nextOne.participantsMap?.[sid]?.status;
-                    return st === 'accepted' || st === 'confirmed';
-                  }))
-                  ? (nextOne.status === 'completed' ? 'completed' : 'confirmed')
-                  : nextOne.status;
-                return (
-                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[ds] || 'bg-gray-200'}`}>
-                    {ds === 'confirmed' ? 'Confirmé' : ds === 'completed' ? 'Terminé' : ds}
-                  </span>
-                );
-              })()}
+                {(() => {
+                  const ds = (nextOne?.is_group && Array.isArray(nextOne.participant_ids) &&
+                    nextOne.participant_ids.some(sid => {
+                      const st = nextOne.participantsMap?.[sid]?.status;
+                      return st === 'accepted' || st === 'confirmed';
+                    }))
+                    ? (nextOne.status === 'completed' ? 'completed' : 'confirmed')
+                    : nextOne.status;
+                  return (
+                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[ds] || 'bg-gray-200'}`}>
+                      {ds === 'confirmed' ? 'Confirmé' : ds === 'completed' ? 'Terminé' : ds}
+                    </span>
+                  );
+                })()}
+
                 <span className="font-bold text-secondary">{nextOne.subject_id || 'Matière'}</span>
+
+                {/* NOM élève pour individuel / libellé groupé */}
                 <span className="text-sm text-gray-700">
                   {studentMap.get(nextOne.student_id) || nextOne.student_id || (nextOne.is_group ? 'Cours groupé' : '')}
                 </span>
+
+                {/* 👥 Icône + nombre de participants pour le prochain cours groupé (juste l’icône, pas de liste) */}
+                {nextOne.is_group && (
+                  <span
+                    className="ml-1 text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded"
+                    title="Cours groupé"
+                  >
+                    {/* on réutilise le même comptage que la vue hebdo */}
+                    👥 {(groupNamesByLesson.get(nextOne.id) || nextOne.participant_ids || []).length}
+                  </span>
+                )}
+
                 <span className="text-sm text-gray-500 ml-auto">
                   {FR_DAY_CODES.includes(nextOne.slot_day) ? nextOne.startAt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' }) : ''}
                   {' • '}
@@ -274,24 +289,25 @@ export default function TeacherCalendar() {
 
                         return (
                           <li key={l.id} className="relative flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border">
-                          {(() => {
-                            const ds = (l?.is_group && Array.isArray(l.participant_ids) &&
-                              l.participant_ids.some(sid => {
-                                const st = l.participantsMap?.[sid]?.status;
-                                return st === 'accepted' || st === 'confirmed';
-                              }))
-                              ? (l.status === 'completed' ? 'completed' : 'confirmed')
-                              : l.status;
-                            return (
-                              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[ds] || 'bg-gray-200'}`}>
-                                {ds === 'booked' ? 'En attente'
-                                  : ds === 'confirmed' ? 'Confirmé'
-                                  : ds === 'rejected' ? 'Refusé'
-                                  : ds === 'completed' ? 'Terminé'
-                                  : ds}
-                              </span>
-                            );
-                          })()}
+                            {(() => {
+                              const ds = (l?.is_group && Array.isArray(l.participant_ids) &&
+                                l.participant_ids.some(sid => {
+                                  const st = l.participantsMap?.[sid]?.status;
+                                  return st === 'accepted' || st === 'confirmed';
+                                }))
+                                ? (l.status === 'completed' ? 'completed' : 'confirmed')
+                                : l.status;
+                              return (
+                                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[ds] || 'bg-gray-200'}`}>
+                                  {ds === 'booked' ? 'En attente'
+                                    : ds === 'confirmed' ? 'Confirmé'
+                                    : ds === 'rejected' ? 'Refusé'
+                                    : ds === 'completed' ? 'Terminé'
+                                    : ds}
+                                </span>
+                              );
+                            })()}
+
                             <span className="font-bold text-primary">{l.subject_id || 'Matière'}</span>
 
                             {/* Élève principal (si cours individuel) */}
