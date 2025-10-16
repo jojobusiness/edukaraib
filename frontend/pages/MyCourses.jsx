@@ -12,6 +12,7 @@ import {
   getDoc,
   updateDoc,
   limit,
+  onSnapshot
 } from 'firebase/firestore';
 
 /* ---------- Helpers ---------- */
@@ -158,31 +159,32 @@ export default function MyCourses() {
   const nameCache = useRef(new Map());
 
   useEffect(() => {
-    (async () => {
-      if (!auth.currentUser) return;
-      setLoading(true);
-      const uid = auth.currentUser.uid;
+    if (!auth.currentUser) return;
+    const uid = auth.currentUser.uid;
+    setLoading(true);
 
-      // A) leçons où tu es l'élève principal
-      let map = new Map();
-      const qA = query(collection(db, 'lessons'), where('student_id', '==', uid));
-      const sA = await getDocs(qA);
-      sA.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
+    const map = new Map();
+    const upsert = (id, data) => { map.set(id, { id, ...data }); setCourses(Array.from(map.values())); };
+    const remove = (id) => { map.delete(id); setCourses(Array.from(map.values())); };
 
-      // B) leçons où tu es dans participant_ids
-      const qB = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', uid));
-      const sB = await getDocs(qB);
-      sB.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
+    const qA = query(collection(db, 'lessons'), where('student_id', '==', uid));
+    const qB = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', uid));
 
-      const data = Array.from(map.values());
-
-      // Enrichir prof
-      const tIds = Array.from(new Set(data.map(l => l.teacher_id).filter(Boolean)));
-      await Promise.all(tIds.map((tid) => resolveTeacherName(tid, nameCache)));
-
-      setCourses(data);
+    const unsubA = onSnapshot(qA, (snap) => {
+      snap.docChanges().forEach((ch) => (
+        ch.type === 'removed' ? remove(ch.doc.id) : upsert(ch.doc.id, ch.doc.data())
+      ));
       setLoading(false);
-    })();
+    }, () => setLoading(false));
+
+    const unsubB = onSnapshot(qB, (snap) => {
+      snap.docChanges().forEach((ch) => (
+        ch.type === 'removed' ? remove(ch.doc.id) : upsert(ch.doc.id, ch.doc.data())
+      ));
+      setLoading(false);
+    }, () => setLoading(false));
+
+    return () => { unsubA(); unsubB(); };
   }, []);
 
   // prochain confirmé (toi) — basé sur “confirmé pour moi” (participantsMap OU status global)

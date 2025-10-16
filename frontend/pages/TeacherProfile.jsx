@@ -7,6 +7,34 @@ import {
 } from 'firebase/firestore';
 import BookingModal from '../components/BookingModal';
 
+// --- helper: recharge les créneaux pris/occupés (confirmés, bookés, ou groupes avec participants)
+async function refreshBookedSlots(teacherId, setBookedSlots) {
+  const lessonsQ = query(collection(db, 'lessons'), where('teacher_id', '==', teacherId));
+  const lessonsSnap = await getDocs(lessonsQ);
+
+  const full = new Map();
+  lessonsSnap.docs.forEach((docu) => {
+    const l = docu.data();
+    if (!l.slot_day && l.slot_hour == null) return;
+    const key = `${l.slot_day}|${l.slot_hour}`;
+
+    // rouge si: confirmé OU en attente 'booked' OU groupe avec ≥1 participant
+    const isConfirmedOrBooked = l.status === 'confirmed' || l.status === 'booked';
+    const hasAnyGroupParticipant = Array.isArray(l.participant_ids) && l.participant_ids.length > 0;
+
+    if (isConfirmedOrBooked || (l.is_group && hasAnyGroupParticipant)) {
+      full.set(key, true);
+    }
+  });
+
+  setBookedSlots(
+    Array.from(full.keys()).map((k) => {
+      const [day, hour] = k.split('|');
+      return { day, hour: Number(hour) };
+    })
+  );
+}
+
 const DAYS_ORDER = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
 function countAccepted(l) {
@@ -68,32 +96,8 @@ export default function TeacherProfile() {
       if (!cancelled) setReviews(rSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
 
       // slots occupés (confirmés, réservés, ou groupes complets)
-      const lessonsQ = query(collection(db, 'lessons'), where('teacher_id', '==', teacherId));
-      const lessonsSnap = await getDocs(lessonsQ);
-      const full = new Map();
-
-      lessonsSnap.docs.forEach((docu) => {
-        const l = docu.data();
-        if (!l.slot_day && l.slot_hour == null) return;
-        const key = `${l.slot_day}|${l.slot_hour}`;
-
-        const isConfirmed = l.status === 'confirmed' || l.status === 'booked';
-        const isFullGroup =
-          l.is_group &&
-          Number(l.capacity || 0) > 0 &&
-          countAccepted(l) >= Number(l.capacity);
-
-        if (isConfirmed || isFullGroup) {
-          full.set(key, true);
-        }
-      });
-
-      setBookedSlots(
-        Array.from(full.keys()).map((k) => {
-          const [day, hour] = k.split('|');
-          return { day, hour: Number(hour) };
-        })
-      );
+      await refreshBookedSlots(teacherId, setBookedSlots);
+      
     })();
     return () => { cancelled = true; };
   }, [teacherId]);
@@ -348,8 +352,8 @@ export default function TeacherProfile() {
 
     // 🚫 Empêcher un professeur de réserver ses propres cours
     if (teacherId === auth.currentUser.uid) {
-      setConfirmationMsg("Tu ne peux pas réserver tes propres cours.");
-      setShowBooking(false);
+      // rafraîchir l'état visuel des créneaux (rouge)
+      try { await refreshBookedSlots(teacherId, setBookedSlots); } catch {}
       return;
     }
 
