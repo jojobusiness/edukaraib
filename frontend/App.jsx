@@ -44,6 +44,9 @@ import PrivateRoute from './components/PrivateRoute';
 import StudentRoute from './components/StudentRoute';
 import RequireRole from './routes/RequireRole';
 
+// ✅ Import de la page administrateur
+import AdminDashboard from './pages/AdminDashboard';
+
 /** Optionnel : mémorise la dernière route visitée pour un meilleur retour après refresh/reco */
 function RouteMemory() {
   const location = useLocation();
@@ -150,6 +153,16 @@ function App() {
         <Route path="/prof/earnings" element={<TeacherRoute><TeacherEarnings /></TeacherRoute>} />
         <Route path="/prof/planning" element={<TeacherRoute><TeacherCalendar /></TeacherRoute>} />
         <Route path="/prof/reviews" element={<PrivateRoute role="teacher"><TeacherReviews /></PrivateRoute>} />
+
+        {/* 🛠️ Administrateur */}
+        <Route
+          path="/admin/dashboard"
+          element={
+            <RequireRole roles={['admin']}>
+              <AdminDashboard />
+            </RequireRole>
+          }
+        />
 
         {/* 404 */}
         <Route path="*" element={<NotFound />} />
