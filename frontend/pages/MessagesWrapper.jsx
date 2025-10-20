@@ -1,35 +1,42 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import ChatList from "./ChatList";
 import Messages from "./Messages";
 
 /**
  * MessagesWrapper.jsx
- * Point d'entrée de la messagerie :
- * - Affiche la liste des discussions
- * - Charge Messages.jsx quand une discussion est sélectionnée
+ * - Lit l'id de l'URL (/chat/:id) et ouvre la discussion
+ * - Sinon affiche la liste et attend un onSelectChat
  */
 export default function MessagesWrapper() {
+  const { id } = useParams(); // :id = receiverId
+  const navigate = useNavigate();
   const [selectedReceiver, setSelectedReceiver] = useState(null);
 
-  // Quand on clique sur une discussion dans ChatList :
+  // Si on arrive via /chat/:id, on sélectionne automatiquement
+  useEffect(() => {
+    if (id) setSelectedReceiver(id);
+  }, [id]);
+
   const handleSelectChat = (receiverId) => {
     setSelectedReceiver(receiverId);
+    // met à jour l'URL pour partage/refresh
+    navigate(`/chat/${receiverId}`, { replace: false });
   };
 
-  // Bouton retour depuis la discussion :
   const handleBack = () => {
     setSelectedReceiver(null);
+    // revient à la liste
+    navigate("/chat", { replace: false });
   };
 
   return (
     <div className="flex flex-col h-screen bg-gray-100">
       {!selectedReceiver ? (
-        // ✅ Mode liste : aucune discussion ouverte
         <div className="flex-1 overflow-hidden">
           <ChatList onSelectChat={handleSelectChat} />
         </div>
       ) : (
-        // ✅ Mode discussion : on affiche Messages.jsx
         <div className="flex-1 overflow-hidden">
           <Messages receiverId={selectedReceiver} onBack={handleBack} />
         </div>

@@ -140,8 +140,11 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
   const debounceRef = useRef(null);
   const [loading, setLoading] = useState(false);
 
-  // ✅ (ajout minimal) mémoriser l'élève d'un cours individuel pour l'afficher dans Participants
+  // ✅ mémoriser l'élève d'un cours individuel (pour l’affichage ET pour les bascules auto)
   const [singleStudentId, setSingleStudentId] = useState(null);
+
+  // 🔒 éviter les boucles lors d’un auto-downgrade
+  const guardRef = useRef({ downgrading: false });
 
   useEffect(() => {
     if (!open || !lesson?.id) return;
@@ -160,19 +163,43 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
         setCapacity(Number(data.capacity || 1));
         setParticipantIds(pIds);
         setParticipantsMap(data.participantsMap || {});
-
-        // 🔹 conserver l'élève individuel (sans rien changer d'autre)
         setSingleStudentId(!data.is_group && data.student_id ? data.student_id : null);
 
         const nm = {};
-        for (const id of pIds) {
-          nm[id] = await resolveName(id);
-        }
-        // 🔹 résoudre aussi le nom de l'individuel pour l'afficher dans Participants
+        for (const id of pIds) nm[id] = await resolveName(id);
         if (!data.is_group && data.student_id) {
           nm[data.student_id] = await resolveName(data.student_id);
         }
         setNameMap(nm);
+
+        // 🔁 Auto-downgrade si on est passés en groupé puis que l’invitation est refusée/retirée
+        // Règle : si is_group === true ET qu’il ne reste aucun autre participant “actif”
+        // que l’élève d’origine (singleStudentId), alors on repasse en individuel (capacité 1).
+        if (data.is_group && singleStudentId) {
+          const pm = data.participantsMap || {};
+          const activeOthers = (pIds || []).filter((sid) => {
+            if (sid === singleStudentId) return false;
+            const st = String(pm?.[sid]?.status || 'pending');
+            // actifs = tout ce qui n’est pas rejeté/supprimé
+            return !['rejected', 'removed', 'deleted'].includes(st);
+          });
+
+          if (!guardRef.current.downgrading && activeOthers.length === 0) {
+            try {
+              guardRef.current.downgrading = true;
+              await updateDoc(ref, {
+                is_group: false,
+                capacity: 1,
+                participant_ids: arrayRemove(singleStudentId),
+                [`participantsMap.${singleStudentId}`]: deleteField(),
+              });
+            } catch (e) {
+              console.error('Auto-downgrade failed:', e);
+            } finally {
+              setTimeout(() => { guardRef.current.downgrading = false; }, 500);
+            }
+          }
+        }
       },
       (err) => {
         setLoading(false);
@@ -180,7 +207,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
       }
     );
     return () => unsub();
-  }, [open, lesson?.id]);
+  }, [open, lesson?.id, singleStudentId]);
 
   useEffect(() => {
     if (!open) return;
@@ -200,11 +227,11 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     }, 250);
   }, [search, open]);
 
-  // ✅ Compteurs affichés en haut : on ajoute +1 si c'est un cours individuel
   const confirmedBase = useMemo(
     () => countConfirmed(participantIds, participantsMap),
     [participantIds, participantsMap]
   );
+  // ➕ afficher +1 si cours individuel (pour le bandeau)
   const confirmedDisplayed = useMemo(
     () => confirmedBase + (singleStudentId ? 1 : 0),
     [confirmedBase, singleStudentId]
@@ -231,20 +258,21 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     const cap = Number(capacity) || 1;
     const ref = doc(db, 'lessons', lesson.id);
 
-    // Patch de base
     const patch = { capacity: cap };
 
     if (cap <= 1) {
-      // 👉 Rester/repasse en INDIVIDUEL si capacité = 1
-      // Ne touche pas aux participant_ids: l'affichage restera "cours individuel"
-      // (Card considère is_group OU >1 participants pour basculer en "groupé")
+      // 👉 Revenir/forcer INDIVIDUEL
       patch.is_group = false;
+      // Si on avait précédemment mis l’élève d’origine en participant, on peut le retirer :
+      if (singleStudentId) {
+        patch.participant_ids = arrayRemove(singleStudentId);
+        patch[`participantsMap.${singleStudentId}`] = deleteField();
+      }
     } else {
-      // 👉 Passer en GROUPE si capacité > 1
+      // 👉 Forcer GROUPE si capacité > 1
       patch.is_group = true;
 
-      // Si le cours avait déjà un élève individuel, on le remet dans le groupe
-      // pour qu'il réapparaisse immédiatement côté prof.
+      // S’assurer que l’élève individuel est bien gardé comme participant confirmé
       if (singleStudentId && !(participantIds || []).includes(singleStudentId)) {
         patch.participant_ids = arrayUnion(singleStudentId);
         patch[`participantsMap.${singleStudentId}`] = {
@@ -253,7 +281,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
           is_paid: !!lesson.is_paid,
           paid_by: null,
           paid_at: null,
-          status: 'confirmed',            // on l’affiche comme présent
+          status: 'confirmed',
           added_at: serverTimestamp(),
         };
       }
@@ -268,7 +296,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     }
   }
 
-  // Invitation — pas d’optimistic update (onSnapshot fait foi)
+  // ✅ INVITER : conversion auto en GROUPÉ, capacité +1 (min 2), conserver l’élève d’origine
   async function addByPick(p) {
     if (!p?.id) return;
     const id = p.id;
@@ -276,7 +304,14 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
       alert('Déjà présent dans la liste.');
       return;
     }
-    const patch = {
+
+    const ref = doc(db, 'lessons', lesson.id);
+
+    // Capacité à +1 (minimum 2)
+    const newCap = Math.max((Number(capacity) || 1) + 1, 2);
+
+    // Patch de base pour l’invité
+    const invitedPayload = {
       parent_id: null,
       booked_by: null,
       is_paid: false,
@@ -285,13 +320,32 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
       status: 'invited_student',
       added_at: serverTimestamp(),
     };
+
+    // Patch complet
+    const patch = {
+      is_group: true,
+      capacity: newCap,
+      participant_ids: singleStudentId ? arrayUnion(id, singleStudentId) : arrayUnion(id),
+      [`participantsMap.${id}`]: invitedPayload,
+    };
+
+    // Conserver l’élève d’origine (si cours individuel) comme “confirmé”
+    if (singleStudentId) {
+      patch[`participantsMap.${singleStudentId}`] = {
+        parent_id: lesson.parent_id || null,
+        booked_by: lesson.booked_by || null,
+        is_paid: !!lesson.is_paid,
+        paid_by: null,
+        paid_at: null,
+        status: 'confirmed',
+        added_at: serverTimestamp(),
+      };
+    }
+
     try {
-      await updateDoc(doc(db, 'lessons', lesson.id), {
-        is_group: true,
-        participant_ids: arrayUnion(id),
-        [`participantsMap.${id}`]: patch,
-      });
-      // notif élève
+      await updateDoc(ref, patch);
+
+      // notif élève invité
       try {
         await addDoc(collection(db, 'notifications'), {
           user_id: id,
@@ -302,6 +356,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
           message: `Invitation à rejoindre le cours ${lesson.subject_id || ''} (${lesson.slot_day} ${lesson.slot_hour}h).`,
         });
       } catch {}
+
       setSearch('');
       setResults([]);
     } catch (e) {
@@ -350,7 +405,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
         <div className="p-5 space-y-6">
           {loading && <div className="text-sm text-gray-500">Chargement…</div>}
 
-          {/* Réglages de groupe (inchangé) */}
+          {/* Réglages de groupe */}
           <div className="flex items-center gap-3">
             <label className="font-medium">Capacité (places max)</label>
             <input
@@ -371,7 +426,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
             Confirmés : <b>{confirmedDisplayed}</b> / {capacity} — Places libres : <b>{freeDisplayed}</b>
           </div>
 
-          {/* Recherche / invitation (inchangé) */}
+          {/* Recherche / invitation */}
           <div>
             <label className="block text-sm font-medium mb-1">Inviter un élève (par nom)</label>
             <input
@@ -405,7 +460,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
             )}
           </div>
 
-          {/* ✅ PARTICIPANTS (inclut aussi l'élève d'un cours individuel, seulement ici) */}
+          {/* Participants (inclut l'élève individuel en “virtuel”) */}
           <div className="border rounded-lg p-3">
             <div className="font-medium mb-2">Participants</div>
             {participantsForRender.length === 0 ? (
@@ -413,7 +468,6 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
             ) : (
               <div className="flex flex-wrap gap-2">
                 {participantsForRender.map((sid) => {
-                  // statut + paiement : pour l'élève individuel on force un rendu "Confirmé"
                   const ent = participantsMap?.[sid] || {};
                   const isVirtualIndividual = singleStudentId === sid && !(participantIds || []).includes(sid);
                   const st = isVirtualIndividual ? 'confirmed' : (ent.status || 'pending');
@@ -443,7 +497,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
             )}
           </div>
 
-          {/* Invitations envoyées (inchangé) */}
+          {/* Invitations envoyées */}
           <div className="border rounded-lg p-3">
             <div className="font-medium mb-2">Invitations envoyées</div>
             {(() => {

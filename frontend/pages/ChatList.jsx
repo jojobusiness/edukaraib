@@ -42,7 +42,7 @@ function formatDate(date) {
   return date.toLocaleDateString();
 }
 
-export default function ChatList() {
+export default function ChatList({ onSelectChat }) {
   const [items, setItems] = useState([]);
   const { role: currentRole, loading } = useUserRole();
 
@@ -136,18 +136,28 @@ export default function ChatList() {
                     </div>
                   </div>
 
-                  <div className="flex flex-col items-end">
+                  <div className="flex items-center gap-2">
                     {c.lastDate && (
-                      <div className="text-xs text-gray-400 mb-2">
+                      <div className="text-xs text-gray-400">
                         {formatDate(c.lastDate)}
                       </div>
                     )}
-                    <Link
-                      to={`/chat/${c.otherUid}`}
-                      className="bg-primary text-white px-4 py-2 rounded shadow font-semibold hover:bg-primary-dark transition"
-                    >
-                      Discuter
-                    </Link>
+
+                    {onSelectChat ? (
+                      <button
+                        onClick={() => onSelectChat(c.otherUid)}
+                        className="bg-primary text-white px-4 py-2 rounded shadow font-semibold hover:bg-primary-dark transition"
+                      >
+                        Discuter
+                      </button>
+                    ) : (
+                      <Link
+                        to={`/chat/${c.otherUid}`}
+                        className="bg-primary text-white px-4 py-2 rounded shadow font-semibold hover:bg-primary-dark transition"
+                      >
+                        Discuter
+                      </Link>
+                    )}
                   </div>
                 </li>
               ))}

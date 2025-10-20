@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { auth, db } from "../lib/firebase";
 import {
   collection,
@@ -20,7 +20,6 @@ import {
 import { io } from "socket.io-client";
 
 // ── CONFIG SOCKET ──────────────────────────────────────────
-// Mets l'URL de ton serveur Socket.io (prod/dev)
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:4000";
 
 // -------- Helpers --------
@@ -63,8 +62,12 @@ async function ensureConversation(myUid, otherUid) {
   return ref.id;
 }
 
-export default function Messages({ receiverId }) {
-  const [cid, setCid] = useState(null); // conversationId
+export default function Messages(props) {
+  const routeParams = useParams();
+  const routeReceiverId = routeParams?.id || null;
+  const receiverId = props.receiverId || routeReceiverId;
+
+  const [cid, setCid] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [receiverName, setReceiverName] = useState("");
@@ -79,7 +82,6 @@ export default function Messages({ receiverId }) {
   useEffect(() => {
     const socket = io(SOCKET_URL, {
       autoConnect: false,
-      // On peut passer le token dès le handshake
       auth: async (cb) => {
         const current = auth.currentUser;
         const idToken = current ? await current.getIdToken() : null;
@@ -88,7 +90,6 @@ export default function Messages({ receiverId }) {
     });
     socket.connect();
 
-    // Fallback: si pas de token au handshake, on (re)auth via event
     socket.on("connect", async () => {
       try {
         const current = auth.currentUser;
@@ -97,17 +98,9 @@ export default function Messages({ receiverId }) {
       } catch {}
     });
 
-    // (Optionnel) événements temps réel côté socket
-    socket.on("message_created", (payload) => {
-      // Pas nécessaire si on écoute Firestore,
-      // mais utile pour réactions ultra-rapides si tu veux pré-afficher
-    });
-
     socketRef.current = socket;
     return () => {
-      try {
-        socket.disconnect();
-      } catch {}
+      try { socket.disconnect(); } catch {}
       socketRef.current = null;
     };
   }, []);
@@ -120,7 +113,6 @@ export default function Messages({ receiverId }) {
       const conversationId = await ensureConversation(myUid, receiverId);
       setCid(conversationId);
 
-      // Join côté socket
       try {
         socketRef.current?.emit("join_dm", { otherUid: receiverId }, () => {});
       } catch {}
@@ -139,7 +131,7 @@ export default function Messages({ receiverId }) {
     })();
   }, [receiverId]);
 
-  // 3) Flux messages (de cette conversation) via Firestore
+  // 3) Flux messages
   useEffect(() => {
     if (!cid) return;
     const qMsg = query(
@@ -169,14 +161,11 @@ export default function Messages({ receiverId }) {
     const socket = socketRef.current;
     const text = newMessage.trim();
 
-    // Émission vers le serveur (qui écrit dans Firestore)
     socket?.emit(
       "send_message",
       { conversationId: cid, toUid: receiverId, text },
       (res) => {
         if (!res?.ok) {
-          // Fallback (si le serveur est down): on repasse par Firestore client
-          // pour ne pas bloquer l'utilisateur
           addDoc(collection(db, "messages"), {
             conversationId: cid,
             sender_uid: myUid,
@@ -231,35 +220,8 @@ export default function Messages({ receiverId }) {
         (window.firebase?.firestore?.FieldValue ||
           (await import("firebase/firestore"))).arrayUnion(myUid),
     }).catch(() => {});
-
-    let done = false;
-    while (!done) {
-      const qMsgs = query(
-        collection(db, "messages"),
-        where("conversationId", "==", conversationId),
-        limit(400)
-      );
-      const snap = await getDocs(qMsgs);
-      if (snap.empty) break;
-
-      const batch = writeBatch(db);
-      snap.docs.forEach((d) => {
-        batch.update(d.ref, {
-          deletedFor: (window.firebase?.firestore?.FieldValue || null),
-        });
-      });
-      await Promise.all(
-        snap.docs.map(async (d) => {
-          try {
-            await updateDoc(d.ref, { [`deletedFor_${myUid}`]: true });
-          } catch {}
-        })
-      );
-      done = snap.size < 400;
-    }
   }
 
-  // 6) Suppression (avec fallback si rules bloquent)
   const handleDeleteConversation = async () => {
     const myUid = auth.currentUser?.uid;
     if (!myUid || !cid) return;
@@ -269,26 +231,17 @@ export default function Messages({ receiverId }) {
     );
     if (!ok) return;
 
-    try {
-      unsubRefs.current.msgs?.();
-    } catch {}
+    try { unsubRefs.current.msgs?.(); } catch {}
 
     try {
       await tryHardDeleteConversation(cid, myUid);
-    } catch (e) {
-      if (
-        (e && (e.code === "permission-denied" || /PERMISSION|denied/i.test(String(e)))) ||
-        true
-      ) {
-        await softDeleteForUser(cid, myUid);
-      } else {
-        console.error(e);
-        alert("Erreur lors de la suppression.");
-        return;
-      }
+    } catch {
+      await softDeleteForUser(cid, myUid);
     }
 
-    navigate("/conversations");
+    // back to list if wrapper present, else dashboard
+    if (typeof props.onBack === "function") props.onBack();
+    else navigate("/chat-list");
   };
 
   if (!receiverId) return <div className="p-4">Chargement…</div>;
@@ -297,9 +250,8 @@ export default function Messages({ receiverId }) {
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white p-4 shadow flex items-center gap-3">
-       {/* Bouton retour à la liste */}
         <button
-          onClick={onBack || (() => navigate("/dashboard"))}
+          onClick={props.onBack || (() => navigate("/dashboard"))}
           className="text-sm px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50"
         >
           ← Retour
@@ -326,8 +278,6 @@ export default function Messages({ receiverId }) {
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.map((m) => {
           const myUid = auth.currentUser?.uid;
-          if (m[`deletedFor_${myUid}`]) return null;
-
           const isMine = m.sender_uid === myUid;
           return (
             <div
