@@ -1,5 +1,3 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import DashboardLayout from '../components/DashboardLayout';
 import { auth, db } from '../lib/firebase';
 import {
   addDoc,
@@ -17,6 +15,8 @@ import {
   where,
 } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
+import { Link } from 'react-router-dom';
+import fetchWithAuth from '../utils/fetchWithAuth';
 
 /* ===========================
    Utils
@@ -42,11 +42,107 @@ const nameOf = (u) =>
   'Sans nom';
 
 /* ===========================
-   AdminDashboard
+   Petite modale remboursement
+=========================== */
+function RefundModal({ open, onClose, onConfirm, payment, teacher }) {
+  const [amount, setAmount] = useState(''); // en euros (optionnel)
+  const [reason, setReason] = useState('requested_by_customer');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setAmount('');
+      setReason('requested_by_customer');
+      setLoading(false);
+    }
+  }, [open]);
+
+  if (!open || !payment) return null;
+
+  const handleConfirm = async () => {
+    setLoading(true);
+    try {
+      await onConfirm({
+        paymentId: payment.id,
+        amount_eur: amount ? Number(amount) : undefined,
+        reason,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const grossEur =
+    typeof payment.amount === 'number'
+      ? payment.amount / 100
+      : Number(payment.gross_eur || 0);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+        <div className="p-4 border-b">
+          <div className="text-lg font-semibold">Rembourser un paiement</div>
+          <div className="text-xs text-gray-500 mt-1">
+            Prof : <b>{teacher || payment.teacher_id}</b> ·
+            Montant initial : <b>{grossEur ? `${grossEur.toFixed(2)} €` : '—'}</b>
+          </div>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <div>
+            <label className="block text-sm font-medium">Montant à rembourser (optionnel)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2"
+              placeholder={`laisser vide pour rembourser ${grossEur ? `${grossEur.toFixed(2)} €` : 'le total'}`}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium">Raison</label>
+            <select
+              className="w-full border rounded-lg px-3 py-2"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            >
+              <option value="requested_by_customer">requested_by_customer</option>
+              <option value="duplicate">duplicate</option>
+              <option value="fraudulent">fraudulent</option>
+              <option value="other">other</option>
+            </select>
+          </div>
+
+          <div className="text-xs text-gray-500">
+            • Si le paiement n’a pas encore été reversé au prof, un <b>refund</b> simple est créé. <br />
+            • S’il a déjà été reversé, on fait un <b>reverse transfer</b> côté Stripe, puis un refund côté client si nécessaire.
+          </div>
+        </div>
+
+        <div className="p-4 border-t flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 rounded bg-gray-100 hover:bg-gray-200">
+            Annuler
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={loading}
+            className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
+          >
+            {loading ? 'Traitement…' : 'Confirmer le remboursement'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ===========================
+   AdminDashboard (sans layout)
 =========================== */
 export default function AdminDashboard() {
   const [tab, setTab] = useState('accounts'); // accounts | payments | messages
-  const [me, setMe] = useState(null);
   const [meRole, setMeRole] = useState(null);
 
   // --- Accounts state ---
@@ -64,6 +160,11 @@ export default function AdminDashboard() {
   const [dateFrom, setDateFrom] = useState(''); // YYYY-MM-DD
   const [dateTo, setDateTo] = useState('');   // YYYY-MM-DD
 
+  // --- Refund modal ---
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [refundTarget, setRefundTarget] = useState(null);
+  const [refundTeacherName, setRefundTeacherName] = useState('');
+
   // --- Messages state ---
   const [messageTitle, setMessageTitle] = useState('');
   const [messageBody, setMessageBody] = useState('');
@@ -73,7 +174,6 @@ export default function AdminDashboard() {
   useEffect(() => {
     const cur = auth.currentUser;
     if (!cur) return;
-    setMe(cur);
     (async () => {
       try {
         const snap = await getDoc(doc(db, 'users', cur.uid));
@@ -106,7 +206,6 @@ export default function AdminDashboard() {
     (async () => {
       setPayLoading(true);
 
-      // Optional date filtering (client-side to keep code simple)
       const [pSnap, rSnap, poSnap] = await Promise.all([
         getDocs(query(collection(db, 'payments'), orderBy('created_at', 'desc'), limit(500))),
         getDocs(query(collection(db, 'refunds'), orderBy('created_at', 'desc'), limit(500))),
@@ -148,15 +247,7 @@ export default function AdminDashboard() {
         } else if (u?.role !== roleFilter) return false;
       }
       if (!t) return true;
-      const s = [
-        u.email,
-        nameOf(u),
-        u.city,
-        u.role,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
+      const s = [u.email, nameOf(u), u.city, u.role].filter(Boolean).join(' ').toLowerCase();
       return s.includes(t);
     });
   }, [users, search, roleFilter]);
@@ -180,9 +271,7 @@ export default function AdminDashboard() {
   }, [payments, refunds]);
 
   const perTeacher = useMemo(() => {
-    // Aggregate net by teacher: (sum succeeded for teacher) - (sum refunds for teacher)
     const byId = new Map();
-
     const add = (tid, kind, cents) => {
       if (!byId.has(tid)) byId.set(tid, { teacher_id: tid, paid: 0, refunded: 0, net: 0 });
       const row = byId.get(tid);
@@ -190,14 +279,12 @@ export default function AdminDashboard() {
       row.net = row.paid - row.refunded;
       byId.set(tid, row);
     };
-
     payments.forEach((p) => {
       if (p.status === 'succeeded' && p.teacher_id) add(p.teacher_id, 'paid', Number(p.amount || 0));
     });
     refunds.forEach((r) => {
       if (r.teacher_id) add(r.teacher_id, 'refunded', Number(r.amount || 0));
     });
-
     const arr = Array.from(byId.values());
     arr.sort((a, b) => b.net - a.net);
     return arr;
@@ -245,7 +332,7 @@ export default function AdminDashboard() {
       alert('Email de réinitialisation envoyé.');
     } catch (e) {
       console.error(e);
-      alert('Impossible denvoyer le reset password.');
+      alert("Impossible d'envoyer le reset password.");
     }
   };
 
@@ -261,10 +348,40 @@ export default function AdminDashboard() {
   };
 
   /* ===========================
-     Messaging
+     Refund action
+  =========================== */
+  const openRefund = async (payment) => {
+    setRefundTarget(payment);
+    const teacher = teacherMap.get(payment.teacher_id);
+    setRefundTeacherName(teacher ? nameOf(teacher) : '');
+    setRefundOpen(true);
+  };
+
+  const confirmRefund = async ({ paymentId, amount_eur, reason }) => {
+    try {
+      const body = { paymentId };
+      if (amount_eur != null && !Number.isNaN(Number(amount_eur))) body.amount_eur = Number(amount_eur);
+      if (reason) body.reason = reason;
+
+      const resp = await fetchWithAuth('/api/refund', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      if (!resp || resp.error) throw new Error(resp?.error || 'Échec du remboursement');
+
+      alert('Remboursement lancé avec succès.');
+      setRefundOpen(false);
+      setRefundTarget(null);
+    } catch (e) {
+      console.error(e);
+      alert(e.message || 'Remboursement impossible.');
+    }
+  };
+
+  /* ===========================
+     Messaging (broadcast)
   =========================== */
   const sendMessage = async (audience) => {
-    // audience: 'selected' | 'filtered' | 'all'
     let targets = [];
     if (audience === 'selected') {
       targets = filteredUsers.filter((u) => selectedIds.has(u.id));
@@ -279,29 +396,19 @@ export default function AdminDashboard() {
     }
     if (!window.confirm(`Envoyer ce message à ${targets.length} compte(s) ?`)) return;
 
-    setMessageSending(true);
     try {
-      const batchSize = Math.min(500, targets.length); // simple protection
       let sent = 0;
-      for (let i = 0; i < targets.length; i += batchSize) {
-        const chunk = targets.slice(i, i + batchSize);
-        // Envoi séquentiel simple (remplacer par Cloud Function si besoin)
-        // notifications: { user_id, title, body, read:false, created_at, type:'admin_broadcast' }
-        // Peut être étendu pour push/SMS/email
-        /* eslint-disable no-await-in-loop */
-        for (const u of chunk) {
-          await addDoc(collection(db, 'notifications'), {
-            user_id: u.id,
-            read: false,
-            created_at: serverTimestamp(),
-            type: 'admin_broadcast',
-            title: messageTitle.trim(),
-            message: messageBody.trim(),
-            from_admin: me?.uid || null,
-          });
-          sent += 1;
-        }
-        /* eslint-enable no-await-in-loop */
+      for (const u of targets) {
+        await addDoc(collection(db, 'notifications'), {
+          user_id: u.id,
+          read: false,
+          created_at: serverTimestamp(),
+          type: 'admin_broadcast',
+          title: messageTitle.trim(),
+          message: messageBody.trim(),
+          from_admin: auth.currentUser?.uid || null,
+        });
+        sent += 1;
       }
       alert(`Message envoyé à ${sent} compte(s).`);
       setMessageTitle('');
@@ -310,8 +417,6 @@ export default function AdminDashboard() {
     } catch (e) {
       console.error(e);
       alert("Échec de l'envoi de message.");
-    } finally {
-      setMessageSending(false);
     }
   };
 
@@ -320,22 +425,37 @@ export default function AdminDashboard() {
   =========================== */
   if (meRole && meRole !== 'admin') {
     return (
-      <DashboardLayout role="admin">
-        <div className="p-6">
+      <div className="min-h-screen bg-gray-50">
+        {/* Header minimal */}
+        <header className="w-full bg-white border-b">
+          <div className="max-w-7xl mx-auto px-4 py-3">
+            <Link to="/" className="text-xl font-extrabold text-primary hover:underline">EduKaraib</Link>
+          </div>
+        </header>
+
+        <main className="max-w-7xl mx-auto p-6">
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
             Accès refusé. Votre rôle doit être <b>admin</b>.
           </div>
-        </div>
-      </DashboardLayout>
+        </main>
+      </div>
     );
   }
 
   /* ===========================
-     UI
+     UI (sans layout)
   =========================== */
   return (
-    <DashboardLayout role="admin">
-      <div className="max-w-7xl mx-auto p-6">
+    <div className="min-h-screen bg-gray-50">
+      {/* Header minimal avec lien vers accueil */}
+      <header className="w-full bg-white border-b">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <Link to="/" className="text-xl font-extrabold text-primary hover:underline">EduKaraib</Link>
+          <div className="text-xs text-gray-500">Admin</div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto p-6">
         <h1 className="text-2xl font-bold text-primary mb-4">Tableau de bord Administrateur</h1>
 
         {/* Tabs */}
@@ -458,6 +578,15 @@ export default function AdminDashboard() {
                       <td className="p-2">{toDateStr(u.createdAt)}</td>
                       <td className="p-2 text-right">
                         <div className="flex gap-2 justify-end">
+                          {/* Messagerie standard */}
+                          <Link
+                            to={`/chat/${u.id}`}
+                            className="px-2 py-1 text-xs rounded bg-primary text-white hover:bg-primary-dark"
+                            title="Contacter par messagerie"
+                          >
+                            Contacter
+                          </Link>
+
                           <button
                             className="px-2 py-1 text-xs rounded bg-amber-100 hover:bg-amber-200"
                             onClick={() => resetPassword(u)}
@@ -572,17 +701,19 @@ export default function AdminDashboard() {
                       <th className="p-2 text-left">Prof</th>
                       <th className="p-2 text-right">Montant</th>
                       <th className="p-2 text-left">Statut</th>
+                      <th className="p-2 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {payLoading && (
-                      <tr><td colSpan={4} className="p-4 text-center text-gray-500">Chargement…</td></tr>
+                      <tr><td colSpan={5} className="p-4 text-center text-gray-500">Chargement…</td></tr>
                     )}
                     {!payLoading && payments.length === 0 && (
-                      <tr><td colSpan={4} className="p-4 text-center text-gray-400">Aucun paiement</td></tr>
+                      <tr><td colSpan={5} className="p-4 text-center text-gray-400">Aucun paiement</td></tr>
                     )}
                     {!payLoading && payments.map((p) => {
                       const t = teacherMap.get(p.teacher_id);
+                      const canRefund = ['succeeded', 'held', 'released'].includes(String(p.status || ''));
                       return (
                         <tr key={p.id} className="border-t">
                           <td className="p-2">{toDateStr(p.created_at)}</td>
@@ -592,6 +723,16 @@ export default function AdminDashboard() {
                             <span className={`px-2 py-0.5 rounded ${p.status === 'succeeded' ? 'bg-green-100 text-green-700' : p.status === 'refunded' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100'}`}>
                               {p.status}
                             </span>
+                          </td>
+                          <td className="p-2 text-right">
+                            {canRefund && (
+                              <button
+                                className="px-3 py-1 rounded text-sm border border-red-300 text-red-700 hover:bg-red-50"
+                                onClick={() => openRefund(p)}
+                              >
+                                Rembourser
+                              </button>
+                            )}
                           </td>
                         </tr>
                       );
@@ -674,15 +815,24 @@ export default function AdminDashboard() {
                 </table>
               </div>
             </div>
+
+            {/* Modal remboursement */}
+            <RefundModal
+              open={refundOpen}
+              onClose={() => setRefundOpen(false)}
+              onConfirm={confirmRefund}
+              payment={refundTarget}
+              teacher={refundTeacherName}
+            />
           </div>
         )}
 
         {/* === MESSAGES TAB === */}
         {tab === 'messages' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Composer */}
+            {/* Composer (broadcast notifications) */}
             <div className="lg:col-span-2 bg-white border rounded-xl p-4">
-              <h3 className="text-lg font-semibold mb-3">Envoyer un message</h3>
+              <h3 className="text-lg font-semibold mb-3">Envoyer un message (broadcast)</h3>
               <div className="grid grid-cols-1 gap-3">
                 <input
                   className="border rounded-lg px-3 py-2"
@@ -721,7 +871,7 @@ export default function AdminDashboard() {
                 </button>
               </div>
               <p className="text-xs text-gray-500 mt-2">
-                Les messages sont créés dans la collection <code>notifications</code> avec <code>type: 'admin_broadcast'</code>.
+                Diffusion via <code>notifications</code>. Pour un échange direct, utilise <b>Contacter</b> dans l’onglet Comptes (ouvre le chat).
               </p>
             </div>
 
@@ -743,6 +893,12 @@ export default function AdminDashboard() {
                       <div className="font-medium">{nameOf(u)}</div>
                       <div className="text-xs text-gray-500">{u.email} · {u.role}</div>
                     </div>
+                    <Link
+                      to={`/chat/${u.id}`}
+                      className="text-xs px-2 py-1 rounded bg-primary text-white hover:bg-primary-dark"
+                    >
+                      Contacter
+                    </Link>
                   </div>
                 ))}
                 {filteredUsers.length > 200 && (
@@ -754,7 +910,7 @@ export default function AdminDashboard() {
             </div>
           </div>
         )}
-      </div>
-    </DashboardLayout>
+      </main>
+    </div>
   );
 }
