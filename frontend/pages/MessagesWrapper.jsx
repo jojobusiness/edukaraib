@@ -1,22 +1,34 @@
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import ChatList from "./ChatList";
 import Messages from "./Messages";
 
 /**
  * MessagesWrapper.jsx
- * - Lit l'id de l'URL (/chat/:id) et ouvre la discussion
+ * - Lit l'id de l'URL (/chat/:id) ou le query param (?to=uid) et ouvre la discussion
  * - Sinon affiche la liste et attend un onSelectChat
  */
+
 export default function MessagesWrapper() {
-  const { id } = useParams(); // :id = receiverId
+  const { id } = useParams();          // /chat/:id
+  const { search } = useLocation();    // /chat?to=uid
   const navigate = useNavigate();
   const [selectedReceiver, setSelectedReceiver] = useState(null);
 
-  // Si on arrive via /chat/:id, on sélectionne automatiquement
+  // Sélection auto depuis :id OU ?to=
   useEffect(() => {
-    if (id) setSelectedReceiver(id);
-  }, [id]);
+    const qs = new URLSearchParams(search);
+    const to = qs.get('to');
+    if (id) {
+      setSelectedReceiver(id);
+    } else if (to) {
+      setSelectedReceiver(to);
+      // normalise l’URL vers /chat/:id (plus propre pour le refresh / partage)
+      navigate(`/chat/${to}`, { replace: true });
+    } else {
+      setSelectedReceiver(null);
+    }
+  }, [id, search, navigate]);
 
   const handleSelectChat = (receiverId) => {
     setSelectedReceiver(receiverId);

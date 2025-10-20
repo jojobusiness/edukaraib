@@ -84,7 +84,7 @@ function App() {
         <Route
           path="/chat"
           element={
-            <RequireRole roles={['student','teacher','parent']}>
+            <RequireRole roles={['student','teacher','parent','admin']}>
               <MessagesWrapper />
             </RequireRole>
           }
@@ -92,7 +92,7 @@ function App() {
         <Route
           path="/chat/:id"
           element={
-            <RequireRole roles={['student','teacher','parent']}>
+            <RequireRole roles={['student','teacher','parent','admin']}>
               <MessagesWrapper />
             </RequireRole>
           }
@@ -101,7 +101,7 @@ function App() {
         <Route
           path="/messages"
           element={
-            <RequireRole roles={['student','teacher','parent']}>
+            <RequireRole roles={['student','teacher','parent','admin']}>
               <Messages />
             </RequireRole>
           }
@@ -109,7 +109,7 @@ function App() {
         <Route
           path="/messages/:id"
           element={
-            <RequireRole roles={['student','teacher','parent']}>
+            <RequireRole roles={['student','teacher','parent','admin']}>
               <Messages />
             </RequireRole>
           }
