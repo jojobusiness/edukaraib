@@ -1,3 +1,4 @@
+import React, { useEffect, useMemo, useState } from 'react';
 import { auth, db } from '../lib/firebase';
 import {
   addDoc,
@@ -17,7 +18,6 @@ import {
 import { sendPasswordResetEmail } from 'firebase/auth';
 import { Link } from 'react-router-dom';
 import fetchWithAuth from '../utils/fetchWithAuth';
-import React, { useEffect, useMemo, useState } from 'react';
 
 /* ===========================
    Utils
@@ -145,6 +145,7 @@ function RefundModal({ open, onClose, onConfirm, payment, teacher }) {
 export default function AdminDashboard() {
   const [tab, setTab] = useState('accounts'); // accounts | payments | messages
   const [meRole, setMeRole] = useState(null);
+  const [meId, setMeId] = useState(null);     // 👈 pour masquer les autres admins
 
   // --- Accounts state ---
   const [users, setUsers] = useState([]);
@@ -158,8 +159,8 @@ export default function AdminDashboard() {
   const [refunds, setRefunds] = useState([]);
   const [payouts, setPayouts] = useState([]);
   const [payLoading, setPayLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState(''); // YYYY-MM-DD
-  const [dateTo, setDateTo] = useState('');   // YYYY-MM-DD
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   // --- Refund modal ---
   const [refundOpen, setRefundOpen] = useState(false);
@@ -175,6 +176,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     const cur = auth.currentUser;
     if (!cur) return;
+    setMeId(cur.uid); // 👈 mémorise mon uid
     (async () => {
       try {
         const snap = await getDoc(doc(db, 'users', cur.uid));
@@ -242,6 +244,9 @@ export default function AdminDashboard() {
   const filteredUsers = useMemo(() => {
     const t = (search || '').toLowerCase().trim();
     return users.filter((u) => {
+      // ⛔️ masque tous les admins sauf moi (aucune visibilité)
+      if (u?.role === 'admin' && u?.id !== meId) return false;
+
       if (roleFilter !== 'all') {
         if (roleFilter === 'disabled') {
           if (!u?.disabled) return false;
@@ -251,7 +256,7 @@ export default function AdminDashboard() {
       const s = [u.email, nameOf(u), u.city, u.role].filter(Boolean).join(' ').toLowerCase();
       return s.includes(t);
     });
-  }, [users, search, roleFilter]);
+  }, [users, search, roleFilter, meId]);
 
   /* ----- Derived: payments summaries ----- */
   const teacherMap = useMemo(() => {
@@ -263,11 +268,9 @@ export default function AdminDashboard() {
   const totals = useMemo(() => {
     const succ = payments.filter((p) => p.status === 'succeeded');
     const sum = (arr) => arr.reduce((acc, x) => acc + Number(x.amount || 0), 0);
-
     const paid = sum(succ);
     const refunded = refunds.reduce((acc, r) => acc + Number(r.amount || 0), 0);
     const net = paid - refunded;
-
     return { paid, refunded, net };
   }, [payments, refunds]);
 
@@ -427,7 +430,6 @@ export default function AdminDashboard() {
   if (meRole && meRole !== 'admin') {
     return (
       <div className="min-h-screen bg-gray-50">
-        {/* Header minimal */}
         <header className="w-full bg-white border-b">
           <div className="max-w-7xl mx-auto px-4 py-3">
             <Link to="/" className="text-xl font-extrabold text-primary hover:underline">EduKaraib</Link>
@@ -448,7 +450,6 @@ export default function AdminDashboard() {
   =========================== */
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header minimal avec lien vers accueil */}
       <header className="w-full bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link to="/" className="text-xl font-extrabold text-primary hover:underline">EduKaraib</Link>
@@ -500,6 +501,8 @@ export default function AdminDashboard() {
                 <option value="student">Élève</option>
                 <option value="parent">Parent</option>
                 <option value="teacher">Professeur</option>
+                {/* on laisse l’option 'admin' si tu veux filtrer toi-même, 
+                    mais ils seront masqués par le filtre ci-dessus */}
                 <option value="admin">Admin</option>
                 <option value="disabled">Désactivés</option>
               </select>
@@ -579,7 +582,6 @@ export default function AdminDashboard() {
                       <td className="p-2">{toDateStr(u.createdAt)}</td>
                       <td className="p-2 text-right">
                         <div className="flex gap-2 justify-end">
-                          {/* Messagerie standard */}
                           <Link
                             to={`/chat/${u.id}`}
                             className="px-2 py-1 text-xs rounded bg-primary text-white hover:bg-primary-dark"
@@ -619,7 +621,7 @@ export default function AdminDashboard() {
         {/* === PAYMENTS TAB === */}
         {tab === 'payments' && (
           <div className="space-y-6">
-            {/* Filters */}
+            {/* Filtres */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div>
                 <label className="block text-sm text-gray-600">Du</label>
@@ -645,19 +647,24 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div className="bg-white border rounded-xl p-4">
                 <div className="text-gray-500 text-sm">Paiements réussis</div>
-                <div className="text-xl font-bold">{fmtMoney(totals.paid)}</div>
+                <div className="text-xl font-bold">{fmtMoney(payments.filter(p=>p.status==='succeeded').reduce((a,b)=>a+Number(b.amount||0),0))}</div>
               </div>
               <div className="bg-white border rounded-xl p-4">
                 <div className="text-gray-500 text-sm">Remboursés</div>
-                <div className="text-xl font-bold">{fmtMoney(totals.refunded)}</div>
+                <div className="text-xl font-bold">{fmtMoney(refunds.reduce((a,b)=>a+Number(b.amount||0),0))}</div>
               </div>
               <div className="bg-white border rounded-xl p-4">
                 <div className="text-gray-500 text-sm">Revenu net</div>
-                <div className="text-xl font-bold">{fmtMoney(totals.net)}</div>
+                <div className="text-xl font-bold">
+                  {fmtMoney(
+                    payments.filter(p=>p.status==='succeeded').reduce((a,b)=>a+Number(b.amount||0),0)
+                    - refunds.reduce((a,b)=>a+Number(b.amount||0),0)
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Per-teacher aggregation */}
+            {/* Agrégat par prof */}
             <div className="bg-white border rounded-xl overflow-hidden">
               <div className="p-3 border-b font-semibold">Revenus par professeur</div>
               <table className="w-full text-sm">
@@ -673,25 +680,43 @@ export default function AdminDashboard() {
                   {payLoading && (
                     <tr><td colSpan={4} className="p-4 text-center text-gray-500">Chargement…</td></tr>
                   )}
-                  {!payLoading && perTeacher.length === 0 && (
+                  {!payLoading && users.length === 0 && (
                     <tr><td colSpan={4} className="p-4 text-center text-gray-400">Aucune donnée</td></tr>
                   )}
-                  {!payLoading && perTeacher.map((row) => {
-                    const t = teacherMap.get(row.teacher_id);
-                    return (
-                      <tr key={row.teacher_id} className="border-t">
-                        <td className="p-2">{t ? nameOf(t) : row.teacher_id}</td>
-                        <td className="p-2 text-right">{fmtMoney(row.paid)}</td>
-                        <td className="p-2 text-right text-amber-700">{fmtMoney(row.refunded)}</td>
-                        <td className="p-2 text-right font-semibold">{fmtMoney(row.net)}</td>
-                      </tr>
-                    );
-                  })}
+                  {!payLoading && (() => {
+                    // re-calc local pour affichage
+                    const byId = new Map();
+                    const add = (tid, kind, cents) => {
+                      if (!byId.has(tid)) byId.set(tid, { teacher_id: tid, paid: 0, refunded: 0, net: 0 });
+                      const row = byId.get(tid);
+                      row[kind] += cents;
+                      row.net = row.paid - row.refunded;
+                      byId.set(tid, row);
+                    };
+                    payments.forEach((p) => {
+                      if (p.status === 'succeeded' && p.teacher_id) add(p.teacher_id, 'paid', Number(p.amount || 0));
+                    });
+                    refunds.forEach((r) => {
+                      if (r.teacher_id) add(r.teacher_id, 'refunded', Number(r.amount || 0));
+                    });
+                    const arr = Array.from(byId.values()).sort((a,b)=>b.net-a.net);
+                    return arr.map((row) => {
+                      const t = teacherMap.get(row.teacher_id);
+                      return (
+                        <tr key={row.teacher_id} className="border-t">
+                          <td className="p-2">{t ? nameOf(t) : row.teacher_id}</td>
+                          <td className="p-2 text-right">{fmtMoney(row.paid)}</td>
+                          <td className="p-2 text-right text-amber-700">{fmtMoney(row.refunded)}</td>
+                          <td className="p-2 text-right font-semibold">{fmtMoney(row.net)}</td>
+                        </tr>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>
 
-            {/* Details tables */}
+            {/* Détails */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="bg-white border rounded-xl overflow-hidden">
                 <div className="p-3 border-b font-semibold">Derniers paiements</div>
@@ -831,7 +856,6 @@ export default function AdminDashboard() {
         {/* === MESSAGES TAB === */}
         {tab === 'messages' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Composer (broadcast notifications) */}
             <div className="lg:col-span-2 bg-white border rounded-xl p-4">
               <h3 className="text-lg font-semibold mb-3">Envoyer un message (broadcast)</h3>
               <div className="grid grid-cols-1 gap-3">
@@ -876,7 +900,6 @@ export default function AdminDashboard() {
               </p>
             </div>
 
-            {/* Aperçu destinataires (selon l’onglet Comptes + filtres/selection) */}
             <div className="bg-white border rounded-xl p-4">
               <h3 className="text-lg font-semibold mb-3">Destinataires (aperçu)</h3>
               <div className="text-sm text-gray-600 mb-2">
