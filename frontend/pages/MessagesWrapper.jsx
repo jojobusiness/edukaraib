@@ -38,7 +38,7 @@ export default function MessagesWrapper() {
 
   const handleBack = () => {
     setSelectedReceiver(null);
-    // revient à la liste 
+    // revient à la liste  
     navigate("/chat", { replace: false });
   };
 
