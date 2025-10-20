@@ -40,6 +40,16 @@ import PrivateRoute from './components/PrivateRoute';
 import StudentRoute from './components/StudentRoute';
 import RequireRole from './routes/RequireRole';
 
+/** Optionnel : mémorise la dernière route visitée (utile après certaines reconnexions) */
+function RouteMemory() {
+  const location = useLocation();
+  useEffect(() => {
+    try {
+      localStorage.setItem('lastRoute', location.pathname + location.search + location.hash);
+    } catch {}
+  }, [location]);
+  return null;
+}
 
 function App() {
   return (
