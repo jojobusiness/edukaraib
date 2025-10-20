@@ -1,5 +1,6 @@
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
+import { auth } from './lib/firebase';
 
 import Home from './pages/Home';
 import Login from './pages/Login';
@@ -19,10 +20,10 @@ import StudentPayments from './pages/StudentPayments';
 import TeacherCalendar from './pages/TeacherCalendar';
 import TeacherReviews from './pages/TeacherReviews';
 
-import MessagesWrapper from './pages/MessagesWrapper'; 
-import Messages from './pages/Messages';               
+import MessagesWrapper from './pages/MessagesWrapper';
+import Messages from './pages/Messages';
 import ChatList from './pages/ChatList';
-import NotFound from './pages/NotFound';              
+import NotFound from './pages/NotFound';
 
 import Unauthorized from './pages/Unauthorized';
 import ParentPayments from './pages/ParentPayments';
@@ -47,7 +48,7 @@ import RequireRole from './routes/RequireRole';
 // ✅ Import de la page administrateur
 import AdminDashboard from './pages/AdminDashboard';
 
-/** Optionnel : mémorise la dernière route visitée pour un meilleur retour après refresh/reco */
+/** Mémorise la dernière route visitée pour un meilleur retour après refresh/reco */
 function RouteMemory() {
   const location = useLocation();
   useEffect(() => {
@@ -58,9 +59,26 @@ function RouteMemory() {
   return null;
 }
 
+/** ➕ Restaure la dernière route si l'utilisateur est encore connecté */
+function RestoreLastRoute() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged((user) => {
+      if (!user) return;
+      const last = localStorage.getItem('lastRoute');
+      if (last && !['/login', '/register', '/unauthorized'].includes(last)) {
+        navigate(last, { replace: true });
+      }
+    });
+    return unsub;
+  }, [navigate]);
+  return null;
+}
+
 function App() {
   return (
     <Router>
+      <RestoreLastRoute />
       <RouteMemory />
       <Routes>
         {/* Public */}
@@ -72,7 +90,6 @@ function App() {
         <Route path="/contact" element={<Contact />} />
         <Route path="/cgu" element={<CGU />} />
         <Route path="/privacy" element={<Privacy />} />
-        <Route path="*" element={<NotFound />} />
         <Route path="/pay/success" element={<PaySuccess />} />
         <Route path="/pay/cancel" element={<PayCancel />} />
 
@@ -97,7 +114,6 @@ function App() {
             </RequireRole>
           }
         />
-        {/* routes directes si tu utilises Messages sans wrapper quelque part */}
         <Route
           path="/messages"
           element={
@@ -128,7 +144,6 @@ function App() {
           path="/student/payments"
           element={<RequireRole roles={['student']}><StudentPayments /></RequireRole>}
         />
-        {/* ✅ Réservation élève conservée */}
         <Route
           path="/book-lesson-eleve"
           element={
@@ -164,7 +179,7 @@ function App() {
           }
         />
 
-        {/* 404 */}
+        {/* 404 (garde un seul wildcard) */}
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Router>

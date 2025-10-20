@@ -15,7 +15,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { sendPasswordResetEmail } from 'firebase/auth';
+import { sendPasswordResetEmail, signOut } from 'firebase/auth';
 import { Link } from 'react-router-dom';
 import fetchWithAuth from '../utils/fetchWithAuth';
 
@@ -453,7 +453,20 @@ export default function AdminDashboard() {
       <header className="w-full bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link to="/" className="text-xl font-extrabold text-primary hover:underline">EduKaraib</Link>
-          <div className="text-xs text-gray-500">Admin</div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-500">Admin</span>
+            <button
+                onClick={() => {
+                signOut(auth)
+                    .then(() => window.location.href = "/")
+                    .catch((e) => alert("Erreur lors de la déconnexion : " + e.message));
+                }}
+                className="text-sm bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg transition"
+            >
+                Déconnexion
+            </button>
+           </div>
+
         </div>
       </header>
 
