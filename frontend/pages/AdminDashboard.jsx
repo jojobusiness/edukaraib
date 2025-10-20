@@ -244,8 +244,8 @@ export default function AdminDashboard() {
   const filteredUsers = useMemo(() => {
     const t = (search || '').toLowerCase().trim();
     return users.filter((u) => {
-      // ⛔️ masque tous les admins sauf moi (aucune visibilité)
-      if (u?.role === 'admin' && u?.id !== meId) return false;
+      // ⛔️ masque mon propre compte 
+      if (u?.role === 'admin') return false;
 
       if (roleFilter !== 'all') {
         if (roleFilter === 'disabled') {
