@@ -140,10 +140,10 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
   const debounceRef = useRef(null);
   const [loading, setLoading] = useState(false);
 
-  // ✅ mémoriser l'élève d'un cours individuel (pour l’affichage ET pour les bascules auto)
+  // ✅ élève d’un cours individuel (pour l’affichage + bascules auto)
   const [singleStudentId, setSingleStudentId] = useState(null);
 
-  // 🔒 éviter les boucles lors d’un auto-downgrade
+  // 🔒 anti-boucle downgrade
   const guardRef = useRef({ downgrading: false });
 
   useEffect(() => {
@@ -172,27 +172,32 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
         }
         setNameMap(nm);
 
-        // 🔁 Auto-downgrade si on est passés en groupé puis que l’invitation est refusée/retirée
-        // Règle : si is_group === true ET qu’il ne reste aucun autre participant “actif”
-        // que l’élève d’origine (singleStudentId), alors on repasse en individuel (capacité 1).
-        if (data.is_group && singleStudentId) {
+        // 🔁 Auto-downgrade : si le cours est groupé et qu’il ne reste
+        // **aucun autre participant actif** que l’élève individuel → redevenir individuel.
+        if (data.is_group && data.student_id) {
+          const baseStudent = data.student_id; // élève d’origine (individuel)
           const pm = data.participantsMap || {};
           const activeOthers = (pIds || []).filter((sid) => {
-            if (sid === singleStudentId) return false;
+            if (sid === baseStudent) return false;
             const st = String(pm?.[sid]?.status || 'pending');
-            // actifs = tout ce qui n’est pas rejeté/supprimé
             return !['rejected', 'removed', 'deleted'].includes(st);
           });
 
           if (!guardRef.current.downgrading && activeOthers.length === 0) {
             try {
               guardRef.current.downgrading = true;
-              await updateDoc(ref, {
+
+              // 👉 Nettoyage complet des participants (on revient en pur individuel)
+              const patch = {
                 is_group: false,
                 capacity: 1,
-                participant_ids: arrayRemove(singleStudentId),
-                [`participantsMap.${singleStudentId}`]: deleteField(),
-              });
+                participant_ids: [],
+              };
+              // supprimer toutes les entrées participantsMap.*
+              for (const sid of pIds) {
+                patch[`participantsMap.${sid}`] = deleteField();
+              }
+              await updateDoc(ref, patch);
             } catch (e) {
               console.error('Auto-downgrade failed:', e);
             } finally {
@@ -207,7 +212,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
       }
     );
     return () => unsub();
-  }, [open, lesson?.id, singleStudentId]);
+  }, [open, lesson?.id]);
 
   useEffect(() => {
     if (!open) return;
@@ -231,7 +236,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     () => countConfirmed(participantIds, participantsMap),
     [participantIds, participantsMap]
   );
-  // ➕ afficher +1 si cours individuel (pour le bandeau)
+  // ➕ afficher +1 si cours individuel (bandeau)
   const confirmedDisplayed = useMemo(
     () => confirmedBase + (singleStudentId ? 1 : 0),
     [confirmedBase, singleStudentId]
@@ -263,10 +268,12 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     if (cap <= 1) {
       // 👉 Revenir/forcer INDIVIDUEL
       patch.is_group = false;
-      // Si on avait précédemment mis l’élève d’origine en participant, on peut le retirer :
-      if (singleStudentId) {
-        patch.participant_ids = arrayRemove(singleStudentId);
-        patch[`participantsMap.${singleStudentId}`] = deleteField();
+      // nettoyage complet des participants de groupe
+      patch.participant_ids = [];
+      if ((participantIds || []).length) {
+        (participantIds || []).forEach((sid) => {
+          patch[`participantsMap.${sid}`] = deleteField();
+        });
       }
     } else {
       // 👉 Forcer GROUPE si capacité > 1
@@ -296,7 +303,8 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     }
   }
 
-  // ✅ INVITER : conversion auto en GROUPÉ, capacité +1 (min 2), conserver l’élève d’origine
+  // ✅ INVITER : passe en groupé, +1 capacité (min 2), garde l’élève d’origine confirmé
+  // L’invité est marqué "invited_student" ⇒ **visible uniquement dans “Invitations”** (pas “Participants”).
   async function addByPick(p) {
     if (!p?.id) return;
     const id = p.id;
@@ -310,7 +318,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     // Capacité à +1 (minimum 2)
     const newCap = Math.max((Number(capacity) || 1) + 1, 2);
 
-    // Patch de base pour l’invité
+    // invited payload
     const invitedPayload = {
       parent_id: null,
       booked_by: null,
@@ -321,7 +329,6 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
       added_at: serverTimestamp(),
     };
 
-    // Patch complet
     const patch = {
       is_group: true,
       capacity: newCap,
@@ -329,7 +336,6 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
       [`participantsMap.${id}`]: invitedPayload,
     };
 
-    // Conserver l’élève d’origine (si cours individuel) comme “confirmé”
     if (singleStudentId) {
       patch[`participantsMap.${singleStudentId}`] = {
         parent_id: lesson.parent_id || null,
@@ -365,6 +371,8 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     }
   }
 
+  // 🗑️ Retirer un invité/participant :
+  // si après retrait il ne reste que l’élève d’origine ⇒ on repasse en individuel (géré par onSnapshot + auto-downgrade).
   async function removeStudent(id) {
     const ok = window.confirm("Retirer cet élève de la liste ?");
     if (!ok) return;
@@ -373,6 +381,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
         participant_ids: arrayRemove(id),
         [`participantsMap.${id}`]: deleteField(),
       });
+      // Le onSnapshot détectera s’il faut downgrade (aucun “autre” actif).
     } catch (e) {
       console.error(e);
       alert("Impossible de retirer l'élève.");
@@ -380,13 +389,18 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
   }
 
   /* === Participants à afficher ===
-     - TOUS les participant_ids (groupe)
-     - + l'élève individuel (si présent), UNIQUEMENT dans l'affichage Participants */
+     - TOUS les participant_ids **sauf** ceux en statut "invited_*"
+     - + l'élève individuel (si présent), UNIQUEMENT dans l'affichage Participants
+       (donc pas de doublon avec la section “Invitations”) */
   const participantsForRender = useMemo(() => {
-    const base = Array.from(new Set(participantIds || []));
+    const base = Array.from(new Set(participantIds || []))
+      .filter((sid) => {
+        const st = participantsMap?.[sid]?.status;
+        return st !== 'invited_student' && st !== 'invited_parent';
+      });
     if (singleStudentId && !base.includes(singleStudentId)) base.push(singleStudentId);
     return base;
-  }, [participantIds, singleStudentId]);
+  }, [participantIds, participantsMap, singleStudentId]);
 
   if (!open || !lesson) return null;
 
@@ -460,7 +474,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
             )}
           </div>
 
-          {/* Participants (inclut l'élève individuel en “virtuel”) */}
+          {/* Participants (sans les "invited_*") */}
           <div className="border rounded-lg p-3">
             <div className="font-medium mb-2">Participants</div>
             {participantsForRender.length === 0 ? (
@@ -504,7 +518,10 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
               const invitedIds = Array.from(
                 new Set(
                   (participantIds || []).filter(
-                    (sid) => participantsMap?.[sid]?.status === 'invited_student'
+                    (sid) => {
+                      const st = participantsMap?.[sid]?.status;
+                      return st === 'invited_student' || st === 'invited_parent';
+                    }
                   )
                 )
               );

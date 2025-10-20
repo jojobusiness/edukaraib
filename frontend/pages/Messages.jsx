@@ -17,10 +17,7 @@ import {
   deleteDoc,
   writeBatch,
 } from "firebase/firestore";
-import { io } from "socket.io-client";
-
-// ── CONFIG SOCKET ──────────────────────────────────────────
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:4000";
+import Pusher from "pusher-js"; // ✅ WebSocket managé
 
 // -------- Helpers --------
 function pairKey(a, b) {
@@ -76,34 +73,8 @@ export default function Messages(props) {
   const navigate = useNavigate();
 
   const unsubRefs = useRef({ msgs: null });
-  const socketRef = useRef(null);
-
-  // 0) Init socket (une seule fois)
-  useEffect(() => {
-    const socket = io(SOCKET_URL, {
-      autoConnect: false,
-      auth: async (cb) => {
-        const current = auth.currentUser;
-        const idToken = current ? await current.getIdToken() : null;
-        cb({ token: idToken });
-      },
-    });
-    socket.connect();
-
-    socket.on("connect", async () => {
-      try {
-        const current = auth.currentUser;
-        const idToken = current ? await current.getIdToken() : null;
-        if (idToken) socket.emit("auth", { idToken }, () => {});
-      } catch {}
-    });
-
-    socketRef.current = socket;
-    return () => {
-      try { socket.disconnect(); } catch {}
-      socketRef.current = null;
-    };
-  }, []);
+  const pusherRef = useRef(null);
+  const channelRef = useRef(null);
 
   // 1) Résoudre/Créer la conversation
   useEffect(() => {
@@ -112,14 +83,10 @@ export default function Messages(props) {
       if (!myUid || !receiverId) return;
       const conversationId = await ensureConversation(myUid, receiverId);
       setCid(conversationId);
-
-      try {
-        socketRef.current?.emit("join_dm", { otherUid: receiverId }, () => {});
-      } catch {}
     })();
   }, [receiverId]);
 
-  // 2) Charger le profil interlocuteur
+  // 2) Profil interlocuteur
   useEffect(() => {
     (async () => {
       if (!receiverId) return;
@@ -131,7 +98,7 @@ export default function Messages(props) {
     })();
   }, [receiverId]);
 
-  // 3) Flux messages
+  // 3) Flux messages Firestore (source de vérité)
   useEffect(() => {
     if (!cid) return;
     const qMsg = query(
@@ -147,43 +114,89 @@ export default function Messages(props) {
     return () => unsub();
   }, [cid]);
 
-  // 4) Auto-scroll
+  // 4) Pusher: abonnement au canal de la conversation (presence-conversation-{cid})
+  useEffect(() => {
+    let mounted = true;
+
+    async function setupPusher() {
+      if (!cid) return;
+      const key = import.meta.env.VITE_PUSHER_KEY;
+      const cluster = import.meta.env.VITE_PUSHER_CLUSTER;
+      if (!key || !cluster) {
+        console.warn("Pusher env vars manquantes (VITE_PUSHER_KEY / VITE_PUSHER_CLUSTER).");
+        return;
+      }
+
+      // Récupère un ID token AVANT de créer Pusher (les headers doivent être sync)
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!mounted) return;
+
+      // Instancie Pusher avec auth côté Vercel API
+      const pusher = new Pusher(key, {
+        cluster,
+        authEndpoint: "/api/pusher/auth",
+        auth: {
+          headers: { Authorization: `Bearer ${idToken || ""}` },
+        },
+      });
+      pusherRef.current = pusher;
+
+      const channelName = `presence-conversation-${cid}`;
+      const channel = pusher.subscribe(channelName);
+      channelRef.current = channel;
+
+      // Event temps réel ultra-rapide (optionnel — Firestore affiche de toute façon)
+      channel.bind("message:new", (payload) => {
+        // Option : pré-afficher pour instantané, sinon Firestore arrive dans la foulée
+        // setMessages((prev) => prev.some(m => m.id === payload.id) ? prev : [...prev, payload]);
+      });
+    }
+
+    setupPusher();
+
+    return () => {
+      mounted = false;
+      try {
+        const ch = channelRef.current;
+        if (ch) {
+          ch.unbind_all();
+          const p = pusherRef.current;
+          if (p) p.unsubscribe(ch.name);
+        }
+      } catch {}
+      channelRef.current = null;
+      try {
+        const p = pusherRef.current;
+        if (p) p.disconnect();
+      } catch {}
+      pusherRef.current = null;
+    };
+  }, [cid]);
+
+  // 5) Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // 5) Envoi via Socket.io (persistance côté serveur)
+  // 6) Envoi via API Vercel -> Firestore + trigger Pusher
   const handleSend = async (e) => {
     e.preventDefault();
     const myUid = auth.currentUser?.uid;
     if (!newMessage.trim() || !myUid || !cid || !receiverId) return;
 
-    const socket = socketRef.current;
     const text = newMessage.trim();
+    const idToken = await auth.currentUser?.getIdToken();
 
-    socket?.emit(
-      "send_message",
-      { conversationId: cid, toUid: receiverId, text },
-      (res) => {
-        if (!res?.ok) {
-          addDoc(collection(db, "messages"), {
-            conversationId: cid,
-            sender_uid: myUid,
-            receiver_uid: receiverId,
-            participants_uids: [myUid, receiverId],
-            message: text,
-            sent_at: serverTimestamp(),
-          }).then(() => {
-            updateDoc(doc(db, "conversations", cid), {
-              lastMessage: text,
-              lastSentAt: serverTimestamp(),
-              lastSender: myUid,
-            });
-          });
-        }
-      }
-    );
+    await fetch("/api/messages/send", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${idToken || ""}`,
+      },
+      body: JSON.stringify({ conversationId: cid, toUid: receiverId, text }),
+    });
 
+    // Firestore onSnapshot mettra la liste à jour; on peut vider l’input tout de suite
     setNewMessage("");
   };
 
@@ -239,7 +252,6 @@ export default function Messages(props) {
       await softDeleteForUser(cid, myUid);
     }
 
-    // back to list if wrapper present, else dashboard
     if (typeof props.onBack === "function") props.onBack();
     else navigate("/chat-list");
   };
@@ -264,7 +276,6 @@ export default function Messages(props) {
         />
         <h2 className="text-lg font-semibold flex-1">{receiverName}</h2>
 
-        {/* Supprimer */}
         <button
           onClick={handleDeleteConversation}
           className="text-sm px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
@@ -282,22 +293,17 @@ export default function Messages(props) {
           return (
             <div
               key={m.id}
-              className={`flex flex-col max-w-xs ${
-                isMine ? "ml-auto items-end" : "mr-auto items-start"
-              }`}
+              className={`flex flex-col max-w-xs ${isMine ? "ml-auto items-end" : "mr-auto items-start"}`}
             >
               <div
                 className={`px-4 py-2 rounded-2xl shadow ${
-                  isMine
-                    ? "bg-primary text-white rounded-br-none"
-                    : "bg-gray-200 text-gray-900 rounded-bl-none"
+                  isMine ? "bg-primary text-white rounded-br-none" : "bg-gray-200 text-gray-900 rounded-bl-none"
                 }`}
               >
                 {m.message}
               </div>
               <span className="text-xs text-gray-500 mt-1">
-                {isMine ? "Moi" : receiverName} •{" "}
-                {m.sent_at?.toDate ? m.sent_at.toDate().toLocaleTimeString() : ""}
+                {isMine ? "Moi" : receiverName} • {m.sent_at?.toDate ? m.sent_at.toDate().toLocaleTimeString() : ""}
               </span>
             </div>
           );
