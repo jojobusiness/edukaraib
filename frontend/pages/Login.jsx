@@ -27,7 +27,7 @@ export default function Login() {
 
       const role = userDoc.data().role;
 
-      // Redirection en fonction du rôle
+      // ✅ Redirection selon le rôle
       switch (role) {
         case 'student':
           navigate('/dashboard-eleve');
@@ -37,6 +37,9 @@ export default function Login() {
           break;
         case 'teacher':
           navigate('/prof/dashboard');
+          break;
+        case 'admin': // 🟢 nouveau
+          navigate('/admin/dashboard');
           break;
         default:
           alert("Rôle inconnu !");
