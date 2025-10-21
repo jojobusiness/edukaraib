@@ -155,8 +155,15 @@ export default function TeacherDashboard() {
   const [reviews, setReviews] = useState([]);
   const [studentMap, setStudentMap] = useState(new Map());
   const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map()); // lessonId -> [names]
-  const [openGroupId, setOpenGroupId] = useState(null);
-  const [notifications, setNotifications] = useState([]); // 👈 ajout
+  const [openGroupId, setOpenGroupId] = useState(null); // ✅ unique & cohérent
+  const [notifications, setNotifications] = useState([]);
+
+  // ✅ tick horaire pour faire « expirer » visuellement les notifs à J+2
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 60 * 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const userId = auth.currentUser?.uid;
   const nameCacheRef = useRef(new Map());
@@ -304,7 +311,20 @@ export default function TeacherDashboard() {
     return () => unsub();
   }, [userId]);
 
-  const [openListId, setOpenListId] = useState(null);
+  // 👉 Filtre J+2 (48h) – visibilité seulement
+  const recentNotifications = useMemo(() => {
+    const cutoffMs = 2 * 24 * 60 * 60 * 1000;
+    return notifications.filter(n => {
+      const ts = n?.created_at;
+      let d = null;
+      try {
+        d = ts?.toDate ? ts.toDate() : (ts ? new Date(ts) : null);
+      } catch { d = null; }
+      if (!d || Number.isNaN(d.getTime())) return true;
+      return (nowTick - d.getTime()) < cutoffMs;
+    });
+  }, [notifications, nowTick]);
+
   const nextOne = upcomingCourses[0] || null;
 
   return (
@@ -377,11 +397,11 @@ export default function TeacherDashboard() {
       {/* 🔔 Notifications (placées au-dessus des avis) */}
       <div className="bg-white rounded-xl shadow p-5 mb-6">
         <h3 className="font-bold text-primary mb-3">Notifications</h3>
-        {notifications.length === 0 ? (
+        {recentNotifications.length === 0 ? (
           <div className="text-gray-500 text-sm">Aucune notification.</div>
         ) : (
           <ul className="divide-y">
-            {notifications.map(n => (
+            {recentNotifications.map(n => (
               <li key={n.id} className="py-2">
                 <div className="text-sm font-semibold">{n.title || n.type || 'Notification'}</div>
                 {n.message ? (

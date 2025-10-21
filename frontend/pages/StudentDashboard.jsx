@@ -118,6 +118,13 @@ export default function StudentDashboard() {
   const [totalCourses, setTotalCourses] = useState(0);
   const [notifications, setNotifications] = useState([]);
 
+  // ✅ tick horaire pour faire « expirer » visuellement les notifs à J+2
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 60 * 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
   const userId = auth.currentUser?.uid;
 
   // 🔔 Notifications (LIVE) + auto-clean paiement
@@ -137,6 +144,20 @@ export default function StudentDashboard() {
     autoClearPaymentDueNotifications(userId).catch(() => {});
     return () => unsub();
   }, [userId]);
+
+  // 👉 Filtre J+2 (48h) – visibilité seulement
+  const recentNotifications = useMemo(() => {
+    const cutoffMs = 2 * 24 * 60 * 60 * 1000;
+    return notifications.filter(n => {
+      const ts = n?.created_at;
+      let d = null;
+      try {
+        d = ts?.toDate ? ts.toDate() : (ts ? new Date(ts) : null);
+      } catch { d = null; }
+      if (!d || Number.isNaN(d.getTime())) return true;
+      return (nowTick - d.getTime()) < cutoffMs;
+    });
+  }, [notifications, nowTick]);
 
   // -------- Favoris --------
   useEffect(() => {
@@ -396,11 +417,11 @@ export default function StudentDashboard() {
       {/* Notifications (titre + message + date) */}
       <div className="bg-white rounded-xl shadow p-5 mt-6">
         <h3 className="font-bold text-primary mb-3">Notifications</h3>
-        {notifications.length === 0 ? (
+        {recentNotifications.length === 0 ? (
           <div className="text-gray-500 text-sm">Aucune notification.</div>
         ) : (
           <ul className="divide-y">
-            {notifications.map(n => (
+            {recentNotifications.map(n => (
               <li key={n.id} className="py-2">
                 <div className="text-sm font-semibold">{n.title || n.type || 'Notification'}</div>
                 {n.message ? (
