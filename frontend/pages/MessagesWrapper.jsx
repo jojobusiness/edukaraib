@@ -1,45 +1,74 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { db, auth } from "../lib/firebase";
+import { doc, getDoc } from "firebase/firestore";
 import ChatList from "./ChatList";
 import Messages from "./Messages";
 
 /**
  * MessagesWrapper.jsx
- * - Lit l'id de l'URL (/chat/:id) ou le query param (?to=uid) et ouvre la discussion
- * - Sinon affiche la liste et attend un onSelectChat
+ * - Lit l'id de l'URL (/chat/:id) ou le query param (?to=uid)
+ * - Propage le contexte `from=admin` pour que le bouton Retour renvoie au dashboard admin
+ * - Vérifie le rôle avant de renvoyer sur /admin
  */
 
 export default function MessagesWrapper() {
   const { id } = useParams();          // /chat/:id
-  const { search } = useLocation();    // /chat?to=uid
+  const { search } = useLocation();    // /chat?to=uid&from=admin
   const navigate = useNavigate();
-  const [selectedReceiver, setSelectedReceiver] = useState(null);
 
-  // Sélection auto depuis :id OU ?to=
+  const [selectedReceiver, setSelectedReceiver] = useState(null);
+  const [fromAdmin, setFromAdmin] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Détecte ?from=admin et sélecteur initial
   useEffect(() => {
     const qs = new URLSearchParams(search);
-    const to = qs.get('to');
+    const to = qs.get("to");
+    const from = (qs.get("from") || "").toLowerCase();
+    setFromAdmin(from === "admin");
+
     if (id) {
       setSelectedReceiver(id);
     } else if (to) {
       setSelectedReceiver(to);
-      // normalise l’URL vers /chat/:id (plus propre pour le refresh / partage)
-      navigate(`/chat/${to}`, { replace: true });
+      // Normalise l'URL, en gardant le flag from=admin si présent
+      navigate(`/chat/${to}${from === "admin" ? "?from=admin" : ""}`, { replace: true });
     } else {
       setSelectedReceiver(null);
     }
   }, [id, search, navigate]);
 
+  // Vérifie le rôle courant (pour le retour sécurisé vers /admin)
+  useEffect(() => {
+    (async () => {
+      try {
+        const uid = auth.currentUser?.uid;
+        if (!uid) return setIsAdmin(false);
+        const s = await getDoc(doc(db, "users", uid));
+        const role = s.exists() ? (s.data()?.role || "") : "";
+        setIsAdmin(role === "admin");
+      } catch {
+        setIsAdmin(false);
+      }
+    })();
+  }, []);
+
   const handleSelectChat = (receiverId) => {
     setSelectedReceiver(receiverId);
-    // met à jour l'URL pour partage/refresh
-    navigate(`/chat/${receiverId}`, { replace: false });
+    // met à jour l'URL pour partage/refresh (garde from=admin si présent)
+    navigate(`/chat/${receiverId}${fromAdmin ? "?from=admin" : ""}`, { replace: false });
   };
 
   const handleBack = () => {
     setSelectedReceiver(null);
-    // revient à la liste  
-    navigate("/chat", { replace: false });
+    // Si on vient de l'admin ET qu'on est bien admin -> retour dashboard admin
+    if (fromAdmin && isAdmin) {
+      navigate("/admin", { replace: false });
+    } else {
+      // sinon on reste dans le contexte messagerie
+      navigate("/chat", { replace: false });
+    }
   };
 
   return (

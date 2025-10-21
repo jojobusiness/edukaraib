@@ -244,7 +244,7 @@ export default function AdminDashboard() {
   const filteredUsers = useMemo(() => {
     const t = (search || '').toLowerCase().trim();
     return users.filter((u) => {
-      // ⛔️ masque mon propre compte 
+      // ⛔️ masque tous les admins dans la liste (y compris moi)
       if (u?.role === 'admin') return false;
 
       if (roleFilter !== 'all') {
@@ -256,7 +256,7 @@ export default function AdminDashboard() {
       const s = [u.email, nameOf(u), u.city, u.role].filter(Boolean).join(' ').toLowerCase();
       return s.includes(t);
     });
-  }, [users, search, roleFilter, meId]);
+  }, [users, search, roleFilter]);
 
   /* ----- Derived: payments summaries ----- */
   const teacherMap = useMemo(() => {
@@ -383,48 +383,6 @@ export default function AdminDashboard() {
   };
 
   /* ===========================
-     Messaging (broadcast)
-  =========================== */
-  const sendMessage = async (audience) => {
-    let targets = [];
-    if (audience === 'selected') {
-      targets = filteredUsers.filter((u) => selectedIds.has(u.id));
-    } else if (audience === 'filtered') {
-      targets = filteredUsers;
-    } else {
-      targets = users;
-    }
-
-    if (!messageTitle.trim() || !messageBody.trim()) {
-      return alert('Titre et message requis.');
-    }
-    if (!window.confirm(`Envoyer ce message à ${targets.length} compte(s) ?`)) return;
-
-    try {
-      let sent = 0;
-      for (const u of targets) {
-        await addDoc(collection(db, 'notifications'), {
-          user_id: u.id,
-          read: false,
-          created_at: serverTimestamp(),
-          type: 'admin_broadcast',
-          title: messageTitle.trim(),
-          message: messageBody.trim(),
-          from_admin: auth.currentUser?.uid || null,
-        });
-        sent += 1;
-      }
-      alert(`Message envoyé à ${sent} compte(s).`);
-      setMessageTitle('');
-      setMessageBody('');
-      setSelectedIds(new Set());
-    } catch (e) {
-      console.error(e);
-      alert("Échec de l'envoi de message.");
-    }
-  };
-
-  /* ===========================
      Guards
   =========================== */
   if (meRole && meRole !== 'admin') {
@@ -453,20 +411,29 @@ export default function AdminDashboard() {
       <header className="w-full bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link to="/" className="text-xl font-extrabold text-primary hover:underline">EduKaraib</Link>
+
           <div className="flex items-center gap-3">
+            {/* 👇 Nouveau bouton Discussions (ouvre la liste de toutes les convs de l’admin) */}
+            <Link
+              to="/chat?from=admin"
+              className="text-sm bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg transition"
+              title="Voir toutes mes conversations"
+            >
+              Discussions
+            </Link>
+
             <span className="text-xs text-gray-500">Admin</span>
             <button
-                onClick={() => {
+              onClick={() => {
                 signOut(auth)
-                    .then(() => window.location.href = "/")
-                    .catch((e) => alert("Erreur lors de la déconnexion : " + e.message));
-                }}
-                className="text-sm bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg transition"
+                  .then(() => window.location.href = "/")
+                  .catch((e) => alert("Erreur lors de la déconnexion : " + e.message));
+              }}
+              className="text-sm bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg transition"
             >
-                Déconnexion
+              Déconnexion
             </button>
-           </div>
-
+          </div>
         </div>
       </header>
 
@@ -514,8 +481,6 @@ export default function AdminDashboard() {
                 <option value="student">Élève</option>
                 <option value="parent">Parent</option>
                 <option value="teacher">Professeur</option>
-                {/* on laisse l’option 'admin' si tu veux filtrer toi-même, 
-                    mais ils seront masqués par le filtre ci-dessus */}
                 <option value="admin">Admin</option>
                 <option value="disabled">Désactivés</option>
               </select>
@@ -595,8 +560,9 @@ export default function AdminDashboard() {
                       <td className="p-2">{toDateStr(u.createdAt)}</td>
                       <td className="p-2 text-right">
                         <div className="flex gap-2 justify-end">
+                          {/* 👇 Contacter ouvre la conversation ciblée et garde la provenance admin */}
                           <Link
-                            to={`/chat/${u.id}`}
+                            to={`/chat/${u.id}?from=admin`}
                             className="px-2 py-1 text-xs rounded bg-primary text-white hover:bg-primary-dark"
                             title="Contacter par messagerie"
                           >
@@ -931,7 +897,7 @@ export default function AdminDashboard() {
                       <div className="text-xs text-gray-500">{u.email} · {u.role}</div>
                     </div>
                     <Link
-                      to={`/chat/${u.id}`}
+                      to={`/chat/${u.id}?from=admin`}
                       className="text-xs px-2 py-1 rounded bg-primary text-white hover:bg-primary-dark"
                     >
                       Contacter
