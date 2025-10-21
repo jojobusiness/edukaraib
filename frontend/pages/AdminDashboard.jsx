@@ -625,17 +625,13 @@ export default function AdminDashboard() {
                       <td className="p-2 text-right">
                         <div className="flex gap-2 justify-end">
                           {/* Contacter : sélectionne directement la conversation dans l’onglet Discussions (sans navigation) */}
-                            <button
-                            onClick={() => {
-                                // 👉 ouvre directement la conversation dans l’onglet Discussions
-                                setSelectedChatId(u.id);
-                                setTab('discussions');
-                            }}
+                            <Link
+                            to={`/chat/${u.id}`}
                             className="px-2 py-1 text-xs rounded bg-primary text-white hover:bg-primary-dark"
                             title="Contacter par messagerie"
                             >
                             Contacter
-                            </button>
+                            </Link>
                           <button
                             className="px-2 py-1 text-xs rounded bg-amber-100 hover:bg-amber-200"
                             onClick={() => resetPassword(u)}
@@ -1021,20 +1017,12 @@ export default function AdminDashboard() {
                       <div className="font-medium">{nameOf(u)}</div>
                       <div className="text-xs text-gray-500">{u.email} · {u.role}</div>
                     </div>
-                    <button
-                    onClick={() => {
-                        const target = c.otherUid || c.other_uid || c.otherId || c.uid || c.id || null;
-                        if (target) {
-                        setSelectedChatId(target);
-                        setTab('discussions'); // au cas où on ne serait plus sur l’onglet
-                        } else {
-                        console.warn('UID destinataire introuvable pour cette conversation', c);
-                        }
-                    }}
+                    <Link
+                    to={`/chat/${u.id}`}
                     className="bg-primary text-white px-3 py-1.5 rounded hover:bg-primary-dark"
                     >
                     Discuter
-                    </button>
+                    </Link>
                   </label>
                 ))}
                 {filteredUsers.length > 200 && (
@@ -1082,12 +1070,12 @@ export default function AdminDashboard() {
                         {c.lastMessage || 'Aucun message'}
                         </div>
                     </div>
-                    <button
-                        onClick={() => setSelectedChatId(c.otherUid)}
-                        className="bg-primary text-white px-3 py-1.5 rounded hover:bg-primary-dark"
+                    <Link
+                    to={`/chat/${c.otherUid}`}
+                    className="bg-primary text-white px-3 py-1.5 rounded hover:bg-primary-dark"
                     >
-                        Discuter
-                    </button>
+                    Discuter
+                    </Link>
                     </li>
                 ))}
                 </ul>
