@@ -19,6 +19,10 @@ import { sendPasswordResetEmail, signOut } from 'firebase/auth';
 import { Link } from 'react-router-dom';
 import fetchWithAuth from '../utils/fetchWithAuth';
 
+// 👇 imports messagerie (utilisés dans l’onglet "Discussions")
+import ChatList from '../components/ChatList';
+import Messages from '../components/Messages';
+
 /* ===========================
    Utils
 =========================== */
@@ -143,9 +147,9 @@ function RefundModal({ open, onClose, onConfirm, payment, teacher }) {
    AdminDashboard (sans layout)
 =========================== */
 export default function AdminDashboard() {
-  const [tab, setTab] = useState('accounts'); // accounts | payments | messages
+  const [tab, setTab] = useState('accounts'); // accounts | payments | messages | discussions
   const [meRole, setMeRole] = useState(null);
-  const [meId, setMeId] = useState(null);     // 👈 pour masquer les autres admins
+  const [meId, setMeId] = useState(null);
 
   // --- Accounts state ---
   const [users, setUsers] = useState([]);
@@ -167,16 +171,19 @@ export default function AdminDashboard() {
   const [refundTarget, setRefundTarget] = useState(null);
   const [refundTeacherName, setRefundTeacherName] = useState('');
 
-  // --- Messages state ---
+  // --- Messages broadcast ---
   const [messageTitle, setMessageTitle] = useState('');
   const [messageBody, setMessageBody] = useState('');
   const [messageSending, setMessageSending] = useState(false);
+
+  // --- Discussions (inline, sans navigation) ---
+  const [selectedChatId, setSelectedChatId] = useState(null);
 
   /* ----- Load current user & role ----- */
   useEffect(() => {
     const cur = auth.currentUser;
     if (!cur) return;
-    setMeId(cur.uid); // 👈 mémorise mon uid
+    setMeId(cur.uid);
     (async () => {
       try {
         const snap = await getDoc(doc(db, 'users', cur.uid));
@@ -244,7 +251,7 @@ export default function AdminDashboard() {
   const filteredUsers = useMemo(() => {
     const t = (search || '').toLowerCase().trim();
     return users.filter((u) => {
-      // ⛔️ masque tous les admins dans la liste (y compris moi)
+      // ⛔️ masque les admins dans la liste
       if (u?.role === 'admin') return false;
 
       if (roleFilter !== 'all') {
@@ -258,7 +265,6 @@ export default function AdminDashboard() {
     });
   }, [users, search, roleFilter]);
 
-  /* ----- Derived: payments summaries ----- */
   const teacherMap = useMemo(() => {
     const m = new Map();
     users.forEach((u) => m.set(u.id, u));
@@ -413,15 +419,6 @@ export default function AdminDashboard() {
           <Link to="/" className="text-xl font-extrabold text-primary hover:underline">EduKaraib</Link>
 
           <div className="flex items-center gap-3">
-            {/* 👇 Nouveau bouton Discussions (ouvre la liste de toutes les convs de l’admin) */}
-            <Link
-              to="/chat?from=admin"
-              className="text-sm bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg transition"
-              title="Voir toutes mes conversations"
-            >
-              Discussions
-            </Link>
-
             <span className="text-xs text-gray-500">Admin</span>
             <button
               onClick={() => {
@@ -459,6 +456,13 @@ export default function AdminDashboard() {
             onClick={() => setTab('messages')}
           >
             Messages
+          </button>
+          {/* 👇 NOUVEL onglet, même design que “Messages” */}
+          <button
+            className={`px-4 py-2 rounded-lg border ${tab === 'discussions' ? 'bg-primary text-white border-primary' : 'bg-white'}`}
+            onClick={() => setTab('discussions')}
+          >
+            Discussions
           </button>
         </div>
 
@@ -560,14 +564,17 @@ export default function AdminDashboard() {
                       <td className="p-2">{toDateStr(u.createdAt)}</td>
                       <td className="p-2 text-right">
                         <div className="flex gap-2 justify-end">
-                          {/* 👇 Contacter ouvre la conversation ciblée et garde la provenance admin */}
-                          <Link
-                            to={`/chat/${u.id}?from=admin`}
+                          {/* Contacter : sélectionne directement la conversation dans l’onglet Discussions (sans navigation) */}
+                          <button
+                            onClick={() => {
+                              setTab('discussions');
+                              setSelectedChatId(u.id);
+                            }}
                             className="px-2 py-1 text-xs rounded bg-primary text-white hover:bg-primary-dark"
-                            title="Contacter par messagerie"
+                            title="Ouvrir la discussion"
                           >
                             Contacter
-                          </Link>
+                          </button>
 
                           <button
                             className="px-2 py-1 text-xs rounded bg-amber-100 hover:bg-amber-200"
@@ -832,7 +839,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* === MESSAGES TAB === */}
+        {/* === MESSAGES (broadcast) TAB === */}
         {tab === 'messages' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-white border rounded-xl p-4">
@@ -855,27 +862,85 @@ export default function AdminDashboard() {
                 <button
                   className="px-4 py-2 rounded bg-primary text-white hover:bg-primary-dark disabled:opacity-60"
                   disabled={messageSending || !messageTitle.trim() || !messageBody.trim() || selectedIds.size === 0}
-                  onClick={() => sendMessage('selected')}
+                  onClick={async () => {
+                    try {
+                      setMessageSending(true);
+                      const ids = Array.from(selectedIds);
+                      await Promise.all(ids.map(uid =>
+                        addDoc(collection(db, 'notifications'), {
+                          user_id: uid,
+                          title: messageTitle.trim(),
+                          message: messageBody.trim(),
+                          type: 'admin_broadcast',
+                          created_at: serverTimestamp(),
+                          from_admin: auth.currentUser?.uid || null,
+                        })
+                      ));
+                      alert('Message envoyé aux comptes sélectionnés.');
+                      setMessageTitle('');
+                      setMessageBody('');
+                    } finally {
+                      setMessageSending(false);
+                    }
+                  }}
                 >
                   Envoyer aux sélectionnés ({selectedIds.size})
                 </button>
                 <button
                   className="px-4 py-2 rounded bg-gray-800 text-white hover:bg-black disabled:opacity-60"
                   disabled={messageSending || !messageTitle.trim() || !messageBody.trim() || filteredUsers.length === 0}
-                  onClick={() => sendMessage('filtered')}
+                  onClick={async () => {
+                    try {
+                      setMessageSending(true);
+                      await Promise.all(filteredUsers.map(u =>
+                        addDoc(collection(db, 'notifications'), {
+                          user_id: u.id,
+                          title: messageTitle.trim(),
+                          message: messageBody.trim(),
+                          type: 'admin_broadcast',
+                          created_at: serverTimestamp(),
+                          from_admin: auth.currentUser?.uid || null,
+                        })
+                      ));
+                      alert('Message envoyé à la liste filtrée.');
+                      setMessageTitle('');
+                      setMessageBody('');
+                    } finally {
+                      setMessageSending(false);
+                    }
+                  }}
                 >
                   Envoyer à la liste filtrée ({filteredUsers.length})
                 </button>
                 <button
                   className="px-4 py-2 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-60"
                   disabled={messageSending || !messageTitle.trim() || !messageBody.trim() || users.length === 0}
-                  onClick={() => sendMessage('all')}
+                  onClick={async () => {
+                    try {
+                      setMessageSending(true);
+                      await Promise.all(users.filter(u => u.role !== 'admin').map(u =>
+                        addDoc(collection(db, 'notifications'), {
+                          user_id: u.id,
+                          title: messageTitle.trim(),
+                          message: messageBody.trim(),
+                          type: 'admin_broadcast',
+                          created_at: serverTimestamp(),
+                          from_admin: auth.currentUser?.uid || null,
+                        })
+                      ));
+                      alert('Message envoyé à tous (hors admins).');
+                      setMessageTitle('');
+                      setMessageBody('');
+                    } finally {
+                      setMessageSending(false);
+                    }
+                  }}
                 >
-                  Envoyer à tous ({users.length})
+                  Envoyer à tous ({users.filter(u=>u.role!=='admin').length})
                 </button>
               </div>
               <p className="text-xs text-gray-500 mt-2">
-                Diffusion via <code>notifications</code>. Pour un échange direct, utilise <b>Contacter</b> dans l’onglet Comptes (ouvre le chat).
+                Diffusion via <code>notifications</code>. Pour un échange direct, utilise l’onglet <b>Discussions</b>.
               </p>
             </div>
 
@@ -886,7 +951,7 @@ export default function AdminDashboard() {
               </div>
               <div className="max-h-[400px] overflow-auto divide-y">
                 {filteredUsers.slice(0, 200).map((u) => (
-                  <div key={`dest:${u.id}`} className="py-2 flex items-center gap-2">
+                  <label key={`dest:${u.id}`} className="py-2 flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={selectedIds.has(u.id)}
@@ -896,17 +961,55 @@ export default function AdminDashboard() {
                       <div className="font-medium">{nameOf(u)}</div>
                       <div className="text-xs text-gray-500">{u.email} · {u.role}</div>
                     </div>
-                    <Link
-                      to={`/chat/${u.id}?from=admin`}
+                    <button
+                      onClick={(e) => { e.preventDefault(); setTab('discussions'); setSelectedChatId(u.id); }}
                       className="text-xs px-2 py-1 rounded bg-primary text-white hover:bg-primary-dark"
                     >
-                      Contacter
-                    </Link>
-                  </div>
+                      Discuter
+                    </button>
+                  </label>
                 ))}
                 {filteredUsers.length > 200 && (
                   <div className="py-2 text-xs text-gray-500">
                     + {filteredUsers.length - 200} autres…
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* === DISCUSSIONS TAB (inline, sans layout, on reste sur la page) === */}
+        {tab === 'discussions' && (
+          <div className="bg-white border rounded-xl overflow-hidden">
+            <div className="p-3 border-b flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Discussions</h3>
+              {selectedChatId && (
+                <button
+                  onClick={() => setSelectedChatId(null)}
+                  className="text-sm px-3 py-1.5 rounded bg-gray-100 hover:bg-gray-200"
+                >
+                  ← Retour aux conversations
+                </button>
+              )}
+            </div>
+
+            {/* 2 colonnes responsives : liste / conversation */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 h-[70vh]">
+              <div className={`border-r ${selectedChatId ? 'hidden lg:block' : 'block'} overflow-hidden`}>
+                <ChatList
+                  onSelectChat={(uid) => setSelectedChatId(uid)}
+                />
+              </div>
+              <div className={`lg:col-span-2 ${selectedChatId ? 'block' : 'hidden lg:block'} h-full`}>
+                {selectedChatId ? (
+                  <Messages
+                    receiverId={selectedChatId}
+                    onBack={() => setSelectedChatId(null)}
+                  />
+                ) : (
+                  <div className="h-full flex items-center justify-center text-gray-500">
+                    Sélectionnez une conversation dans la liste.
                   </div>
                 )}
               </div>

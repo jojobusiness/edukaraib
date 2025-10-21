@@ -64,7 +64,7 @@ export default function MessagesWrapper() {
     setSelectedReceiver(null);
     // Si on vient de l'admin ET qu'on est bien admin -> retour dashboard admin
     if (fromAdmin && isAdmin) {
-      navigate("/admin", { replace: false });
+      navigate("/admin/dashboard", { replace: false });
     } else {
       // sinon on reste dans le contexte messagerie
       navigate("/chat", { replace: false });
