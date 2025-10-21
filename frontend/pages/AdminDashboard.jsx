@@ -178,6 +178,8 @@ export default function AdminDashboard() {
   // --- Discussions (inline, sans navigation) ---
   const [selectedChatId, setSelectedChatId] = useState(null);
 
+  // Discussions (liste compacte si rien n'est sélectionné)
+
   /* ----- Load current user & role ----- */
   useEffect(() => {
     const cur = auth.currentUser;
@@ -245,6 +247,62 @@ export default function AdminDashboard() {
       setPayLoading(false);
     })();
   }, [tab, dateFrom, dateTo]);
+
+  // Charger les conversations (compact, sans layout) quand l’onglet Discussions est actif
+  useEffect(() => {
+    if (tab !== 'discussions') return;
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    const qConvs = query(
+      collection(db, 'conversations'),
+      where('participants', 'array-contains', uid),
+      orderBy('lastSentAt', 'desc')
+    );
+
+    const unsub = onSnapshot(qConvs, async (snap) => {
+      const arr = await Promise.all(
+        snap.docs.map(async (d) => {
+          const c = { id: d.id, ...d.data() };
+          const otherUid = (c.participants || []).find((p) => p !== uid);
+
+          // essaie d'utiliser la liste "users" déjà chargée
+          let person = users.find((u) => u.id === otherUid);
+          if (!person) {
+            try {
+              const s = await getDoc(doc(db, 'users', otherUid));
+              if (s.exists()) person = { id: s.id, ...s.data() };
+            } catch {}
+          }
+
+          const name =
+            (person?.fullName ||
+              person?.full_name ||
+              [person?.firstName, person?.lastName].filter(Boolean).join(' ').trim() ||
+              person?.name ||
+              person?.displayName ||
+              (typeof person?.email === 'string' ? person.email.split('@')[0] : '') ||
+              'Utilisateur');
+          const avatar =
+            person?.avatarUrl ||
+            person?.avatar_url ||
+            person?.photoURL ||
+            person?.photo_url ||
+            '/avatar-default.png';
+
+          return {
+            cid: c.id,
+            otherUid,
+            name,
+            avatar,
+            lastMessage: c.lastMessage || '',
+          };
+        })
+      );
+      setConvs(arr);
+    });
+    return () => unsub();
+  }, [tab, users]);
 
   /* ----- Derived: account filters ----- */
   const filteredUsers = useMemo(() => {
@@ -981,22 +1039,47 @@ export default function AdminDashboard() {
         {/* === DISCUSSIONS TAB (inline, sans layout, on reste sur la page) === */}
         {tab === 'discussions' && (
         <>
-            {/* Affiche UNIQUEMENT la conversation si une cible est choisie */}
+            {/* Si une cible est choisie → afficher uniquement la conversation */}
             {selectedChatId ? (
             <div className="bg-white border rounded-xl overflow-hidden h-[70vh]">
                 <Messages
                 receiverId={selectedChatId}
                 onBack={() => {
-                    // Quand on clique "Retour" dans la conversation,
-                    // on revient à l’onglet Comptes (ou reste sur Discussions vide, comme tu préfères)
+                    // retour : on enlève la cible et on revient à la liste compacte
                     setSelectedChatId(null);
-                    setTab('accounts');  // 👉 si tu préfères rester sur Discussions vide, enlève cette ligne
                 }}
                 />
             </div>
             ) : (
-            // Rien du tout quand aucune conversation n’est encore choisie
-            <></>
+            // Sinon : petite liste compacte, sans layout ni titres
+            <div className="bg-white border rounded-xl overflow-hidden">
+                <ul className="divide-y divide-gray-100 max-h-[70vh] overflow-y-auto">
+                {convs.length === 0 && (
+                    <li className="py-10 text-center text-gray-500">Aucune conversation.</li>
+                )}
+                {convs.map((c) => (
+                    <li key={c.cid} className="flex items-center gap-3 p-3">
+                    <img
+                        src={c.avatar}
+                        alt={c.name}
+                        className="w-10 h-10 rounded-full object-cover border"
+                    />
+                    <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-primary truncate">{c.name}</div>
+                        <div className="text-xs text-gray-500 truncate">
+                        {c.lastMessage || 'Aucun message'}
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => setSelectedChatId(c.otherUid)}
+                        className="bg-primary text-white px-3 py-1.5 rounded hover:bg-primary-dark"
+                    >
+                        Discuter
+                    </button>
+                    </li>
+                ))}
+                </ul>
+            </div>
             )}
         </>
         )}
