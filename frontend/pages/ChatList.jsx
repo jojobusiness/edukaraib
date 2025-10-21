@@ -16,20 +16,68 @@ import { Link } from "react-router-dom";
 import { useUserRole } from "../hooks/useUserRole";
 
 // ---------- Helpers ----------
-async function fetchUserProfile(uid) {
-  if (!uid) return null;
+async function fetchFromColById(col, uid) {
   try {
-    const d = await getDoc(doc(db, "users", uid));
-    if (d.exists()) return { id: uid, ...d.data() };
+    const d = await getDoc(doc(db, col, uid));
+    if (d.exists()) return { id: d.id, ...d.data(), _col: col, _mode: "byId" };
   } catch {}
+  return null;
+}
+async function fetchFromColByUid(col, uid) {
   try {
-    const q = query(collection(db, "users"), where("uid", "==", uid), limit(1));
-    const s = await getDocs(q);
+    const qy = query(collection(db, col), where("uid", "==", uid), limit(1));
+    const s = await getDocs(qy);
     if (!s.empty) {
       const d = s.docs[0];
-      return { id: d.id, ...d.data() };
+      return { id: d.id, ...d.data(), _col: col, _mode: "byUid" };
     }
   } catch {}
+  return null;
+}
+function buildName(p) {
+  if (!p) return "";
+  const byFL = [p.firstName, p.lastName].filter(Boolean).join(" ").trim();
+  return (
+    p.fullName ||
+    p.full_name ||
+    byFL ||
+    p.name ||
+    p.displayName ||
+    (typeof p.email === "string" ? p.email.split("@")[0] : "") ||
+    ""
+  );
+}
+function buildAvatar(p) {
+  if (!p) return "";
+  return (
+    p.avatarUrl ||
+    p.avatar_url ||
+    p.photoURL ||
+    p.photo_url ||
+    ""
+  );
+}
+async function fetchUserProfile(uid) {
+  if (!uid) return null;
+
+  // 1) users
+  let p =
+    (await fetchFromColById("users", uid)) ||
+    (await fetchFromColByUid("users", uid));
+  if (p) return p;
+
+  // 2) teachers
+  p =
+    (await fetchFromColById("teachers", uid)) ||
+    (await fetchFromColByUid("teachers", uid));
+  if (p) return p;
+
+  // 3) students
+  p =
+    (await fetchFromColById("students", uid)) ||
+    (await fetchFromColByUid("students", uid));
+  if (p) return p;
+
   return null;
 }
 
@@ -61,7 +109,15 @@ export default function ChatList({ onSelectChat }) {
         snap.docs.map(async (d) => {
           const c = { id: d.id, ...d.data() };
           const otherUid = (c.participants || []).find((u) => u !== myUid);
+
           const profile = await fetchUserProfile(otherUid);
+          const name = buildName(profile) || "(Sans nom)";
+          const avatar = buildAvatar(profile);
+          const role = profile?.role || profile?._col === "teachers"
+            ? "teacher"
+            : profile?._col === "students"
+            ? "student"
+            : "";
 
           // Présence (statut en ligne)
           let isOnline = false;
@@ -70,11 +126,6 @@ export default function ChatList({ onSelectChat }) {
             isOnline = pres.exists() && pres.data().online;
           } catch {}
 
-          const name =
-            profile?.fullName || profile?.name || profile?.displayName || "(Sans nom)";
-          const avatar =
-            profile?.avatarUrl || profile?.avatar_url || profile?.photoURL || "";
-          const role = profile?.role || "";
           const lastDate = c.lastSentAt?.toDate ? c.lastSentAt.toDate() : null;
 
           return {

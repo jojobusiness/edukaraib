@@ -20,7 +20,6 @@ import { Link } from 'react-router-dom';
 import fetchWithAuth from '../utils/fetchWithAuth';
 
 // 👇 imports messagerie (utilisés dans l’onglet "Discussions")
-import ChatList from './ChatList';
 import Messages from './Messages';
 
 /* ===========================
@@ -981,40 +980,25 @@ export default function AdminDashboard() {
 
         {/* === DISCUSSIONS TAB (inline, sans layout, on reste sur la page) === */}
         {tab === 'discussions' && (
-          <div className="bg-white border rounded-xl overflow-hidden">
-            <div className="p-3 border-b flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Discussions</h3>
-              {selectedChatId && (
-                <button
-                  onClick={() => setSelectedChatId(null)}
-                  className="text-sm px-3 py-1.5 rounded bg-gray-100 hover:bg-gray-200"
-                >
-                  ← Retour aux conversations
-                </button>
-              )}
-            </div>
-
-            {/* 2 colonnes responsives : liste / conversation */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 h-[70vh]">
-              <div className={`border-r ${selectedChatId ? 'hidden lg:block' : 'block'} overflow-hidden`}>
-                <ChatList
-                  onSelectChat={(uid) => setSelectedChatId(uid)}
+        <>
+            {/* Affiche UNIQUEMENT la conversation si une cible est choisie */}
+            {selectedChatId ? (
+            <div className="bg-white border rounded-xl overflow-hidden h-[70vh]">
+                <Messages
+                receiverId={selectedChatId}
+                onBack={() => {
+                    // Quand on clique "Retour" dans la conversation,
+                    // on revient à l’onglet Comptes (ou reste sur Discussions vide, comme tu préfères)
+                    setSelectedChatId(null);
+                    setTab('accounts');  // 👉 si tu préfères rester sur Discussions vide, enlève cette ligne
+                }}
                 />
-              </div>
-              <div className={`lg:col-span-2 ${selectedChatId ? 'block' : 'hidden lg:block'} h-full`}>
-                {selectedChatId ? (
-                  <Messages
-                    receiverId={selectedChatId}
-                    onBack={() => setSelectedChatId(null)}
-                  />
-                ) : (
-                  <div className="h-full flex items-center justify-center text-gray-500">
-                    Sélectionnez une conversation dans la liste.
-                  </div>
-                )}
-              </div>
             </div>
-          </div>
+            ) : (
+            // Rien du tout quand aucune conversation n’est encore choisie
+            <></>
+            )}
+        </>
         )}
       </main>
     </div>

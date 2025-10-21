@@ -24,20 +24,70 @@ function pairKey(a, b) {
   return [a, b].sort().join("_");
 }
 
-async function fetchUserProfile(uid) {
-  if (!uid) return null;
+// --- robust profile fetch (users, teachers, students) ---
+async function fetchFromColById(col, uid) {
   try {
-    const d = await getDoc(doc(db, "users", uid));
-    if (d.exists()) return { id: uid, ...d.data() };
+    const d = await getDoc(doc(db, col, uid));
+    if (d.exists()) return { id: d.id, ...d.data(), _col: col, _mode: "byId" };
   } catch {}
+  return null;
+}
+async function fetchFromColByUid(col, uid) {
   try {
-    const q = query(collection(db, "users"), where("uid", "==", uid), limit(1));
-    const s = await getDocs(q);
+    const qy = query(collection(db, col), where("uid", "==", uid), limit(1));
+    const s = await getDocs(qy);
     if (!s.empty) {
       const d = s.docs[0];
-      return { id: d.id, ...d.data() };
+      return { id: d.id, ...d.data(), _col: col, _mode: "byUid" };
     }
   } catch {}
+  return null;
+}
+function buildName(p) {
+  if (!p) return "";
+  const byFL = [p.firstName, p.lastName].filter(Boolean).join(" ").trim();
+  return (
+    p.fullName ||
+    p.full_name ||
+    byFL ||
+    p.name ||
+    p.displayName ||
+    (typeof p.email === "string" ? p.email.split("@")[0] : "") ||
+    "Utilisateur"
+  );
+}
+function buildAvatar(p) {
+  if (!p) return "/avatar-default.png";
+  return (
+    p.avatarUrl ||
+    p.avatar_url ||
+    p.photoURL ||
+    p.photo_url ||
+    "/avatar-default.png"
+  );
+}
+
+async function fetchUserProfile(uid) {
+  if (!uid) return null;
+
+  // 1) users
+  let p =
+    (await fetchFromColById("users", uid)) ||
+    (await fetchFromColByUid("users", uid));
+  if (p) return p;
+
+  // 2) teachers
+  p =
+    (await fetchFromColById("teachers", uid)) ||
+    (await fetchFromColByUid("teachers", uid));
+  if (p) return p;
+
+  // 3) students
+  p =
+    (await fetchFromColById("students", uid)) ||
+    (await fetchFromColByUid("students", uid));
+  if (p) return p;
+
   return null;
 }
 
@@ -86,15 +136,13 @@ export default function Messages(props) {
     })();
   }, [receiverId]);
 
-  // 2) Profil interlocuteur
+  // 2) Profil interlocuteur (robuste)
   useEffect(() => {
     (async () => {
       if (!receiverId) return;
       const p = await fetchUserProfile(receiverId);
-      setReceiverName(p?.fullName || p?.name || p?.displayName || "Utilisateur");
-      setReceiverAvatar(
-        p?.avatarUrl || p?.avatar_url || p?.photoURL || "/avatar-default.png"
-      );
+      setReceiverName(buildName(p));
+      setReceiverAvatar(buildAvatar(p));
     })();
   }, [receiverId]);
 
@@ -114,7 +162,7 @@ export default function Messages(props) {
     return () => unsub();
   }, [cid]);
 
-  // 4) Pusher: abonnement au canal de la conversation (presence-conversation-{cid})
+  // 4) Pusher temps réel (optionnel)
   useEffect(() => {
     let mounted = true;
 
@@ -126,12 +174,9 @@ export default function Messages(props) {
         console.warn("Pusher env vars manquantes (VITE_PUSHER_KEY / VITE_PUSHER_CLUSTER).");
         return;
       }
-
-      // Récupère un ID token AVANT de créer Pusher (les headers doivent être sync)
       const idToken = await auth.currentUser?.getIdToken();
       if (!mounted) return;
 
-      // Instancie Pusher avec auth côté Vercel API
       const pusher = new Pusher(key, {
         cluster,
         authEndpoint: "/api/pusher/auth",
@@ -145,10 +190,8 @@ export default function Messages(props) {
       const channel = pusher.subscribe(channelName);
       channelRef.current = channel;
 
-      // Event temps réel ultra-rapide (optionnel — Firestore affiche de toute façon)
-      channel.bind("message:new", (payload) => {
-        // Option : pré-afficher pour instantané, sinon Firestore arrive dans la foulée
-        // setMessages((prev) => prev.some(m => m.id === payload.id) ? prev : [...prev, payload]);
+      channel.bind("message:new", () => {
+        // Firestore pousse déjà via onSnapshot; on peut ignorer ou pré-afficher.
       });
     }
 
@@ -196,7 +239,6 @@ export default function Messages(props) {
       body: JSON.stringify({ conversationId: cid, toUid: receiverId, text }),
     });
 
-    // Firestore onSnapshot mettra la liste à jour; on peut vider l’input tout de suite
     setNewMessage("");
   };
 
