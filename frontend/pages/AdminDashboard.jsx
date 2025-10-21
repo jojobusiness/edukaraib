@@ -180,6 +180,9 @@ export default function AdminDashboard() {
 
   // Discussions (liste compacte si rien n'est sélectionné)
 
+  // 🔹 Liste des conversations compactes (onglet Discussions)
+  const [convs, setConvs] = useState([]);
+
   /* ----- Load current user & role ----- */
   useEffect(() => {
     const cur = auth.currentUser;
