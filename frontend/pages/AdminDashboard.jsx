@@ -625,17 +625,17 @@ export default function AdminDashboard() {
                       <td className="p-2 text-right">
                         <div className="flex gap-2 justify-end">
                           {/* Contacter : sélectionne directement la conversation dans l’onglet Discussions (sans navigation) */}
-                          <button
+                            <button
                             onClick={() => {
-                              setTab('discussions');
-                              setSelectedChatId(u.id);
+                                // 👉 ouvre directement la conversation dans l’onglet Discussions
+                                setSelectedChatId(u.id);
+                                setTab('discussions');
                             }}
                             className="px-2 py-1 text-xs rounded bg-primary text-white hover:bg-primary-dark"
-                            title="Ouvrir la discussion"
-                          >
+                            title="Contacter par messagerie"
+                            >
                             Contacter
-                          </button>
-
+                            </button>
                           <button
                             className="px-2 py-1 text-xs rounded bg-amber-100 hover:bg-amber-200"
                             onClick={() => resetPassword(u)}
@@ -1022,10 +1022,18 @@ export default function AdminDashboard() {
                       <div className="text-xs text-gray-500">{u.email} · {u.role}</div>
                     </div>
                     <button
-                      onClick={(e) => { e.preventDefault(); setTab('discussions'); setSelectedChatId(u.id); }}
-                      className="text-xs px-2 py-1 rounded bg-primary text-white hover:bg-primary-dark"
+                    onClick={() => {
+                        const target = c.otherUid || c.other_uid || c.otherId || c.uid || c.id || null;
+                        if (target) {
+                        setSelectedChatId(target);
+                        setTab('discussions'); // au cas où on ne serait plus sur l’onglet
+                        } else {
+                        console.warn('UID destinataire introuvable pour cette conversation', c);
+                        }
+                    }}
+                    className="bg-primary text-white px-3 py-1.5 rounded hover:bg-primary-dark"
                     >
-                      Discuter
+                    Discuter
                     </button>
                   </label>
                 ))}
@@ -1046,6 +1054,7 @@ export default function AdminDashboard() {
             {selectedChatId ? (
             <div className="bg-white border rounded-xl overflow-hidden h-[70vh]">
                 <Messages
+                key={selectedChatId}        // 👈 force le remount quand la cible change
                 receiverId={selectedChatId}
                 onBack={() => {
                     // retour : on enlève la cible et on revient à la liste compacte
