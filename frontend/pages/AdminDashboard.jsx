@@ -626,7 +626,7 @@ export default function AdminDashboard() {
                         <div className="flex gap-2 justify-end">
                           {/* Contacter : sélectionne directement la conversation dans l’onglet Discussions (sans navigation) */}
                             <Link
-                            to={`/chat/${u.id}`}
+                            to={`/chat/${u.id}?from=admin`}
                             className="px-2 py-1 text-xs rounded bg-primary text-white hover:bg-primary-dark"
                             title="Contacter par messagerie"
                             >
@@ -1018,7 +1018,7 @@ export default function AdminDashboard() {
                       <div className="text-xs text-gray-500">{u.email} · {u.role}</div>
                     </div>
                     <Link
-                    to={`/chat/${u.id}`}
+                    to={`/chat/${u.id}?from=admin`}
                     className="bg-primary text-white px-3 py-1.5 rounded hover:bg-primary-dark"
                     >
                     Discuter
@@ -1071,7 +1071,7 @@ export default function AdminDashboard() {
                         </div>
                     </div>
                     <Link
-                    to={`/chat/${c.otherUid}`}
+                    to={`/chat/${c.otherUid}?from=admin`}
                     className="bg-primary text-white px-3 py-1.5 rounded hover:bg-primary-dark"
                     >
                     Discuter
