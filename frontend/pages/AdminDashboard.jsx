@@ -20,8 +20,8 @@ import { Link } from 'react-router-dom';
 import fetchWithAuth from '../utils/fetchWithAuth';
 
 // 👇 imports messagerie (utilisés dans l’onglet "Discussions")
-import ChatList from '../components/ChatList';
-import Messages from '../components/Messages';
+import ChatList from './ChatList';
+import Messages from './Messages';
 
 /* ===========================
    Utils
