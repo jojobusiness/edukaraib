@@ -9,6 +9,8 @@ import {
   doc,
   getDoc,
   limit,
+  onSnapshot,
+  orderBy,
 } from 'firebase/firestore';
 
 // ---------- Helpers jours/heures ----------
@@ -40,6 +42,12 @@ function formatDate(dt) {
 }
 function formatTime(dt) {
   return dt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+function formatDT(ts) {
+  try {
+    const d = ts?.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleString('fr-FR');
+  } catch { return ''; }
 }
 
 // ---------- Résolution profil (users / students) ----------
@@ -148,6 +156,7 @@ export default function TeacherDashboard() {
   const [studentMap, setStudentMap] = useState(new Map());
   const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map()); // lessonId -> [names]
   const [openGroupId, setOpenGroupId] = useState(null);
+  const [notifications, setNotifications] = useState([]); // 👈 ajout
 
   const userId = auth.currentUser?.uid;
   const nameCacheRef = useRef(new Map());
@@ -188,9 +197,7 @@ export default function TeacherDashboard() {
       });
       setGroupNamesByLesson(gMap);
 
-      // 4) Cours à venir — inclure:
-      //    - individuels: status === 'confirmed'
-      //    - groupes: au moins un participant accepted/confirmed
+      // 4) Cours à venir
       const now = new Date();
       const enriched = lessons
         .filter((l) =>
@@ -204,9 +211,9 @@ export default function TeacherDashboard() {
         .filter(l => l.startAt && l.startAt > now)
         .sort((a, b) => a.startAt - b.startAt);
 
-      setUpcomingCourses(enriched.slice(0, 10)); // utilisé pour le gros bloc "Prochain cours"
+      setUpcomingCourses(enriched.slice(0, 10));
 
-      // 5) Demandes en attente — corrigé
+      // 5) Demandes en attente
       setPending(countPendingRequests(lessons));
 
       // 6) Revenus du mois
@@ -283,6 +290,20 @@ export default function TeacherDashboard() {
     })();
   }, [userId]);
 
+  // 🔔 Notifications pour le PROF (LIVE)
+  useEffect(() => {
+    if (!userId) return;
+    const qNotif = query(
+      collection(db, 'notifications'),
+      where('user_id', '==', userId),
+      orderBy('created_at', 'desc')
+    );
+    const unsub = onSnapshot(qNotif, (snap) => {
+      setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, [userId]);
+
   const [openListId, setOpenListId] = useState(null);
   const nextOne = upcomingCourses[0] || null;
 
@@ -353,7 +374,25 @@ export default function TeacherDashboard() {
         </div>
       </div>
 
-      {/* Section "Cours à venir" retirée pour éviter la répétition */}
+      {/* 🔔 Notifications (placées au-dessus des avis) */}
+      <div className="bg-white rounded-xl shadow p-5 mb-6">
+        <h3 className="font-bold text-primary mb-3">Notifications</h3>
+        {notifications.length === 0 ? (
+          <div className="text-gray-500 text-sm">Aucune notification.</div>
+        ) : (
+          <ul className="divide-y">
+            {notifications.map(n => (
+              <li key={n.id} className="py-2">
+                <div className="text-sm font-semibold">{n.title || n.type || 'Notification'}</div>
+                {n.message ? (
+                  <div className="text-sm text-gray-700">{n.message}</div>
+                ) : null}
+                <div className="text-xs text-gray-500 mt-0.5">{formatDT(n.created_at)}</div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {/* Derniers avis reçus */}
       <div className="bg-white rounded-xl shadow p-5">

@@ -11,7 +11,6 @@ import {
   doc,
   getDoc,
 } from 'firebase/firestore';
-import NotifList from '../components/NotifList';
 import { autoClearPaymentDueNotifications } from '../lib/paymentNotifications';
 
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -44,6 +43,13 @@ function isPaidForKid(lesson, kidId) {
     return !!lesson.is_paid || !!lesson.paid_at;
   }
   return false;
+}
+
+function formatDT(ts) {
+  try {
+    const d = ts?.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleString('fr-FR');
+  } catch { return ''; }
 }
 
 export default function ParentDashboard() {
@@ -120,10 +126,7 @@ export default function ParentDashboard() {
         .filter(l => l.startAt);
       setCourses(enriched);
 
-      // Compteur "à régler" — aligné avec ParentPayments :
-      // - exclut `pending_teacher`
-      // - groupé : enfants acceptés/confirmés ET non payés (compté par enfant)
-      // - individuel : (confirmed OU completed) ET non payé (par enfant)
+      // Compteur "à régler"
       const unpaidCount = lessons.reduce((acc, l) => {
         if (l.status === 'pending_teacher') return acc;
 
@@ -146,7 +149,7 @@ export default function ParentDashboard() {
 
         // Individuel
         if (kidIds.includes(l.student_id)) {
-          const isEligible = (l.status === 'confirmed' || l.status === 'completed'); // ✅ inclut completed
+          const isEligible = (l.status === 'confirmed' || l.status === 'completed');
           const paid = !!l.is_paid || !!l.paid_at;
           return acc + (isEligible && !paid ? 1 : 0);
         }
@@ -210,48 +213,49 @@ export default function ParentDashboard() {
         <p className="text-gray-600">Bienvenue sur votre espace parent. Suivez vos enfants, leurs cours et paiements ici.</p>
       </div>
 
-      {/* 👉 Prochain cours tout en haut, tout à gauche */}
-      <div className="bg-white rounded-2xl shadow p-6 border border-gray-100 border-l-4 border-primary mb-10">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-3xl">📅</span>
-          <h3 className="font-bold text-primary text-lg">Prochain cours</h3>
-        </div>
-        <div className="text-gray-700">
-          {nextOne
-            ? (() => {
-                const datePart = nextOne.startAt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
-                const timePart = nextOne.startAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-                const who = nextOne.is_group ? 'Groupe' : 'Cours';
-                return `${who} (${nextOne.subject_id || 'Matière'}) — ${datePart} ${timePart}`;
-              })()
-            : 'Aucun cours confirmé à venir'}
-        </div>
-        {nextOne?.is_group && (
-          <div className="mt-3">
-            <button
-              onClick={() => setOpenRowId(openRowId === nextOne.id ? null : nextOne.id)}
-              className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100"
-            >
-              👥 Participants
-            </button>
-            {openRowId === nextOne.id && (
-              <div className="mt-2 bg-white border rounded-lg shadow p-3 w-72">
-                <div className="text-xs font-semibold mb-1">Élèves du groupe</div>
-                {(groupNamesByLesson.get(nextOne.id) || []).length ? (
-                  <ul className="text-sm text-gray-700 list-disc pl-4 space-y-1">
-                    {(groupNamesByLesson.get(nextOne.id) || []).map((nm, i) => <li key={i}>{nm}</li>)}
-                  </ul>
-                ) : (
-                  <div className="text-xs text-gray-500">Aucun participant.</div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Cartes de stats */}
+      {/* 👉 Une seule ligne en 3 colonnes : Prochain cours | Enfants | Paiements */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+        {/* Prochain cours */}
+        <div className="bg-white rounded-2xl shadow p-6 border border-gray-100 border-l-4 border-primary">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-3xl">📅</span>
+            <h3 className="font-bold text-primary text-lg">Prochain cours</h3>
+          </div>
+          <div className="text-gray-700">
+            {nextOne
+              ? (() => {
+                  const datePart = nextOne.startAt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
+                  const timePart = nextOne.startAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+                  const who = nextOne.is_group ? 'Groupe' : 'Cours';
+                  return `${who} (${nextOne.subject_id || 'Matière'}) — ${datePart} ${timePart}`;
+                })()
+              : 'Aucun cours confirmé à venir'}
+          </div>
+          {nextOne?.is_group && (
+            <div className="mt-3">
+              <button
+                onClick={() => setOpenRowId(openRowId === nextOne.id ? null : nextOne.id)}
+                className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100"
+              >
+                👥 Participants
+              </button>
+              {openRowId === nextOne.id && (
+                <div className="mt-2 bg-white border rounded-lg shadow p-3 w-72">
+                  <div className="text-xs font-semibold mb-1">Élèves du groupe</div>
+                  {(groupNamesByLesson.get(nextOne.id) || []).length ? (
+                    <ul className="text-sm text-gray-700 list-disc pl-4 space-y-1">
+                      {(groupNamesByLesson.get(nextOne.id) || []).map((nm, i) => <li key={i}>{nm}</li>)}
+                    </ul>
+                  ) : (
+                    <div className="text-xs text-gray-500">Aucun participant.</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Enfants enregistrés */}
         <div className="bg-white rounded-2xl shadow p-6 border border-gray-100 border-l-4 border-primary flex flex-col items-start">
           <span className="text-3xl mb-2">👧</span>
           <span className="text-xl font-bold text-primary">Enfants enregistrés</span>
@@ -263,16 +267,32 @@ export default function ParentDashboard() {
           </ul>
         </div>
 
-        <div className="bg-white rounded-2xl shadow p-6 border border-gray-100 border-l-4 border-secondary flex flex-col items-start md:col-span-2">
+        {/* Paiements à régler */}
+        <div className="bg-white rounded-2xl shadow p-6 border border-gray-100 border-l-4 border-secondary flex flex-col items-start">
           <span className="text-3xl mb-2">💳</span>
           <span className="text-xl font-bold text-secondary">Paiements à régler</span>
           <span className="text-gray-700 mt-1">{unpaid} cours à régler</span>
         </div>
       </div>
 
+      {/* Notifications (titre + message + date) */}
       <div className="bg-white rounded-2xl shadow p-6 border border-gray-100">
         <h3 className="font-bold text-primary mb-3">Notifications</h3>
-        <NotifList notifications={notifications} />
+        {notifications.length === 0 ? (
+          <div className="text-gray-500 text-sm">Aucune notification.</div>
+        ) : (
+          <ul className="divide-y">
+            {notifications.map(n => (
+              <li key={n.id} className="py-2">
+                <div className="text-sm font-semibold">{n.title || n.type || 'Notification'}</div>
+                {n.message ? (
+                  <div className="text-sm text-gray-700">{n.message}</div>
+                ) : null}
+                <div className="text-xs text-gray-500 mt-0.5">{formatDT(n.created_at)}</div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </DashboardLayout>
   );

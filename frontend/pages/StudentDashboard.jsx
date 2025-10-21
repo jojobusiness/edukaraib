@@ -14,7 +14,6 @@ import {
   deleteDoc,
   limit,
 } from 'firebase/firestore';
-import NotifList from '../components/NotifList';
 import { autoClearPaymentDueNotifications } from '../lib/paymentNotifications';
 
 // ---------- Helpers temps ----------
@@ -98,6 +97,13 @@ function isConfirmedForMe(l, uid) {
     return st === 'accepted' || st === 'confirmed';
   }
   return l?.status === 'confirmed';
+}
+
+function formatDT(ts) {
+  try {
+    const d = ts?.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleString('fr-FR');
+  } catch { return ''; }
 }
 
 export default function StudentDashboard() {
@@ -223,7 +229,7 @@ export default function StudentDashboard() {
       });
       setGroupNamesByLesson(gMap);
 
-      // === Profs récents : TOUS les profs avec qui l'élève a eu cours (confirmé ou terminé) ===
+      // === Profs récents ===
       const teacherIds = new Set();
       allLessons.forEach((l) => {
         if (!l.teacher_id) return;
@@ -387,11 +393,24 @@ export default function StudentDashboard() {
         </div>
       </div>
 
-      {/* Section "Cours confirmés" retirée pour éviter la répétition */}
-
+      {/* Notifications (titre + message + date) */}
       <div className="bg-white rounded-xl shadow p-5 mt-6">
         <h3 className="font-bold text-primary mb-3">Notifications</h3>
-        <NotifList notifications={notifications} />
+        {notifications.length === 0 ? (
+          <div className="text-gray-500 text-sm">Aucune notification.</div>
+        ) : (
+          <ul className="divide-y">
+            {notifications.map(n => (
+              <li key={n.id} className="py-2">
+                <div className="text-sm font-semibold">{n.title || n.type || 'Notification'}</div>
+                {n.message ? (
+                  <div className="text-sm text-gray-700">{n.message}</div>
+                ) : null}
+                <div className="text-xs text-gray-500 mt-0.5">{formatDT(n.created_at)}</div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </DashboardLayout>
   );
