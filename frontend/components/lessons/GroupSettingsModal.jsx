@@ -144,7 +144,10 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
   const [singleStudentId, setSingleStudentId] = useState(null);
 
   // 🔒 anti-boucle downgrade
-  const guardRef = useRef({ downgrading: false });
+  const guardRef = useRef({
+    downgrading: false,
+    justPromotedUntil: 0, // horodatage pour ignorer le downgrade juste après une promotion en groupe
+  });
 
   useEffect(() => {
     if (!open || !lesson?.id) return;
@@ -174,7 +177,11 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
 
         // 🔁 Auto-downgrade : si le cours est groupé et qu’il ne reste
         // **aucun autre participant actif** que l’élève individuel → redevenir individuel.
-        if (data.is_group && data.student_id) {
+          if (
+            data.is_group &&
+            data.student_id &&
+            !(guardRef.current?.justPromotedUntil && Date.now() < guardRef.current.justPromotedUntil)
+          ) {
           const baseStudent = data.student_id; // élève d’origine (individuel)
           const pm = data.participantsMap || {};
           const activeOthers = (pIds || []).filter((sid) => {
@@ -279,7 +286,6 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
       // 👉 Forcer GROUPE si capacité > 1
       patch.is_group = true;
 
-      // S’assurer que l’élève individuel est bien gardé comme participant confirmé
       if (singleStudentId && !(participantIds || []).includes(singleStudentId)) {
         patch.participant_ids = arrayUnion(singleStudentId);
         patch[`participantsMap.${singleStudentId}`] = {
@@ -292,7 +298,13 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
           added_at: serverTimestamp(),
         };
       }
+
+      // ⛳️ anti-auto-downgrade immédiat (4s de grâce après promotion)
+      try {
+        guardRef.current.justPromotedUntil = Date.now() + 4000;
+      } catch {}
     }
+
 
     try {
       await updateDoc(ref, patch);
