@@ -177,11 +177,12 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
 
         // 🔁 Auto-downgrade : si le cours est groupé et qu’il ne reste
         // **aucun autre participant actif** que l’élève individuel → redevenir individuel.
-          if (
-            data.is_group &&
-            data.student_id &&
-            !(guardRef.current?.justPromotedUntil && Date.now() < guardRef.current.justPromotedUntil)
-          ) {
+        if (
+          data.is_group &&
+          data.student_id &&
+          Number(data.capacity || 1) <= 1 &&                         // ✅ ne downgrade que si la capacité est 1
+          !(guardRef.current?.justPromotedUntil && Date.now() < guardRef.current.justPromotedUntil)
+        ) {
           const baseStudent = data.student_id; // élève d’origine (individuel)
           const pm = data.participantsMap || {};
           const activeOthers = (pIds || []).filter((sid) => {
