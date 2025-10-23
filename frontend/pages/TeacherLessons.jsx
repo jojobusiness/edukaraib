@@ -63,7 +63,8 @@ function StatusPill({ status }) {
 }
 
 /* ---------- data helpers ---------- */
-async function resolvePersonName(id, cache) {
+async function resolvePersonName(id, cache, opts = {}) {
+  const { parentId = null } = opts;
   if (!id) return '';
   if (cache.has(id)) return cache.get(id);
 
@@ -86,6 +87,34 @@ async function resolvePersonName(id, cache) {
       return nm;
     }
   } catch {}
+
+  // 🔎 fallback 1 : collection globale "children" (si utilisée)
+  try {
+    const c = await getDoc(doc(db, 'children', id));
+    if (c.exists()) {
+      const d = c.data();
+      const nm = (d.fullName || d.full_name || [d.firstName, d.lastName].filter(Boolean).join(' ') || d.name || '').trim();
+      if (nm) {
+        cache.set(id, nm);
+        return nm;
+      }
+    }
+  } catch {}
+
+  // 🔎 fallback 2 : sous-collection "parents/{parentId}/children/{childId}"
+  if (parentId) {
+    try {
+      const pc = await getDoc(doc(db, 'parents', parentId, 'children', id));
+      if (pc.exists()) {
+        const d = pc.data();
+        const nm = (d.fullName || d.full_name || [d.firstName, d.lastName].filter(Boolean).join(' ') || d.name || '').trim();
+        if (nm) {
+          cache.set(id, nm);
+          return nm;
+        }
+      }
+    } catch {}
+  }
 
   cache.set(id, id);
   return id;
@@ -198,12 +227,15 @@ export default function TeacherLessons() {
             if (Array.isArray(l.participant_ids) && l.participant_ids.length > 0) {
               const pm = l.participantsMap || {};
               participantDetails = await Promise.all(
-                l.participant_ids.map(async (sid) => ({
-                  id: sid,
-                  name: await resolvePersonName(sid, nameCacheRef.current),
-                  is_paid: !!pm?.[sid]?.is_paid,
-                  status: pm?.[sid]?.status || 'accepted',
-                }))
+                l.participant_ids.map(async (sid) => {
+                  const parentId = pm?.[sid]?.parent_id || pm?.[sid]?.booked_by || null;
+                  return {
+                    id: sid,
+                    name: await resolvePersonName(sid, nameCacheRef.current, { parentId }),
+                    is_paid: !!pm?.[sid]?.is_paid,
+                    status: pm?.[sid]?.status || 'accepted',
+                  };
+                })
               );
             }
 
@@ -220,8 +252,11 @@ export default function TeacherLessons() {
 
             // fallback : si pas de student_id mais un seul participant, utiliser son nom
             if (!studentName && Array.isArray(l.participant_ids) && l.participant_ids.length === 1) {
+              const onlyId = l.participant_ids[0];
+              const pm = l.participantsMap || {};
+              const parentId = pm?.[onlyId]?.parent_id || pm?.[onlyId]?.booked_by || null;
               studentName = participantDetails[0]?.name
-                || await resolvePersonName(l.participant_ids[0], nameCacheRef.current);
+                || await resolvePersonName(onlyId, nameCacheRef.current, { parentId });
             }
 
             return { ...l, studentName, participantDetails, requesterName };
@@ -237,7 +272,11 @@ export default function TeacherLessons() {
         // enrichir pendingGroup avec noms d'élève + "demande faite par"
         const pGroup = await Promise.all(
           pGroupRaw.map(async (g) => {
-            const nm = await resolvePersonName(g.studentId, nameCacheRef.current);
+            const parentIdCtx =
+              g.lesson?.participantsMap?.[g.studentId]?.parent_id ||
+              g.lesson?.participantsMap?.[g.studentId]?.booked_by ||
+              null;
+            const nm = await resolvePersonName(g.studentId, nameCacheRef.current, { parentId: parentIdCtx });
             const pm = g.lesson?.participantsMap || {};
             const info = pm[g.studentId] || {};
             const requesterId = info.parent_id || info.booked_by || null;
