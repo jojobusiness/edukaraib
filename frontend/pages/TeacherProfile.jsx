@@ -9,17 +9,7 @@ import BookingModal from '../components/BookingModal';
 
 /**
  * Recalcule les créneaux "bloqués" (rouges) ET les "places restantes" pour un professeur,
- * en tenant compte :
- *  - des cours individuels (toujours bloquants s’ils ne sont pas rejetés),
- *  - des groupes : un créneau N’EST BLOQUÉ que si TOUS les groupes à cette heure sont pleins,
- *    ou si l’enfant (forStudentId) est déjà dans un des groupes de ce créneau.
- *  - si aucun groupe n’existe mais que le prof autorise les groupes (capacité > 1),
- *    on considère qu’un groupe peut être créé => places restantes = capacité par défaut.
- *  - si le créneau est bloqué pour l’enfant (déjà inscrit), on n’affiche pas de badge.
- *
- * @param {string} teacherId
- * @param {(slots: Array<{day: string, hour: number}>) => void} setBookedSlots
- * @param {{ forStudentId?: string, teacherDoc?: any, setRemainingBySlot?: Function }} opts
+ * … (contenu inchangé)
  */
 async function refreshBookedSlots(teacherId, setBookedSlots, opts = {}) {
   const { forStudentId = null, teacherDoc = null, setRemainingBySlot = null } = opts;
@@ -40,7 +30,7 @@ async function refreshBookedSlots(teacherId, setBookedSlots, opts = {}) {
   const blocked = [];
   const remainingMap = {}; // 'Lun:10' -> nb places
 
-  // valeurs par défaut prof (pour autoriser la création d’un nouveau groupe si aucun n’existe)
+  // valeurs par défaut prof
   const teacherGroupEnabled = !!teacherDoc?.group_enabled;
   const teacherDefaultCap =
     typeof teacherDoc?.group_capacity === 'number' && teacherDoc.group_capacity > 1
@@ -52,20 +42,18 @@ async function refreshBookedSlots(teacherId, setBookedSlots, opts = {}) {
     const hour = Number(hourStr);
     const label = `${day}:${hour}`;
 
-    // 1) INDIVIDUELS : s’il y a un cours individuel non rejeté => créneau bloqué
+    // 1) INDIVIDUELS
     const indivBlocks = individuals.some((l) => {
       const st = String(l.status || 'booked');
       return st !== 'rejected' && st !== 'deleted';
     });
     if (indivBlocks) {
       blocked.push({ day, hour });
-      // pas de badge “places restantes” dans ce cas
       continue;
     }
 
-    // 2) GROUPES EXISTANTS
+    // 2) GROUPES
     if (groups.length > 0) {
-      // a) si l’enfant sélectionné est DÉJÀ dans un des groupes de ce créneau (non removed/rejected) => bloqué pour lui
       const childAlreadyIn = !!forStudentId && groups.some((g) => {
         const ids = Array.isArray(g.participant_ids) ? g.participant_ids : [];
         if (!ids.includes(forStudentId)) return false;
@@ -74,11 +62,9 @@ async function refreshBookedSlots(teacherId, setBookedSlots, opts = {}) {
       });
       if (childAlreadyIn) {
         blocked.push({ day, hour });
-        // pas de badge pour un créneau bloqué par appartenance
         continue;
       }
 
-      // b) somme des places restantes parmi tous les groupes de ce créneau
       let totalRemaining = 0;
       let hasRoomSomewhere = false;
 
@@ -97,24 +83,18 @@ async function refreshBookedSlots(teacherId, setBookedSlots, opts = {}) {
       });
 
       if (!hasRoomSomewhere) {
-        // tous les groupes sont pleins -> créneau bloqué
         blocked.push({ day, hour });
       } else if (totalRemaining > 0) {
-        // on affiche la somme des places restantes sur l’ensemble des groupes de ce créneau
         remainingMap[label] = totalRemaining;
       }
       continue;
     }
 
-    // 3) AUCUN GROUPE EXISTANT :
-    //    - si le prof a activé les groupes et capacité > 1, on autorise la création d’un groupe => places restantes = capacité par défaut
+    // 3) AUCUN GROUPE EXISTANT
     if (teacherGroupEnabled && teacherDefaultCap > 1) {
       remainingMap[label] = teacherDefaultCap;
-      // créneau non bloqué (on pourrait créer un groupe)
       continue;
     }
-
-    // 4) sinon: pas de groupe permis → pas de badge; le créneau reste dispo si pas d'individuel (déjà géré plus haut)
   }
 
   setBookedSlots(blocked);
@@ -136,7 +116,6 @@ function countAccepted(l) {
   return accepted;
 }
 
-// Helpers pour afficher le nom / avatar d'un utilisateur ou élève
 function pickDisplayName(x = {}) {
   return (
     x.fullName ||
@@ -151,7 +130,6 @@ function pickDisplayName(x = {}) {
 function pickAvatar(x = {}) {
   return x.avatarUrl || x.avatar_url || x.photoURL || (x.profile && x.profile.avatar) || '';
 }
-// Renvoie l'ID du rédacteur de l'avis, selon les champs possibles
 function getReviewerId(r = {}) {
   return r.reviewer_id || r.author_id || r.user_id || r.student_id || r.created_by || null;
 }
@@ -162,10 +140,10 @@ export default function TeacherProfile() {
 
   const [teacher, setTeacher] = useState(null);
   const [reviews, setReviews] = useState([]);
-  const [reviewerInfo, setReviewerInfo] = useState({}); // { reviewerId: {name, avatar} }
+  const [reviewerInfo, setReviewerInfo] = useState({});
 
-  const [bookedSlots, setBookedSlots] = useState([]); // [{day,hour}] bloqués (rouges)
-  const [remainingBySlot, setRemainingBySlot] = useState({}); // {'Lun:10': 2, ...} badges places restantes
+  const [bookedSlots, setBookedSlots] = useState([]);
+  const [remainingBySlot, setRemainingBySlot] = useState({});
 
   const [showBooking, setShowBooking] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
@@ -189,19 +167,19 @@ export default function TeacherProfile() {
     return () => { cancelled = true; };
   }, [teacherId]);
 
-  // Dispos (rouge + badges) : recalcul quand on a le prof, et à chaque changement d’élève sélectionné
+  // Dispos (rouge + badges)
   useEffect(() => {
     if (!teacher) return;
     (async () => {
       await refreshBookedSlots(teacherId, setBookedSlots, {
         forStudentId: selectedStudentId || auth.currentUser?.uid || null,
         teacherDoc: teacher,
-        setRemainingBySlot, // 👈 met à jour les badges “places restantes”
+        setRemainingBySlot,
       });
     })();
   }, [teacher, teacherId, selectedStudentId]);
 
-  // Récupération des infos (nom + avatar) des auteurs des avis
+  // Infos auteurs d'avis
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -278,10 +256,14 @@ export default function TeacherProfile() {
 
   const meUid = auth.currentUser?.uid;
 
+  // ✅ Blocages côté front :
+  const isTeacherUser = currentRole === 'teacher';
+  const isOwnProfile = teacherId === auth.currentUser?.uid;
+  const canBook = !isTeacherUser && !isOwnProfile; // profs ne peuvent réserver ni pour eux, ni pour d'autres profs
+
   /**
    * Réserve 1 seul créneau (utilitaire interne)
-   * Retourne { slot, status, message }
-   * status: 'duplicate' | 'joined_group' | 'created_group' | 'created_individual' | 'error'
+   * … (logique inchangée)
    */
   const bookSingleSlot = async (slot, context) => {
     const { teacherId, teacher, me, bookingFor, targetStudentId } = context;
@@ -375,7 +357,7 @@ export default function TeacherProfile() {
         parent_id: bookingFor === 'child' ? me.uid : null,
         booked_by: me.uid,
         booked_for: bookingFor,
-        status: 'booked', // à valider par le prof
+        status: 'booked',
         created_at: serverTimestamp(),
         subject_id: Array.isArray(teacher?.subjects) ? teacher.subjects.join(', ') : teacher?.subjects || '',
         price_per_hour: teacher?.price_per_hour || 0,
@@ -414,7 +396,7 @@ export default function TeacherProfile() {
         parent_id: bookingFor === 'child' ? me.uid : null,
         booked_by: me.uid,
         booked_for: bookingFor,
-        status: 'booked', // à valider par le prof
+        status: 'booked',
         created_at: serverTimestamp(),
         subject_id: Array.isArray(teacher?.subjects) ? teacher.subjects.join(', ') : teacher?.subjects || '',
         price_per_hour: teacher?.price_per_hour || 0,
@@ -439,30 +421,21 @@ export default function TeacherProfile() {
   };
 
   /**
-   * Handler principal : accepte un seul créneau OU un tableau de créneaux.
-   * Exemples d'entrée:
-   *  - { day: 'Lun', hour: 10 }
-   *  - [{ day: 'Lun', hour: 10 }, { day: 'Mar', hour: 14 }]
+   * Handler principal
    */
   const handleBooking = async (selected) => {
     if (!auth.currentUser) return navigate('/login');
 
-    // 🚫 Empêcher un professeur de réserver ses propres cours
-    if (teacherId === auth.currentUser.uid) {
-      try {
-        await refreshBookedSlots(teacherId, setBookedSlots, {
-          forStudentId: selectedStudentId || auth.currentUser?.uid || null,
-          teacherDoc: teacher,
-          setRemainingBySlot, // 👈 met à jour les badges
-        });
-      } catch {}
+    // 🚫 Blocage prof→prof et prof→lui-même
+    if (!canBook) {
+      setShowBooking(false);
+      setConfirmationMsg("Les comptes professeurs ne peuvent pas réserver de cours.");
       return;
     }
 
     const me = auth.currentUser;
     const targetStudentId = selectedStudentId || me.uid;
     const bookingFor = (currentRole === 'parent' && targetStudentId !== me.uid) ? 'child' : 'self';
-
     const slots = Array.isArray(selected) ? selected : [selected];
 
     setIsBooking(true);
@@ -475,22 +448,11 @@ export default function TeacherProfile() {
           results.push(r);
         } catch (e) {
           console.error('Booking error (single)', e);
-          results.push({
-            slot,
-            status: 'error',
-            message: `Erreur sur ${slot.day} ${slot.hour}h.`,
-          });
+          results.push({ slot, status: 'error', message: `Erreur sur ${slot.day} ${slot.hour}h.` });
         }
       }
 
-      // Construire un message récapitulatif lisible
-      const grouped = {
-        created_group: [],
-        created_individual: [],
-        joined_group: [],
-        duplicate: [],
-        error: [],
-      };
+      const grouped = { created_group: [], created_individual: [], joined_group: [], duplicate: [], error: [] };
       for (const r of results) {
         const key = grouped[r.status] ? r.status : 'error';
         grouped[key].push(`${r.slot.day} ${r.slot.hour}h`);
@@ -511,12 +473,12 @@ export default function TeacherProfile() {
       setShowBooking(false);
       setConfirmationMsg(parts.length ? parts.join(' ') : "Demandes envoyées.");
 
-      // ✅ rafraîchir immédiatement les créneaux pris + badges POUR L’ÉLÈVE EN COURS
+      // refresh slots/badges
       try {
         await refreshBookedSlots(teacherId, setBookedSlots, {
           forStudentId: targetStudentId,
           teacherDoc: teacher,
-          setRemainingBySlot, // 👈
+          setRemainingBySlot,
         });
       } catch {}
     } catch (e) {
@@ -587,17 +549,18 @@ export default function TeacherProfile() {
             </div>
           )}
 
-          <button
-            className="bg-primary text-white px-6 py-3 rounded-lg font-semibold shadow hover:bg-primary-dark transition mb-4 disabled:opacity-60"
-            disabled={isBooking}
-            onClick={() => {
-              if (!auth.currentUser) return navigate('/login');
-              setShowBooking(true);
-              setConfirmationMsg('');
-            }}
-          >
-            {isBooking ? 'Envoi…' : 'Réserver un ou plusieurs créneaux'}
-          </button>
+          {canBook && (
+            <button
+              className="bg-primary text-white px-6 py-3 rounded-lg font-semibold shadow hover:bg-primary-dark transition mb-2"
+              onClick={() => {
+                if (!auth.currentUser) return navigate('/login');
+                setShowBooking(true);
+                setConfirmationMsg('');
+              }}
+            >
+              {isBooking ? 'Envoi…' : 'Réserver un ou plusieurs créneaux'}
+            </button>
+          )}
 
           {confirmationMsg && (
             <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-2 rounded mb-2 text-sm text-center mt-2">
@@ -606,11 +569,11 @@ export default function TeacherProfile() {
           )}
         </div>
 
-        {showBooking && (
+        {canBook && showBooking && (
           <BookingModal
             availability={teacher.availability || {}}
             bookedSlots={bookedSlots}
-            remainingBySlot={remainingBySlot}   
+            remainingBySlot={remainingBySlot}
             onBook={handleBooking}
             onClose={() => setShowBooking(false)}
             orderDays={DAYS_ORDER}
@@ -632,7 +595,6 @@ export default function TeacherProfile() {
             const rating = r.rating || 0;
             return (
               <div key={r.id} className="bg-gray-50 border rounded-xl px-4 py-3">
-                {/* En-tête auteur de l'avis */}
                 <div className="flex items-center gap-3 mb-2">
                   <img
                     src={avatar}
@@ -649,7 +611,6 @@ export default function TeacherProfile() {
                   </div>
                 </div>
 
-                {/* Note + commentaire */}
                 <div className="flex items-start gap-2">
                   <span className="text-yellow-500">{'★'.repeat(Math.min(5, Math.max(0, Math.round(rating))))}</span>
                   <span className="italic text-gray-700">{r.comment}</span>

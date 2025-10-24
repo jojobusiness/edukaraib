@@ -12,12 +12,14 @@ export default function BookingModal({
   orderDays = DEFAULT_DAYS, // option d’ordre de colonnes
   multiSelect = true,       // 🔁 active la multi-sélection
 
-  // 👇 nouveau (optionnel) : nombre de places restantes par créneau (clé "Jour:Heure")
-  // ex: { 'Lun:10': 2, 'Mar:14': 0 }
+  // 👇 nombre de places restantes par créneau (clé "Jour:Heure") — optionnel
   remainingBySlot = {},
 
   // (optionnel) afficher la légende “places restantes”
   showRemainingLegend = true,
+
+  // ✅ NOUVEAU : permet de désactiver totalement la réservation (ex: utilisateur = teacher)
+  canBook = true,
 }) {
   // Tableau de créneaux sélectionnés: [{day, hour}]
   const [selected, setSelected] = useState([]);
@@ -41,6 +43,7 @@ export default function BookingModal({
   };
 
   const toggleSelect = (day, hour) => {
+    if (!canBook) return; // 🔒 blocage total si canBook=false
     if (!isAvailable(day, hour) || isBooked(day, hour)) return;
 
     if (multiSelect) {
@@ -57,6 +60,7 @@ export default function BookingModal({
   };
 
   const handleSubmit = () => {
+    if (!canBook) return; // 🔒
     if (!selected.length) return;
     if (multiSelect) {
       onBook(selected);
@@ -75,6 +79,12 @@ export default function BookingModal({
         <h3 className="text-xl font-bold text-primary mb-3">
           {multiSelect ? 'Choisissez un ou plusieurs créneaux' : 'Choisissez un créneau'}
         </h3>
+
+        {!canBook && (
+          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">
+            Les comptes <b>professeurs</b> ne peuvent pas réserver de cours. Connectez-vous en élève/parent.
+          </div>
+        )}
 
         {/* Légende */}
         <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600 mb-3">
@@ -123,7 +133,9 @@ export default function BookingModal({
                     // Style du bouton
                     let classes =
                       'relative w-8 h-8 rounded shadow flex items-center justify-center select-none ';
-                    if (booked) {
+                    if (!canBook) {
+                      classes += 'bg-gray-100 text-gray-300 cursor-not-allowed';
+                    } else if (booked) {
                       classes += 'bg-red-500 text-white cursor-not-allowed';
                     } else if (sel) {
                       classes += 'bg-secondary text-white';
@@ -134,17 +146,18 @@ export default function BookingModal({
                     }
 
                     // Title (tooltip)
-                    const title = booked
+                    const baseTitle = booked
                       ? 'Créneau déjà réservé'
                       : dispo
                       ? (sel ? 'Sélectionné' : 'Disponible')
                       : 'Indisponible';
+                    const title = !canBook ? 'Réservation désactivée pour les professeurs' : baseTitle;
 
                     return (
                       <td key={h} className="px-1 py-1">
                         <button
                           type="button"
-                          disabled={!dispo || booked}
+                          disabled={!canBook || !dispo || booked}
                           onClick={() => toggleSelect(day, h)}
                           className={classes}
                           title={title}
@@ -157,7 +170,7 @@ export default function BookingModal({
                           {booked ? '❌' : sel ? '✔' : ''}
 
                           {/* 👇 Badge "places restantes" (si fourni) */}
-                          {remaining !== null && !booked && (
+                          {remaining !== null && !booked && canBook && (
                             <span
                               className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] leading-[18px] text-center pointer-events-none"
                               title={`Places restantes : ${remaining}`}
@@ -178,7 +191,8 @@ export default function BookingModal({
         <button
           className="w-full bg-primary text-white py-2 rounded-lg font-semibold shadow mt-2 disabled:opacity-60"
           onClick={handleSubmit}
-          disabled={!selected.length}
+          disabled={!canBook || !selected.length}
+          title={!canBook ? 'La réservation est désactivée pour les professeurs' : undefined}
         >
           {multiSelect
             ? `Réserver ${selected.length} créneau${selected.length > 1 ? 'x' : ''}`
