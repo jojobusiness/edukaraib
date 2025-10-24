@@ -50,10 +50,15 @@ app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 app.use(express.json());
 
 const server = http.createServer(app);
+
+// ✅ Forcer Socket.io en mode polling pour Vercel (évite wss:// erreurs)
 const io = new Server(server, {
+  path: "/socket.io",
+  transports: ["polling"], // important: Vercel ne supporte pas WebSockets purs
   cors: {
     origin: ALLOWED_ORIGINS,
     credentials: true,
+    methods: ["GET", "POST"],
   },
 });
 
@@ -108,7 +113,6 @@ async function setPresenceOffline(uid) {
 }
 
 // ── Auth middleware (Socket.io) ────────────────────────────
-// On accepte le token soit dans auth.handshake, soit via un 1er event "auth"
 io.use(async (socket, next) => {
   try {
     const token =
@@ -116,12 +120,7 @@ io.use(async (socket, next) => {
       socket.handshake.auth?.idToken ||
       (socket.handshake.headers.authorization || "").replace(/^Bearer\s+/i, "");
 
-    if (!token) {
-      // On autorise la connexion "non auth" pour permettre un event 'auth' ensuite.
-      // Tu peux forcer le reject si tu veux strict :
-      // return next(new Error("Missing auth token"));
-      return next();
-    }
+    if (!token) return next();
 
     const decoded = await admin.auth().verifyIdToken(token);
     socket.data.uid = decoded.uid;
@@ -129,7 +128,7 @@ io.use(async (socket, next) => {
     next();
   } catch (e) {
     console.warn("⚠️  Auth handshake failed:", e?.message || e);
-    next(); // autoriser, le client peut appeler 'auth' après
+    next();
   }
 });
 
@@ -140,7 +139,7 @@ io.on("connection", (socket) => {
 
   console.log("🔌 Client connected:", sid, "uid:", authedUid);
 
-  // Permettre auth après la connexion si besoin
+  // Auth post-connexion
   socket.on("auth", async ({ idToken } = {}, cb) => {
     try {
       const decoded = await admin.auth().verifyIdToken(idToken);
@@ -153,14 +152,14 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Rejoindre un salon de conversation existant
+  // Rejoindre une conversation existante
   socket.on("join_conversation", async ({ conversationId }, cb) => {
     if (!conversationId) return cb && cb({ ok: false, error: "missing_conversationId" });
     await socket.join(`conv:${conversationId}`);
     cb && cb({ ok: true });
   });
 
-  // Rejoindre ou créer la conversation avec un autre utilisateur (DM)
+  // Rejoindre ou créer un DM
   socket.on("join_dm", async ({ otherUid }, cb) => {
     try {
       if (!authedUid) return cb && cb({ ok: false, error: "not_authenticated" });
@@ -187,7 +186,6 @@ io.on("connection", (socket) => {
   });
 
   // Envoyer un message
-  // payload attendu: { conversationId? , toUid? , text }
   socket.on("send_message", async (payload = {}, cb) => {
     try {
       if (!authedUid) return cb && cb({ ok: false, error: "not_authenticated" });
@@ -202,18 +200,15 @@ io.on("connection", (socket) => {
         convId = conv.id;
       }
 
-      // Persist message
       const messageDoc = await db.collection("messages").add({
         conversationId: convId,
         sender_uid: authedUid,
-        // si tu fournis toUid côté client c'est utile mais facultatif pour l'historique
         receiver_uid: toUid || null,
         participants_uids: toUid ? [authedUid, toUid] : null,
         message: text.trim(),
         sent_at: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      // Update conversation metadata
       await db.collection("conversations").doc(convId).set(
         {
           lastMessage: text.trim(),
@@ -223,7 +218,6 @@ io.on("connection", (socket) => {
         { merge: true }
       );
 
-      // Broadcast to room
       io.to(`conv:${convId}`).emit("message_created", {
         id: messageDoc.id,
         conversationId: convId,
@@ -244,7 +238,6 @@ io.on("connection", (socket) => {
       if (!authedUid || !conversationId)
         return cb && cb({ ok: false, error: "bad_request" });
 
-      // Option simple: stocker une map lastRead[uid] = serverTimestamp
       await db
         .collection("conversations")
         .doc(conversationId)

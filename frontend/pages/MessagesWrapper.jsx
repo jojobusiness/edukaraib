@@ -22,22 +22,34 @@ export default function MessagesWrapper() {
   const [fromAdmin, setFromAdmin] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // ✅ Initialise socket.io avec reconnexion et fallback polling
+  // ✅ Initialise socket.io en "polling only" (pas de WebSocket), avec reconnexion robuste
   useEffect(() => {
-    const socket = io(import.meta.env.VITE_SOCKET_URL || "https://edukaraib-server.vercel.app", {
-      transports: ["websocket", "polling"],
+    const SERVER_URL = import.meta.env.VITE_SOCKET_URL || "https://edukaraib-server.vercel.app";
+
+    const socket = io(SERVER_URL, {
+      // ⚠️ Forcer uniquement le polling pour Vercel functions
+      transports: ["polling"],
+      upgrade: false,
+      path: "/socket.io", // laisser le path par défaut de ton server.js
+
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       timeout: 20000,
+      withCredentials: true,
     });
 
-    socket.on("connect_error", (e) => console.warn("socket connect_error", e?.message));
+    socket.on("connect", () => console.log("socket connected (polling)"));
+    socket.on("connect_error", (e) => console.warn("socket connect_error", e?.message || e));
     socket.on("reconnect_attempt", (n) => console.log("socket reconnect_attempt", n));
+    socket.on("disconnect", (r) => console.log("socket disconnected:", r));
 
     return () => {
-      socket.disconnect();
+      try {
+        socket.removeAllListeners();
+        socket.disconnect();
+      } catch {}
     };
   }, []);
 
