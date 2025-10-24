@@ -99,6 +99,25 @@ function isConfirmedForChild(l, sid) {
   return l?.student_id === sid && l?.status === 'confirmed';
 }
 
+/* ---------- helpers auto-règles (globaux) ---------- */
+const isIndividualPaid = (l) => l && !l.is_group && (l.is_paid === true);
+const hasAnyConfirmedParticipant = (l) => {
+  if (!Array.isArray(l?.participant_ids)) return false;
+  const pm = l?.participantsMap || {};
+  return l.participant_ids.some((sid) => {
+    const st = pm?.[sid]?.status;
+    return st === 'accepted' || st === 'confirmed';
+  });
+};
+const getStartMs = (lesson) => {
+  const ts = lesson?.start_datetime;
+  if (ts?.toDate) {
+    try { return ts.toDate().getTime(); } catch { return null; }
+  }
+  if (typeof ts?.seconds === 'number') return ts.seconds * 1000;
+  return null;
+};
+
 /* =================== PAGE =================== */
 export default function ParentCourses() {
   const [courses, setCourses] = useState([]);
@@ -230,6 +249,47 @@ export default function ParentCourses() {
       const tProfiles = await Promise.all(tIds.map((tid) => fetchUserProfile(tid)));
       setTeacherMap(new Map(tProfiles.filter(Boolean).map(p => [p.id || p.uid, p.fullName || p.name || p.displayName || 'Professeur'])));
     })();
+  }, [courses]);
+
+  // ✅ Auto-règles globales (pour tout le monde, en continu)
+  useEffect(() => {
+    if (!courses.length) return;
+
+    const tick = async () => {
+      const now = Date.now();
+      const updates = courses.map(async (l) => {
+        const startMs = getStartMs(l);
+        if (!startMs) return; // pas de date absolue → on ne force rien
+
+        // 1) Si pas accepté avant l'heure prévue → rejeté
+        if (now >= startMs) {
+          const statusStr = String(l.status || '');
+          const isAccepted =
+            statusStr === 'confirmed' ||
+            statusStr === 'completed' ||
+            (l.is_group && hasAnyConfirmedParticipant(l));
+
+          if (!isAccepted && statusStr !== 'rejected') {
+            try { await updateDoc(doc(db, 'lessons', l.id), { status: 'rejected' }); } catch {}
+            return;
+          }
+        }
+
+        // 2) Individuel accepté mais non payé à l'heure → rejeté
+        if (!l.is_group && String(l.status || '') === 'confirmed') {
+          if (now >= startMs && !isIndividualPaid(l)) {
+            try { await updateDoc(doc(db, 'lessons', l.id), { status: 'rejected' }); } catch {}
+          }
+        }
+      });
+
+      try { await Promise.all(updates); } catch {}
+    };
+
+    // premier passage + intervalle régulier
+    tick();
+    const id = setInterval(tick, 60 * 1000);
+    return () => clearInterval(id);
   }, [courses]);
 
   // prochaines (confirmées pour au moins un enfant/parent) — exclure terminées

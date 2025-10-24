@@ -333,7 +333,7 @@ export default function TeacherLessons() {
   }, []);
 
   // Helper : y a-t-il au moins un participant confirmé/accepté ?
-  const hasAnyConfirmedParticipant = (l) => {
+  const hasAnyConfirmedParticipantUI = (l) => {
     if (!Array.isArray(l.participantDetails)) return false;
     return l.participantDetails.some((p) => p.status === 'accepted' || p.status === 'confirmed');
   };
@@ -342,12 +342,12 @@ export default function TeacherLessons() {
   const confirmes = useMemo(() => {
     return lessons.filter((l) => {
       if (l.status === 'completed') return false; // ✅ ne pas dupliquer
-      if (l.is_group) return hasAnyConfirmedParticipant(l) || l.status === 'confirmed';
+      if (l.is_group) return hasAnyConfirmedParticipantUI(l) || l.status === 'confirmed';
       return l.status === 'confirmed';
     });
   }, [lessons]);
 
-  // ✅ NOUVEAU : cours refusés
+  // ✅ Cours refusés
   const refuses = useMemo(() => lessons.filter((l) => l.status === 'rejected'), [lessons]);
 
   const termines = useMemo(() => lessons.filter((l) => l.status === 'completed'), [lessons]);
@@ -447,7 +447,7 @@ export default function TeacherLessons() {
           const isAccepted =
             statusStr === 'confirmed' ||
             statusStr === 'completed' ||
-            (l.is_group && hasAnyConfirmedParticipant(l));
+            (l.is_group && hasAnyConfirmedParticipantUI(l));
 
           if (!isAccepted && statusStr !== 'rejected') {
             try {
@@ -686,7 +686,7 @@ export default function TeacherLessons() {
           )}
         </section>
 
-        {/* ✅ NOUVEAU — Refusés */}
+        {/* Refusés */}
         <section className="mb-10">
           <div className="flex items-baseline justify-between mb-4">
             <h3 className="text-xl font-semibold text-red-600">Cours refusés</h3>
