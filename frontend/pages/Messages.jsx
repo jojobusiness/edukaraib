@@ -18,6 +18,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import Pusher from "pusher-js"; // ✅ WebSocket managé
+import { io } from "socket.io-client"; // 🆕 pour join_dm serveur (création côté admin)
 
 // -------- Helpers --------
 function pairKey(a, b) {
@@ -44,7 +45,7 @@ async function fetchFromColByUid(col, uid) {
   return null;
 }
 function buildName(p) {
-  if (!p) return "";
+  if (!p) return "Utilisateur";
   const byFL = [p.firstName, p.lastName].filter(Boolean).join(" ").trim();
   return (
     p.fullName ||
@@ -91,8 +92,8 @@ async function fetchUserProfile(uid) {
   return null;
 }
 
-/** Trouve / crée une conversation unique entre myUid et otherUid */
-async function ensureConversation(myUid, otherUid) {
+/** Trouve / crée une conversation unique entre myUid et otherUid (fallback client) */
+async function ensureConversationClient(myUid, otherUid) {
   const key = pairKey(myUid, otherUid);
   const qConv = query(collection(db, "conversations"), where("key", "==", key), limit(1));
   const snap = await getDocs(qConv);
@@ -118,7 +119,7 @@ export default function Messages(props) {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [receiverName, setReceiverName] = useState("");
-  const [receiverAvatar, setReceiverAvatar] = useState("");
+  const [receiverAvatar, setReceiverAvatar] = useState("/avatar-default.png");
   const messagesEndRef = useRef(null);
   const navigate = useNavigate();
 
@@ -126,14 +127,75 @@ export default function Messages(props) {
   const pusherRef = useRef(null);
   const channelRef = useRef(null);
 
-  // 1) Résoudre/Créer la conversation
+  // 🆕 socket ref (évite les connexions multiples)
+  const socketRef = useRef(null);
+
+  // 1) Résoudre/Créer la conversation (serveur d'abord → fallback client)
   useEffect(() => {
     (async () => {
       const myUid = auth.currentUser?.uid;
       if (!myUid || !receiverId) return;
-      const conversationId = await ensureConversation(myUid, receiverId);
-      setCid(conversationId);
+
+      if (myUid === receiverId) {
+        // empêche le self-chat
+        alert("Impossible de discuter avec soi-même.");
+        return;
+      }
+
+      const SERVER_URL = import.meta.env.VITE_SOCKET_URL || "https://edukaraib-server.vercel.app";
+      // (ré)initialise la socket si besoin
+      if (!socketRef.current) {
+        const s = io(SERVER_URL, {
+          path: "/socket.io",
+          transports: ["polling"], // Vercel-friendly
+          upgrade: false,
+          withCredentials: true,
+          reconnection: true,
+          reconnectionAttempts: Infinity,
+          reconnectionDelay: 1000,
+          reconnectionDelayMax: 5000,
+          timeout: 20000,
+        });
+        // masque le bruit “xhr poll error”
+        s.on("connect_error", (e) => {
+          if (!String(e?.message || "").includes("xhr poll error")) {
+            console.warn("socket connect_error", e?.message || e);
+          }
+        });
+        socketRef.current = s;
+      }
+
+      try {
+        // auth + join_dm → le serveur crée/assure la conversation (privilèges admin)
+        const idToken = await auth.currentUser?.getIdToken();
+        await new Promise((resolve) => {
+          socketRef.current.emit("auth", { idToken }, () => resolve());
+        });
+
+        const convId = await new Promise((resolve) => {
+          socketRef.current.emit("join_dm", { otherUid: receiverId }, (res) => {
+            if (res?.ok && res.conversationId) resolve(res.conversationId);
+            else resolve(null);
+          });
+        });
+
+        if (convId) {
+          setCid(convId);
+          return; // ✅ serveur OK, on sort
+        }
+      } catch {
+        // continue fallback
+      }
+
+      // 🔁 fallback client-side si le serveur n’a pas pu créer la conv
+      const convIdFallback = await ensureConversationClient(myUid, receiverId);
+      setCid(convIdFallback);
     })();
+
+    // cleanup socket si on change de destinataire
+    return () => {
+      // on ne détruit pas la socket globale ici, on la garde pour ce composant
+    };
   }, [receiverId]);
 
   // 2) Profil interlocuteur (robuste)
@@ -316,7 +378,7 @@ export default function Messages(props) {
           alt="Avatar"
           className="w-10 h-10 rounded-full object-cover ml-2"
         />
-        <h2 className="text-lg font-semibold flex-1">{receiverName}</h2>
+        <h2 className="text-lg font-semibold flex-1">{receiverName || "Utilisateur"}</h2>
 
         <button
           onClick={handleDeleteConversation}
@@ -345,7 +407,7 @@ export default function Messages(props) {
                 {m.message}
               </div>
               <span className="text-xs text-gray-500 mt-1">
-                {isMine ? "Moi" : receiverName} • {m.sent_at?.toDate ? m.sent_at.toDate().toLocaleTimeString() : ""}
+                {isMine ? "Moi" : receiverName || "Utilisateur"} • {m.sent_at?.toDate ? m.sent_at.toDate().toLocaleTimeString() : ""}
               </span>
             </div>
           );

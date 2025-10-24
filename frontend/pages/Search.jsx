@@ -95,36 +95,19 @@ function TeacherCard({ teacher, navigate }) {
   })();
 
   // Fonction pour contacter le prof
+  // Fonction pour contacter le prof (comme dans l'admin : /chat/<uid>)
   const handleContact = async () => {
     if (!auth.currentUser) {
       navigate('/login');
       return;
     }
-
-    const userId = auth.currentUser.uid;
-    const teacherUid = teacher.uid;
-
-    // Vérifie s'il existe déjà une conversation (participants = [userId, teacherId] OU [teacherId, userId])
-    const convRef = collection(db, 'conversations');
-    const q = query(convRef, where('participants', 'array-contains', userId));
-    const snap = await getDocs(q);
-
-    let existing = snap.docs
-      .map(doc => ({ id: doc.id, ...doc.data() }))
-      .find(conv => conv.participants.includes(teacherUid));
-
-    let convId = null;
-    if (existing) {
-      convId = existing.id;
-    } else {
-      const convDoc = await addDoc(convRef, {
-        participants: [userId, teacherUid],
-        created_at: new Date()
-      });
-      convId = convDoc.id;
+    // on utilise l'UID Firebase stocké en doc.id dans "users"
+    const receiverUid = teacher.id || teacher.uid;
+    if (!receiverUid) {
+      alert("Profil professeur invalide.");
+      return;
     }
-    // Redirige vers la conversation (on utilise l'id de conversation)
-    navigate(`/chat/${convId}`);
+    navigate(`/chat/${receiverUid}`);
   };
 
   return (

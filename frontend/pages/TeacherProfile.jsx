@@ -600,7 +600,7 @@ export default function TeacherProfile() {
             </div>
           )}
         </div>
-
+        
         {canBook && showBooking && (
           <BookingModal
             availability={teacher.availability || {}}
@@ -611,6 +611,19 @@ export default function TeacherProfile() {
             orderDays={DAYS_ORDER}
             multiSelect={true}
           />
+        )}
+
+        {/* Bouton contacter (comme admin) — visible sauf sur son propre profil */}
+        {!isOwnProfile && (
+          <button
+            className="bg-secondary text-white px-6 py-2 rounded-lg font-semibold shadow hover:bg-yellow-500 transition mb-2"
+            onClick={() => {
+              if (!auth.currentUser) return navigate('/login');
+              navigate(`/chat/${teacherId}`);
+            }}
+          >
+            Contacter
+          </button>
         )}
 
         <h3 className="text-lg font-bold text-secondary mt-6 mb-3">Avis</h3>
