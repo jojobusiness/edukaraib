@@ -40,7 +40,7 @@ const isPaidForStudent = (lesson, studentId) => {
   return false;
 };
 
-// éligible au paiement pour l’enfant concerné
+// éligible au paiement pour l’enfant/parent concerné
 const isEligibleForChildPayment = (lesson, childId) => {
   if (!childId || !lesson) return false;
   if (lesson.is_group) {
@@ -110,40 +110,39 @@ export default function ParentPayments() {
       // 1) Enfants du parent
       const kidsSnap = await getDocs(query(collection(db, 'students'), where('parent_id', '==', user.uid)));
       const kids = kidsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      const childIds = [];
+
+      // IDs suivis = enfants + le parent lui-même (✅ pour voir ses propres paiements)
+      const childIds = [user.uid];
       kids.forEach((k) => {
         childIds.push(k.id);
         if (k.user_id) childIds.push(k.user_id);
         if (k.uid) childIds.push(k.uid);
       });
 
-      if (childIds.length === 0) {
-        setToPay([]); setPaid([]); setLoading(false);
-        return;
-      }
-
-      // 2) Abonnements live → legacy student_id IN (par lot) + groupes array-contains (par enfant)
+      // 2) Abonnements live → legacy student_id IN (par lot) + groupes array-contains (par id suivi)
       const chunks = []; for (let i = 0; i < childIds.length; i += 10) chunks.push(childIds.slice(i, i + 10));
       let combined = new Map();
+      const parentUid = user.uid;
 
       const rebuildRows = async () => {
         const lessons = Array.from(combined.values());
         const rows = [];
 
         for (const l of lessons) {
-          // IDs des enfants de CE parent dans cette leçon
+          // IDs (enfants + parent) présents dans cette leçon
           const presentIds = new Set();
           if (l.student_id && childIds.includes(l.student_id)) presentIds.add(l.student_id);
           if (Array.isArray(l.participant_ids)) {
             l.participant_ids.forEach((id) => { if (childIds.includes(id)) presentIds.add(id); });
           }
-          // Une ligne PAR enfant présent
+          // Une ligne PAR id présent
           for (const sid of presentIds) {
-            const [teacherName, childName] = await Promise.all([
+            const [teacherName, childNameResolved] = await Promise.all([
               teacherNameOf(l.teacher_id),
-              childNameOf(sid),
+              // Affichage “Moi (parent)” pour le parent
+              sid === parentUid ? Promise.resolve('Moi (parent)') : childNameOf(sid),
             ]);
-            rows.push({ lesson: l, forStudent: sid, teacherName, childName });
+            rows.push({ lesson: l, forStudent: sid, teacherName, childName: childNameResolved });
           }
         }
 
@@ -178,7 +177,7 @@ export default function ParentPayments() {
         }, (e) => { console.error(e); setLoading(false); });
         unsubscribers.push(unsub);
       }
-      // Groupes: array-contains par enfant
+      // Groupes: array-contains par id suivi (enfants + parent)
       childIds.forEach((cid) => {
         const qGroup = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', cid));
         const unsub = onSnapshot(qGroup, (snap) => {
@@ -231,7 +230,7 @@ export default function ParentPayments() {
   // --- Résolution du paymentId (payments) pour rembourser ---
   const resolvePaymentId = async (lessonId, forStudent) => {
     try {
-      // On récupère le plus récent paiement non remboursé pour cet élève et cette leçon
+      // On récupère le plus récent paiement non remboursé pour cet élève/parent et cette leçon
       let qBase = query(
         collection(db, 'payments'),
         where('lesson_id', '==', String(lessonId)),
@@ -244,7 +243,6 @@ export default function ParentPayments() {
       const snap = await getDocs(qBase);
       if (!snap.empty) return snap.docs[0].id;
 
-      // fallback: il peut exister un doc avec session_id = id, mais au cas où
       return null;
     } catch (e) {
       console.error('resolvePaymentId error', e);
@@ -311,7 +309,9 @@ export default function ParentPayments() {
                         </span>
                       </div>
                       <div className="text-xs text-gray-500">Professeur : {r.teacherName || r.lesson.teacher_id}</div>
-                      <div className="text-xs text-gray-500">Enfant : {r.childName || r.forStudent}</div>
+                      <div className="text-xs text-gray-500">
+                        {r.forStudent === auth.currentUser?.uid ? 'Parent' : 'Enfant'} : {r.childName || r.forStudent}
+                      </div>
                       <div className="text-xs text-gray-500">📅 {fmtDateTime(r.lesson.start_datetime, r.lesson.slot_day, r.lesson.slot_hour)}</div>
                     </div>
 
@@ -353,7 +353,9 @@ export default function ParentPayments() {
                     <div className="flex flex-col md:flex-row md:items-center gap-2">
                       <span className="font-bold text-primary">{r.lesson.subject_id || 'Matière'}</span>
                       <span className="text-xs text-gray-600">{fmtDateTime(r.lesson.start_datetime, r.lesson.slot_day, r.lesson.slot_hour)}</span>
-                      <span className="text-xs text-gray-600">Enfant : {r.childName || r.forStudent}</span>
+                      <span className="text-xs text-gray-600">
+                        {r.forStudent === auth.currentUser?.uid ? 'Parent' : 'Enfant'} : {r.childName || r.forStudent}
+                      </span>
                       <span className="text-xs text-gray-600">Prof : {r.teacherName || r.lesson.teacher_id}</span>
                       <span className="text-green-600 text-xs font-semibold md:ml-auto">Payé</span>
                     </div>
