@@ -1,3 +1,4 @@
+import React from 'react';
 const jours = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
 // ⏰ Étendue horaire élargie : 6h → 23h (créneaux d'1h : 6-7, 7-8, ..., 22-23, 23-24)
