@@ -64,6 +64,8 @@ const existsCity = (city) => {
   return GUYANE_COMMUNES.some((c) => normalize(c) === n);
 };
 
+const TODAY = new Date().toISOString().split('T')[0];
+
 export default function Register() {
   const [form, setForm] = useState({
     email: '', password: '',
@@ -112,6 +114,9 @@ export default function Register() {
     if (form.phone && !PHONE_REGEX.test(form.phone)) return alert("Numéro de téléphone invalide.");
     if (!form.city) return alert("Merci d’indiquer votre ville.");
     if (!existsCity(form.city)) return alert("Ville inconnue : choisissez une commune de Guyane proposée.");
+    if (form.birth) {
+      if (form.birth > TODAY) return alert("La date de naissance ne peut pas dépasser la date d’aujourd’hui.");
+    }
 
     setLoading(true);
     try {
@@ -369,26 +374,21 @@ export default function Register() {
               </div>
             )}
 
-            {/* Ville : input + datalist + validation d’existence */}
+            {/* Ville : LISTE DÉROULANTE (comme niveaux) */}
             <div>
               <label className="block mb-1 text-sm font-medium text-gray-700">Ville (commune)</label>
-              <input
-                list="guyane-communes"
+              <select
                 name="city"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2"
                 value={form.city}
                 onChange={handleChange}
-                placeholder="Commence à taper puis choisis…"
                 required
-              />
-              <datalist id="guyane-communes">
+              >
+                <option value="">Sélectionner…</option>
                 {GUYANE_COMMUNES.map((c) => (
-                  <option key={c} value={c} />
+                  <option key={c} value={c}>{c}</option>
                 ))}
-              </datalist>
-              <p className="text-xs mt-1">
-                Doit correspondre à une commune de Guyane (liste proposée).
-              </p>
+              </select>
             </div>
 
             {/* Élève */}
@@ -413,6 +413,7 @@ export default function Register() {
                   <input
                     type="date"
                     name="birth"
+                    max={TODAY}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2"
                     value={form.birth}
                     onChange={handleChange}

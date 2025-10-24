@@ -14,7 +14,7 @@ import TeacherAvailabilityEditor from '../components/TeacherAvailabilityEditor';
 import PaymentStatusCard from '../components/stripe/PaymentStatusCard';
 import StripeConnectButtons from '../components/stripe/StripeConnectButtons';
 
-/* ====== Contrôles de saisie (alignés avec Register) ====== */
+/* ====== Contrôles & listes (alignés avec Register) ====== */
 // Communes officielles de Guyane (22)
 const GUYANE_COMMUNES = [
   'Apatou',
@@ -40,6 +40,17 @@ const GUYANE_COMMUNES = [
   'Saül',
   'Sinnamary',
 ];
+
+const SCHOOL_LEVELS = [
+  'CP','CE1','CE2','CM1','CM2',
+  '6e','5e','4e','3e',
+  'Seconde','Première','Terminale',
+  'BTS 1','BTS 2','BUT 1','BUT 2','BUT 3',
+  'CPGE 1','CPGE 2','Licence 1','Licence 2','Licence 3',
+  'Master 1','Master 2','Doctorat',
+  'Formation professionnelle','Remise à niveau','Autre',
+];
+
 const NAME_CHARS_REGEX = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]*$/;  // saisie incrémentale
 const NAME_MIN2_REGEX  = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]{2,}$/; // contrôle final (≥2)
 const PHONE_REGEX = /^[+0-9 ()-]{7,20}$/;
@@ -56,12 +67,17 @@ const existsCity = (city) => {
   return GUYANE_COMMUNES.some((c) => normalize(c) === n);
 };
 
+const TODAY = new Date().toISOString().split('T')[0];
+
 export default function Profile() {
   const [userLoaded, setUserLoaded] = useState(false);
   const [profile, setProfile] = useState({
     uid: '',
     email: '',
     role: '',
+    // Séparation nom/prénom côté UI (on garde fullName en base)
+    firstName: '',
+    lastName: '',
     fullName: '',
     phone: '',
     city: '',
@@ -94,12 +110,17 @@ export default function Profile() {
         const snap = await getDoc(ref);
         if (snap.exists()) {
           const data = snap.data();
+          // Déduire prénom/nom depuis fullName s’ils ne sont pas en base
+          const loadedFirst = data.firstName || (data.fullName ? data.fullName.split(' ')[0] : '');
+          const loadedLast  = data.lastName  || (data.fullName ? data.fullName.split(' ').slice(1).join(' ') : '');
           setProfile((prev) => ({
             ...prev,
             ...data,
             uid: u.uid,
             email: data.email || u.email || '',
             role: data.role || data.type || prev.role || 'student',
+            firstName: loadedFirst,
+            lastName: loadedLast,
             // valeurs par défaut si absentes en base
             group_enabled: typeof data.group_enabled === 'boolean' ? data.group_enabled : false,
             group_capacity: typeof data.group_capacity === 'number' ? data.group_capacity : 1,
@@ -116,27 +137,6 @@ export default function Profile() {
     return () => unsub();
   }, []);
 
-  // Champs dynamiques (UI)
-  const fields = [
-    { name: 'fullName', label: 'Nom complet', required: true, type: 'text' },
-    { name: 'phone', label: 'Téléphone', type: 'tel' },
-    { name: 'city', label: 'Ville', type: 'text' },
-    ...(profile.role === 'student'
-      ? [
-          { name: 'level', label: 'Niveau scolaire', type: 'text' },
-          { name: 'birth', label: 'Date de naissance', type: 'date' },
-        ]
-      : []),
-    ...(profile.role === 'teacher'
-      ? [
-          { name: 'subjects', label: 'Matières enseignées', type: 'text' },
-          { name: 'diploma', label: 'Diplômes', type: 'text' },
-          { name: 'bio', label: 'Bio', type: 'textarea' },
-          { name: 'price_per_hour', label: "Prix à l'heure (€)", type: 'number', step: 1, min: 0 },
-        ]
-      : []),
-  ];
-
   const handlePhoto = (e) => {
     const f = e.target.files?.[0];
     if (f) setAvatarFile(f);
@@ -146,15 +146,13 @@ export default function Profile() {
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
 
-    // Nom complet : autoriser lettres/espaces/-/’ uniquement
-    if (name === 'fullName') {
+    if (name === 'firstName' || name === 'lastName') {
       if (NAME_CHARS_REGEX.test(value)) {
-        setProfile((p) => ({ ...p, fullName: value }));
+        setProfile((p) => ({ ...p, [name]: value }));
       }
       return;
     }
 
-    // Téléphone : contraindre aux caractères autorisés
     if (name === 'phone') {
       if (/^[+0-9 ()-]*$/.test(value)) {
         setProfile((p) => ({ ...p, phone: value }));
@@ -162,13 +160,6 @@ export default function Profile() {
       return;
     }
 
-    // Ville : laisser taper tout, on validera à l'enregistrement
-    if (name === 'city') {
-      setProfile((p) => ({ ...p, city: value }));
-      return;
-    }
-
-    // price_per_hour / group_capacity : laisser faire l'input number (coercion au submit)
     if (name === 'price_per_hour' || name === 'group_capacity') {
       setProfile((p) => ({ ...p, [name]: value }));
       return;
@@ -184,9 +175,12 @@ export default function Profile() {
     e.preventDefault();
     if (!profile.uid) return;
 
-    // ✅ Validations finales (anti-fausses valeurs)
-    if (!NAME_MIN2_REGEX.test(profile.fullName || '')) {
-      return alert('Nom complet invalide (2 caractères minimum, lettres/espaces/-/’).');
+    // ✅ Validations finales
+    if (!NAME_MIN2_REGEX.test(profile.firstName || '')) {
+      return alert('Prénom invalide (2 caractères minimum, lettres/espaces/-/’).');
+    }
+    if (!NAME_MIN2_REGEX.test(profile.lastName || '')) {
+      return alert('Nom invalide (2 caractères minimum, lettres/espaces/-/’).');
     }
     if (profile.phone && !PHONE_REGEX.test(profile.phone)) {
       return alert('Numéro de téléphone invalide.');
@@ -194,8 +188,11 @@ export default function Profile() {
     if (profile.city && !existsCity(profile.city)) {
       return alert('Ville inconnue : indique une commune de Guyane (liste officielle).');
     }
+    if (profile.birth && profile.birth > TODAY) {
+      return alert("La date de naissance ne peut pas dépasser la date d’aujourd’hui.");
+    }
 
-    // Prix et capacité : nombres sûrs
+    // Prix / Capacité
     const priceNum =
       profile.price_per_hour === '' || profile.price_per_hour === null
         ? null
@@ -205,8 +202,13 @@ export default function Profile() {
         ? 1
         : Number(profile.group_capacity);
 
-    if (priceNum !== null && (Number.isNaN(priceNum) || priceNum < 0)) {
-      return alert("Le prix à l'heure doit être un nombre ≥ 0.");
+    if (priceNum !== null) {
+      if (Number.isNaN(priceNum) || priceNum < 0) {
+        return alert("Le prix à l'heure doit être un nombre ≥ 0.");
+      }
+      if (priceNum > 1000) {
+        return alert("Le prix à l'heure ne doit pas dépasser 1000 €.");
+      }
     }
     if (Number.isNaN(capacityNum) || capacityNum < 1) {
       return alert('La capacité de groupe doit être un entier ≥ 1.');
@@ -225,20 +227,25 @@ export default function Profile() {
 
       const ref = doc(db, 'users', profile.uid);
 
+      // Reconstruire fullName à partir de Prénom + Nom
+      const fullName = `${(profile.firstName || '').trim()} ${(profile.lastName || '').trim()}`.trim();
+
       const toSave = {
         ...profile,
+        fullName,
         avatarUrl,
         price_per_hour: priceNum === null || Number.isNaN(priceNum) ? 0 : Number(priceNum),
         group_enabled: !!profile.group_enabled,
         group_capacity: Number.isNaN(capacityNum) ? 1 : Math.max(1, Math.floor(capacityNum)),
-        fullName: (profile.fullName || '').trim(),
+        firstName: (profile.firstName || '').trim(),
+        lastName: (profile.lastName || '').trim(),
         city: (profile.city || '').trim(),
         phone: (profile.phone || '').trim(),
       };
       delete toSave.uid; // uid n'est pas stocké dans le doc
 
       await updateDoc(ref, toSave);
-      setProfile((p) => ({ ...p, avatarUrl }));
+      setProfile((p) => ({ ...p, avatarUrl, fullName }));
       alert('Profil mis à jour !');
     } catch (err) {
       console.error(err);
@@ -284,13 +291,11 @@ export default function Profile() {
     } catch (err) {
       const msg = String(err?.message || err || '');
       if (msg.includes('requires-recent-login')) {
-        // Réauthentifier
         const email = auth.currentUser?.email || '';
         const pwd = window.prompt(`Par sécurité, entrez votre mot de passe (${email}) :`);
         if (!pwd) return;
         const cred = EmailAuthProvider.credential(email, pwd);
         await reauthenticateWithCredential(auth.currentUser, cred);
-        // Réessaye
         await callDeleteAccount();
         alert('Compte supprimé. À bientôt !');
         window.location.href = '/';
@@ -329,31 +334,147 @@ export default function Profile() {
 
         {/* Form */}
         <form className="space-y-4" onSubmit={handleSave}>
-          {fields.map((f) => (
-            <div key={f.name}>
-              <label className="block mb-1 text-sm font-medium text-gray-700">{f.label}</label>
-              {f.type === 'textarea' ? (
-                <textarea
-                  name={f.name}
+
+          {/* Prénom / Nom */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block mb-1 text-sm font-medium text-gray-700">Prénom</label>
+              <input
+                type="text"
+                name="firstName"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                value={profile.firstName || ''}
+                onChange={handleChange}
+                required
+                placeholder="ex : Sarah"
+              />
+            </div>
+            <div>
+              <label className="block mb-1 text-sm font-medium text-gray-700">Nom</label>
+              <input
+                type="text"
+                name="lastName"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                value={profile.lastName || ''}
+                onChange={handleChange}
+                required
+                placeholder="ex : Dupont"
+              />
+            </div>
+          </div>
+
+          {/* Téléphone */}
+          <div>
+            <label className="block mb-1 text-sm font-medium text-gray-700">Téléphone</label>
+            <input
+              type="tel"
+              name="phone"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2"
+              value={profile.phone || ''}
+              onChange={handleChange}
+              placeholder="ex : +594 694 xx xx xx"
+            />
+          </div>
+
+          {/* Ville — LISTE DÉROULANTE */}
+          <div>
+            <label className="block mb-1 text-sm font-medium text-gray-700">Ville (commune)</label>
+            <select
+              name="city"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2"
+              value={profile.city || ''}
+              onChange={handleChange}
+              required
+            >
+              <option value="">Sélectionner…</option>
+              {GUYANE_COMMUNES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Étudiant : niveau & naissance (niveau identique à l’inscription) */}
+          {profile.role === 'student' && (
+            <>
+              <div>
+                <label className="block mb-1 text-sm font-medium text-gray-700">Niveau scolaire</label>
+                <select
+                  name="level"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                  value={profile[f.name] || ''}
+                  value={profile.level || ''}
+                  onChange={handleChange}
+                >
+                  <option value="">Sélectionner…</option>
+                  {SCHOOL_LEVELS.map((lvl) => (
+                    <option key={lvl} value={lvl}>{lvl}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block mb-1 text-sm font-medium text-gray-700">Date de naissance</label>
+                <input
+                  type="date"
+                  name="birth"
+                  max={TODAY}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  value={profile.birth || ''}
+                  onChange={handleChange}
+                />
+              </div>
+            </>
+          )}
+
+          {/* Prof — matières/diplôme/bio/prix (prix ≤ 10€) */}
+          {profile.role === 'teacher' && (
+            <>
+              <div>
+                <label className="block mb-1 text-sm font-medium text-gray-700">Matières enseignées</label>
+                <input
+                  type="text"
+                  name="subjects"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  value={profile.subjects || ''}
+                  onChange={handleChange}
+                  placeholder="ex : Maths, Physique"
+                />
+              </div>
+              <div>
+                <label className="block mb-1 text-sm font-medium text-gray-700">Diplômes</label>
+                <input
+                  type="text"
+                  name="diploma"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  value={profile.diploma || ''}
+                  onChange={handleChange}
+                  placeholder="ex : Master Maths"
+                />
+              </div>
+              <div>
+                <label className="block mb-1 text-sm font-medium text-gray-700">Bio</label>
+                <textarea
+                  name="bio"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  value={profile.bio || ''}
                   onChange={handleChange}
                   rows={3}
                 />
-              ) : (
+              </div>
+              <div>
+                <label className="block mb-1 text-sm font-medium text-gray-700">Prix à l’heure (€)</label>
                 <input
-                  type={f.type}
-                  name={f.name}
-                  step={f.step}
-                  min={f.min}
+                  type="number"
+                  name="price_per_hour"
+                  min={0}
+                  max={10}
+                  step={1}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                  value={profile[f.name] ?? ''}
+                  value={profile.price_per_hour ?? ''}
                   onChange={handleChange}
-                  required={f.required}
                 />
-              )}
-            </div>
-          ))}
+                <p className="text-xs text-gray-500 mt-1">Maximum autorisé : 1000 € / h.</p>
+              </div>
+            </>
+          )}
 
           {/* Réglage des cours de groupe pour PROF */}
           {profile.role === 'teacher' && (
@@ -440,7 +561,7 @@ export default function Profile() {
           >
             Changer de mot de passe
           </button>
-          {/* Suppression de compte : réauthentification déjà gérée si nécessaire via reauthenticateWithCredential */}
+          {/* Suppression de compte */}
           <button
             onClick={handleDeleteAccount}
             className="w-full bg-red-100 text-red-800 font-semibold py-2 rounded-lg hover:bg-red-200 transition"
