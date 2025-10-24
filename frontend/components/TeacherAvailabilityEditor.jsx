@@ -100,33 +100,42 @@ export default function TeacherAvailabilityEditor({ value = {}, onChange }) {
 
   return (
     <div className="mt-6 mb-3">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <label className="font-bold text-primary block">Disponibilités hebdo (créneaux d’1h) :</label>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => applyPreset('empty')}
-            className="text-xs px-3 py-1 rounded border hover:bg-gray-50"
-            title="Vider toute la semaine"
-          >
-            Vider semaine
-          </button>
-          <button
-            type="button"
-            onClick={() => applyPreset('office')}
-            className="text-xs px-3 py-1 rounded border hover:bg-gray-50"
-            title="Lun–Ven : 8–12 & 14–18"
-          >
-            8–12 & 14–18
-          </button>
-          <button
-            type="button"
-            onClick={() => applyPreset('continuous')}
-            className="text-xs px-3 py-1 rounded border hover:bg-gray-50"
-            title="Lun–Sam : 9–19"
-          >
-            9–19 (Lun–Sam)
-          </button>
+
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+            <button
+              type="button"
+              onClick={() => applyPreset('empty')}
+              className="px-3 py-1.5 text-xs hover:bg-gray-50"
+              title="Vider toute la semaine"
+            >
+              🧹 Vider
+            </button>
+            <div className="w-px bg-gray-200" />
+            <button
+              type="button"
+              onClick={() => applyPreset('office')}
+              className="px-3 py-1.5 text-xs hover:bg-gray-50"
+              title="Lun–Ven : 8–12 & 14–18"
+            >
+              🗓️ Bureau
+            </button>
+            <div className="w-px bg-gray-200" />
+            <button
+              type="button"
+              onClick={() => applyPreset('continuous')}
+              className="px-3 py-1.5 text-xs hover:bg-gray-50"
+              title="Lun–Sam : 9–19"
+            >
+              ⏱️ Continu
+            </button>
+          </div>
+
+          <span className="text-[11px] text-gray-500 hidden sm:inline">
+            Astuce : utilisez aussi les <i>raccourcis jour</i> ci-dessous.
+          </span>
         </div>
       </div>
 
@@ -163,71 +172,112 @@ export default function TeacherAvailabilityEditor({ value = {}, onChange }) {
                 ))}
 
                 {/* Actions rapides par jour */}
-                <td className="min-w-[220px]">
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => selectAllDay(jour)}
-                        className="text-[11px] px-2.5 py-1 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 shadow-sm"
-                        title="Tout sélectionner (jour)"
-                      >
-                        Tout
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => clearDay(jour)}
-                        className="text-[11px] px-2.5 py-1 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 shadow-sm"
-                        title="Vider le jour"
-                      >
-                        Vider
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openCopyFor(jour)}
-                        className="text-[11px] px-2.5 py-1 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 shadow-sm"
-                        title="Copier ce jour vers d'autres jours"
-                      >
-                        Copier →
-                      </button>
+                <td className="min-w-[280px] align-top">
+                  <div className="flex flex-col gap-2">
+
+                    {/* Barre compacte d’actions jour */}
+                    <div className="flex items-center flex-wrap gap-1.5">
+                      {/* Compteur sélection du jour */}
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                        {(value[jour] || []).length} sélection(s)
+                      </span>
+
+                      <div className="inline-flex rounded-lg border border-gray-300 bg-white shadow-sm overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => selectAllDay(jour)}
+                          className="px-2.5 py-1.5 text-[11px] hover:bg-gray-50"
+                          title="Tout sélectionner (jour)"
+                        >
+                          Tout
+                        </button>
+                        <div className="w-px bg-gray-200" />
+                        <button
+                          type="button"
+                          onClick={() => clearDay(jour)}
+                          className="px-2.5 py-1.5 text-[11px] hover:bg-gray-50"
+                          title="Vider le jour"
+                        >
+                          Vider
+                        </button>
+                        <div className="w-px bg-gray-200" />
+                        <button
+                          type="button"
+                          onClick={() => openCopyFor(jour)}
+                          className="px-2.5 py-1.5 text-[11px] hover:bg-gray-50"
+                          title="Copier ce jour vers d'autres jours"
+                        >
+                          Copier →
+                        </button>
+                      </div>
+
+                      {/* Raccourcis de plages 1 clic */}
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => addHours(jour, rangeHours(8, 12))}
+                          className="text-[11px] px-2 py-1 rounded-full bg-gray-100 hover:bg-gray-200 border border-gray-200"
+                          title="Ajouter 8→12"
+                        >
+                          8–12
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => addHours(jour, rangeHours(14, 18))}
+                          className="text-[11px] px-2 py-1 rounded-full bg-gray-100 hover:bg-gray-200 border border-gray-200"
+                          title="Ajouter 14→18"
+                        >
+                          14–18
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => addHours(jour, rangeHours(18, 21))}
+                          className="text-[11px] px-2 py-1 rounded-full bg-gray-100 hover:bg-gray-200 border border-gray-200"
+                          title="Ajouter 18→21"
+                        >
+                          Soir
+                        </button>
+                      </div>
                     </div>
 
-                    {/* Ajout de plage rapide (toujours 1h/slot) */}
-                    <div className="flex items-center gap-1">
-                      <span className="text-[10px] text-gray-500">Plage</span>
-                      <select
-                        className="text-[11px] border rounded px-1 py-[1px]"
-                        value={ranges[jour]?.start ?? 8}
-                        onChange={(e) => updateRange(jour, 'start', e.target.value)}
-                      >
-                        {heures.map(h => <option key={h} value={h}>{h}h</option>)}
-                      </select>
-                      <span className="text-[10px]">→</span>
-                      <select
-                        className="text-[11px] border rounded px-1 py-[1px]"
-                        value={ranges[jour]?.end ?? 12}
-                        onChange={(e) => updateRange(jour, 'end', e.target.value)}
-                      >
-                        {heures.map(h => <option key={h} value={h}>{h}h</option>)}
-                        <option value={24}>24h</option>
-                      </select>
+                    {/* Ajout de plage personnalisée (restylé) */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-gray-500">Plage perso</span>
+                      <div className="flex items-center gap-1">
+                        <select
+                          className="text-[11px] border rounded-md px-2 py-1 bg-white"
+                          value={ranges[jour]?.start ?? 8}
+                          onChange={(e) => updateRange(jour, 'start', e.target.value)}
+                        >
+                          {heures.map(h => <option key={h} value={h}>{h}h</option>)}
+                        </select>
+                        <span className="text-[11px]">→</span>
+                        <select
+                          className="text-[11px] border rounded-md px-2 py-1 bg-white"
+                          value={ranges[jour]?.end ?? 12}
+                          onChange={(e) => updateRange(jour, 'end', e.target.value)}
+                        >
+                          {heures.map(h => <option key={h} value={h}>{h}h</option>)}
+                          <option value={24}>24h</option>
+                        </select>
+                      </div>
                       <button
                         type="button"
                         onClick={() => applyRange(jour)}
-                        className="text-[11px] px-2.5 py-1 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 shadow-sm"
+                        className="text-[11px] px-3 py-1.5 rounded-lg bg-primary text-white hover:bg-primary/90 shadow-sm"
                         title="Ajouter la plage au jour"
                       >
                         Ajouter
                       </button>
                     </div>
 
-                    {/* Panneau de copie ciblée */}
+                    {/* Panneau copie ciblée (design adouci) */}
                     {copyPanel.openDay === jour && (
-                      <div className="mt-1 p-2 border rounded bg-gray-50">
+                      <div className="mt-1 p-2.5 border rounded-xl bg-gray-50">
                         <div className="text-[11px] mb-1 text-gray-600">Copier vers :</div>
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-wrap gap-1.5">
                           {jours.map((j2) => (
-                            <label key={j2} className={`text-[11px] px-2 py-[2px] rounded border cursor-pointer ${
+                            <label key={j2} className={`text-[11px] px-2.5 py-1 rounded-full border cursor-pointer ${
                               copyPanel.targets.includes(j2) ? 'bg-primary text-white border-primary' : 'bg-white'
                             } ${j2 === jour ? 'opacity-40 cursor-not-allowed' : ''}`}>
                               <input
@@ -245,14 +295,14 @@ export default function TeacherAvailabilityEditor({ value = {}, onChange }) {
                           <button
                             type="button"
                             onClick={doCopy}
-                            className="text-[11px] px-3 py-1 rounded bg-primary text-white hover:bg-primary/90"
+                            className="text-[11px] px-3 py-1.5 rounded-lg bg-primary text-white hover:bg-primary/90"
                           >
                             Copier
                           </button>
                           <button
                             type="button"
                             onClick={closeCopy}
-                            className="text-[11px] px-3 py-1 rounded border hover:bg-gray-50"
+                            className="text-[11px] px-3 py-1.5 rounded-lg border hover:bg-gray-50"
                           >
                             Fermer
                           </button>
