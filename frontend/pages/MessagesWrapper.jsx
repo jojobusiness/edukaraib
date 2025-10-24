@@ -4,6 +4,7 @@ import { db, auth } from "../lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import ChatList from "./ChatList";
 import Messages from "./Messages";
+import { io } from "socket.io-client";
 
 /**
  * MessagesWrapper.jsx
@@ -20,6 +21,25 @@ export default function MessagesWrapper() {
   const [selectedReceiver, setSelectedReceiver] = useState(null);
   const [fromAdmin, setFromAdmin] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+
+  // ✅ Initialise socket.io avec reconnexion et fallback polling
+  useEffect(() => {
+    const socket = io(import.meta.env.VITE_SOCKET_URL || "https://edukaraib-server.vercel.app", {
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
+    });
+
+    socket.on("connect_error", (e) => console.warn("socket connect_error", e?.message));
+    socket.on("reconnect_attempt", (n) => console.log("socket reconnect_attempt", n));
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
 
   // Détecte ?from=admin et sélecteur initial
   useEffect(() => {
