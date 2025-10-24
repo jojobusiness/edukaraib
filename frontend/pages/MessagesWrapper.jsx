@@ -31,6 +31,14 @@ export default function MessagesWrapper() {
       timeout: 20000,
     });
 
+    // Ajoute cette ligne :
+    socket.io.opts.extraHeaders = { "X-Requested-By": "edukaraib" };
+
+    // Et masque les erreurs polling inutiles :
+    socket.on("connect_error", (e) => {
+      if (e?.message?.includes("xhr poll error")) return;
+      console.warn("socket connect_error", e?.message || e);
+    });
     socket.on("connect", () => console.log("socket connected (polling)"));
     socket.on("connect_error", (e) => console.warn("socket connect_error", e?.message || e));
     socket.on("reconnect_attempt", (n) => console.log("socket reconnect_attempt", n));
