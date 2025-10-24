@@ -8,7 +8,7 @@ const firebaseConfig = {
   authDomain: "edukaraib.firebaseapp.com",
   projectId: "edukaraib",
   // ✅ Le bucket correct est <project-id>.appspot.com
-  storageBucket: "edukaraib.appspot.com",
+  storageBucket: "edukaraib.firebasestorage.app",
   messagingSenderId: "827164038836",
   appId: "1:827164038836:web:8f0ce9776e18d1b03da9e1",
 };
