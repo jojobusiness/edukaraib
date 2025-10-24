@@ -347,6 +347,9 @@ export default function TeacherLessons() {
     });
   }, [lessons]);
 
+  // ✅ NOUVEAU : cours refusés
+  const refuses = useMemo(() => lessons.filter((l) => l.status === 'rejected'), [lessons]);
+
   const termines = useMemo(() => lessons.filter((l) => l.status === 'completed'), [lessons]);
 
   const openDocs = (lesson) => { setDocLesson(lesson); setDocOpen(true); };
@@ -679,6 +682,23 @@ export default function TeacherLessons() {
           ) : (
             <div className="grid grid-cols-1 gap-5">
               {confirmes.map((l) => <Card key={l.id} lesson={l} showActionsForPending={false} />)}
+            </div>
+          )}
+        </section>
+
+        {/* ✅ NOUVEAU — Refusés */}
+        <section className="mb-10">
+          <div className="flex items-baseline justify-between mb-4">
+            <h3 className="text-xl font-semibold text-red-600">Cours refusés</h3>
+            <span className="text-sm text-gray-500">{refuses.length} refusé(s)</span>
+          </div>
+          {loading ? (
+            <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Chargement…</div>
+          ) : refuses.length === 0 ? (
+            <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucun cours refusé.</div>
+          ) : (
+            <div className="grid grid-cols-1 gap-5">
+              {refuses.map((l) => <Card key={l.id} lesson={l} showActionsForPending={false} />)}
             </div>
           )}
         </section>
