@@ -6,38 +6,29 @@ import ChatList from "./ChatList";
 import Messages from "./Messages";
 import { io } from "socket.io-client";
 
-/**
- * MessagesWrapper.jsx
- * - Lit l'id de l'URL (/chat/:id) ou le query param (?to=uid)
- * - Propage le contexte `from=admin` pour que le bouton Retour renvoie au dashboard admin
- * - Vérifie le rôle avant de renvoyer sur /admin
- */
-
 export default function MessagesWrapper() {
-  const { id } = useParams();          // /chat/:id
-  const { search } = useLocation();    // /chat?to=uid&from=admin
+  const { id } = useParams();
+  const { search } = useLocation();
   const navigate = useNavigate();
 
   const [selectedReceiver, setSelectedReceiver] = useState(null);
   const [fromAdmin, setFromAdmin] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // ✅ Initialise socket.io en "polling only" (pas de WebSocket), avec reconnexion robuste
+  // ✅ Socket.io : polling only + path + credentials
   useEffect(() => {
     const SERVER_URL = import.meta.env.VITE_SOCKET_URL || "https://edukaraib-server.vercel.app";
 
     const socket = io(SERVER_URL, {
-      // ⚠️ Forcer uniquement le polling pour Vercel functions
-      transports: ["polling"],
+      path: "/socket.io",         // ⚠ identique au serveur
+      transports: ["polling"],    // pas de WebSocket sur Vercel
       upgrade: false,
-      path: "/socket.io", // laisser le path par défaut de ton server.js
-
+      withCredentials: true,      // envoie les cookies si nécessaires
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       timeout: 20000,
-      withCredentials: true,
     });
 
     socket.on("connect", () => console.log("socket connected (polling)"));
@@ -53,7 +44,7 @@ export default function MessagesWrapper() {
     };
   }, []);
 
-  // Détecte ?from=admin et sélecteur initial
+  // Détecte ?from=admin et sélection initiale
   useEffect(() => {
     const qs = new URLSearchParams(search);
     const to = qs.get("to");
@@ -64,14 +55,13 @@ export default function MessagesWrapper() {
       setSelectedReceiver(id);
     } else if (to) {
       setSelectedReceiver(to);
-      // Normalise l'URL, en gardant le flag from=admin si présent
       navigate(`/chat/${to}${from === "admin" ? "?from=admin" : ""}`, { replace: true });
     } else {
       setSelectedReceiver(null);
     }
   }, [id, search, navigate]);
 
-  // Vérifie le rôle courant (pour le retour sécurisé vers /admin)
+  // Vérifie le rôle courant
   useEffect(() => {
     (async () => {
       try {
@@ -88,17 +78,14 @@ export default function MessagesWrapper() {
 
   const handleSelectChat = (receiverId) => {
     setSelectedReceiver(receiverId);
-    // met à jour l'URL pour partage/refresh (garde from=admin si présent)
     navigate(`/chat/${receiverId}${fromAdmin ? "?from=admin" : ""}`, { replace: false });
   };
 
   const handleBack = () => {
     setSelectedReceiver(null);
-    // Si on vient de l'admin ET qu'on est bien admin -> retour dashboard admin
     if (fromAdmin && isAdmin) {
       navigate("/admin/dashboard", { replace: false });
     } else {
-      // sinon on reste dans le contexte messagerie
       navigate("/chat", { replace: false });
     }
   };

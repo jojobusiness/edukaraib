@@ -1,12 +1,6 @@
 // server.js
 // ───────────────────────────────────────────────────────────
 // Socket.io realtime chat server for EduKaraib
-// - Auth Firebase ID token (Bearer <token> or {idToken} event)
-// - Presence (online/lastSeen)
-// - Ensure one conversation per pair
-// - Persist messages to Firestore
-// - Broadcast to conversation room
-// - Typing / Read receipts
 // ───────────────────────────────────────────────────────────
 
 import express from "express";
@@ -16,25 +10,21 @@ import { Server } from "socket.io";
 import admin from "firebase-admin";
 
 // ── ENV ────────────────────────────────────────────────────
-// Recommandé : GOOGLE_APPLICATION_CREDENTIALS pointe vers ton JSON service account
-// ou bien utilise une variable FIREBASE_SERVICE_ACCOUNT (JSON) si tu préfères.
-const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || "*")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+const ALLOWED_ORIGINS = [
+  "https://edukaraib.vercel.app",
+  "http://localhost:5173",
+  "http://localhost:3000",
+  ...(process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(",").map(s => s.trim()).filter(Boolean) : []),
+];
 
 const PORT = process.env.PORT || 4000;
 
 // ── Firebase Admin init ────────────────────────────────────
 try {
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    // Init via JSON en variable d'env (stringifié)
     const svc = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    admin.initializeApp({
-      credential: admin.credential.cert(svc),
-    });
+    admin.initializeApp({ credential: admin.credential.cert(svc) });
   } else {
-    // Utilise GOOGLE_APPLICATION_CREDENTIALS ou ADC
     admin.initializeApp();
   }
 } catch (e) {
@@ -44,37 +34,76 @@ try {
 
 const db = admin.firestore();
 
-// ── Express + Socket.io ────────────────────────────────────
+// ── Express + CORS ─────────────────────────────────────────
 const app = express();
-app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin || "*");
+  }
+  res.header("Vary", "Origin");
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+  if (req.method === "OPTIONS") return res.sendStatus(200);
+  next();
+});
+
+app.use(cors({
+  origin: (origin, cb) => cb(null, !origin || ALLOWED_ORIGINS.includes(origin)),
+  credentials: true,
+}));
 app.use(express.json());
+
+// Healthcheck
+app.get("/", (_req, res) => {
+  res.json({ ok: true, service: "edukaraib-socket", time: new Date().toISOString() });
+});
+
+// Préflight explicite pour socket.io polling
+app.options("/socket.io/*", (req, res) => {
+  res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+  return res.sendStatus(200);
+});
 
 const server = http.createServer(app);
 
-// ✅ Forcer Socket.io en mode polling pour Vercel (évite wss:// erreurs)
+// ── Socket.io (polling only + CORS + path strict) ─────────
 const io = new Server(server, {
-  path: "/socket.io",
-  transports: ["polling"], // important: Vercel ne supporte pas WebSockets purs
+  path: "/socket.io",                // ⚠ doit matcher côté client
+  transports: ["polling"],           // Vercel-friendly
+  serveClient: true,                 // expose le client si besoin
   cors: {
-    origin: ALLOWED_ORIGINS,
+    origin: (origin, cb) => cb(null, !origin || ALLOWED_ORIGINS.includes(origin)),
     credentials: true,
     methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   },
 });
 
-// ── Helpers Firestore ──────────────────────────────────────
+// Ceinture + bretelles : ajoute les headers CORS au niveau engine
+io.engine.on("headers", (headers, req) => {
+  const origin = req.headers.origin;
+  if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+    headers["Access-Control-Allow-Origin"] = origin || "*";
+  }
+  headers["Access-Control-Allow-Credentials"] = "true";
+  headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS";
+  headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With";
+});
+
+// ── Helpers ────────────────────────────────────────────────
 function pairKey(a, b) {
   return [a, b].sort().join("_");
 }
 
 async function ensureConversation(uidA, uidB) {
   const key = pairKey(uidA, uidB);
-  const snap = await db
-    .collection("conversations")
-    .where("key", "==", key)
-    .limit(1)
-    .get();
-
+  const snap = await db.collection("conversations").where("key", "==", key).limit(1).get();
   if (!snap.empty) return { id: snap.docs[0].id, data: snap.docs[0].data() };
 
   const docRef = await db.collection("conversations").add({
@@ -85,34 +114,27 @@ async function ensureConversation(uidA, uidB) {
     lastSender: "",
     created_at: admin.firestore.FieldValue.serverTimestamp(),
   });
-
   const data = (await docRef.get()).data();
   return { id: docRef.id, data };
 }
 
 async function setPresenceOnline(uid) {
   if (!uid) return;
-  await db.collection("presence").doc(uid).set(
-    {
-      online: true,
-      lastSeen: admin.firestore.FieldValue.serverTimestamp(),
-    },
-    { merge: true }
-  );
+  await db.collection("presence").doc(uid).set({
+    online: true,
+    lastSeen: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
 }
 
 async function setPresenceOffline(uid) {
   if (!uid) return;
-  await db.collection("presence").doc(uid).set(
-    {
-      online: false,
-      lastSeen: admin.firestore.FieldValue.serverTimestamp(),
-    },
-    { merge: true }
-  );
+  await db.collection("presence").doc(uid).set({
+    online: false,
+    lastSeen: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
 }
 
-// ── Auth middleware (Socket.io) ────────────────────────────
+// ── Auth middleware ────────────────────────────────────────
 io.use(async (socket, next) => {
   try {
     const token =
@@ -132,14 +154,12 @@ io.use(async (socket, next) => {
   }
 });
 
-// ── Socket events ──────────────────────────────────────────
+// ── Events ─────────────────────────────────────────────────
 io.on("connection", (socket) => {
   const sid = socket.id;
   let authedUid = socket.data.uid || null;
-
   console.log("🔌 Client connected:", sid, "uid:", authedUid);
 
-  // Auth post-connexion
   socket.on("auth", async ({ idToken } = {}, cb) => {
     try {
       const decoded = await admin.auth().verifyIdToken(idToken);
@@ -152,19 +172,16 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Rejoindre une conversation existante
   socket.on("join_conversation", async ({ conversationId }, cb) => {
     if (!conversationId) return cb && cb({ ok: false, error: "missing_conversationId" });
     await socket.join(`conv:${conversationId}`);
     cb && cb({ ok: true });
   });
 
-  // Rejoindre ou créer un DM
   socket.on("join_dm", async ({ otherUid }, cb) => {
     try {
       if (!authedUid) return cb && cb({ ok: false, error: "not_authenticated" });
       if (!otherUid) return cb && cb({ ok: false, error: "missing_otherUid" });
-
       const conv = await ensureConversation(authedUid, otherUid);
       await socket.join(`conv:${conv.id}`);
       cb && cb({ ok: true, conversationId: conv.id });
@@ -174,7 +191,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Saisie en cours
   socket.on("typing", ({ conversationId, isTyping = true }) => {
     if (!conversationId || !authedUid) return;
     socket.to(`conv:${conversationId}`).emit("typing", {
@@ -185,11 +201,9 @@ io.on("connection", (socket) => {
     });
   });
 
-  // Envoyer un message
   socket.on("send_message", async (payload = {}, cb) => {
     try {
       if (!authedUid) return cb && cb({ ok: false, error: "not_authenticated" });
-
       const { conversationId, toUid, text } = payload;
       if (!text || !text.trim()) return cb && cb({ ok: false, error: "empty_text" });
 
@@ -209,14 +223,11 @@ io.on("connection", (socket) => {
         sent_at: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      await db.collection("conversations").doc(convId).set(
-        {
-          lastMessage: text.trim(),
-          lastSentAt: admin.firestore.FieldValue.serverTimestamp(),
-          lastSender: authedUid,
-        },
-        { merge: true }
-      );
+      await db.collection("conversations").doc(convId).set({
+        lastMessage: text.trim(),
+        lastSentAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastSender: authedUid,
+      }, { merge: true });
 
       io.to(`conv:${convId}`).emit("message_created", {
         id: messageDoc.id,
@@ -232,23 +243,13 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Marquer comme lu
   socket.on("mark_read", async ({ conversationId }, cb) => {
     try {
-      if (!authedUid || !conversationId)
-        return cb && cb({ ok: false, error: "bad_request" });
+      if (!authedUid || !conversationId) return cb && cb({ ok: false, error: "bad_request" });
 
-      await db
-        .collection("conversations")
-        .doc(conversationId)
-        .set(
-          {
-            lastRead: {
-              [authedUid]: admin.firestore.FieldValue.serverTimestamp(),
-            },
-          },
-          { merge: true }
-        );
+      await db.collection("conversations").doc(conversationId).set({
+        lastRead: { [authedUid]: admin.firestore.FieldValue.serverTimestamp() },
+      }, { merge: true });
 
       socket.to(`conv:${conversationId}`).emit("read", {
         conversationId,
@@ -265,18 +266,13 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", async () => {
     console.log("🔌 Client disconnected:", sid, "uid:", authedUid);
-    if (authedUid) {
-      await setPresenceOffline(authedUid);
-    }
+    if (authedUid) await setPresenceOffline(authedUid);
   });
-});
-
-// ── Health & root ──────────────────────────────────────────
-app.get("/", (_req, res) => {
-  res.json({ ok: true, service: "edukaraib-socket", time: new Date().toISOString() });
 });
 
 // ── Start ──────────────────────────────────────────────────
 server.listen(PORT, () => {
   console.log(`✅ Socket server running on :${PORT} (CORS: ${ALLOWED_ORIGINS.join(",")})`);
 });
+
+export default server;
