@@ -161,19 +161,53 @@ export default function TeacherProfile() {
     return () => unsubTeacher();
   }, [teacherId]);
 
+  // Avis du prof en temps réel
+  useEffect(() => {
+    const q = query(collection(db, 'reviews'), where('teacher_id', '==', teacherId));
+    const unsub = onSnapshot(q, (snap) => {
+      setReviews(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, [teacherId]);
+
   // Dispos (rouge + badges)
   useEffect(() => {
     if (!teacher) return;
+
     const q = query(collection(db, 'lessons'), where('teacher_id', '==', teacherId));
     const unsubLessons = onSnapshot(q, (snap) => {
+      // 1) Calcul de base (bloqués + restants depuis les docs lessons)
       const { blocked, remainingMap } = computeBookedAndRemaining(
         snap.docs,
         teacher,
         selectedStudentId || auth.currentUser?.uid || null
       );
+
+      // 2) Compléter avec une capacité par défaut sur tous les créneaux "ouverts" du prof
+      //    - si group_enabled && group_capacity>1 => cette capacité
+      //    - sinon (individuel) => 1
+      const fill = { ...remainingMap };
+      const defCap =
+        teacher?.group_enabled && Number(teacher?.group_capacity) > 1
+          ? Math.floor(Number(teacher.group_capacity))
+          : 1;
+
+      const avail = teacher?.availability || {}; // { 'Lun': [8,9,10], ... }
+      Object.entries(avail).forEach(([day, hours]) => {
+        (hours || []).forEach((h) => {
+          const key = `${day}:${h}`;
+          const isBlocked = blocked.some((b) => b.day === day && b.hour === h);
+          // On n’écrase pas une valeur issue d’un "lesson" (groupe existant/capacité custom)
+          if (!fill[key] && !isBlocked) {
+            fill[key] = defCap; // → 1 en individuel, ou capacité par défaut du prof en groupe
+          }
+        });
+      });
+
       setBookedSlots(blocked);
-      setRemainingBySlot(remainingMap);
+      setRemainingBySlot(fill);
     });
+
     return () => unsubLessons();
   }, [teacherId, teacher, selectedStudentId]);
 
