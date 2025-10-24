@@ -424,7 +424,7 @@ export default function Profile() {
             </>
           )}
 
-          {/* Prof — matières/diplôme/bio/prix (prix ≤ 10€) */}
+          {/* Prof — matières/diplôme/bio/prix (prix ≤ 1000€) */}
           {profile.role === 'teacher' && (
             <>
               <div>
@@ -465,7 +465,7 @@ export default function Profile() {
                   type="number"
                   name="price_per_hour"
                   min={0}
-                  max={10}
+                  max={1000}
                   step={1}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2"
                   value={profile.price_per_hour ?? ''}
