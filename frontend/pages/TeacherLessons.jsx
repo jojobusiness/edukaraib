@@ -147,6 +147,19 @@ const PENDING_SET = new Set([
   'awaiting',
 ]);
 
+/* ---------- payment helpers (individuel) ---------- */
+const isIndividualPaid = (l) => l && !l.is_group && (l.is_paid === true);
+
+/* ---------- time helpers ---------- */
+const getStartMs = (lesson) => {
+  const ts = lesson?.start_datetime;
+  if (ts?.toDate) {
+    try { return ts.toDate().getTime(); } catch { return null; }
+  }
+  if (typeof ts?.seconds === 'number') return ts.seconds * 1000;
+  return null; // si seulement slot_day/slot_hour (pas de date) → pas d’auto-règle
+};
+
 /* =================== PAGE =================== */
 export default function TeacherLessons() {
   const [lessons, setLessons] = useState([]);
@@ -414,6 +427,52 @@ export default function TeacherLessons() {
     }
   }
 
+  /* ---------- AUTO-RÈGLES : refus si non accepté / non payé à l’heure ---------- */
+  useEffect(() => {
+    if (!lessons.length) return;
+
+    const tick = async () => {
+      const now = Date.now();
+
+      const updates = lessons.map(async (l) => {
+        const startMs = getStartMs(l);
+        if (!startMs) return; // on ne force rien si aucune date absolue
+
+        // 1) Si pas accepté avant l'heure prévue → refusé
+        if (now >= startMs) {
+          const statusStr = String(l.status || '');
+          const isAccepted =
+            statusStr === 'confirmed' ||
+            statusStr === 'completed' ||
+            (l.is_group && hasAnyConfirmedParticipant(l));
+
+          if (!isAccepted && statusStr !== 'rejected') {
+            try {
+              await updateDoc(doc(db, 'lessons', l.id), { status: 'rejected' });
+            } catch {}
+            return;
+          }
+        }
+
+        // 2) Individuel accepté mais non payé à l'heure → refusé
+        if (!l.is_group && String(l.status || '') === 'confirmed') {
+          if (now >= startMs && !isIndividualPaid(l)) {
+            try {
+              await updateDoc(doc(db, 'lessons', l.id), { status: 'rejected' });
+            } catch {}
+          }
+        }
+      });
+
+      try { await Promise.all(updates); } catch {}
+    };
+
+    // premier passage + intervalle régulier
+    tick();
+    const id = setInterval(tick, 60 * 1000); // chaque minute
+    return () => clearInterval(id);
+  }, [lessons]);
+
   const Card = ({ lesson, showActionsForPending }) => {
     const isGroup = !!lesson.is_group || (Array.isArray(lesson.participant_ids) && lesson.participant_ids.length > 0);
     const confirmedParticipants = (lesson.participantDetails || []).filter(
@@ -432,12 +491,25 @@ export default function TeacherLessons() {
         ? 'confirmed'
         : lesson.status;
 
+    // ⬇️ Pastille paiement pour les cours individuels
+    const indivPaidPill = !isGroup ? (
+      <span
+        className={`text-[11px] px-2 py-0.5 rounded-full ml-2 ${
+          isIndividualPaid(lesson) ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800'
+        }`}
+        title={isIndividualPaid(lesson) ? 'Payé' : 'À payer'}
+      >
+        {isIndividualPaid(lesson) ? 'Payé' : 'À payer'}
+      </span>
+    ) : null;
+
     return (
       <div className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between relative">
         <div className="flex-1">
           <div className="flex gap-2 items-center mb-1">
             <span className="font-bold text-primary">{lesson.subject_id || 'Matière'}</span>
             <StatusPill status={displayedStatus} />
+            {indivPaidPill}
             {isGroup && (
               <>
                 <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded ml-1">👥 {used}/{capacity}</span>
