@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import {
   doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc,
-  serverTimestamp, arrayUnion,
+  serverTimestamp, arrayUnion, onSnapshot,
 } from 'firebase/firestore';
 import BookingModal from '../components/BookingModal';
 
@@ -11,14 +11,10 @@ import BookingModal from '../components/BookingModal';
  * Recalcule les créneaux "bloqués" (rouges) ET les "places restantes" pour un professeur,
  * … (contenu inchangé)
  */
-async function refreshBookedSlots(teacherId, setBookedSlots, opts = {}) {
-  const { forStudentId = null, teacherDoc = null, setRemainingBySlot = null } = opts;
+function computeBookedAndRemaining(lessonsDocs, teacherDoc, forStudentId) {
+  const bySlot = new Map(); // "day|hour" -> { individuals: [], groups: [] }
 
-  const lessonsQ = query(collection(db, 'lessons'), where('teacher_id', '==', teacherId));
-  const lessonsSnap = await getDocs(lessonsQ);
-  const bySlot = new Map(); // key: "day|hour" -> { individuals: [], groups: [] }
-
-  lessonsSnap.docs.forEach((docu) => {
+  lessonsDocs.forEach((docu) => {
     const l = docu.data();
     if (!l.slot_day && l.slot_hour == null) return;
     const key = `${l.slot_day}|${l.slot_hour}`;
@@ -28,9 +24,8 @@ async function refreshBookedSlots(teacherId, setBookedSlots, opts = {}) {
   });
 
   const blocked = [];
-  const remainingMap = {}; // 'Lun:10' -> nb places
+  const remainingMap = {};
 
-  // valeurs par défaut prof
   const teacherGroupEnabled = !!teacherDoc?.group_enabled;
   const teacherDefaultCap =
     typeof teacherDoc?.group_capacity === 'number' && teacherDoc.group_capacity > 1
@@ -42,7 +37,7 @@ async function refreshBookedSlots(teacherId, setBookedSlots, opts = {}) {
     const hour = Number(hourStr);
     const label = `${day}:${hour}`;
 
-    // 1) INDIVIDUELS
+    // 1) Individuels : un seul suffit pour bloquer
     const indivBlocks = individuals.some((l) => {
       const st = String(l.status || 'booked');
       return st !== 'rejected' && st !== 'deleted';
@@ -52,8 +47,9 @@ async function refreshBookedSlots(teacherId, setBookedSlots, opts = {}) {
       continue;
     }
 
-    // 2) GROUPES
+    // 2) Groupes
     if (groups.length > 0) {
+      // Élève déjà dans un groupe actif sur ce créneau => on bloque
       const childAlreadyIn = !!forStudentId && groups.some((g) => {
         const ids = Array.isArray(g.participant_ids) ? g.participant_ids : [];
         if (!ids.includes(forStudentId)) return false;
@@ -65,11 +61,14 @@ async function refreshBookedSlots(teacherId, setBookedSlots, opts = {}) {
         continue;
       }
 
+      // Capacité restante = somme(max(capacity - accepted, 0)) sur tous les groupes du slot
       let totalRemaining = 0;
       let hasRoomSomewhere = false;
 
       groups.forEach((g) => {
-        const capacity = Number(g.capacity || 0) > 0 ? Number(g.capacity) : (teacherDefaultCap > 1 ? teacherDefaultCap : 1);
+        // ⚠️ Priorité à g.capacity si défini (>0), sinon capacité par défaut prof
+        const cap = Number(g.capacity || 0) > 0 ? Number(g.capacity)
+                  : (teacherDefaultCap > 1 ? teacherDefaultCap : 1);
         const ids = Array.isArray(g.participant_ids) ? g.participant_ids : [];
         const pm = g.participantsMap || {};
         let accepted = 0;
@@ -77,7 +76,7 @@ async function refreshBookedSlots(teacherId, setBookedSlots, opts = {}) {
           const st = pm?.[sid]?.status;
           if (st === 'accepted' || st === 'confirmed') accepted += 1;
         });
-        const remains = Math.max(0, capacity - accepted);
+        const remains = Math.max(0, cap - accepted);
         if (remains > 0) hasRoomSomewhere = true;
         totalRemaining += remains;
       });
@@ -90,17 +89,14 @@ async function refreshBookedSlots(teacherId, setBookedSlots, opts = {}) {
       continue;
     }
 
-    // 3) AUCUN GROUPE EXISTANT
+    // 3) Aucun groupe existant sur ce créneau
     if (teacherGroupEnabled && teacherDefaultCap > 1) {
       remainingMap[label] = teacherDefaultCap;
       continue;
     }
   }
 
-  setBookedSlots(blocked);
-  if (typeof setRemainingBySlot === 'function') {
-    setRemainingBySlot(remainingMap);
-  }
+  return { blocked, remainingMap };
 }
 
 const DAYS_ORDER = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -155,29 +151,31 @@ export default function TeacherProfile() {
 
   // Charger prof + avis
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const snap = await getDoc(doc(db, 'users', teacherId));
-      if (!cancelled && snap.exists()) setTeacher({ ...snap.data(), id: teacherId });
-
-      const qReviews = query(collection(db, 'reviews'), where('teacher_id', '==', teacherId));
-      const rSnap = await getDocs(qReviews);
-      if (!cancelled) setReviews(rSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    })();
-    return () => { cancelled = true; };
+    const unsubTeacher = onSnapshot(doc(db, 'users', teacherId), (snap) => {
+      if (snap.exists()) {
+        setTeacher({ ...snap.data(), id: teacherId });
+      } else {
+        setTeacher(null);
+      }
+    });
+    return () => unsubTeacher();
   }, [teacherId]);
 
   // Dispos (rouge + badges)
   useEffect(() => {
     if (!teacher) return;
-    (async () => {
-      await refreshBookedSlots(teacherId, setBookedSlots, {
-        forStudentId: selectedStudentId || auth.currentUser?.uid || null,
-        teacherDoc: teacher,
-        setRemainingBySlot,
-      });
-    })();
-  }, [teacher, teacherId, selectedStudentId]);
+    const q = query(collection(db, 'lessons'), where('teacher_id', '==', teacherId));
+    const unsubLessons = onSnapshot(q, (snap) => {
+      const { blocked, remainingMap } = computeBookedAndRemaining(
+        snap.docs,
+        teacher,
+        selectedStudentId || auth.currentUser?.uid || null
+      );
+      setBookedSlots(blocked);
+      setRemainingBySlot(remainingMap);
+    });
+    return () => unsubLessons();
+  }, [teacherId, teacher, selectedStudentId]);
 
   // Infos auteurs d'avis
   useEffect(() => {

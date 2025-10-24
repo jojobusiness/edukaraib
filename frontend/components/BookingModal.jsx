@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 
 // Jours + heures affichées
 const DEFAULT_DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-const HOURS = Array.from({ length: 12 }, (_, i) => i + 8); // 08h → 19h
 
 export default function BookingModal({
   availability = {},        // { 'Lun': [10,11], ... }
@@ -32,6 +31,19 @@ export default function BookingModal({
     });
     return m;
   }, [bookedSlots]);
+
+  // Colonnes d'heures dynamiques selon les dispos du prof
+  const hours = useMemo(() => {
+    // availability attendu: { 'Lun': [10,11], ... } (heures = débuts de créneaux d'1h)
+    const all = Object.values(availability || {}).flat().filter((h) => Number.isInteger(h));
+    if (all.length === 0) {
+      // fallback si le prof n'a rien saisi: 08→19 (comportement précédent)
+      return Array.from({ length: 12 }, (_, i) => i + 8);
+    }
+    const min = Math.max(0, Math.min(...all));
+    const max = Math.min(23, Math.max(...all));
+    return Array.from({ length: (max - min + 1) }, (_, i) => min + i);
+  }, [availability]);
 
   const isBooked = (day, hour) => bookedMap.get(`${day}:${hour}`) === true;
   const isAvailable = (day, hour) => Array.isArray(availability[day]) && availability[day].includes(hour);
@@ -115,7 +127,7 @@ export default function BookingModal({
             <thead>
               <tr>
                 <th className="px-2 py-1"></th>
-                {HOURS.map((h) => (
+                {hours.map((h) => (
                   <th key={h} className="px-2 py-1">{h}h</th>
                 ))}
               </tr>
@@ -124,7 +136,7 @@ export default function BookingModal({
               {orderDays.map((day) => (
                 <tr key={day}>
                   <td className="font-bold px-2 py-1">{day}</td>
-                  {HOURS.map((h) => {
+                  {hours.map((h) => {
                     const booked = isBooked(day, h);
                     const dispo = isAvailable(day, h);
                     const sel = isSelected(day, h);
