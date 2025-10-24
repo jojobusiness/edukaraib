@@ -477,6 +477,23 @@ export default function Profile() {
             </>
           )}
 
+          {/* Paiements (Stripe) pour PROF */}
+          {profile.role === 'teacher' && (
+            <div className="mt-8 bg-white border border-gray-200 rounded-2xl p-6">
+              <h3 className="text-lg font-bold text-primary mb-2">Paiements & RIB (via Stripe)</h3>
+              <p className="text-sm text-gray-600 mb-3">
+                Configure tes informations (identité, IBAN). Stripe les stocke/vérifie — rien n’est conservé chez EduKaraib.
+              </p>
+
+              <PaymentStatusCard />
+              <StripeConnectButtons hasAccount={!!profile.stripeAccountId} />
+
+              <p className="text-xs text-gray-500 mt-3">
+                Anti-fraude : vérif. identité (KYC), IBAN, 3DS. Les virements arrivent directement sur ton compte bancaire.
+              </p>
+            </div>
+          )}
+
           {/* Réglage des cours de groupe pour PROF */}
           {profile.role === 'teacher' && (
             <div className="rounded-xl border border-gray-200 p-4 space-y-3 bg-gray-50">
@@ -606,24 +623,6 @@ export default function Profile() {
             {saving ? 'Enregistrement…' : 'Enregistrer'}
           </button>
         </form>
-        
-
-        {/* Paiements (Stripe) pour PROF */}
-        {profile.role === 'teacher' && (
-          <div className="mt-8 bg-white border border-gray-200 rounded-2xl p-6">
-            <h3 className="text-lg font-bold text-primary mb-2">Paiements & RIB (via Stripe)</h3>
-            <p className="text-sm text-gray-600 mb-3">
-              Configure tes informations (identité, IBAN). Stripe les stocke/vérifie — rien n’est conservé chez EduKaraib.
-            </p>
-
-            <PaymentStatusCard />
-            <StripeConnectButtons hasAccount={!!profile.stripeAccountId} />
-
-            <p className="text-xs text-gray-500 mt-3">
-              Anti-fraude : vérif. identité (KYC), IBAN, 3DS. Les virements arrivent directement sur ton compte bancaire.
-            </p>
-          </div>
-        )}
 
         {/* Actions compte */}
         <div className="mt-8 flex flex-col gap-2">
