@@ -118,6 +118,7 @@ export default function Messages(props) {
   const [cid, setCid] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
+  const [sending, setSending] = useState(false); // 🆕 anti double envoi
   const [receiverName, setReceiverName] = useState("");
   const [receiverAvatar, setReceiverAvatar] = useState("/avatar-default.png");
   const messagesEndRef = useRef(null);
@@ -283,25 +284,65 @@ export default function Messages(props) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // 6) Envoi via API Vercel -> Firestore + trigger Pusher
+  // 6) Envoi via API -> fallback Firestore si besoin
   const handleSend = async (e) => {
     e.preventDefault();
+    if (sending) return;
     const myUid = auth.currentUser?.uid;
-    if (!newMessage.trim() || !myUid || !cid || !receiverId) return;
-
     const text = newMessage.trim();
-    const idToken = await auth.currentUser?.getIdToken();
+    if (!text) return;
 
-    await fetch("/api/messages/send", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${idToken || ""}`,
-      },
-      body: JSON.stringify({ conversationId: cid, toUid: receiverId, text }),
-    });
+    try {
+      setSending(true);
 
-    setNewMessage("");
+      // sécurité : s’assure qu’on a une conversation id
+      let conversationId = cid;
+      if (!myUid || !receiverId) throw new Error("Destinataire introuvable.");
+      if (!conversationId) {
+        conversationId = await ensureConversationClient(myUid, receiverId);
+        setCid(conversationId);
+      }
+
+      // 1) tentative via API (si autorisée côté backend)
+      try {
+        const idToken = await auth.currentUser?.getIdToken();
+        const res = await fetch("/api/messages/send", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken || ""}`,
+          },
+          body: JSON.stringify({ conversationId, toUid: receiverId, text }),
+        });
+        if (!res.ok) throw new Error("api_failed");
+        setNewMessage("");
+        return; // ✅ envoyé via API
+      } catch {
+        // 2) 🔁 Fallback direct Firestore (non-admin)
+        await addDoc(collection(db, "messages"), {
+          conversationId,
+          sender_uid: myUid,
+          receiver_uid: receiverId,
+          participants_uids: [myUid, receiverId],
+          message: text,
+          sent_at: serverTimestamp(),
+        });
+
+        await updateDoc(doc(db, "conversations", conversationId), {
+          lastMessage: text,
+          lastSentAt: serverTimestamp(),
+          lastSender: myUid,
+        });
+
+        setNewMessage("");
+        return;
+      }
+    } catch (err) {
+      console.warn("send failed:", err?.message || err);
+      alert("Échec de l’envoi du message. Réessayez.");
+    } finally {
+      setSending(false);
+    }
   };
 
   /** HARD DELETE: supprime messages + doc conversation (limite 500/commit) */
@@ -384,6 +425,7 @@ export default function Messages(props) {
           onClick={handleDeleteConversation}
           className="text-sm px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
           title="Supprimer la discussion"
+          disabled={sending}
         >
           Supprimer
         </button>
@@ -426,7 +468,8 @@ export default function Messages(props) {
         />
         <button
           type="submit"
-          className="bg-primary text-white px-4 py-2 rounded-full shadow hover:bg-primary-dark transition"
+          disabled={sending || !newMessage.trim()}
+          className="bg-primary text-white px-4 py-2 rounded-full shadow hover:bg-primary-dark transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Envoyer
         </button>

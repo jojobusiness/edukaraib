@@ -1,6 +1,7 @@
 import Pusher from "pusher";
 import admin from "firebase-admin";
 
+// Init Firebase Admin (idempotent)
 if (!admin.apps.length) {
   const svc = process.env.FIREBASE_SERVICE_ACCOUNT && JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
   admin.initializeApp({ credential: svc ? admin.credential.cert(svc) : admin.credential.applicationDefault() });
@@ -15,17 +16,37 @@ const pusher = new Pusher({
   useTLS: true,
 });
 
+// ── CORS helper (sécurisé, minimal) ─────────────────
+function setCors(res, origin) {
+  res.setHeader("Access-Control-Allow-Origin", origin || "*");
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+}
+
 export default async function handler(req, res) {
+  setCors(res, req.headers.origin);
+
+  // Préflight
+  if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).end();
 
   try {
     const authHeader = req.headers.authorization || "";
     const idToken = authHeader.replace(/^Bearer\s+/i, "") || req.body?.idToken;
+    if (!idToken) return res.status(401).json({ error: "missing_token" });
+
     const decoded = await admin.auth().verifyIdToken(idToken);
     const myUid = decoded.uid;
 
     const { conversationId, toUid, text } = req.body || {};
-    if (!conversationId || !text || !text.trim()) return res.status(400).json({ error: "bad_request" });
+    if (!conversationId || !text || !text.trim()) {
+      return res.status(400).json({ error: "bad_request" });
+    }
+    if (toUid && toUid === myUid) {
+      return res.status(400).json({ error: "self_message_forbidden" });
+    }
 
     const messageRef = await db.collection("messages").add({
       conversationId,
@@ -36,13 +57,15 @@ export default async function handler(req, res) {
       sent_at: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    await db.collection("conversations").doc(conversationId).set({
-      lastMessage: text.trim(),
-      lastSentAt: admin.firestore.FieldValue.serverTimestamp(),
-      lastSender: myUid,
-    }, { merge: true });
+    await db.collection("conversations").doc(conversationId).set(
+      {
+        lastMessage: text.trim(),
+        lastSentAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastSender: myUid,
+      },
+      { merge: true }
+    );
 
-    // Push WS sur le canal de la conversation
     await pusher.trigger(`presence-conversation-${conversationId}`, "message:new", {
       id: messageRef.id,
       conversationId,
