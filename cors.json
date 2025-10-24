@@ -1,0 +1,12 @@
+[
+  {
+    "origin": [
+      "https://edukaraib.vercel.app",
+      "http://localhost:5173",
+      "http://localhost:3000"
+    ],
+    "method": ["GET", "HEAD", "PUT", "POST", "DELETE", "OPTIONS"],
+    "responseHeader": ["Authorization", "Content-Type", "x-goog-meta-*", "x-goog-resumable"],
+    "maxAgeSeconds": 3600
+  }
+]
