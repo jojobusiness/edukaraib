@@ -139,8 +139,8 @@ export default function TeacherAvailabilityEditor({ value = {}, onChange }) {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="table-auto border text-xs">
+        <div className="overflow-x-auto p-2 sm:p-4 bg-white rounded-xl shadow-inner">
+          <table className="table-auto border text-xs w-full">
           <thead>
             <tr>
               <th className="px-1"></th>

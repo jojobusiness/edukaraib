@@ -550,25 +550,28 @@ export default function Profile() {
             </div>
           )}
           
-          {/* Slide-over (panneau dispos) */}
+          {/* Fenêtre modale centrée pour les dispos */}
           {profile.role === 'teacher' && (
             <div
-              className={`fixed inset-0 z-50 ${showAvailDrawer ? '' : 'pointer-events-none'}`}
-              aria-hidden={!showAvailDrawer}
+              className={`fixed inset-0 z-50 flex items-center justify-center transition-all duration-300 ${
+                showAvailDrawer ? 'opacity-100 visible' : 'opacity-0 invisible'
+              }`}
             >
-              {/* Backdrop */}
+              {/* Arrière-plan */}
               <div
                 onClick={() => setShowAvailDrawer(false)}
-                className={`absolute inset-0 bg-black/40 transition-opacity ${showAvailDrawer ? 'opacity-100' : 'opacity-0'}`}
+                className="absolute inset-0 bg-black/40 backdrop-blur-sm"
               />
-              {/* Panel */}
+
+              {/* Fenêtre */}
               <div
-                className={`absolute right-0 top-0 h-full w-full sm:w-[540px] bg-white shadow-2xl border-l border-gray-200
-                            transition-transform duration-300 ${showAvailDrawer ? 'translate-x-0' : 'translate-x-full'}`}
-                role="dialog"
-                aria-modal="true"
+                className={`relative bg-white rounded-2xl shadow-2xl border border-gray-100 w-full max-w-5xl mx-auto 
+                            max-h-[90vh] overflow-hidden flex flex-col transition-all duration-300 ${
+                  showAvailDrawer ? 'scale-100 opacity-100' : 'scale-95 opacity-0'
+                }`}
               >
-                <div className="flex items-center justify-between px-4 py-3 border-b">
+                {/* En-tête */}
+                <div className="flex items-center justify-between px-6 py-4 border-b bg-primary/5 sticky top-0">
                   <h3 className="text-lg font-semibold text-primary">Éditer mes disponibilités</h3>
                   <button
                     type="button"
@@ -580,35 +583,34 @@ export default function Profile() {
                   </button>
                 </div>
 
-                <div className="overflow-y-auto h-[calc(100%-56px-64px)] p-4">
+                {/* Contenu scrollable */}
+                <div className="flex-1 overflow-y-auto p-6 bg-white">
                   <TeacherAvailabilityEditor
                     value={profile.availability || {}}
                     onChange={(avail) => setProfile((p) => ({ ...p, availability: avail }))}
                   />
                 </div>
 
-                {/* Footer collant */}
-                <div className="absolute bottom-0 left-0 right-0 border-t bg-white p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs text-gray-500">
-                      Les changements sont pris en compte quand vous cliquez sur <b>Enregistrer</b> (en bas du profil).
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowAvailDrawer(false)}
-                        className="px-3 py-2 rounded-lg border hover:bg-gray-50 text-sm font-semibold"
-                      >
-                        Fermer
-                      </button>
-                      <button
-                        type="submit"
-                        className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold shadow hover:bg-primary/90"
-                        onClick={() => setShowAvailDrawer(false)}
-                      >
-                        Enregistrer
-                      </button>
-                    </div>
+                {/* Footer */}
+                <div className="flex justify-between items-center gap-2 border-t bg-gray-50 p-4 sticky bottom-0">
+                  <p className="text-xs text-gray-500">
+                    Les changements sont pris en compte après avoir cliqué sur <b>Enregistrer</b> (en bas du profil).
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowAvailDrawer(false)}
+                      className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 text-sm font-semibold"
+                    >
+                      Fermer
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold shadow hover:bg-primary/90"
+                      onClick={() => setShowAvailDrawer(false)}
+                    >
+                      Enregistrer
+                    </button>
                   </div>
                 </div>
               </div>
