@@ -83,7 +83,7 @@ export default function BookingModal({
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-40 bg-black/30">
-      <div className="bg-white p-6 rounded-xl shadow max-w-md w-full relative">
+      <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-md w-full relative border border-gray-100">
         <button className="absolute right-2 top-2 text-gray-500" onClick={onClose} aria-label="Fermer">
           ✖
         </button>
@@ -99,7 +99,7 @@ export default function BookingModal({
         )}
 
         {/* Légende */}
-        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600 mb-3">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-700 mb-3 p-2 rounded-lg bg-gray-50 border border-gray-200">
           <span className="inline-flex items-center gap-1">
             <span className="inline-block w-3 h-3 rounded bg-green-500" /> Libre
           </span>
@@ -201,7 +201,7 @@ export default function BookingModal({
         </div>
 
         <button
-          className="w-full bg-primary text-white py-2 rounded-lg font-semibold shadow mt-2 disabled:opacity-60"
+          className="w-full bg-primary text-white py-3 rounded-xl font-semibold shadow mt-2 disabled:opacity-60 hover:bg-primary/90"
           onClick={handleSubmit}
           disabled={!canBook || !selected.length}
           title={!canBook ? 'La réservation est désactivée pour les professeurs' : undefined}

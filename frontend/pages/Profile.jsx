@@ -71,6 +71,7 @@ const TODAY = new Date().toISOString().split('T')[0];
 
 export default function Profile() {
   const [userLoaded, setUserLoaded] = useState(false);
+  const [showAvailDrawer, setShowAvailDrawer] = useState(false);
   const [profile, setProfile] = useState({
     uid: '',
     email: '',
@@ -515,10 +516,86 @@ export default function Profile() {
           )}
 
           {profile.role === 'teacher' && (
-            <TeacherAvailabilityEditor
-              value={profile.availability || {}}
-              onChange={(avail) => setProfile((p) => ({ ...p, availability: avail }))}
-            />
+            <div className="rounded-xl border border-gray-200 p-4 bg-gray-50">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-md font-bold text-gray-800">Disponibilités hebdomadaires</h3>
+                  <p className="text-xs text-gray-500">Chaque case = 1h. Utilise le panneau pour des ajouts en masse et des presets.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAvailDrawer(true)}
+                  className="inline-flex items-center gap-2 bg-primary text-white px-3 py-2 rounded-lg font-semibold shadow hover:bg-primary/90"
+                >
+                  Modifier
+                </button>
+              </div>
+            </div>
+          )}
+          
+          {/* Slide-over (panneau dispos) */}
+          {profile.role === 'teacher' && (
+            <div
+              className={`fixed inset-0 z-50 ${showAvailDrawer ? '' : 'pointer-events-none'}`}
+              aria-hidden={!showAvailDrawer}
+            >
+              {/* Backdrop */}
+              <div
+                onClick={() => setShowAvailDrawer(false)}
+                className={`absolute inset-0 bg-black/40 transition-opacity ${showAvailDrawer ? 'opacity-100' : 'opacity-0'}`}
+              />
+              {/* Panel */}
+              <div
+                className={`absolute right-0 top-0 h-full w-full sm:w-[540px] bg-white shadow-2xl border-l border-gray-200
+                            transition-transform duration-300 ${showAvailDrawer ? 'translate-x-0' : 'translate-x-full'}`}
+                role="dialog"
+                aria-modal="true"
+              >
+                <div className="flex items-center justify-between px-4 py-3 border-b">
+                  <h3 className="text-lg font-semibold text-primary">Éditer mes disponibilités</h3>
+                  <button
+                    type="button"
+                    onClick={() => setShowAvailDrawer(false)}
+                    className="text-gray-500 hover:text-gray-700 text-xl leading-none"
+                    aria-label="Fermer"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="overflow-y-auto h-[calc(100%-56px-64px)] p-4">
+                  <TeacherAvailabilityEditor
+                    value={profile.availability || {}}
+                    onChange={(avail) => setProfile((p) => ({ ...p, availability: avail }))}
+                  />
+                </div>
+
+                {/* Footer collant */}
+                <div className="absolute bottom-0 left-0 right-0 border-t bg-white p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-gray-500">
+                      Les changements sont pris en compte quand vous cliquez sur <b>Enregistrer</b> (en bas du profil).
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAvailDrawer(false)}
+                        className="px-3 py-2 rounded-lg border hover:bg-gray-50 text-sm font-semibold"
+                      >
+                        Fermer
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-3 py-2 rounded-lg bg-primary text-white text-sm font-semibold shadow hover:bg-primary/90"
+                        onClick={() => setShowAvailDrawer(false)}
+                      >
+                        Enregistrer
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
 
           <button
@@ -529,6 +606,7 @@ export default function Profile() {
             {saving ? 'Enregistrement…' : 'Enregistrer'}
           </button>
         </form>
+        
 
         {/* Paiements (Stripe) pour PROF */}
         {profile.role === 'teacher' && (

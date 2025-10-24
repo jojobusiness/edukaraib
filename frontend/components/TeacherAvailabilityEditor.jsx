@@ -152,8 +152,8 @@ export default function TeacherAvailabilityEditor({ value = {}, onChange }) {
                       onClick={() => toggle(jour, h)}
                       className={
                         (value[jour] || []).includes(h)
-                          ? "bg-green-500 w-6 h-6 rounded shadow text-white"
-                          : "bg-gray-100 w-6 h-6 rounded hover:bg-gray-200"
+                          ? "w-7 h-7 rounded-md shadow-sm bg-green-600 text-white ring-1 ring-green-700/30"
+                          : "w-7 h-7 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-600 ring-1 ring-gray-200"
                       }
                       title={(value[jour] || []).includes(h) ? `${h}h–${h+1}h (sélectionné)` : `${h}h–${h+1}h`}
                     >
@@ -169,7 +169,7 @@ export default function TeacherAvailabilityEditor({ value = {}, onChange }) {
                       <button
                         type="button"
                         onClick={() => selectAllDay(jour)}
-                        className="text-[10px] px-2 py-[2px] rounded border hover:bg-gray-50"
+                        className="text-[11px] px-2.5 py-1 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 shadow-sm"
                         title="Tout sélectionner (jour)"
                       >
                         Tout
@@ -177,7 +177,7 @@ export default function TeacherAvailabilityEditor({ value = {}, onChange }) {
                       <button
                         type="button"
                         onClick={() => clearDay(jour)}
-                        className="text-[10px] px-2 py-[2px] rounded border hover:bg-gray-50"
+                        className="text-[11px] px-2.5 py-1 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 shadow-sm"
                         title="Vider le jour"
                       >
                         Vider
@@ -185,7 +185,7 @@ export default function TeacherAvailabilityEditor({ value = {}, onChange }) {
                       <button
                         type="button"
                         onClick={() => openCopyFor(jour)}
-                        className="text-[10px] px-2 py-[2px] rounded border hover:bg-gray-50"
+                        className="text-[11px] px-2.5 py-1 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 shadow-sm"
                         title="Copier ce jour vers d'autres jours"
                       >
                         Copier →
@@ -214,7 +214,7 @@ export default function TeacherAvailabilityEditor({ value = {}, onChange }) {
                       <button
                         type="button"
                         onClick={() => applyRange(jour)}
-                        className="text-[10px] px-2 py-[2px] rounded border hover:bg-gray-50"
+                        className="text-[11px] px-2.5 py-1 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 shadow-sm"
                         title="Ajouter la plage au jour"
                       >
                         Ajouter
