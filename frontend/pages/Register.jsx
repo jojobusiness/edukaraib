@@ -111,7 +111,12 @@ export default function Register() {
     if (!NAME_MIN2_REGEX.test(form.lastName)) return alert("Nom invalide.");
     if (!form.email) return alert("Adresse email requise.");
     if (!form.password || form.password.length < 6) return alert("Mot de passe trop court (≥6).");
-    if (form.phone && !PHONE_REGEX.test(form.phone)) return alert("Numéro de téléphone invalide.");
+    if (form.phone) {
+      const phoneClean = form.phone.replace(/\D/g, ''); // supprime espaces et symboles
+      if (!/^0\d{9}$/.test(phoneClean)) {
+        return alert("Le numéro doit commencer par 0 et contenir exactement 10 chiffres.");
+      }
+    }
     if (!form.city) return alert("Merci d’indiquer votre ville.");
     if (!existsCity(form.city)) return alert("Ville inconnue : choisissez une commune de Guyane proposée.");
     if (form.birth) {
@@ -187,7 +192,7 @@ export default function Register() {
           group_capacity: 1,
         });
       }
-
+      
       await setDoc(doc(db, 'users', pendingUser.uid), baseData);
 
       setWaitingEmailVerify(false);
@@ -199,6 +204,14 @@ export default function Register() {
       } else {
         navigate('/dashboard-eleve');
       }
+
+      if (form.role === 'teacher' && form.price_per_hour) {
+        const price = Number(form.price_per_hour);
+        if (isNaN(price) || price < 0 || price > 1000) {
+          return alert("Le prix doit être compris entre 0 et 1000 €.");
+        }
+      }
+
     } catch (err) {
       alert('Erreur: ' + (err?.message || 'Finalisation impossible'));
     } finally {
@@ -366,10 +379,12 @@ export default function Register() {
                 <input
                   type="tel"
                   name="phone"
+                  pattern="0[0-9]{9}"
+                  maxLength={10}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2"
                   value={form.phone}
                   onChange={handleChange}
-                  placeholder="ex : +594 694 xx xx xx"
+                  placeholder="ex : 0694xxxxxx"
                 />
               </div>
             )}

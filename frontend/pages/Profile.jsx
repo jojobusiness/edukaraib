@@ -183,8 +183,11 @@ export default function Profile() {
     if (!NAME_MIN2_REGEX.test(profile.lastName || '')) {
       return alert('Nom invalide (2 caractères minimum, lettres/espaces/-/’).');
     }
-    if (profile.phone && !PHONE_REGEX.test(profile.phone)) {
-      return alert('Numéro de téléphone invalide.');
+    if (profile.phone) {
+      const phoneClean = profile.phone.replace(/\D/g, ''); // supprime espaces/symboles
+      if (!/^0[1-9]\d{8}$/.test(phoneClean)) {
+        return alert("Le numéro doit commencer par 0, contenir 10 chiffres et ne pas commencer par deux zéros.");
+      }
     }
     if (profile.city && !existsCity(profile.city)) {
       return alert('Ville inconnue : indique une commune de Guyane (liste officielle).');
@@ -370,10 +373,12 @@ export default function Profile() {
             <input
               type="tel"
               name="phone"
+              pattern="0[1-9][0-9]{8}"
+              maxLength={10}
               className="w-full border border-gray-300 rounded-lg px-3 py-2"
               value={profile.phone || ''}
               onChange={handleChange}
-              placeholder="ex : +594 694 xx xx xx"
+              placeholder="ex : 0694xxxxxx"
             />
           </div>
 
