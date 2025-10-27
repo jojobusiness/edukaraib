@@ -17,15 +17,14 @@ import {
   deleteDoc,
   writeBatch,
 } from "firebase/firestore";
-import Pusher from "pusher-js"; // ✅ WebSocket managé
-import { io } from "socket.io-client"; // 🆕 pour join_dm serveur (création côté admin)
+import Pusher from "pusher-js";
+import { io } from "socket.io-client";
 
-// -------- Helpers --------
+// -------- Helpers communs --------
 function pairKey(a, b) {
   return [a, b].sort().join("_");
 }
 
-// --- robust profile fetch (users, teachers, students) ---
 async function fetchFromColById(col, uid) {
   try {
     const d = await getDoc(doc(db, col, uid));
@@ -95,7 +94,11 @@ async function fetchUserProfile(uid) {
 /** Trouve / crée une conversation unique entre myUid et otherUid (fallback client) */
 async function ensureConversationClient(myUid, otherUid) {
   const key = pairKey(myUid, otherUid);
-  const qConv = query(collection(db, "conversations"), where("key", "==", key), limit(1));
+  const qConv = query(
+    collection(db, "conversations"),
+    where("key", "==", key),
+    limit(1)
+  );
   const snap = await getDocs(qConv);
   if (!snap.empty) return snap.docs[0].id;
 
@@ -110,6 +113,26 @@ async function ensureConversationClient(myUid, otherUid) {
   return ref.id;
 }
 
+/** Trouve une conversation EXISTANTE entre myUid et otherUid via participants */
+async function findExistingConversationByParticipants(myUid, otherUid) {
+  // On ne peut pas faire deux array-contains en Firestore ⇒ scan côté client sur mes convs récentes
+  const qMine = query(
+    collection(db, "conversations"),
+    where("participants", "array-contains", myUid),
+    orderBy("lastSentAt", "desc"),
+    limit(20)
+  );
+  const snap = await getDocs(qMine);
+  let found = null;
+  snap.forEach((d) => {
+    const c = d.data();
+    if (Array.isArray(c.participants) && c.participants.includes(otherUid)) {
+      if (!found) found = { id: d.id, ...c };
+    }
+  });
+  return found?.id || null;
+}
+
 export default function Messages(props) {
   const routeParams = useParams();
   const routeReceiverId = routeParams?.id || null;
@@ -118,7 +141,7 @@ export default function Messages(props) {
   const [cid, setCid] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
-  const [sending, setSending] = useState(false); // 🆕 anti double envoi
+  const [sending, setSending] = useState(false);
   const [receiverName, setReceiverName] = useState("");
   const [receiverAvatar, setReceiverAvatar] = useState("/avatar-default.png");
   const messagesEndRef = useRef(null);
@@ -128,78 +151,127 @@ export default function Messages(props) {
   const pusherRef = useRef(null);
   const channelRef = useRef(null);
 
-  // 🆕 socket ref (évite les connexions multiples)
+  // socket ref (évite connexions multiples)
   const socketRef = useRef(null);
 
-  // 1) Résoudre/Créer la conversation (serveur d'abord → fallback client)
+  // ──────────────────────────────────────────────────────────────
+  // 1) Résoudre/choisir la conversation (existante > serveur > fallback client)
+  // ──────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       const myUid = auth.currentUser?.uid;
       if (!myUid || !receiverId) return;
 
       if (myUid === receiverId) {
-        // empêche le self-chat
         alert("Impossible de discuter avec soi-même.");
         return;
       }
 
-      const SERVER_URL = import.meta.env.VITE_SOCKET_URL || "https://edukaraib-server.vercel.app";
-      // (ré)initialise la socket si besoin
-      if (!socketRef.current) {
-        const s = io(SERVER_URL, {
-          path: "/socket.io",
-          transports: ["polling"], // Vercel-friendly
-          upgrade: false,
-          withCredentials: true,
-          reconnection: true,
-          reconnectionAttempts: Infinity,
-          reconnectionDelay: 1000,
-          reconnectionDelayMax: 5000,
-          timeout: 20000,
-        });
-        // masque le bruit “xhr poll error”
-        s.on("connect_error", (e) => {
-          if (!String(e?.message || "").includes("xhr poll error")) {
-            console.warn("socket connect_error", e?.message || e);
+      // (A) D'abord, on cherche une conversation EXISTANTE (participants)
+      const existingByParticipants = await findExistingConversationByParticipants(
+        myUid,
+        receiverId
+      );
+      if (existingByParticipants) {
+        setCid(existingByParticipants);
+        // tenter de join la room côté socket (sans recréer)
+        try {
+          const SERVER_URL =
+            import.meta.env.VITE_SOCKET_URL ||
+            "https://edukaraib-server.vercel.app";
+          if (!socketRef.current) {
+            const s = io(SERVER_URL, {
+              path: "/socket.io",
+              transports: ["polling"],
+              upgrade: false,
+              withCredentials: true,
+              reconnection: true,
+              reconnectionAttempts: Infinity,
+              reconnectionDelay: 1000,
+              reconnectionDelayMax: 5000,
+              timeout: 20000,
+            });
+            s.on("connect_error", (e) => {
+              if (!String(e?.message || "").includes("xhr poll error")) {
+                console.warn("socket connect_error", e?.message || e);
+              }
+            });
+            socketRef.current = s;
           }
-        });
-        socketRef.current = s;
+          const idToken = await auth.currentUser?.getIdToken();
+          await new Promise((resolve) =>
+            socketRef.current.emit("auth", { idToken }, () => resolve())
+          );
+          await new Promise((resolve) =>
+            socketRef.current.emit(
+              "join_conversation",
+              { conversationId: existingByParticipants },
+              () => resolve()
+            )
+          );
+        } catch {}
+        return; // ✅ utilise l'existante
       }
 
+      // (B) Sinon, on ESSAIE via le serveur (join_dm crée si besoin côté admin)
       try {
-        // auth + join_dm → le serveur crée/assure la conversation (privilèges admin)
-        const idToken = await auth.currentUser?.getIdToken();
-        await new Promise((resolve) => {
-          socketRef.current.emit("auth", { idToken }, () => resolve());
-        });
-
-        const convId = await new Promise((resolve) => {
-          socketRef.current.emit("join_dm", { otherUid: receiverId }, (res) => {
-            if (res?.ok && res.conversationId) resolve(res.conversationId);
-            else resolve(null);
+        const SERVER_URL =
+          import.meta.env.VITE_SOCKET_URL ||
+          "https://edukaraib-server.vercel.app";
+        if (!socketRef.current) {
+          const s = io(SERVER_URL, {
+            path: "/socket.io",
+            transports: ["polling"], // Vercel-friendly
+            upgrade: false,
+            withCredentials: true,
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            timeout: 20000,
           });
+          s.on("connect_error", (e) => {
+            if (!String(e?.message || "").includes("xhr poll error")) {
+              console.warn("socket connect_error", e?.message || e);
+            }
+          });
+          socketRef.current = s;
+        }
+        const idToken = await auth.currentUser?.getIdToken();
+        await new Promise((resolve) =>
+          socketRef.current.emit("auth", { idToken }, () => resolve())
+        );
+        const convId = await new Promise((resolve) => {
+          socketRef.current.emit(
+            "join_dm",
+            { otherUid: receiverId },
+            (res) => {
+              if (res?.ok && res.conversationId) resolve(res.conversationId);
+              else resolve(null);
+            }
+          );
         });
-
         if (convId) {
           setCid(convId);
-          return; // ✅ serveur OK, on sort
+          return; // ✅ serveur OK
         }
       } catch {
-        // continue fallback
+        // continue sur (C)
       }
 
-      // 🔁 fallback client-side si le serveur n’a pas pu créer la conv
+      // (C) Dernier recours : créer côté client
       const convIdFallback = await ensureConversationClient(myUid, receiverId);
       setCid(convIdFallback);
     })();
 
-    // cleanup socket si on change de destinataire
     return () => {
-      // on ne détruit pas la socket globale ici, on la garde pour ce composant
+      // on garde la socket pour ce composant
     };
   }, [receiverId]);
 
-  // 2) Profil interlocuteur (robuste)
+  // ──────────────────────────────────────────────────────────────
+  // 2) Profil interlocuteur
+  // ──────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       if (!receiverId) return;
@@ -209,7 +281,9 @@ export default function Messages(props) {
     })();
   }, [receiverId]);
 
+  // ──────────────────────────────────────────────────────────────
   // 3) Flux messages Firestore (source de vérité)
+  // ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!cid) return;
     const qMsg = query(
@@ -217,15 +291,26 @@ export default function Messages(props) {
       where("conversationId", "==", cid),
       orderBy("sent_at", "asc")
     );
-    const unsub = onSnapshot(qMsg, (snap) => {
-      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setMessages(data);
-    });
+    const unsub = onSnapshot(
+      qMsg,
+      (snap) => {
+        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setMessages(data);
+      },
+      (err) => {
+        console.warn(
+          "onSnapshot messages error:",
+          err?.code || err?.message || err
+        );
+      }
+    );
     unsubRefs.current.msgs = unsub;
     return () => unsub();
   }, [cid]);
 
+  // ──────────────────────────────────────────────────────────────
   // 4) Pusher temps réel (optionnel)
+  // ──────────────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
 
@@ -234,7 +319,9 @@ export default function Messages(props) {
       const key = import.meta.env.VITE_PUSHER_KEY;
       const cluster = import.meta.env.VITE_PUSHER_CLUSTER;
       if (!key || !cluster) {
-        console.warn("Pusher env vars manquantes (VITE_PUSHER_KEY / VITE_PUSHER_CLUSTER).");
+        console.warn(
+          "Pusher env vars manquantes (VITE_PUSHER_KEY / VITE_PUSHER_CLUSTER)."
+        );
         return;
       }
       const idToken = await auth.currentUser?.getIdToken();
@@ -254,7 +341,7 @@ export default function Messages(props) {
       channelRef.current = channel;
 
       channel.bind("message:new", () => {
-        // Firestore pousse déjà via onSnapshot; on peut ignorer ou pré-afficher.
+        // Firestore pousse déjà via onSnapshot; on peut ignorer
       });
     }
 
@@ -279,12 +366,16 @@ export default function Messages(props) {
     };
   }, [cid]);
 
+  // ──────────────────────────────────────────────────────────────
   // 5) Auto-scroll
+  // ──────────────────────────────────────────────────────────────
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // ──────────────────────────────────────────────────────────────
   // 6) Envoi via API -> fallback Firestore si besoin
+  // ──────────────────────────────────────────────────────────────
   const handleSend = async (e) => {
     e.preventDefault();
     if (sending) return;
@@ -299,7 +390,10 @@ export default function Messages(props) {
       let conversationId = cid;
       if (!myUid || !receiverId) throw new Error("Destinataire introuvable.");
       if (!conversationId) {
-        conversationId = await ensureConversationClient(myUid, receiverId);
+        // Recheck existante (au cas où) avant de créer
+        conversationId =
+          (await findExistingConversationByParticipants(myUid, receiverId)) ||
+          (await ensureConversationClient(myUid, receiverId));
         setCid(conversationId);
       }
 
@@ -345,12 +439,17 @@ export default function Messages(props) {
     }
   };
 
-  /** HARD DELETE: supprime messages + doc conversation (limite 500/commit) */
+  // ──────────────────────────────────────────────────────────────
+  // Suppression (hard/soft) — inchangé
+  // ──────────────────────────────────────────────────────────────
   async function tryHardDeleteConversation(conversationId, myUid) {
     const convSnap = await getDoc(doc(db, "conversations", conversationId));
     if (!convSnap.exists()) throw new Error("Conversation introuvable.");
     const conv = convSnap.data();
-    if (!Array.isArray(conv.participants) || !conv.participants.includes(myUid)) {
+    if (
+      !Array.isArray(conv.participants) ||
+      !conv.participants.includes(myUid)
+    ) {
       throw new Error("Accès refusé.");
     }
 
@@ -371,7 +470,6 @@ export default function Messages(props) {
     await deleteDoc(doc(db, "conversations", conversationId));
   }
 
-  /** SOFT DELETE: masque la conversation pour l'utilisateur courant */
   async function softDeleteForUser(conversationId, myUid) {
     await updateDoc(doc(db, "conversations", conversationId), {
       hiddenFor:
@@ -389,7 +487,9 @@ export default function Messages(props) {
     );
     if (!ok) return;
 
-    try { unsubRefs.current.msgs?.(); } catch {}
+    try {
+      unsubRefs.current.msgs?.();
+    } catch {}
 
     try {
       await tryHardDeleteConversation(cid, myUid);
@@ -419,7 +519,9 @@ export default function Messages(props) {
           alt="Avatar"
           className="w-10 h-10 rounded-full object-cover ml-2"
         />
-        <h2 className="text-lg font-semibold flex-1">{receiverName || "Utilisateur"}</h2>
+        <h2 className="text-lg font-semibold flex-1">
+          {receiverName || "Utilisateur"}
+        </h2>
 
         <button
           onClick={handleDeleteConversation}
@@ -439,17 +541,24 @@ export default function Messages(props) {
           return (
             <div
               key={m.id}
-              className={`flex flex-col max-w-xs ${isMine ? "ml-auto items-end" : "mr-auto items-start"}`}
+              className={`flex flex-col max-w-xs ${
+                isMine ? "ml-auto items-end" : "mr-auto items-start"
+              }`}
             >
               <div
                 className={`px-4 py-2 rounded-2xl shadow ${
-                  isMine ? "bg-primary text-white rounded-br-none" : "bg-gray-200 text-gray-900 rounded-bl-none"
+                  isMine
+                    ? "bg-primary text-white rounded-br-none"
+                    : "bg-gray-200 text-gray-900 rounded-bl-none"
                 }`}
               >
                 {m.message}
               </div>
               <span className="text-xs text-gray-500 mt-1">
-                {isMine ? "Moi" : receiverName || "Utilisateur"} • {m.sent_at?.toDate ? m.sent_at.toDate().toLocaleTimeString() : ""}
+                {isMine ? "Moi" : receiverName || "Utilisateur"} •{" "}
+                {m.sent_at?.toDate
+                  ? m.sent_at.toDate().toLocaleTimeString()
+                  : ""}
               </span>
             </div>
           );
@@ -458,7 +567,10 @@ export default function Messages(props) {
       </div>
 
       {/* Formulaire */}
-      <form onSubmit={handleSend} className="p-3 bg-white border-t flex gap-2 items-center">
+      <form
+        onSubmit={handleSend}
+        className="p-3 bg-white border-t flex gap-2 items-center"
+      >
         <input
           type="text"
           placeholder="Votre message..."
