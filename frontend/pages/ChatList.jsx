@@ -15,6 +15,9 @@ import DashboardLayout from "../components/DashboardLayout";
 import { Link } from "react-router-dom";
 import { useUserRole } from "../hooks/useUserRole";
 
+// --- Mini cache en mémoire pour accélérer la liste
+const PROFILE_CACHE = new Map(); // uid -> { name, avatar, role }
+
 // ---------- Helpers ----------
 async function fetchFromColById(col, uid) {
   try {
@@ -34,8 +37,10 @@ async function fetchFromColByUid(col, uid) {
   } catch {}
   return null;
 }
-function buildName(p) {
-  if (!p) return "(Sans nom)";
+function buildName(p, uidFallback) {
+  if (!p) {
+    return uidFallback ? `Utilisateur-${String(uidFallback).slice(0, 6)}` : "(Sans nom)";
+  }
   const byFL = [p.firstName, p.lastName].filter(Boolean).join(" ").trim();
   return (
     p.fullName ||
@@ -44,7 +49,7 @@ function buildName(p) {
     p.name ||
     p.displayName ||
     (typeof p.email === "string" ? p.email.split("@")[0] : "") ||
-    "(Sans nom)"
+    (uidFallback ? `Utilisateur-${String(uidFallback).slice(0, 6)}` : "(Sans nom)")
   );
 }
 function buildAvatar(p) {
@@ -110,16 +115,20 @@ export default function ChatList({ onSelectChat }) {
           const c = { id: d.id, ...d.data() };
           const otherUid = (c.participants || []).find((u) => u !== myUid);
 
-          // robust lookup profil
-          const profile = await fetchUserProfile(otherUid);
-          const name = buildName(profile);
-          const avatar = buildAvatar(profile);
-
-          // rôle: essaie d'utiliser le champ users.role, sinon déduire via _col
-          let role = "";
-          if (profile?.role) role = profile.role;
-          else if (profile?._col === "teachers") role = "teacher";
-          else if (profile?._col === "students") role = "student";
+          // --- Profil avec cache
+          let cached = PROFILE_CACHE.get(otherUid);
+          if (!cached) {
+            const profile = await fetchUserProfile(otherUid);
+            const name = buildName(profile, otherUid);
+            const avatar = buildAvatar(profile);
+            let role = "";
+            if (profile?.role) role = profile.role;
+            else if (profile?._col === "teachers") role = "teacher";
+            else if (profile?._col === "students") role = "student";
+            cached = { name, avatar, role };
+            PROFILE_CACHE.set(otherUid, cached);
+          }
+          const { name, avatar, role } = cached;
 
           // Présence (statut en ligne)
           let isOnline = false;
@@ -132,7 +141,7 @@ export default function ChatList({ onSelectChat }) {
 
           return {
             cid: c.id,
-            otherUid,            // 👈 UID Firebase — c’est ce que tu utilises aussi côté admin
+            otherUid, // UID Firebase
             name,
             avatar,
             role,

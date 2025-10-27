@@ -43,8 +43,8 @@ async function fetchFromColByUid(col, uid) {
   } catch {}
   return null;
 }
-function buildName(p) {
-  if (!p) return "Utilisateur";
+function buildName(p, uidFallback) {
+  if (!p) return uidFallback ? `Utilisateur-${String(uidFallback).slice(0, 6)}` : "Utilisateur";
   const byFL = [p.firstName, p.lastName].filter(Boolean).join(" ").trim();
   return (
     p.fullName ||
@@ -53,7 +53,7 @@ function buildName(p) {
     p.name ||
     p.displayName ||
     (typeof p.email === "string" ? p.email.split("@")[0] : "") ||
-    "Utilisateur"
+    (uidFallback ? `Utilisateur-${String(uidFallback).slice(0, 6)}` : "Utilisateur")
   );
 }
 function buildAvatar(p) {
@@ -115,7 +115,6 @@ async function ensureConversationClient(myUid, otherUid) {
 
 /** Trouve une conversation EXISTANTE entre myUid et otherUid via participants */
 async function findExistingConversationByParticipants(myUid, otherUid) {
-  // On ne peut pas faire deux array-contains en Firestore ⇒ scan côté client sur mes convs récentes
   const qMine = query(
     collection(db, "conversations"),
     where("participants", "array-contains", myUid),
@@ -154,9 +153,7 @@ export default function Messages(props) {
   // socket ref (évite connexions multiples)
   const socketRef = useRef(null);
 
-  // ──────────────────────────────────────────────────────────────
   // 1) Résoudre/choisir la conversation (existante > serveur > fallback client)
-  // ──────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       const myUid = auth.currentUser?.uid;
@@ -167,14 +164,14 @@ export default function Messages(props) {
         return;
       }
 
-      // (A) D'abord, on cherche une conversation EXISTANTE (participants)
+      // (A) Conversation existante ?
       const existingByParticipants = await findExistingConversationByParticipants(
         myUid,
         receiverId
       );
       if (existingByParticipants) {
         setCid(existingByParticipants);
-        // tenter de join la room côté socket (sans recréer)
+        // join room côté socket (sans recréer)
         try {
           const SERVER_URL =
             import.meta.env.VITE_SOCKET_URL ||
@@ -213,7 +210,7 @@ export default function Messages(props) {
         return; // ✅ utilise l'existante
       }
 
-      // (B) Sinon, on ESSAIE via le serveur (join_dm crée si besoin côté admin)
+      // (B) Sinon, ESSAI serveur (join_dm crée si besoin côté admin)
       try {
         const SERVER_URL =
           import.meta.env.VITE_SOCKET_URL ||
@@ -221,7 +218,7 @@ export default function Messages(props) {
         if (!socketRef.current) {
           const s = io(SERVER_URL, {
             path: "/socket.io",
-            transports: ["polling"], // Vercel-friendly
+            transports: ["polling"],
             upgrade: false,
             withCredentials: true,
             reconnection: true,
@@ -269,21 +266,17 @@ export default function Messages(props) {
     };
   }, [receiverId]);
 
-  // ──────────────────────────────────────────────────────────────
   // 2) Profil interlocuteur
-  // ──────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       if (!receiverId) return;
       const p = await fetchUserProfile(receiverId);
-      setReceiverName(buildName(p));
+      setReceiverName(buildName(p, receiverId));
       setReceiverAvatar(buildAvatar(p));
     })();
   }, [receiverId]);
 
-  // ──────────────────────────────────────────────────────────────
   // 3) Flux messages Firestore (source de vérité)
-  // ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!cid) return;
     const qMsg = query(
@@ -308,9 +301,7 @@ export default function Messages(props) {
     return () => unsub();
   }, [cid]);
 
-  // ──────────────────────────────────────────────────────────────
   // 4) Pusher temps réel (optionnel)
-  // ──────────────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
 
@@ -366,16 +357,12 @@ export default function Messages(props) {
     };
   }, [cid]);
 
-  // ──────────────────────────────────────────────────────────────
   // 5) Auto-scroll
-  // ──────────────────────────────────────────────────────────────
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // ──────────────────────────────────────────────────────────────
   // 6) Envoi via API -> fallback Firestore si besoin
-  // ──────────────────────────────────────────────────────────────
   const handleSend = async (e) => {
     e.preventDefault();
     if (sending) return;
@@ -386,18 +373,17 @@ export default function Messages(props) {
     try {
       setSending(true);
 
-      // sécurité : s’assure qu’on a une conversation id
+      // s’assurer d’un conversationId
       let conversationId = cid;
       if (!myUid || !receiverId) throw new Error("Destinataire introuvable.");
       if (!conversationId) {
-        // Recheck existante (au cas où) avant de créer
         conversationId =
           (await findExistingConversationByParticipants(myUid, receiverId)) ||
           (await ensureConversationClient(myUid, receiverId));
         setCid(conversationId);
       }
 
-      // 1) tentative via API (si autorisée côté backend)
+      // 1) tentative API
       try {
         const idToken = await auth.currentUser?.getIdToken();
         const res = await fetch("/api/messages/send", {
@@ -410,9 +396,9 @@ export default function Messages(props) {
         });
         if (!res.ok) throw new Error("api_failed");
         setNewMessage("");
-        return; // ✅ envoyé via API
+        return;
       } catch {
-        // 2) 🔁 Fallback direct Firestore (non-admin)
+        // 2) fallback Firestore
         await addDoc(collection(db, "messages"), {
           conversationId,
           sender_uid: myUid,
@@ -439,9 +425,7 @@ export default function Messages(props) {
     }
   };
 
-  // ──────────────────────────────────────────────────────────────
-  // Suppression (hard/soft) — inchangé
-  // ──────────────────────────────────────────────────────────────
+  // Suppression (hard/soft) — complet
   async function tryHardDeleteConversation(conversationId, myUid) {
     const convSnap = await getDoc(doc(db, "conversations", conversationId));
     if (!convSnap.exists()) throw new Error("Conversation introuvable.");
