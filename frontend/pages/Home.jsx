@@ -193,7 +193,7 @@ export default function Home() {
         <img
           src="/accueil.jpg"
           alt="Élève et professeur - EduKaraib"
-          className="absolute inset-0 h-full w-full object-cover opacity-10"
+          className="absolute inset-0 h-full w-full object-cover opacity-30"
         />
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-24 flex items-center justify-center">
           <div className="w-full max-w-3xl text-center">
