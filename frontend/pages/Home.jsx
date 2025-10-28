@@ -383,19 +383,24 @@ export default function Home() {
                   '/avatar-default.png';
                 const stars = '★★★★★'.slice(0, Math.round(Number(r.rating) || 0));
                 return (
-                  <div key={r.id} className="border rounded-2xl p-6 bg-white">
-                    <div className="flex items-center gap-3 mb-3">
+                  <div
+                    key={r.id}
+                    className="group border rounded-2xl overflow-hidden bg-white hover:shadow-xl transition"
+                  >
+                    <div className="aspect-square bg-gray-100 overflow-hidden">
                       <img
                         src={reviewerAvatar}
                         alt={reviewerName}
-                        className="w-10 h-10 rounded-full object-cover border"
+                        className="h-full w-full object-cover group-hover:scale-105 transition"
                       />
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-primary truncate">{reviewerName}</div>
-                        <div className="text-xs text-amber-600">{stars}</div>
-                      </div>
                     </div>
-                    <p className="text-gray-600 text-sm">{r.comment}</p>
+                    <div className="p-4">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <h3 className="font-semibold text-primary truncate">{reviewerName}</h3>
+                        <span className="text-sm text-amber-600">{stars}</span>
+                      </div>
+                      <p className="text-gray-700 text-sm leading-relaxed">{r.comment}</p>
+                    </div>
                   </div>
                 );
               })}
