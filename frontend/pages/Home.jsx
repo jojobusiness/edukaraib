@@ -193,7 +193,7 @@ export default function Home() {
         <img
           src="/accueil.jpg"
           alt="Élève et professeur - EduKaraib"
-          className="absolute inset-0 h-full w-full object-cover opacity-20"
+          className="absolute inset-0 h-full w-full object-cover opacity-10"
         />
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-24 flex items-center justify-center">
           <div className="w-full max-w-3xl text-center">
@@ -301,6 +301,66 @@ export default function Home() {
               ))}
             </div>
           )}
+        </div>
+      </section>
+
+      {/* ───────────────────────── CATÉGORIES POPULAIRES ───────────────────────── */}
+      <section className="py-10 bg-gray-50 border-t">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="flex items-end justify-between mb-6">
+            <h2 className="text-2xl font-bold">Matières populaires</h2>
+            <Link to="/search" className="text-primary hover:underline">Parcourir</Link>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            {categories.map((c) => (
+              <button
+                key={c.slug}
+                onClick={() => navigate(`/search?subject=${encodeURIComponent(c.label)}`)}
+                className="group bg-white border rounded-2xl p-4 text-left hover:shadow transition"
+              >
+                <div className="text-2xl mb-2">{c.emoji}</div>
+                <div className="font-semibold group-hover:text-primary">{c.label}</div>
+                <div className="text-xs text-gray-500">Professeurs disponibles</div>
+              </button>
+            ))}
+          </div>
+
+          {/* Villes rapides */}
+          <div className="mt-6 text-sm text-gray-600 flex flex-wrap gap-2">
+            {cities.map((city) => (
+              <button
+                key={city}
+                onClick={() => navigate(`/search?city=${encodeURIComponent(city)}`)}
+                className="px-3 py-1 rounded-full bg-white border hover:border-primary hover:text-primary"
+              >
+                {city}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ───────────────────────── COMMENT ÇA MARCHE ───────────────────────── */}
+      <section className="py-12 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4">
+          <h2 className="text-2xl font-bold mb-6">Comment ça marche ?</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white border rounded-2xl p-6">
+              <div className="text-3xl mb-3">🔎</div>
+              <h3 className="font-semibold mb-1">1. Recherchez</h3>
+              <p className="text-gray-600 text-sm">Filtrez par matière, ville, niveau et disponibilités pour trouver le bon prof.</p>
+            </div>
+            <div className="bg-white border rounded-2xl p-6">
+              <div className="text-3xl mb-3">💬</div>
+              <h3 className="font-semibold mb-1">2. Contactez</h3>
+              <p className="text-gray-600 text-sm">Discutez gratuitement via la messagerie sécurisée pour préciser vos besoins.</p>
+            </div>
+            <div className="bg-white border rounded-2xl p-6">
+              <div className="text-3xl mb-3">📅</div>
+              <h3 className="font-semibold mb-1">3. Réservez</h3>
+              <p className="text-gray-600 text-sm">Payez en ligne et retrouvez votre cours au bon moment.</p>
+            </div>
+          </div>
         </div>
       </section>
 
