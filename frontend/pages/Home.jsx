@@ -62,21 +62,19 @@ export default function Home() {
     const run = async () => {
       setLoadingTeachers(true);
       try {
-        // Récupérer un large échantillon (si énormément de profs, on pourra paginer)
-        const qTeachers = query(collection(db, 'teachers'), orderBy('created_at', 'desc'), limit(60));
-        const snap = await getDocs(qTeachers);
+        // Récupère TOUT sans orderBy pour éviter les soucis si "created_at" manque
+        const snap = await getDocs(collection(db, 'teachers'));
         const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        // Calcul des notes + tri demandé : mieux notés à gauche, autres en aléatoire
+        // Mieux notés à gauche, autres (y compris non notés) en aléatoire
         const withMeta = all.map((p) => ({
           ...p,
           _rating: Number(p.avgRating ?? p.rating ?? 0),
         }));
         const top = withMeta
-          .filter((p) => p._rating && p._rating >= 4.7)
+          .filter((p) => p._rating >= 4.7)
           .sort((a, b) => b._rating - a._rating);
-        const rest = withMeta.filter((p) => !(p._rating && p._rating >= 4.7));
-        // shuffle
+        const rest = withMeta.filter((p) => p._rating < 4.7);
         for (let i = rest.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           [rest[i], rest[j]] = [rest[j], rest[i]];
@@ -87,6 +85,9 @@ export default function Home() {
         const map = new Map();
         arranged.forEach((t) => map.set(t.id, t));
         setTeacherMap(map);
+      } catch (e) {
+        console.error('Chargement des profs échoué:', e);
+        setTeachers([]);
       } finally {
         setLoadingTeachers(false);
       }
@@ -237,7 +238,9 @@ export default function Home() {
                   <div className="p-4">
                     <div className="flex items-center justify-between gap-2">
                       <h3 className="font-semibold truncate">{prof.fullName || 'Professeur'}</h3>
-                      <span className="text-sm text-amber-600">{(prof.avgRating ?? prof.rating ?? '—')}★</span>
+                      {Number(prof.avgRating ?? prof.rating) > 0 && (
+                      <span className="text-sm text-amber-600">{Number(prof.avgRating ?? prof.rating)}★</span>
+                    )}
                     </div>
                     <div className="mt-1 text-sm text-gray-600 truncate">
                       {(Array.isArray(prof.subjects) && prof.subjects.length > 0)
@@ -326,14 +329,19 @@ export default function Home() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {reviews.slice(0, 6).map((r) => {
                 const t = r.teacher_id ? teacherMap.get(r.teacher_id) : null;
-                const teacherName = t?.fullName || t?.name || 'Un professeur';
+                const reviewerName = r.fullName || r.userName || r.reviewerName || t?.fullName || t?.name || 'Utilisateur';
+                const reviewerAvatar = r.userAvatar || r.avatarUrl || r.photoURL || t?.avatarUrl || '/avatar-default.png';
                 const stars = '★★★★★'.slice(0, Math.round(Number(r.rating) || 0));
                 return (
                   <div key={r.id} className="border rounded-2xl p-6 bg-white">
                     <div className="flex items-center gap-3 mb-3">
-                      <img src={t?.avatarUrl || '/avatar-default.png'} alt="avatar" className="w-10 h-10 rounded-full object-cover border" />
+                      <img
+                        src={reviewerAvatar}
+                        alt={reviewerName}
+                        className="w-10 h-10 rounded-full object-cover border"
+                      />
                       <div>
-                        <div className="font-semibold">{teacherName}</div>
+                        <div className="font-semibold">{reviewerName}</div>
                         <div className="text-xs text-amber-600">{stars}</div>
                       </div>
                     </div>
