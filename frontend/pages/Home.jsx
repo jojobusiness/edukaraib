@@ -3,23 +3,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { db, auth } from '../lib/firebase';
-import { collection, getDocs, doc, getDoc, query, orderBy, limit } from 'firebase/firestore';
-
-/**
- * Accueil remaniée (style Superprof) selon tes demandes :
- * - Hero centré, plus visible et esthétique (search box proéminente)
- * - Section Professeurs AU-DESSUS des matières
- * - Liste de (presque) tous les profs : les mieux notés à gauche, le reste en aléatoire
- * - Photos de profil carrées, grandes
- * - "Ils nous font confiance" : n'affiche que de VRAIS avis s'ils existent, sinon cache
- */
+import { collection, getDocs, doc, getDoc, query, orderBy, limit, where } from 'firebase/firestore';
 
 export default function Home() {
   const navigate = useNavigate();
 
-  /* ──────────────────────────────────────────────────────────────
-   * Redirection admin automatique si connecté
-   * ────────────────────────────────────────────────────────────── */
+  // ── Redirection admin si connecté ─────────────────────────────
   useEffect(() => {
     const checkRole = async () => {
       const user = auth.currentUser;
@@ -35,9 +24,7 @@ export default function Home() {
     checkRole();
   }, [navigate]);
 
-  /* ──────────────────────────────────────────────────────────────
-   * Barre de recherche
-   * ────────────────────────────────────────────────────────────── */
+  // ── Barre de recherche ────────────────────────────────────────
   const [qSubject, setQSubject] = useState('');
   const [qCity, setQCity] = useState('');
   const [qLevel, setQLevel] = useState('');
@@ -51,9 +38,7 @@ export default function Home() {
     navigate(`/search?${params.toString()}`);
   };
 
-  /* ──────────────────────────────────────────────────────────────
-   * Données professeurs
-   * ────────────────────────────────────────────────────────────── */
+  // ── Professeurs ───────────────────────────────────────────────
   const [teachers, setTeachers] = useState([]);
   const [loadingTeachers, setLoadingTeachers] = useState(true);
   const [teacherMap, setTeacherMap] = useState(new Map());
@@ -62,18 +47,43 @@ export default function Home() {
     const run = async () => {
       setLoadingTeachers(true);
       try {
-        // Récupère TOUT sans orderBy pour éviter les soucis si "created_at" manque
-        const snap = await getDocs(collection(db, 'teachers'));
-        const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        // 1) Essai principal : collection `teachers`
+        const tSnap = await getDocs(collection(db, 'teachers'));
+        let all = tSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-        // Mieux notés à gauche, autres (y compris non notés) en aléatoire
-        const withMeta = all.map((p) => ({
+        // 2) Fallback : `users` where role=='teacher'
+        if (!Array.isArray(all) || all.length === 0) {
+          const qUsersTeachers = query(
+            collection(db, 'users'),
+            where('role', '==', 'teacher'),
+            limit(100)
+          );
+          const uSnap = await getDocs(qUsersTeachers);
+          all = uSnap.docs.map((d) => {
+            const u = d.data();
+            return {
+              id: d.id,
+              ...u,
+              fullName:
+                u.fullName ||
+                u.name ||
+                [u.firstName, u.lastName].filter(Boolean).join(' ') ||
+                'Professeur',
+              avatarUrl: u.avatarUrl || u.photoURL,
+              location: u.city || u.location,
+              subjects: Array.isArray(u.subjects) ? u.subjects : [],
+              price_per_hour: u.price_per_hour || u.price,
+              rating: u.rating,
+            };
+          });
+        }
+
+        // Tri : mieux notés à gauche (>=4.7), autres en aléatoire
+        const withMeta = (all || []).map((p) => ({
           ...p,
           _rating: Number(p.avgRating ?? p.rating ?? 0),
         }));
-        const top = withMeta
-          .filter((p) => p._rating >= 4.7)
-          .sort((a, b) => b._rating - a._rating);
+        const top = withMeta.filter((p) => p._rating >= 4.7).sort((a, b) => b._rating - a._rating);
         const rest = withMeta.filter((p) => p._rating < 4.7);
         for (let i = rest.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
@@ -95,32 +105,58 @@ export default function Home() {
     run();
   }, []);
 
-  /* ──────────────────────────────────────────────────────────────
-   * Avis réels : n'afficher que s'il y en a
-   * ────────────────────────────────────────────────────────────── */
+  // ── Avis (réels) ─────────────────────────────────────────────
   const [reviews, setReviews] = useState([]);
   const [hasRealReviews, setHasRealReviews] = useState(false);
 
   useEffect(() => {
     const run = async () => {
       try {
-        const qReviews = query(collection(db, 'reviews'), orderBy('created_at', 'desc'), limit(9));
-        const snap = await getDocs(qReviews);
-        const list = snap.docs
+        const qReviews = query(
+          collection(db, 'reviews'),
+          orderBy('created_at', 'desc'),
+          limit(12)
+        );
+        let list = (await getDocs(qReviews)).docs
           .map((d) => ({ id: d.id, ...d.data() }))
           .filter((r) => (r.comment?.trim()?.length ?? 0) > 0 && Number(r.rating) > 0);
+
+        // Enrichir avec users/{user_id} si nom/avatar manquent
+        list = await Promise.all(
+          list.map(async (r) => {
+            if (!(r.fullName || r.userName || r.reviewerName || r.userAvatar || r.photoURL)) {
+              const reviewerId = r.user_id || r.student_id || r.parent_id;
+              if (reviewerId) {
+                try {
+                  const us = await getDoc(doc(db, 'users', reviewerId));
+                  if (us.exists()) {
+                    const u = us.data();
+                    r.fullName =
+                      r.fullName ||
+                      u.fullName ||
+                      u.name ||
+                      [u.firstName, u.lastName].filter(Boolean).join(' ') ||
+                      'Utilisateur';
+                    r.userAvatar = r.userAvatar || u.avatarUrl || u.photoURL;
+                  }
+                } catch {}
+              }
+            }
+            return r;
+          })
+        );
+
         setReviews(list);
-        setHasRealReviews(list.length > 0);
-      } catch {
+        setHasRealReviews((list?.length || 0) > 0);
+      } catch (e) {
+        console.error('Chargement des avis échoué:', e);
         setHasRealReviews(false);
       }
     };
     run();
   }, []);
 
-  /* ──────────────────────────────────────────────────────────────
-   * Catégories / Villes
-   * ────────────────────────────────────────────────────────────── */
+  // ── Catégories / Villes ──────────────────────────────────────
   const categories = useMemo(
     () => [
       { slug: 'maths', label: 'Mathématiques', emoji: '📐' },
@@ -136,7 +172,15 @@ export default function Home() {
   );
 
   const cities = useMemo(
-    () => ['Cayenne', 'Kourou', 'Matoury', 'Rémire-Montjoly', 'Saint-Laurent-du-Maroni', 'Mana', 'Maripasoula'],
+    () => [
+      'Cayenne',
+      'Kourou',
+      'Matoury',
+      'Rémire-Montjoly',
+      'Saint-Laurent-du-Maroni',
+      'Mana',
+      'Maripasoula',
+    ],
     []
   );
 
@@ -144,7 +188,7 @@ export default function Home() {
     <div className="min-h-screen flex flex-col bg-white">
       <Navbar />
 
-      {/* ───────────────────────── HERO (centré + visible) ───────────────────────── */}
+      {/* HERO */}
       <header className="relative isolate overflow-hidden">
         <img
           src="/accueil.jpg"
@@ -159,8 +203,6 @@ export default function Home() {
             <p className="mt-4 text-lg md:text-xl text-gray-700">
               Cours particuliers en Guyane : soutien scolaire, langues, musique, informatique et plus encore.
             </p>
-
-            {/* Search box proéminente */}
             <form
               onSubmit={onSearch}
               className="mt-8 bg-white/95 backdrop-blur rounded-3xl shadow-xl border border-gray-100 p-4 md:p-5 grid grid-cols-1 md:grid-cols-4 gap-3"
@@ -207,7 +249,7 @@ export default function Home() {
         </div>
       </header>
 
-      {/* ─────────────── PROFESSEURS (au-dessus des matières) ─────────────── */}
+      {/* PROFESSEURS */}
       <section className="py-12 bg-white">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-end justify-between mb-6">
@@ -227,7 +269,6 @@ export default function Home() {
                   to={`/profils/${prof.id}`}
                   className="group border rounded-2xl overflow-hidden bg-white hover:shadow-xl transition"
                 >
-                  {/* Photo carrée grande */}
                   <div className="aspect-square bg-gray-100 overflow-hidden">
                     <img
                       src={prof.avatarUrl || prof.photoURL || '/avatar-default.png'}
@@ -239,19 +280,21 @@ export default function Home() {
                     <div className="flex items-center justify-between gap-2">
                       <h3 className="font-semibold truncate">{prof.fullName || 'Professeur'}</h3>
                       {Number(prof.avgRating ?? prof.rating) > 0 && (
-                      <span className="text-sm text-amber-600">{Number(prof.avgRating ?? prof.rating)}★</span>
-                    )}
+                        <span className="text-sm text-amber-600">{Number(prof.avgRating ?? prof.rating)}★</span>
+                      )}
                     </div>
                     <div className="mt-1 text-sm text-gray-600 truncate">
-                      {(Array.isArray(prof.subjects) && prof.subjects.length > 0)
+                      {Array.isArray(prof.subjects) && prof.subjects.length > 0
                         ? prof.subjects.join(', ')
-                        : (prof.main_subject || 'Matière non spécifiée')}
+                        : prof.main_subject || 'Matière non spécifiée'}
                     </div>
                     <div className="mt-1 text-sm text-gray-500">
                       {prof.location || prof.city || 'Guyane'}
                     </div>
                     {prof.price_per_hour && (
-                      <div className="mt-2 font-semibold">{Number(prof.price_per_hour).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} / h</div>
+                      <div className="mt-2 font-semibold">
+                        {Number(prof.price_per_hour).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} / h
+                      </div>
                     )}
                   </div>
                 </Link>
@@ -261,67 +304,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ───────────────────────── CATÉGORIES POPULAIRES ───────────────────────── */}
-      <section className="py-10 bg-gray-50 border-t">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex items-end justify-between mb-6">
-            <h2 className="text-2xl font-bold">Matières populaires</h2>
-            <Link to="/search" className="text-primary hover:underline">Parcourir</Link>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-            {categories.map((c) => (
-              <button
-                key={c.slug}
-                onClick={() => navigate(`/search?subject=${encodeURIComponent(c.label)}`)}
-                className="group bg-white border rounded-2xl p-4 text-left hover:shadow transition"
-              >
-                <div className="text-2xl mb-2">{c.emoji}</div>
-                <div className="font-semibold group-hover:text-primary">{c.label}</div>
-                <div className="text-xs text-gray-500">Professeurs disponibles</div>
-              </button>
-            ))}
-          </div>
-
-          {/* Villes rapides */}
-          <div className="mt-6 text-sm text-gray-600 flex flex-wrap gap-2">
-            {cities.map((city) => (
-              <button
-                key={city}
-                onClick={() => navigate(`/search?city=${encodeURIComponent(city)}`)}
-                className="px-3 py-1 rounded-full bg-white border hover:border-primary hover:text-primary"
-              >
-                {city}
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ───────────────────────── COMMENT ÇA MARCHE ───────────────────────── */}
-      <section className="py-12 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4">
-          <h2 className="text-2xl font-bold mb-6">Comment ça marche ?</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white border rounded-2xl p-6">
-              <div className="text-3xl mb-3">🔎</div>
-              <h3 className="font-semibold mb-1">1. Recherchez</h3>
-              <p className="text-gray-600 text-sm">Filtrez par matière, ville, niveau et disponibilités pour trouver le bon prof.</p>
-            </div>
-            <div className="bg-white border rounded-2xl p-6">
-              <div className="text-3xl mb-3">💬</div>
-              <h3 className="font-semibold mb-1">2. Contactez</h3>
-              <p className="text-gray-600 text-sm">Discutez gratuitement via la messagerie sécurisée pour préciser vos besoins.</p>
-            </div>
-            <div className="bg-white border rounded-2xl p-6">
-              <div className="text-3xl mb-3">📅</div>
-              <h3 className="font-semibold mb-1">3. Réservez</h3>
-              <p className="text-gray-600 text-sm">Payez en ligne et retrouvez votre cours au bon moment.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ───────────────────────── ILS NOUS FONT CONFIANCE (réel seulement) ───────────────────────── */}
+      {/* COMMENTAIRES réels seulement */}
       {hasRealReviews && (
         <section className="py-12 bg-white">
           <div className="max-w-7xl mx-auto px-4">
@@ -340,8 +323,8 @@ export default function Home() {
                         alt={reviewerName}
                         className="w-10 h-10 rounded-full object-cover border"
                       />
-                      <div>
-                        <div className="font-semibold">{reviewerName}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-primary truncate">{reviewerName}</div>
                         <div className="text-xs text-amber-600">{stars}</div>
                       </div>
                     </div>
@@ -354,7 +337,7 @@ export default function Home() {
         </section>
       )}
 
-      {/* ───────────────────────── CTA DOUBLE ───────────────────────── */}
+      {/* CTA */}
       <section className="py-12 bg-primary text-white">
         <div className="max-w-7xl mx-auto px-4 grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
           <div className="space-y-2">
@@ -368,7 +351,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ───────────────────────── FAQ + À propos ───────────────────────── */}
+      {/* FAQ + À propos */}
       <section className="py-12 bg-white">
         <div className="max-w-7xl mx-auto px-4 grid grid-cols-1 lg:grid-cols-3 gap-10">
           <div className="lg:col-span-2">
