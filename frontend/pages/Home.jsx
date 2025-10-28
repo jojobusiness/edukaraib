@@ -418,7 +418,7 @@ export default function Home() {
           </div>
           <div className="flex gap-3 md:justify-end">
             <Link to="/search" className="bg-white text-primary font-semibold px-5 py-3 rounded-xl hover:bg-white/90">Trouver un prof</Link>
-            <Link to="/register" className="bg-black/20 border border-white/40 font-semibold px-5 py-3 rounded-xl hover:bg-black/30">S'inscrire</Link>
+            <Link to="/register" className="bg-yellow-300 text-black font-semibold px-5 py-3 rounded-xl hover:bg-yellow-400 transition">S'inscrire</Link>
           </div>
         </div>
       </section>
