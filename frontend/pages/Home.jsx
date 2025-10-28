@@ -193,7 +193,7 @@ export default function Home() {
         <img
           src="/accueil.jpg"
           alt="Élève et professeur - EduKaraib"
-          className="absolute inset-0 h-full w-full object-cover opacity-50"
+          className="absolute inset-0 h-full w-full object-cover opacity-40"
         />
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-24 flex items-center justify-center">
           <div className="w-full max-w-3xl text-center">
@@ -387,19 +387,21 @@ export default function Home() {
                     key={r.id}
                     className="group border rounded-2xl overflow-hidden bg-white hover:shadow-xl transition"
                   >
-                    <div className="aspect-square bg-gray-100 overflow-hidden">
+                    <div className="aspect-[4/3] bg-gray-100 overflow-hidden">
                       <img
                         src={reviewerAvatar}
                         alt={reviewerName}
                         className="h-full w-full object-cover group-hover:scale-105 transition"
                       />
                     </div>
-                    <div className="p-4">
-                      <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="p-5">
+                      <div className="flex items-center justify-between gap-2 mb-2">
                         <h3 className="font-semibold text-primary truncate">{reviewerName}</h3>
                         <span className="text-sm text-amber-600">{stars}</span>
                       </div>
-                      <p className="text-gray-700 text-sm leading-relaxed">{r.comment}</p>
+                      <p className="text-gray-700 text-sm leading-relaxed italic">
+                        “{r.comment}”
+                      </p>
                     </div>
                   </div>
                 );
