@@ -193,7 +193,7 @@ export default function Home() {
         <img
           src="/accueil.jpg"
           alt="Élève et professeur - EduKaraib"
-          className="absolute inset-0 h-full w-full object-cover opacity-30"
+          className="absolute inset-0 h-full w-full object-cover opacity-50"
         />
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-24 flex items-center justify-center">
           <div className="w-full max-w-3xl text-center">
@@ -373,7 +373,14 @@ export default function Home() {
               {reviews.slice(0, 6).map((r) => {
                 const t = r.teacher_id ? teacherMap.get(r.teacher_id) : null;
                 const reviewerName = r.fullName || r.userName || r.reviewerName || t?.fullName || t?.name || 'Utilisateur';
-                const reviewerAvatar = r.userAvatar || r.avatarUrl || r.photoURL || t?.avatarUrl || '/avatar-default.png';
+                const reviewerAvatar =
+                  r.userAvatar ||
+                  r.avatarUrl ||
+                  r.photoURL ||
+                  (r.user_id && teacherMap.get(r.user_id)?.avatarUrl) || // récupère la vraie photo de l’auteur si stockée
+                  (r.student_id && teacherMap.get(r.student_id)?.avatarUrl) ||
+                  (r.parent_id && teacherMap.get(r.parent_id)?.avatarUrl) ||
+                  '/avatar-default.png';
                 const stars = '★★★★★'.slice(0, Math.round(Number(r.rating) || 0));
                 return (
                   <div key={r.id} className="border rounded-2xl p-6 bg-white">
