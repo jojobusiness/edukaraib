@@ -12,7 +12,9 @@ import { Resend } from "resend"; // ✅ Option A (Resend)
 
 // ── ENV ────────────────────────────────────────────────────
 const ALLOWED_ORIGINS = [
-  "https://edukaraib.vercel.app",
+  "https://edukaraib.com",          // ✅ prod
+  "https://www.edukaraib.com",      // ✅ www prod
+  "https://edukaraib.vercel.app",   // préprod Vercel
   "http://localhost:5173",
   "http://localhost:3000",
   ...(process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(",").map(s => s.trim()).filter(Boolean) : []),
