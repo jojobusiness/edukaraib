@@ -143,10 +143,9 @@ function RefundModal({ open, onClose, onConfirm, payment, teacher }) {
 }
 
 // --- helper: envoi d'email pro via ton serveur /api/notify-email ---
-const SOCKET_BASE = import.meta.env.VITE_SOCKET_URL || "https://socket.edukaraib.com";
 async function notifyByEmail(uid, title, message, ctaUrl, ctaText = "Ouvrir le tableau de bord") {
   try {
-    await fetch(`${SOCKET_BASE}/api/notify-email`, {
+    await fetch("/api/notify-email", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
