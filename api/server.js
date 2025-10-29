@@ -113,6 +113,7 @@ async function sendMail({ to, subject, html }) {
 // ── Express + CORS ─────────────────────────────────────────
 const app = express();
 
+// ✅ Middleware CORS global (répond aussi au préflight)
 app.use((req, res, next) => {
   const origin = req.headers.origin || "";
   if (ALLOWED_ORIGINS.includes(origin)) {
@@ -126,10 +127,8 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(cors({
-  origin: (origin, cb) => cb(null, !origin || ALLOWED_ORIGINS.includes(origin)),
-  credentials: true,
-}));
+// ❌ (retiré) : app.use(cors({...})) — causait le conflit CORS
+
 app.use(express.json());
 
 // Healthcheck
@@ -181,8 +180,13 @@ app.post("/api/notify-email", async (req, res) => {
   }
 });
 
-app.options("/api/notify-email", (req, res) => res.sendStatus(204));
-app.options("/socket.io/*", (req, res) => res.sendStatus(204));
+// Préflight explicite sur /api/notify-email (ceinture + bretelles)
+app.options("/api/notify-email", (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+  res.sendStatus(204);
+});
 
 const server = http.createServer(app);
 
@@ -190,7 +194,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
   path: "/socket.io",                // ⚠ doit matcher côté client
   transports: ["polling"],           // Vercel-friendly
-  serveClient: true,                  // expose le client si besoin
+  serveClient: true,                 // expose le client si besoin
   cors: {
     origin: (origin, cb) => cb(null, !origin || ALLOWED_ORIGINS.includes(origin)),
     credentials: true,
