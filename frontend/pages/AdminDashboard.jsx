@@ -935,6 +935,7 @@ export default function AdminDashboard() {
                 />
               </div>
               <div className="flex items-center gap-2 mt-4">
+                {/* Sélectionnés */}
                 <button
                   className="px-4 py-2 rounded bg-primary text-white hover:bg-primary-dark disabled:opacity-60"
                   disabled={messageSending || !messageTitle.trim() || !messageBody.trim() || selectedIds.size === 0}
@@ -942,24 +943,26 @@ export default function AdminDashboard() {
                     try {
                       setMessageSending(true);
                       const ids = Array.from(selectedIds);
-                      await Promise.all(ids.map(uid =>
-                        addDoc(collection(db, 'notifications'), {
-                          user_id: uid,
-                          title: messageTitle.trim(),
-                          message: messageBody.trim(),
-                          type: 'admin_broadcast',
-                          created_at: serverTimestamp(),
-                          from_admin: auth.currentUser?.uid || null,
+                      await Promise.all(
+                        ids.map(async (uid) => {
+                          await addDoc(collection(db, 'notifications'), {
+                            user_id: uid,
+                            title: messageTitle.trim(),
+                            message: messageBody.trim(),
+                            type: 'admin_broadcast',
+                            created_at: serverTimestamp(),
+                            from_admin: auth.currentUser?.uid || null,
+                          });
+                          // ✉️ email pro pour chaque uid
+                          await notifyByEmail(
+                            uid,
+                            messageTitle.trim(),
+                            messageBody.trim(),
+                            "https://edukaraib.com/dashboard",
+                            "Ouvrir le tableau de bord"
+                          );
                         })
-                      ));
-                        // ✉️ email pro
-                        await notifyByEmail(
-                          uid,
-                          messageTitle.trim(),
-                          messageBody.trim(),
-                          "https://edukaraib.com/dashboard",
-                          "Ouvrir le tableau de bord"
-                        );
+                      );
                       alert('Message envoyé aux comptes sélectionnés.');
                       setMessageTitle('');
                       setMessageBody('');
@@ -970,30 +973,34 @@ export default function AdminDashboard() {
                 >
                   Envoyer aux sélectionnés ({selectedIds.size})
                 </button>
+
+                {/* Liste filtrée */}
                 <button
                   className="px-4 py-2 rounded bg-gray-800 text-white hover:bg-black disabled:opacity-60"
                   disabled={messageSending || !messageTitle.trim() || !messageBody.trim() || filteredUsers.length === 0}
                   onClick={async () => {
                     try {
                       setMessageSending(true);
-                      await Promise.all(filteredUsers.map(u =>
-                        addDoc(collection(db, 'notifications'), {
-                          user_id: u.id,
-                          title: messageTitle.trim(),
-                          message: messageBody.trim(),
-                          type: 'admin_broadcast',
-                          created_at: serverTimestamp(),
-                          from_admin: auth.currentUser?.uid || null,
+                      await Promise.all(
+                        filteredUsers.map(async (u) => {
+                          await addDoc(collection(db, 'notifications'), {
+                            user_id: u.id,
+                            title: messageTitle.trim(),
+                            message: messageBody.trim(),
+                            type: 'admin_broadcast',
+                            created_at: serverTimestamp(),
+                            from_admin: auth.currentUser?.uid || null,
+                          });
+                          // ✉️ email pro pour chaque u.id
+                          await notifyByEmail(
+                            u.id,
+                            messageTitle.trim(),
+                            messageBody.trim(),
+                            "https://edukaraib.com/dashboard",
+                            "Ouvrir le tableau de bord"
+                          );
                         })
-                      ));
-                        // ✉️ email pro
-                        await notifyByEmail(
-                          u.id,
-                          messageTitle.trim(),
-                          messageBody.trim(),
-                          "https://edukaraib.com/dashboard",
-                          "Ouvrir le tableau de bord"
-                        );
+                      );
                       alert('Message envoyé à la liste filtrée.');
                       setMessageTitle('');
                       setMessageBody('');
@@ -1004,30 +1011,35 @@ export default function AdminDashboard() {
                 >
                   Envoyer à la liste filtrée ({filteredUsers.length})
                 </button>
+
+                {/* Tous (hors admins) */}
                 <button
                   className="px-4 py-2 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-60"
                   disabled={messageSending || !messageTitle.trim() || !messageBody.trim() || users.length === 0}
                   onClick={async () => {
                     try {
                       setMessageSending(true);
-                      await Promise.all(users.filter(u => u.role !== 'admin').map(u =>
-                        addDoc(collection(db, 'notifications'), {
-                          user_id: u.id,
-                          title: messageTitle.trim(),
-                          message: messageBody.trim(),
-                          type: 'admin_broadcast',
-                          created_at: serverTimestamp(),
-                          from_admin: auth.currentUser?.uid || null,
+                      const nonAdmins = users.filter(u => u.role !== 'admin');
+                      await Promise.all(
+                        nonAdmins.map(async (u) => {
+                          await addDoc(collection(db, 'notifications'), {
+                            user_id: u.id,
+                            title: messageTitle.trim(),
+                            message: messageBody.trim(),
+                            type: 'admin_broadcast',
+                            created_at: serverTimestamp(),
+                            from_admin: auth.currentUser?.uid || null,
+                          });
+                          // ✉️ email pro pour chaque u.id
+                          await notifyByEmail(
+                            u.id,
+                            messageTitle.trim(),
+                            messageBody.trim(),
+                            "https://edukaraib.com/dashboard",
+                            "Ouvrir le tableau de bord"
+                          );
                         })
-                      ));
-                        // ✉️ email pro
-                        await notifyByEmail(
-                          u.id,
-                          messageTitle.trim(),
-                          messageBody.trim(),
-                          "https://edukaraib.com/dashboard",
-                          "Ouvrir le tableau de bord"
-                        );
+                      );
                       alert('Message envoyé à tous (hors admins).');
                       setMessageTitle('');
                       setMessageBody('');
