@@ -39,6 +39,42 @@ const db = admin.firestore();
 // ── Resend init ────────────────────────────────────────────
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// 🧩 Email HTML avec logo EduKaraib et design propre
+function brandedHtml({ title = "Notification", message = "", ctaText = "Ouvrir", ctaUrl = APP_BASE_URL }) {
+  const safe = (s = "") => String(s).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `
+  <div style="font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#f6f7fb;padding:24px;">
+    <table width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #eef0f4;">
+      <tr>
+        <td style="background:#0ea5e9;padding:16px 20px;">
+          <table width="100%"><tr>
+            <td style="vertical-align:middle">
+              <img src="https://edukaraib.com/logo.png" alt="EduKaraib" style="height:36px;display:block;"/>
+            </td>
+            <td align="right" style="color:#fff;font-weight:600">EduKaraib</td>
+          </tr></table>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:24px 24px 8px 24px;">
+          <h1 style="margin:0 0 8px 0;font-size:20px;color:#0f172a;">${safe(title)}</h1>
+          <p style="margin:0;color:#334155;font-size:14px;line-height:1.6;">${safe(message)}</p>
+          <div style="margin-top:16px;">
+            <a href="${ctaUrl}" style="display:inline-block;background:#facc15;color:#111827;text-decoration:none;font-weight:600;padding:10px 16px;border-radius:10px;">${safe(ctaText)}</a>
+          </div>
+        </td>
+      </tr>
+      <tr><td style="padding:16px 24px 0 24px;"><hr style="border:none;border-top:1px solid #eef0f4"/></td></tr>
+      <tr>
+        <td style="padding:12px 24px 24px 24px;color:#64748b;font-size:12px;line-height:1.6;">
+          <div style="font-weight:600;color:#0f172a;">L’équipe EduKaraib</div>
+          <div>contact@edukaraib.com · edukaraib.com</div>
+        </td>
+      </tr>
+    </table>
+  </div>`;
+}
+
 // Helpers email
 function escapeHtml(str = "") {
   return String(str)
@@ -108,22 +144,37 @@ app.options("/socket.io/*", (req, res) => {
   return res.sendStatus(200);
 });
 
-// ✅ Endpoint minimal pour envoyer un email lors d'une notification app côté client
+// ✅ Endpoint complet /api/notify-email
 app.post("/api/notify-email", async (req, res) => {
   try {
-    const { user_id, title, message } = req.body || {};
-    if (!user_id) return res.status(400).json({ ok: false, error: "missing_user_id" });
-    const to = await getUserEmail(user_id);
-    if (!to) return res.json({ ok: true, skipped: "no_email" });
-    await sendMail({
-      to,
-      subject: title || "Nouvelle notification",
-      html: `<p>${escapeHtml(message || "Vous avez une nouvelle notification.")}</p>
-             <p><a href="${APP_BASE_URL}/notifications">Ouvrir dans EduKaraib</a></p>`
+    const { user_id, to, title, message, ctaUrl, ctaText } = req.body || {};
+
+    // 1️⃣ Trouver l'email
+    let target = to || null;
+    if (!target && user_id) {
+      try {
+        const s = await db.collection("users").doc(user_id).get();
+        target = s.exists ? (s.data().email || null) : null;
+      } catch {}
+    }
+    if (!target) return res.json({ ok: true, skipped: "no_email" });
+
+    // 2️⃣ Envoi via Resend
+    await resend.emails.send({
+      from: "EduKaraib <notifications@edukaraib.com>",
+      to: [target],
+      subject: title || "Notification EduKaraib",
+      html: brandedHtml({
+        title: title || "Notification EduKaraib",
+        message: message || "Vous avez une nouvelle notification.",
+        ctaText: ctaText || "Ouvrir",
+        ctaUrl: ctaUrl || APP_BASE_URL,
+      }),
     });
+
     res.json({ ok: true });
   } catch (e) {
-    console.error(e);
+    console.error("notify-email error:", e);
     res.status(500).json({ ok: false, error: "internal_error" });
   }
 });

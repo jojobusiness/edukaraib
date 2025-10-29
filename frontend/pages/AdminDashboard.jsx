@@ -142,6 +142,26 @@ function RefundModal({ open, onClose, onConfirm, payment, teacher }) {
   );
 }
 
+// --- helper: envoi d'email pro via ton serveur /api/notify-email ---
+const SOCKET_BASE = import.meta.env.VITE_SOCKET_URL || "https://socket.edukaraib.com";
+async function notifyByEmail(uid, title, message, ctaUrl, ctaText = "Ouvrir le tableau de bord") {
+  try {
+    await fetch(`${SOCKET_BASE}/api/notify-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: uid,
+        title,
+        message,
+        ctaUrl,
+        ctaText,
+      }),
+    });
+  } catch (e) {
+    console.warn("notify-email error:", e);
+  }
+}
+
 /* ===========================
    AdminDashboard (sans layout)
 =========================== */
@@ -932,6 +952,14 @@ export default function AdminDashboard() {
                           from_admin: auth.currentUser?.uid || null,
                         })
                       ));
+                        // ✉️ email pro
+                        await notifyByEmail(
+                          uid,
+                          messageTitle.trim(),
+                          messageBody.trim(),
+                          "https://edukaraib.com/dashboard",
+                          "Ouvrir le tableau de bord"
+                        );
                       alert('Message envoyé aux comptes sélectionnés.');
                       setMessageTitle('');
                       setMessageBody('');
@@ -958,6 +986,14 @@ export default function AdminDashboard() {
                           from_admin: auth.currentUser?.uid || null,
                         })
                       ));
+                        // ✉️ email pro
+                        await notifyByEmail(
+                          u.id,
+                          messageTitle.trim(),
+                          messageBody.trim(),
+                          "https://edukaraib.com/dashboard",
+                          "Ouvrir le tableau de bord"
+                        );
                       alert('Message envoyé à la liste filtrée.');
                       setMessageTitle('');
                       setMessageBody('');
@@ -984,6 +1020,14 @@ export default function AdminDashboard() {
                           from_admin: auth.currentUser?.uid || null,
                         })
                       ));
+                        // ✉️ email pro
+                        await notifyByEmail(
+                          u.id,
+                          messageTitle.trim(),
+                          messageBody.trim(),
+                          "https://edukaraib.com/dashboard",
+                          "Ouvrir le tableau de bord"
+                        );
                       alert('Message envoyé à tous (hors admins).');
                       setMessageTitle('');
                       setMessageBody('');
