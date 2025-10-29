@@ -10,6 +10,20 @@ import { Server } from "socket.io";
 import admin from "firebase-admin";
 import { Resend } from "resend"; // ✅ Option A (Resend)
 
+const app = express(); // 👈 déplace-le ici, tout de suite après les imports
+
+// ✅ intercept OPTIONS très tôt pour Vercel
+app.use((req, res, next) => {
+  if (req.method === "OPTIONS") {
+    res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 // ── ENV ────────────────────────────────────────────────────
 const ALLOWED_ORIGINS = [
   "https://edukaraib.com",          // ✅ prod
@@ -109,9 +123,6 @@ async function sendMail({ to, subject, html }) {
     console.error("Email send error:", e?.response || e);
   }
 }
-
-// ── Express + CORS ─────────────────────────────────────────
-const app = express();
 
 // ✅ Middleware CORS global (répond aussi au préflight)
 app.use((req, res, next) => {
