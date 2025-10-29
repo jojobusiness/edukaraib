@@ -95,6 +95,26 @@ export default function DocumentsModal({
         await Promise.allSettled(notifWrites);
       }
 
+      // 🔔 Envoi email à tous les destinataires (un par un)
+      const socketBase = import.meta.env.VITE_SOCKET_URL || "https://<ton-socket-host>";
+      for (const uid of recipients) {
+        try {
+          await fetch(`${socketBase}/api/notify-email`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user_id: uid,
+              title: "Nouveau document partagé",
+              message: `Un nouveau document a été partagé pour votre cours ${lesson.subject_id || ""}.`,
+              ctaUrl: `https://edukaraib.com/lessons/${lesson.id}?tab=documents`,
+              ctaText: "Voir le document"
+            }),
+          });
+        } catch (e) {
+          console.warn("notify-email (doc) skipped:", e);
+        }
+      }
+
       onUploaded?.();
 
       // 4) Refresh liste

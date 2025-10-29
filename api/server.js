@@ -1,6 +1,6 @@
 // server.js
 // ───────────────────────────────────────────────────────────
-// Socket.io realtime chat server for EduKaraib
+// Socket.io realtime chat server for EduKaraib + Emails Resend
 // ───────────────────────────────────────────────────────────
 
 import express from "express";
@@ -8,6 +8,7 @@ import http from "http";
 import cors from "cors";
 import { Server } from "socket.io";
 import admin from "firebase-admin";
+import { Resend } from "resend"; // ✅ Option A (Resend)
 
 // ── ENV ────────────────────────────────────────────────────
 const ALLOWED_ORIGINS = [
@@ -18,6 +19,7 @@ const ALLOWED_ORIGINS = [
 ];
 
 const PORT = process.env.PORT || 4000;
+const APP_BASE_URL = process.env.APP_BASE_URL || "https://edukaraib.com"; // ✅ domaine prod
 
 // ── Firebase Admin init ────────────────────────────────────
 try {
@@ -33,6 +35,42 @@ try {
 }
 
 const db = admin.firestore();
+
+// ── Resend init ────────────────────────────────────────────
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+// Helpers email
+function escapeHtml(str = "") {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+async function getUserEmail(uid) {
+  if (!uid) return null;
+  try {
+    const s = await db.collection("users").doc(uid).get();
+    if (s.exists) return s.data().email || null;
+  } catch {}
+  return null;
+}
+
+async function sendMail({ to, subject, html }) {
+  if (!to) return;
+  try {
+    await resend.emails.send({
+      from: "EduKaraib <notifications@edukaraib.com>", // ✅ expéditeur pro
+      to: Array.isArray(to) ? to : [to],
+      subject: subject || "Notification EduKaraib",
+      html: html || "<p>Nouvelle notification.</p>",
+    });
+  } catch (e) {
+    console.error("Email send error:", e?.response || e);
+  }
+}
 
 // ── Express + CORS ─────────────────────────────────────────
 const app = express();
@@ -70,13 +108,33 @@ app.options("/socket.io/*", (req, res) => {
   return res.sendStatus(200);
 });
 
+// ✅ Endpoint minimal pour envoyer un email lors d'une notification app côté client
+app.post("/api/notify-email", async (req, res) => {
+  try {
+    const { user_id, title, message } = req.body || {};
+    if (!user_id) return res.status(400).json({ ok: false, error: "missing_user_id" });
+    const to = await getUserEmail(user_id);
+    if (!to) return res.json({ ok: true, skipped: "no_email" });
+    await sendMail({
+      to,
+      subject: title || "Nouvelle notification",
+      html: `<p>${escapeHtml(message || "Vous avez une nouvelle notification.")}</p>
+             <p><a href="${APP_BASE_URL}/notifications">Ouvrir dans EduKaraib</a></p>`
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: "internal_error" });
+  }
+});
+
 const server = http.createServer(app);
 
 // ── Socket.io (polling only + CORS + path strict) ─────────
 const io = new Server(server, {
   path: "/socket.io",                // ⚠ doit matcher côté client
   transports: ["polling"],           // Vercel-friendly
-  serveClient: true,                 // expose le client si besoin
+  serveClient: true,                  // expose le client si besoin
   cors: {
     origin: (origin, cb) => cb(null, !origin || ALLOWED_ORIGINS.includes(origin)),
     credentials: true,
@@ -235,6 +293,28 @@ io.on("connection", (socket) => {
         sender_uid: authedUid,
         message: text.trim(),
       });
+
+      // ✅ Email au destinataire (si email disponible)
+      try {
+        let targetUid = toUid || null;
+        if (!targetUid) {
+          const convSnap = await db.collection("conversations").doc(convId).get();
+          const participants = convSnap.exists ? (convSnap.data().participants || []) : [];
+          targetUid = participants.find((u) => u && u !== authedUid) || null;
+        }
+        const toEmail = await getUserEmail(targetUid);
+        if (toEmail) {
+          await sendMail({
+            to: toEmail,
+            subject: "Nouveau message sur EduKaraib",
+            html: `<p>Vous avez reçu un nouveau message :</p>
+                   <blockquote>${escapeHtml(text)}</blockquote>
+                   <p><a href="${APP_BASE_URL}/messages">Ouvrir la conversation</a></p>`,
+          });
+        }
+      } catch (e) {
+        console.warn("send_message: email skipped:", e?.message || e);
+      }
 
       cb && cb({ ok: true, conversationId: convId, messageId: messageDoc.id });
     } catch (e) {
