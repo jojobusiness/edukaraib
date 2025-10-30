@@ -7,29 +7,117 @@ import {
   getDocs,
   addDoc,
   serverTimestamp,
+  doc,
+  getDoc,
+  updateDoc,
+  deleteDoc,
 } from 'firebase/firestore';
-import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import {
+  ref as sRef,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject,
+} from 'firebase/storage';
 
-// --- EMAIL HELPER (DocumentsModal) ---
-async function getEmail(uid) {
+/* =========================
+   EMAIL HELPERS (même logique que TeacherLessons.jsx)
+   ========================= */
+
+async function getEmailFromDoc(pathCol, uid) {
   try {
-    const s = await getDoc(doc(db, "users", uid));
+    const s = await getDoc(doc(db, pathCol, uid));
     if (s.exists()) {
       const d = s.data();
-      return d.email || null;
+      return d.email || d.contactEmail || d.parentEmail || null;
     }
   } catch {}
   return null;
 }
-async function notifyEmail(to, { title, message, ctaUrl, ctaText = "Ouvrir" }) {
-  if (!to) return;
-  await fetch("/api/notify-email", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ to, title, message, ctaUrl, ctaText }),
-  }).catch(() => {});
+
+async function getUserEmail(uid) {
+  if (!uid) return null;
+  return (
+    (await getEmailFromDoc('users', uid)) ||
+    (await getEmailFromDoc('teachers', uid)) ||
+    (await getEmailFromDoc('parents', uid)) ||
+    (await getEmailFromDoc('students', uid))
+  );
 }
-// --- /EMAIL HELPER ---
+
+// parent d’un élève
+async function getParentIdForStudent(studentId, lesson) {
+  const pm = lesson?.participantsMap || {};
+  const viaMap = pm?.[studentId]?.parent_id || pm?.[studentId]?.booked_by;
+  if (viaMap) return viaMap;
+
+  try {
+    const s = await getDoc(doc(db, 'students', studentId));
+    if (s.exists()) {
+      const d = s.data();
+      return d.parent_id || d.parentId || d.booked_by || null;
+    }
+  } catch {}
+
+  try {
+    const u = await getDoc(doc(db, 'users', studentId));
+    if (u.exists()) {
+      const d = u.data();
+      return d.parent_id || d.parentId || d.booked_by || null;
+    }
+  } catch {}
+
+  return null;
+}
+
+/** Envoie aux élèves/participants ET, si besoin, à leurs parents */
+async function sendEmailsToUsers(
+  userIds = [],
+  { title, message, ctaUrl, ctaText = 'Ouvrir' },
+  lessonCtx = null
+) {
+  const emails = new Set();
+
+  // 1) emails directs
+  for (const uid of userIds) {
+    const em = await getUserEmail(uid);
+    if (em) emails.add(em);
+  }
+
+  // 2) fallback parents via participantsMap si dispo
+  if (lessonCtx && Array.isArray(lessonCtx.participant_ids)) {
+    for (const sid of lessonCtx.participant_ids) {
+      const hasStudentEmail = await getUserEmail(sid);
+      if (!hasStudentEmail) {
+        const pid = await getParentIdForStudent(sid, lessonCtx);
+        const pem = await getUserEmail(pid);
+        if (pem) emails.add(pem);
+      }
+    }
+  }
+
+  if (!emails.size) return;
+
+  const payload = {
+    title,
+    message,
+    ctaUrl: ctaUrl || `${window.location.origin}/smart-dashboard`,
+    ctaText,
+  };
+
+  await Promise.all(
+    Array.from(emails).map((to) =>
+      fetch('/api/notify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, ...payload }),
+      }).catch(() => {})
+    )
+  );
+}
+
+/* =========================
+   MODAL DOCUMENTS
+   ========================= */
 
 export default function DocumentsModal({
   open,
@@ -42,7 +130,10 @@ export default function DocumentsModal({
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
 
-  // ---- util ----
+  // Edition (renommer)
+  const [editingId, setEditingId] = useState(null);
+  const [editingName, setEditingName] = useState('');
+
   async function refreshList() {
     if (!lesson?.id) return;
     const qDocs = query(collection(db, 'documents'), where('lesson_id', '==', lesson.id));
@@ -66,9 +157,12 @@ export default function DocumentsModal({
       }
     };
     run();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [open, lesson?.id]);
 
+  // Upload d’un document
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file || !lesson?.id) return;
@@ -81,7 +175,7 @@ export default function DocumentsModal({
       const url = await getDownloadURL(fileRef);
 
       // 2) Enregistrement document
-      await addDoc(collection(db, 'documents'), {
+      const docRef = await addDoc(collection(db, 'documents'), {
         lesson_id: lesson.id,
         sender_id: auth.currentUser?.uid || null,
         filename: file.name,
@@ -90,46 +184,57 @@ export default function DocumentsModal({
         created_at: serverTimestamp(),
       });
 
-      // 3) Notifications — élève principal + tous les participants
-      const recipients = new Set();
-      if (lesson.student_id) recipients.add(lesson.student_id);
+      // 3) Notifications in-app — élève principal + tous les participants
+      const notifRecipients = new Set();
+      if (lesson.student_id) notifRecipients.add(lesson.student_id);
       if (Array.isArray(lesson.participant_ids)) {
-        lesson.participant_ids.forEach((id) => id && recipients.add(id));
+        lesson.participant_ids.forEach((id) => id && notifRecipients.add(id));
       }
-
       const notifWrites = [];
-      const message = `Un nouveau document a été partagé pour votre cours ${lesson.subject_id || ''}.`;
-      for (const uid of recipients) {
+      const messageNotif = `Un nouveau document a été partagé pour votre cours ${lesson.subject_id || ''}.`;
+      for (const uid of notifRecipients) {
         notifWrites.push(
           addDoc(collection(db, 'notifications'), {
             user_id: uid,
             type: 'document_shared',
             with_id: auth.currentUser?.uid || null,
             lesson_id: lesson.id,
-            message,
+            message: messageNotif,
             created_at: serverTimestamp(),
             read: false,
           })
         );
       }
-      if (notifWrites.length) {
-        await Promise.allSettled(notifWrites);
+      if (notifWrites.length) await Promise.allSettled(notifWrites);
+
+      // 4) Emails — même logique que Prof/Lessons
+      const isGroup =
+        !!lesson?.is_group ||
+        (Array.isArray(lesson?.participant_ids) && lesson.participant_ids.length > 0);
+
+      const emailRecipients = new Set();
+      if (isGroup) {
+        (lesson.participant_ids || []).forEach((sid) => sid && emailRecipients.add(sid));
+      } else if (lesson?.student_id) {
+        emailRecipients.add(lesson.student_id);
       }
 
-      // après écriture Firestore réussie :
-      for (const uid of (lesson.participant_ids || [lesson.student_id]).filter(Boolean)) {
-        const to = await getEmail(uid);
-        await notifyEmail(to, {
-          title: "Nouveau document de cours",
-          message: `Un document a été ajouté pour votre cours ${lesson.subject_id || ""}.`,
+      const mailTitle = 'Nouveau document disponible';
+      const mailMsg = `Un document (« ${file.name} ») est disponible pour votre cours ${lesson?.subject_id || ''}.`;
+      await sendEmailsToUsers(
+        Array.from(emailRecipients),
+        {
+          title: mailTitle,
+          message: mailMsg,
           ctaUrl: `${window.location.origin}/smart-dashboard`,
-          ctaText: "Ouvrir le cours",
-        });
-      }
+          ctaText: 'Voir le document',
+        },
+        lesson
+      );
 
       onUploaded?.();
 
-      // 4) Refresh liste
+      // 5) Refresh liste
       await refreshList();
     } catch (err) {
       console.error(err);
@@ -137,6 +242,98 @@ export default function DocumentsModal({
     } finally {
       setUploading(false);
       if (e?.target) e.target.value = '';
+    }
+  };
+
+  // Renommer un document
+  const startEdit = (f) => {
+    setEditingId(f.id);
+    setEditingName(f.filename || '');
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditingName('');
+  };
+
+  const saveEdit = async (f) => {
+    if (!editingName.trim()) return;
+    try {
+      await updateDoc(doc(db, 'documents', f.id), {
+        filename: editingName.trim(),
+      });
+
+      // Email (optionnel) — prévenir les mêmes destinataires
+      const isGroup =
+        !!lesson?.is_group ||
+        (Array.isArray(lesson?.participant_ids) && lesson.participant_ids.length > 0);
+      const emailRecipients = new Set();
+      if (isGroup) {
+        (lesson.participant_ids || []).forEach((sid) => sid && emailRecipients.add(sid));
+      } else if (lesson?.student_id) {
+        emailRecipients.add(lesson.student_id);
+      }
+      await sendEmailsToUsers(
+        Array.from(emailRecipients),
+        {
+          title: 'Document mis à jour',
+          message: `Le document « ${editingName.trim()} » a été mis à jour.`,
+          ctaUrl: `${window.location.origin}/smart-dashboard`,
+          ctaText: 'Ouvrir',
+        },
+        lesson
+      );
+
+      await refreshList();
+    } catch (e) {
+      console.error(e);
+      alert('Impossible de renommer le document.');
+    } finally {
+      cancelEdit();
+    }
+  };
+
+  // Supprimer un document (Firestore + Storage)
+  const removeDoc = async (f) => {
+    if (!confirm('Supprimer ce document ?')) return;
+    try {
+      // Supprimer d’abord le fichier Storage si possible
+      if (f.storage_path) {
+        try {
+          await deleteObject(sRef(storage, f.storage_path));
+        } catch (e) {
+          // si pas trouvé en storage, on continue quand même
+          console.warn('Storage delete skipped:', e?.message || e);
+        }
+      }
+      // Puis la doc Firestore
+      await deleteDoc(doc(db, 'documents', f.id));
+
+      // Email (optionnel) — prévenir les mêmes destinataires
+      const isGroup =
+        !!lesson?.is_group ||
+        (Array.isArray(lesson?.participant_ids) && lesson.participant_ids.length > 0);
+      const emailRecipients = new Set();
+      if (isGroup) {
+        (lesson.participant_ids || []).forEach((sid) => sid && emailRecipients.add(sid));
+      } else if (lesson?.student_id) {
+        emailRecipients.add(lesson.student_id);
+      }
+      await sendEmailsToUsers(
+        Array.from(emailRecipients),
+        {
+          title: 'Document supprimé',
+          message: `Le document « ${f.filename || 'document'} » a été supprimé.`,
+          ctaUrl: `${window.location.origin}/smart-dashboard`,
+          ctaText: 'Ouvrir',
+        },
+        lesson
+      );
+
+      await refreshList();
+    } catch (e) {
+      console.error(e);
+      alert('Impossible de supprimer ce document.');
     }
   };
 
@@ -176,15 +373,40 @@ export default function DocumentsModal({
             ) : (
               <ul className="divide-y">
                 {files.map((f) => (
-                  <li key={f.id} className="py-3 flex items-center justify-between">
-                    <div>
-                      <div className="font-medium">{f.filename}</div>
-                      <div className="text-xs text-gray-500">
-                        {f.created_at?.seconds
-                          ? new Date(f.created_at.seconds * 1000).toLocaleString('fr-FR')
-                          : '—'}
-                      </div>
+                  <li key={f.id} className="py-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      {editingId === f.id ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            value={editingName}
+                            onChange={(e) => setEditingName(e.target.value)}
+                            className="border rounded px-2 py-1 text-sm w-56"
+                          />
+                          <button
+                            onClick={() => saveEdit(f)}
+                            className="px-3 py-1 rounded bg-primary text-white text-sm font-semibold"
+                          >
+                            Enregistrer
+                          </button>
+                          <button
+                            onClick={cancelEdit}
+                            className="px-3 py-1 rounded bg-gray-100 text-sm font-semibold"
+                          >
+                            Annuler
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="font-medium truncate">{f.filename}</div>
+                          <div className="text-xs text-gray-500">
+                            {f.created_at?.seconds
+                              ? new Date(f.created_at.seconds * 1000).toLocaleString('fr-FR')
+                              : '—'}
+                          </div>
+                        </>
+                      )}
                     </div>
+
                     <div className="flex items-center gap-2 shrink-0">
                       <a
                         href={f.url}
@@ -201,6 +423,22 @@ export default function DocumentsModal({
                       >
                         ⬇️ Télécharger
                       </a>
+                      {allowUpload && editingId !== f.id && (
+                        <>
+                          <button
+                            onClick={() => startEdit(f)}
+                            className="px-3 py-1 rounded text-sm font-semibold bg-yellow-100 hover:bg-yellow-200"
+                          >
+                            Renommer
+                          </button>
+                          <button
+                            onClick={() => removeDoc(f)}
+                            className="px-3 py-1 rounded text-sm font-semibold bg-red-100 hover:bg-red-200 text-red-700"
+                          >
+                            Supprimer
+                          </button>
+                        </>
+                      )}
                     </div>
                   </li>
                 ))}
