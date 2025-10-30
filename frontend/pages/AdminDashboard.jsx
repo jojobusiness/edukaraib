@@ -964,7 +964,7 @@ export default function AdminDashboard() {
                             uid,
                             messageTitle.trim(),
                             messageBody.trim(),
-                            "https://edukaraib.com/dashboard",
+                            "https://edukaraib.com/smart-dashboard",
                             "Ouvrir le tableau de bord"
                           );
                         })

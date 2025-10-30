@@ -26,6 +26,7 @@ import Messages from './pages/Messages';
 import ChatList from './pages/ChatList';
 import NotFound from './pages/NotFound';
 
+import SmartDashboard from './pages/SmartDashboard';
 import Unauthorized from './pages/Unauthorized';
 import ParentPayments from './pages/ParentPayments';
 import ParentCalendar from './pages/ParentCalendar';
@@ -99,6 +100,7 @@ function App() {
           <Routes>
             {/* Public */}
             <Route path="/" element={<Home />} />
+            <Route path="/smart-dashboard" element={<SmartDashboard />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/profils/:teacherId" element={<TeacherProfile />} />
