@@ -10,6 +10,27 @@ import {
 } from 'firebase/firestore';
 import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 
+// --- EMAIL HELPER (DocumentsModal) ---
+async function getEmail(uid) {
+  try {
+    const s = await getDoc(doc(db, "users", uid));
+    if (s.exists()) {
+      const d = s.data();
+      return d.email || null;
+    }
+  } catch {}
+  return null;
+}
+async function notifyEmail(to, { title, message, ctaUrl, ctaText = "Ouvrir" }) {
+  if (!to) return;
+  await fetch("/api/notify-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ to, title, message, ctaUrl, ctaText }),
+  }).catch(() => {});
+}
+// --- /EMAIL HELPER ---
+
 export default function DocumentsModal({
   open,
   onClose,
@@ -95,24 +116,15 @@ export default function DocumentsModal({
         await Promise.allSettled(notifWrites);
       }
 
-      // 🔔 Envoi email à tous les destinataires (un par un)
-      const socketBase = import.meta.env.VITE_SOCKET_URL || "https://<ton-socket-host>";
-      for (const uid of recipients) {
-        try {
-          await fetch(`${socketBase}/api/notify-email`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              user_id: uid,
-              title: "Nouveau document partagé",
-              message: `Un nouveau document a été partagé pour votre cours ${lesson.subject_id || ""}.`,
-              ctaUrl: `https://edukaraib.com/lessons/${lesson.id}?tab=documents`,
-              ctaText: "Voir le document"
-            }),
-          });
-        } catch (e) {
-          console.warn("notify-email (doc) skipped:", e);
-        }
+      // après écriture Firestore réussie :
+      for (const uid of (lesson.participant_ids || [lesson.student_id]).filter(Boolean)) {
+        const to = await getEmail(uid);
+        await notifyEmail(to, {
+          title: "Nouveau document de cours",
+          message: `Un document a été ajouté pour votre cours ${lesson.subject_id || ""}.`,
+          ctaUrl: `${window.location.origin}/smart-dashboard`,
+          ctaText: "Ouvrir le cours",
+        });
       }
 
       onUploaded?.();
