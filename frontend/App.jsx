@@ -80,6 +80,15 @@ function RestoreLastRoute() {
 function App() {
   // ⏳ Très important : attendre la restauration Firebase AVANT d'afficher les routes
   const [authReady, setAuthReady] = useState(false);
+  const location = useLocation();
+
+  useEffect(() => {
+    if (typeof window.gtag === 'function') {
+      window.gtag('config', 'G-32EG21Z538', {
+        page_path: location.pathname + location.search,
+      });
+    }
+  }, [location]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, () => {

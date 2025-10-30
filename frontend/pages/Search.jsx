@@ -11,7 +11,6 @@ export default function Search() {
   // ── Filtres ajoutés ─────────────────────────────────────────
   const [level, setLevel] = useState('');              // Primaire/Collège/Lycée/Supérieur/Adulte
   const [city, setCity] = useState('');                // Cayenne, etc.
-  const [mode, setMode] = useState('');                // '', 'presentiel', 'visio'
   const [priceMin, setPriceMin] = useState('');        // numérique texte
   const [priceMax, setPriceMax] = useState('');
   const [sortBy, setSortBy] = useState('');            // '', 'priceAsc','priceDesc','ratingDesc'
@@ -176,16 +175,6 @@ export default function Search() {
             {cityOptions.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
-          </select>
-
-          <select
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-            value={mode}
-            onChange={(e) => setMode(e.target.value)}
-          >
-            <option value="">Mode</option>
-            <option value="presentiel">Présentiel</option>
-            <option value="visio">Visio</option>
           </select>
 
           <input

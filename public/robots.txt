@@ -1,4 +1,14 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://edukaraib.vercel.app/sitemap.xml
+# Ne pas indexer les dashboards
+Disallow: /admin/
+Disallow: /prof/
+Disallow: /parent/
+Disallow: /dashboard-eleve
+Disallow: /smart-dashboard
+Disallow: /messages
+Disallow: /chat/
+
+# Ton sitemap (voir étape 2)
+Sitemap: https://edukaraib.com/api/sitemap.xml
