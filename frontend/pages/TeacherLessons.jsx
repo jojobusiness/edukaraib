@@ -133,33 +133,97 @@ async function notifyUsers(userIds = [], payloadBase = {}) {
   await Promise.all(writes);
 }
 
-// --- EMAIL HELPERS (ajouter une seule fois) ---
+// --- EMAIL HELPERS ---
+async function getEmailFromDoc(pathCol, uid) {
+  try {
+    const s = await getDoc(doc(db, pathCol, uid));
+    if (s.exists()) {
+      const d = s.data();
+      return d.email || d.contactEmail || d.parentEmail || null;
+    }
+  } catch {}
+  return null;
+}
 async function getUserEmail(uid) {
   if (!uid) return null;
-  try {
-    const snap = await getDoc(doc(db, "users", uid));
-    return snap.exists() ? (snap.data().email || null) : null;
-  } catch { return null; }
+  return (
+    (await getEmailFromDoc("users", uid))     ||
+    (await getEmailFromDoc("teachers", uid))  ||
+    (await getEmailFromDoc("parents", uid))   ||
+    (await getEmailFromDoc("students", uid))
+  );
 }
 
-async function sendEmailsToUsers(userIds = [], { title, message, ctaUrl, ctaText = "Ouvrir" }) {
-  const emails = [];
+/** Envoie aux élèves ET, si nécessaire, à leurs parents */
+async function sendEmailsToUsers(userIds = [], { title, message, ctaUrl, ctaText = "Ouvrir" }, lessonCtx = null) {
+  const emails = new Set();
+
+  // 1) emails directs
   for (const uid of userIds) {
     const em = await getUserEmail(uid);
-    if (em) emails.push(em);
+    if (em) emails.add(em);
   }
-  // tir groupé, sans bloquer l'UI
+
+  // 2) fallback parents via participantsMap si dispo
+  if (lessonCtx && Array.isArray(lessonCtx.participant_ids)) {
+    const pm = lessonCtx.participantsMap || {};
+    for (const sid of lessonCtx.participant_ids) {
+      if (!emails.size || !(await getUserEmail(sid))) {
+        const parentId = pm?.[sid]?.parent_id || pm?.[sid]?.booked_by || null;
+        const pem = await getUserEmail(parentId);
+        if (pem) emails.add(pem);
+      }
+    }
+  }
+
+  if (!emails.size) return;
+  const payload = {
+    title,
+    message,
+    ctaUrl: ctaUrl || `${window.location.origin}/smart-dashboard`,
+    ctaText,
+  };
+
   await Promise.all(
-    emails.map((to) =>
+    Array.from(emails).map((to) =>
       fetch("/api/notify-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to, title, message, ctaUrl, ctaText }),
+        body: JSON.stringify({ to, ...payload }),
       }).catch(() => {})
     )
   );
 }
 // --- /EMAIL HELPERS ---
+
+// --- helper: retrouver le parent d'un élève ---
+async function getParentIdForStudent(studentId, lesson) {
+  // 1) via participantsMap de la leçon (le plus fiable si tu l’as)
+  const pm = lesson?.participantsMap || {};
+  const viaMap = pm?.[studentId]?.parent_id || pm?.[studentId]?.booked_by;
+  if (viaMap) return viaMap;
+
+  // 2) via collection students/{id}
+  try {
+    const s = await getDoc(doc(db, "students", studentId));
+    if (s.exists()) {
+      const d = s.data();
+      return d.parent_id || d.parentId || d.booked_by || null;
+    }
+  } catch {}
+
+  // 3) fallback via users/{id} si tu as stocké parent_id dessus
+  try {
+    const u = await getDoc(doc(db, "users", studentId));
+    if (u.exists()) {
+      const d = u.data();
+      return d.parent_id || d.parentId || d.booked_by || null;
+    }
+  } catch {}
+
+  return null;
+}
+// --- /helper ---
 
 /* ---------- pending helpers ---------- */
 const PENDING_SET = new Set([
@@ -423,19 +487,38 @@ export default function TeacherLessons() {
         message,
       });
       
-      // --- ENVOI EMAIL lié au statut ---
-      await sendEmailsToUsers(Array.from(recipients), {
-        title:
-          status === "confirmed" ? "Cours confirmé" :
-          status === "declined"  ? "Cours refusé"   :
-          status === "completed" ? "Cours terminé"  :
-          "Notification EduKaraib",
-        message,                                   // déjà construit au-dessus
-        ctaUrl: `${window.location.origin}/dashboard`,
-        ctaText: "Voir le cours"
-      });
-      // --- /ENVOI EMAIL ---
+      // --- ENVOI EMAIL lié au statut (parents uniquement) ---
+      const parentRecipients = new Set();
       
+      // Pour chaque élève participant, on remonte au parent
+      for (const sid of (lesson.participant_ids || [])) {
+        const pid = await getParentIdForStudent(sid, lesson);
+        if (pid) parentRecipients.add(pid);
+      }
+
+      // Ajoute aussi le booker (souvent le parent) si présent
+      if (lesson.booked_by) parentRecipients.add(lesson.booked_by);
+
+      // Si tu avais déjà un Set "recipients" avec prof/parents,
+      // on n’envoie le mail QU’aux parents, donc on ignore les élèves ici.
+
+      // --- ENVOI EMAIL lié au statut ---
+      await sendEmailsToUsers(
+        Array.from(recipients),
+        {
+          title:
+            status === "confirmed" ? "Cours confirmé" :
+            status === "rejected"  ? "Cours refusé"   :
+            status === "completed" ? "Cours terminé"  :
+            "Notification EduKaraib",
+          message,
+          ctaUrl: `${window.location.origin}/smart-dashboard`,
+          ctaText: "Voir le cours",
+        },
+        lesson // <-- on passe le contexte pour remonter au parent si besoin
+      );
+      // --- /ENVOI EMAIL ---
+
       if (status === 'confirmed') {
         const snap = await getDoc(ref);
         const current = snap.exists() ? { id: snap.id, ...snap.data() } : { ...lesson, status: 'confirmed' };

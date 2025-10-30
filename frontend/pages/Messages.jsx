@@ -22,12 +22,48 @@ import { io } from "socket.io-client";
 
 // --- EMAIL HELPERS (Messages.jsx) ---
 
+async function getEmailFromDoc(pathCol, uid) {
+  try {
+    const s = await getDoc(doc(db, pathCol, uid));
+    if (s.exists()) {
+      const d = s.data();
+      return d.email || d.contactEmail || d.parentEmail || null;
+    }
+  } catch {}
+  return null;
+}
+async function getEmailFromColByUid(pathCol, uid) {
+  try {
+    const qy = query(collection(db, pathCol), where("uid", "==", uid), limit(1));
+    const s = await getDocs(qy);
+    if (!s.empty) {
+      const d = s.docs[0].data();
+      return d.email || d.contactEmail || d.parentEmail || null;
+    }
+  } catch {}
+  return null;
+}
+
+/** Cherche l'email d'un utilisateur quel que soit son “type” */
 async function getUserEmail(uid) {
   if (!uid) return null;
-  try {
-    const snap = await getDoc(doc(db, "users", uid));
-    return snap.exists() ? (snap.data().email || null) : null;
-  } catch { return null; }
+
+  // 1) users (cas standard)
+  let em = await getEmailFromDoc("users", uid);
+  if (em) return em;
+
+  // 2) teachers / parents / students (autres collections possibles)
+  em = await getEmailFromDoc("teachers", uid) ||
+       await getEmailFromDoc("parents", uid) ||
+       await getEmailFromDoc("students", uid);
+  if (em) return em;
+
+  // 3) fallback via champs uid
+  em = await getEmailFromColByUid("users", uid) ||
+       await getEmailFromColByUid("teachers", uid) ||
+       await getEmailFromColByUid("parents", uid) ||
+       await getEmailFromColByUid("students", uid);
+  return em || null;
 }
 
 async function notifyEmailUser(uid, { title, message, ctaUrl, ctaText = "Ouvrir" }) {
@@ -36,9 +72,16 @@ async function notifyEmailUser(uid, { title, message, ctaUrl, ctaText = "Ouvrir"
   await fetch("/api/notify-email", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ to, title, message, ctaUrl, ctaText }),
+    body: JSON.stringify({
+      to,
+      title: title || "Nouveau message sur EduKaraib",
+      message,
+      ctaUrl: ctaUrl || `${window.location.origin}/smart-dashboard`,
+      ctaText: ctaText || "Ouvrir la conversation",
+    }),
   }).catch(() => {});
 }
+// --- /EMAIL HELPERS ---
 
 // -------- Helpers communs --------
 
