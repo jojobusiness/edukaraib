@@ -20,12 +20,10 @@ import StudentCalendar from './pages/StudentCalendar';
 import StudentPayments from './pages/StudentPayments';
 import TeacherCalendar from './pages/TeacherCalendar';
 import TeacherReviews from './pages/TeacherReviews';
-
 import MessagesWrapper from './pages/MessagesWrapper';
 import Messages from './pages/Messages';
 import ChatList from './pages/ChatList';
 import NotFound from './pages/NotFound';
-
 import SmartDashboard from './pages/SmartDashboard';
 import Unauthorized from './pages/Unauthorized';
 import ParentPayments from './pages/ParentPayments';
@@ -46,8 +44,20 @@ import ReviewForm from './components/ReviewForm';
 import PrivateRoute from './components/PrivateRoute';
 import StudentRoute from './components/StudentRoute';
 import RequireRole from './routes/RequireRole';
-
 import AdminDashboard from './pages/AdminDashboard';
+
+/* === Google Analytics PageView Tracker === */
+function PageViewTracker() {
+  const location = useLocation();
+  useEffect(() => {
+    if (typeof window !== 'undefined' && typeof window.gtag === 'function') {
+      window.gtag('config', 'G-32EG21Z538', {
+        page_path: location.pathname + location.search,
+      });
+    }
+  }, [location]);
+  return null;
+}
 
 /** Mémorise la dernière route visitée (pour revenir exactement au même endroit) */
 function RouteMemory() {
@@ -67,7 +77,6 @@ function RestoreLastRoute() {
     const unsub = onAuthStateChanged(auth, (user) => {
       if (!user) return;
       const last = localStorage.getItem('lastRoute');
-      // Évite de renvoyer vers login/register/unauthorized
       if (last && !['/login', '/register', '/unauthorized'].includes(last)) {
         navigate(last, { replace: true });
       }
@@ -78,17 +87,7 @@ function RestoreLastRoute() {
 }
 
 function App() {
-  // ⏳ Très important : attendre la restauration Firebase AVANT d'afficher les routes
   const [authReady, setAuthReady] = useState(false);
-  const location = useLocation();
-
-  useEffect(() => {
-    if (typeof window.gtag === 'function') {
-      window.gtag('config', 'G-32EG21Z538', {
-        page_path: location.pathname + location.search,
-      });
-    }
-  }, [location]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, () => {
@@ -99,7 +98,7 @@ function App() {
 
   return (
     <Router>
-      {/* On n’affiche les routes qu’après restauration de la session Firebase */}
+      <PageViewTracker /> {/* ✅ Tracker INSIDE the Router */}
       {!authReady ? (
         <div className="min-h-screen grid place-items-center text-gray-500">Chargement…</div>
       ) : (
@@ -167,18 +166,8 @@ function App() {
             <Route path="/my-courses" element={<StudentRoute><MyCourses /></StudentRoute>} />
             <Route path="/reviewform" element={<StudentRoute><ReviewForm /></StudentRoute>} />
             <Route path="/dashboard-eleve/planning" element={<StudentRoute><StudentCalendar /></StudentRoute>} />
-            <Route
-              path="/student/payments"
-              element={<RequireRole roles={['student']}><StudentPayments /></RequireRole>}
-            />
-            <Route
-              path="/book-lesson-eleve"
-              element={
-                <StudentRoute>
-                  <BookLessonEleve teacherId="TEACHER_ID" subjectId="SUBJECT_ID" />
-                </StudentRoute>
-              }
-            />
+            <Route path="/student/payments" element={<RequireRole roles={['student']}><StudentPayments /></RequireRole>} />
+            <Route path="/book-lesson-eleve" element={<StudentRoute><BookLessonEleve teacherId="TEACHER_ID" subjectId="SUBJECT_ID" /></StudentRoute>} />
 
             {/* 👨‍👩‍👧 Parent */}
             <Route path="/parent/dashboard" element={<ParentRoute><ParentDashboard /></ParentRoute>} />
@@ -197,14 +186,7 @@ function App() {
             <Route path="/prof/reviews" element={<PrivateRoute role="teacher"><TeacherReviews /></PrivateRoute>} />
 
             {/* 🛠️ Administrateur */}
-            <Route
-              path="/admin/dashboard"
-              element={
-                <RequireRole roles={['admin']}>
-                  <AdminDashboard />
-                </RequireRole>
-              }
-            />
+            <Route path="/admin/dashboard" element={<RequireRole roles={['admin']}><AdminDashboard /></RequireRole>} />
 
             {/* 404 */}
             <Route path="*" element={<NotFound />} />
