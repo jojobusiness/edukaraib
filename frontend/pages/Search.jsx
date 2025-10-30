@@ -97,7 +97,6 @@ export default function Search() {
       // filtres
       if (!hasLevel(teacher, level)) return false;
       if (!matchesCity(teacher, city)) return false;
-      if (!matchesMode(teacher, mode)) return false;
 
       const p = parsePrice(teacher.price_per_hour || teacher.price);
       if (min != null && (p == null || p < min)) return false;
@@ -119,7 +118,7 @@ export default function Search() {
     }
 
     return q ? list : []; // si pas de recherche, garder le comportement initial (section Résultats vide)
-  }, [teachers, search, level, city, mode, priceMin, priceMax, sortBy]);
+  }, [teachers, search, level, city, priceMin, priceMax, sortBy]);
 
   // Exclut les profs déjà dans les résultats filtrés pour la liste du bas
   const displayedTeachers =
