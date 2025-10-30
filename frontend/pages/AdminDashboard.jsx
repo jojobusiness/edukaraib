@@ -142,24 +142,31 @@ function RefundModal({ open, onClose, onConfirm, payment, teacher }) {
   );
 }
 
-// --- helper: envoi d'email pro via ton serveur /api/notify-email ---
+// --- helper: envoi d'email pro via /api/notify-email (avec lookup email par uid) ---
+async function getUserEmail(uid) {
+  if (!uid) return null;
+  try {
+    const s = await getDoc(doc(db, "users", uid));
+    return s.exists() ? (s.data().email || null) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function notifyByEmail(uid, title, message, ctaUrl, ctaText = "Ouvrir le tableau de bord") {
   try {
+    const to = await getUserEmail(uid);
+    if (!to) return; // pas d'email, on ne tente pas
     await fetch("/api/notify-email", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        user_id: uid,
-        title,
-        message,
-        ctaUrl,
-        ctaText,
-      }),
+      body: JSON.stringify({ to, title, message, ctaUrl, ctaText }), // 👈 envoie 'to' (email)
     });
   } catch (e) {
     console.warn("notify-email error:", e);
   }
 }
+// --- /helper ---
 
 /* ===========================
    AdminDashboard (sans layout)

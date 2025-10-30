@@ -133,6 +133,34 @@ async function notifyUsers(userIds = [], payloadBase = {}) {
   await Promise.all(writes);
 }
 
+// --- EMAIL HELPERS (ajouter une seule fois) ---
+async function getUserEmail(uid) {
+  if (!uid) return null;
+  try {
+    const snap = await getDoc(doc(db, "users", uid));
+    return snap.exists() ? (snap.data().email || null) : null;
+  } catch { return null; }
+}
+
+async function sendEmailsToUsers(userIds = [], { title, message, ctaUrl, ctaText = "Ouvrir" }) {
+  const emails = [];
+  for (const uid of userIds) {
+    const em = await getUserEmail(uid);
+    if (em) emails.push(em);
+  }
+  // tir groupé, sans bloquer l'UI
+  await Promise.all(
+    emails.map((to) =>
+      fetch("/api/notify-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to, title, message, ctaUrl, ctaText }),
+      }).catch(() => {})
+    )
+  );
+}
+// --- /EMAIL HELPERS ---
+
 /* ---------- pending helpers ---------- */
 const PENDING_SET = new Set([
   'booked',
@@ -394,7 +422,20 @@ export default function TeacherLessons() {
         lesson_id: lesson.id,
         message,
       });
-
+      
+      // --- ENVOI EMAIL lié au statut ---
+      await sendEmailsToUsers(Array.from(recipients), {
+        title:
+          status === "confirmed" ? "Cours confirmé" :
+          status === "declined"  ? "Cours refusé"   :
+          status === "completed" ? "Cours terminé"  :
+          "Notification EduKaraib",
+        message,                                   // déjà construit au-dessus
+        ctaUrl: `${window.location.origin}/dashboard`,
+        ctaText: "Voir le cours"
+      });
+      // --- /ENVOI EMAIL ---
+      
       if (status === 'confirmed') {
         const snap = await getDoc(ref);
         const current = snap.exists() ? { id: snap.id, ...snap.data() } : { ...lesson, status: 'confirmed' };

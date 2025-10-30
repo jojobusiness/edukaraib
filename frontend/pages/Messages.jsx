@@ -20,7 +20,28 @@ import {
 import Pusher from "pusher-js";
 import { io } from "socket.io-client";
 
+// --- EMAIL HELPERS (Messages.jsx) ---
+
+async function getUserEmail(uid) {
+  if (!uid) return null;
+  try {
+    const snap = await getDoc(doc(db, "users", uid));
+    return snap.exists() ? (snap.data().email || null) : null;
+  } catch { return null; }
+}
+
+async function notifyEmailUser(uid, { title, message, ctaUrl, ctaText = "Ouvrir" }) {
+  const to = await getUserEmail(uid);
+  if (!to) return;
+  await fetch("/api/notify-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ to, title, message, ctaUrl, ctaText }),
+  }).catch(() => {});
+}
+
 // -------- Helpers communs --------
+
 function pairKey(a, b) {
   return [a, b].sort().join("_");
 }
@@ -396,6 +417,14 @@ export default function Messages(props) {
         });
         if (!res.ok) throw new Error("api_failed");
         setNewMessage("");
+        // --- ENVOI EMAIL AU DESTINATAIRE ---
+        notifyEmailUser(receiverId, {
+          title: "Nouveau message sur EduKaraib",
+          message: text,
+          ctaUrl: `${window.location.origin}/messages`,
+          ctaText: "Ouvrir la conversation",
+        });
+        // --- /ENVOI EMAIL ---
         return;
       } catch {
         // 2) fallback Firestore
@@ -413,6 +442,15 @@ export default function Messages(props) {
           lastSentAt: serverTimestamp(),
           lastSender: myUid,
         });
+
+        // --- ENVOI EMAIL AU DESTINATAIRE ---
+        notifyEmailUser(receiverId, {
+          title: "Nouveau message sur EduKaraib",
+          message: text,
+          ctaUrl: `${window.location.origin}/messages`,
+          ctaText: "Ouvrir la conversation",
+        });
+        // --- /ENVOI EMAIL ---
 
         setNewMessage("");
         return;
