@@ -2,7 +2,7 @@
 import { Resend } from "resend";
 
 const APP_BASE_URL = process.env.APP_BASE_URL || "https://edukaraib.com";
-const resend = new Resend(process.env.RESEND_API_KEY || "");
+const resend = new Resend(process.env.RESEND_API_KEY || "re_bKjMkKaa_JGfC8Y2BAJ2fouRA24p7zdyn");
 
 const FROM_TEST = "EduKaraib <onboarding@resend.dev>";          // marche même si domaine non vérifié
 const FROM_PRO  = "EduKaraib <notifications@edukaraib.com>";    // utiliser après vérification du domaine Resend
@@ -66,15 +66,15 @@ export default async function handler(req, res) {
       html: htmlTpl({ title, message, ctaUrl, ctaText }),
     });
 
-    // // Quand ton domaine sera vérifié chez Resend, tu pourras switcher PRO :
-    // if (!result?.id) {
-    //   result = await resend.emails.send({
-    //     from: FROM_PRO,
-    //     to: [to],
-    //     subject: title || "Notification EduKaraib",
-    //     html: htmlTpl({ title, message, ctaUrl, ctaText }),
-    //   });
-    // }
+    // Quand ton domaine sera vérifié chez Resend, tu pourras switcher PRO :
+    if (!result?.id) {
+       result = await resend.emails.send({
+         from: FROM_PRO,
+         to: [to],
+         subject: title || "Notification EduKaraib",
+         html: htmlTpl({ title, message, ctaUrl, ctaText }),
+       });
+    }
 
     if (result?.id) return res.json({ ok: true, id: result.id });
     return res.status(500).json({ ok: false, error: "send_failed" });
