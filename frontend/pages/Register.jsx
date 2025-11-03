@@ -13,28 +13,7 @@ import StripeConnectButtons from '../components/stripe/StripeConnectButtons';
 // ————————————————————————————————
 // Communes officielles de Guyane (22)
 const GUYANE_COMMUNES = [
-  'Apatou',
-  'Awala-Yalimapo',
-  'Camopi',
-  'Cayenne',
-  'Grand-Santi',
-  'Iracoubo',
-  'Kourou',
-  'Macouria',
-  'Mana',
-  'Maripasoula',
-  'Matoury',
-  'Montsinéry-Tonnegrande',
-  'Ouanary',
-  'Papaïchton',
-  'Régina',
-  'Rémire-Montjoly',
-  'Roura',
-  'Saint-Élie',
-  'Saint-Georges',
-  'Saint-Laurent-du-Maroni',
-  'Saül',
-  'Sinnamary',
+  'Apatou','Awala-Yalimapo','Camopi','Cayenne','Grand-Santi','Iracoubo','Kourou','Macouria','Mana','Maripasoula','Matoury','Montsinéry-Tonnegrande','Ouanary','Papaïchton','Régina','Rémire-Montjoly','Roura','Saint-Élie','Saint-Georges','Saint-Laurent-du-Maroni','Saül','Sinnamary',
 ];
 
 const SCHOOL_LEVELS = [
@@ -74,9 +53,19 @@ export default function Register() {
     phone: '', city: '',
     level: '', birth: '',
     subjects: '', diploma: '', bio: '', price_per_hour: '',
+
+    // ➕ NOUVEAU (prof) : packs & visio
+    pack5_price: '',        // total pour 5h (≤ 0.9 * 5 * price_per_hour)
+    pack10_price: '',       // total pour 10h (≤ 0.9 * 10 * price_per_hour)
+    visio_enabled: false,
+    visio_same_rate: true,  // si false, on saisit visio_price_per_hour
+    visio_price_per_hour: '',
   });
   const [photo, setPhoto] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  // CGU obligatoires
+  const [acceptTerms, setAcceptTerms] = useState(false);
 
   // — Étape 2 : attente vérif email
   const [pendingUser, setPendingUser] = useState(null);
@@ -88,7 +77,12 @@ export default function Register() {
   const navigate = useNavigate();
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
+    const { name, value, type, checked } = e.target;
+
+    if (type === 'checkbox') {
+      setForm((f) => ({ ...f, [name]: !!checked }));
+      return;
+    }
 
     if (name === 'firstName' || name === 'lastName') {
       // ✅ autorise la frappe lettre par lettre, bloque chiffres/symboles
@@ -106,6 +100,10 @@ export default function Register() {
   const startRegister = async (e) => {
     e.preventDefault();
 
+    if (!acceptTerms) {
+      return alert("Tu dois accepter les Conditions Générales d’Utilisation pour créer un compte.");
+    }
+
     // ✅ validation finale (≥2 caractères)
     if (!NAME_MIN2_REGEX.test(form.firstName)) return alert("Prénom invalide.");
     if (!NAME_MIN2_REGEX.test(form.lastName)) return alert("Nom invalide.");
@@ -121,6 +119,41 @@ export default function Register() {
     if (!existsCity(form.city)) return alert("Ville inconnue : choisissez une commune de Guyane proposée.");
     if (form.birth) {
       if (form.birth > TODAY) return alert("La date de naissance ne peut pas dépasser la date d’aujourd’hui.");
+    }
+
+    // ✅ validations spécifiques prof (packs/visio) si role = teacher
+    if (form.role === 'teacher') {
+      const base = Number(form.price_per_hour || 0);
+      if (Number.isNaN(base) || base < 0 || base > 1000) {
+        return alert("Le prix à l’heure doit être compris entre 0 et 1000 €.");
+      }
+
+      // Packs : ≤ -10% du prix * 5/10
+      const maxPack5 = 5 * base * 0.9;
+      const maxPack10 = 10 * base * 0.9;
+
+      if (form.pack5_price !== '') {
+        const p5 = Number(form.pack5_price);
+        if (Number.isNaN(p5) || p5 < 0) return alert("Pack 5h invalide (nombre ≥ 0).");
+        if (base > 0 && p5 > maxPack5) {
+          return alert(`Le pack 5h ne doit pas dépasser ${maxPack5.toFixed(2)} € (10% de remise max).`);
+        }
+      }
+      if (form.pack10_price !== '') {
+        const p10 = Number(form.pack10_price);
+        if (Number.isNaN(p10) || p10 < 0) return alert("Pack 10h invalide (nombre ≥ 0).");
+        if (base > 0 && p10 > maxPack10) {
+          return alert(`Le pack 10h ne doit pas dépasser ${maxPack10.toFixed(2)} € (10% de remise max).`);
+        }
+      }
+
+      // Visio : tarif distinct optionnel
+      if (form.visio_enabled && !form.visio_same_rate) {
+        const v = Number(form.visio_price_per_hour);
+        if (Number.isNaN(v) || v < 0 || v > 1000) {
+          return alert("Tarif visio invalide (0 → 1000 €).");
+        }
+      }
     }
 
     setLoading(true);
@@ -179,17 +212,33 @@ export default function Register() {
       }
 
       if (form.role === 'teacher') {
+        // Normalisations nombres
+        const price = form.price_per_hour ? Number(form.price_per_hour) : 0;
+        const pack5 = form.pack5_price === '' ? '' : Number(Number(form.pack5_price).toFixed(2));
+        const pack10 = form.pack10_price === '' ? '' : Number(Number(form.pack10_price).toFixed(2));
+        const visioPrice =
+          form.visio_enabled && !form.visio_same_rate && form.visio_price_per_hour !== ''
+            ? Number(Number(form.visio_price_per_hour).toFixed(2))
+            : '';
+
         Object.assign(baseData, {
           subjects: form.subjects || '',
           diploma: form.diploma || '',
           bio: form.bio || '',
-          price_per_hour: form.price_per_hour ? Number(form.price_per_hour) : 0,
+          price_per_hour: price,
           stripeAccountId: '',
           stripePayoutsEnabled: false,
           stripeChargesEnabled: false,
           stripeDetailsSubmitted: false,
           group_enabled: false,
           group_capacity: 1,
+
+          // ➕ packs & visio
+          pack5_price: pack5,
+          pack10_price: pack10,
+          visio_enabled: !!form.visio_enabled,
+          visio_same_rate: !!form.visio_same_rate,
+          visio_price_per_hour: visioPrice,
         });
       }
       
@@ -473,8 +522,10 @@ export default function Register() {
                     rows={2}
                   />
                 </div>
+
+                {/* Prix /h */}
                 <div>
-                  <label className="block mb-1 text-sm font-medium text-gray-700">Prix à l’heure (€)</label>
+                  <label className="block mb-1 text-sm font-medium text-gray-700">Prix à l’heure (présentiel) €</label>
                   <input
                     type="number"
                     min={0}
@@ -486,8 +537,106 @@ export default function Register() {
                     onChange={handleChange}
                   />
                 </div>
+
+                {/* ➕ Packs 5h / 10h */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block mb-1 text-sm font-medium text-gray-700">Pack 5h (total) €</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      name="pack5_price"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      placeholder="ex : 90 si 20€/h"
+                      value={form.pack5_price}
+                      onChange={handleChange}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      ≤ -10% du total (5 × prix/h)
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block mb-1 text-sm font-medium text-gray-700">Pack 10h (total) €</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      name="pack10_price"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      placeholder="ex : 180 si 20€/h"
+                      value={form.pack10_price}
+                      onChange={handleChange}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      ≤ -10% du total (10 × prix/h)
+                    </p>
+                  </div>
+                </div>
+
+                {/* ➕ Visio */}
+                <div className="rounded-xl border border-gray-200 p-4 space-y-3 bg-gray-50">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-semibold text-gray-700">Proposer des cours en visio</label>
+                    <input
+                      type="checkbox"
+                      name="visio_enabled"
+                      checked={!!form.visio_enabled}
+                      onChange={handleChange}
+                      className="h-5 w-5"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      name="visio_same_rate"
+                      checked={!!form.visio_same_rate}
+                      onChange={handleChange}
+                      disabled={!form.visio_enabled}
+                    />
+                    <label className={`text-sm ${!form.visio_enabled ? 'text-gray-400' : ''}`}>
+                      Même tarif horaire que le présentiel
+                    </label>
+                  </div>
+
+                  {!form.visio_same_rate && form.visio_enabled && (
+                    <div>
+                      <label className="block mb-1 text-sm font-medium text-gray-700">Tarif visio (€ / h)</label>
+                      <input
+                        type="number"
+                        name="visio_price_per_hour"
+                        min={0}
+                        max={1000}
+                        step="0.5"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                        value={form.visio_price_per_hour}
+                        onChange={handleChange}
+                        disabled={!form.visio_enabled}
+                      />
+                    </div>
+                  )}
+                </div>
               </>
             )}
+
+            {/* ➕ CGU obligatoires */}
+            <div className="flex items-start gap-2 mt-2">
+              <input
+                id="acceptTerms"
+                type="checkbox"
+                className="mt-1 h-4 w-4"
+                checked={acceptTerms}
+                onChange={(e) => setAcceptTerms(e.target.checked)}
+                required
+              />
+              <label htmlFor="acceptTerms" className="text-sm text-gray-700">
+                J’ai lu et j’accepte les{' '}
+                <Link to="/cgu" className="text-primary font-semibold hover:underline">
+                  Conditions Générales d’Utilisation
+                </Link>.
+              </label>
+            </div>
 
             <button
               type="submit"
@@ -509,7 +658,7 @@ export default function Register() {
         )}
         <div className="mt-3 text-center">
           <Link to="/" className="inline-block bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-semibold hover:bg-gray-200 transition">
-          ⬅️ Retour à l’accueil
+            ⬅️ Retour à l’accueil
           </Link>
         </div>
       </div>

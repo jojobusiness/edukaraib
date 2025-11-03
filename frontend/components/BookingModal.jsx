@@ -4,42 +4,32 @@ import React, { useMemo, useState } from 'react';
 const DEFAULT_DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
 export default function BookingModal({
-  availability = {},        // { 'Lun': [10,11], ... }
-  bookedSlots = [],         // [{day:'Lun', hour:10}, ...] (rouge/bloqué)
-  onBook,                   // onBook(slot) ou onBook([slots]) selon multiSelect
+  availability = {},
+  bookedSlots = [],
+  onBook,
   onClose,
-  orderDays = DEFAULT_DAYS, // option d’ordre de colonnes
-  multiSelect = true,       // 🔁 active la multi-sélection
+  orderDays = DEFAULT_DAYS,
+  multiSelect = true,
 
-  // 👇 nombre de places restantes par créneau (clé "Jour:Heure") — optionnel
   remainingBySlot = {},
-
-  // (optionnel) afficher la légende “places restantes”
   showRemainingLegend = true,
 
-  // ✅ NOUVEAU : permet de désactiver totalement la réservation (ex: utilisateur = teacher)
   canBook = true,
+
+  // ➕ NOUVEAU: imposer un nombre exact de créneaux (ex: pack 5h ou 10h)
+  requiredCount = null, // null | 5 | 10
 }) {
-  // Tableau de créneaux sélectionnés: [{day, hour}]
   const [selected, setSelected] = useState([]);
 
-  // Map rapide pour savoir si un slot est déjà pris/bloqué
   const bookedMap = useMemo(() => {
     const m = new Map();
-    bookedSlots.forEach(({ day, hour }) => {
-      m.set(`${day}:${hour}`, true);
-    });
+    bookedSlots.forEach(({ day, hour }) => { m.set(`${day}:${hour}`, true); });
     return m;
   }, [bookedSlots]);
 
-  // Colonnes d'heures dynamiques selon les dispos du prof
   const hours = useMemo(() => {
-    // availability attendu: { 'Lun': [10,11], ... } (heures = débuts de créneaux d'1h)
     const all = Object.values(availability || {}).flat().filter((h) => Number.isInteger(h));
-    if (all.length === 0) {
-      // fallback si le prof n'a rien saisi: 08→19 (comportement précédent)
-      return Array.from({ length: 12 }, (_, i) => i + 8);
-    }
+    if (all.length === 0) return Array.from({ length: 12 }, (_, i) => i + 8);
     const min = Math.max(0, Math.min(...all));
     const max = Math.min(23, Math.max(...all));
     return Array.from({ length: (max - min + 1) }, (_, i) => min + i);
@@ -55,7 +45,7 @@ export default function BookingModal({
   };
 
   const toggleSelect = (day, hour) => {
-    if (!canBook) return; // 🔒 blocage total si canBook=false
+    if (!canBook) return;
     if (!isAvailable(day, hour) || isBooked(day, hour)) return;
 
     if (multiSelect) {
@@ -64,6 +54,8 @@ export default function BookingModal({
         if (exists) {
           return prev.filter(s => !(s.day === day && s.hour === hour));
         }
+        // ➕ limite par requiredCount
+        if (requiredCount && prev.length >= requiredCount) return prev;
         return [...prev, { day, hour }];
       });
     } else {
@@ -72,14 +64,13 @@ export default function BookingModal({
   };
 
   const handleSubmit = () => {
-    if (!canBook) return; // 🔒
+    if (!canBook) return;
     if (!selected.length) return;
-    if (multiSelect) {
-      onBook(selected);
-    } else {
-      onBook(selected[0]);
-    }
+    if (requiredCount && selected.length !== requiredCount) return; // impose exact
+    if (multiSelect) onBook(selected); else onBook(selected[0]);
   };
+
+  const need = requiredCount ? (requiredCount - selected.length) : null;
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-40 bg-black/30">
@@ -88,9 +79,15 @@ export default function BookingModal({
           ✖
         </button>
 
-        <h3 className="text-xl font-bold text-primary mb-3">
+        <h3 className="text-xl font-bold text-primary mb-1">
           {multiSelect ? 'Choisissez un ou plusieurs créneaux' : 'Choisissez un créneau'}
         </h3>
+
+        {requiredCount && (
+          <div className="mb-2 text-sm">
+            Pack : sélectionnez <b>{requiredCount}</b> créneau(x). Reste à choisir : <b>{need}</b>.
+          </div>
+        )}
 
         {!canBook && (
           <div className="mb-3 rounded-lg border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">
@@ -140,11 +137,9 @@ export default function BookingModal({
                     const booked = isBooked(day, h);
                     const dispo = isAvailable(day, h);
                     const sel = isSelected(day, h);
-                    const remaining = remainingFor(day, h); // nombre (ou null si non fourni)
+                    const remaining = remainingFor(day, h);
 
-                    // Style du bouton
-                    let classes =
-                      'relative w-8 h-8 rounded shadow flex items-center justify-center select-none ';
+                    let classes = 'relative w-8 h-8 rounded shadow flex items-center justify-center select-none ';
                     if (!canBook) {
                       classes += 'bg-gray-100 text-gray-300 cursor-not-allowed';
                     } else if (booked) {
@@ -157,7 +152,6 @@ export default function BookingModal({
                       classes += 'bg-gray-100 text-gray-400 cursor-not-allowed';
                     }
 
-                    // Title (tooltip)
                     const baseTitle = booked
                       ? 'Créneau déjà réservé'
                       : dispo
@@ -165,23 +159,23 @@ export default function BookingModal({
                       : 'Indisponible';
                     const title = !canBook ? 'Réservation désactivée pour les professeurs' : baseTitle;
 
+                    const disabledByPack =
+                      canBook && dispo && !booked && requiredCount && !sel && selected.length >= requiredCount;
+
                     return (
                       <td key={h} className="px-1 py-1">
                         <button
                           type="button"
-                          disabled={!canBook || !dispo || booked}
+                          disabled={!canBook || !dispo || booked || disabledByPack}
                           onClick={() => toggleSelect(day, h)}
-                          className={classes}
+                          className={classes + (disabledByPack ? ' opacity-60' : '')}
                           title={title}
                           aria-label={
-                            remaining !== null
-                              ? `${title}. Places restantes : ${remaining}`
-                              : title
+                            remaining !== null ? `${title}. Places restantes : ${remaining}` : title
                           }
                         >
                           {booked ? '❌' : sel ? '✔' : ''}
 
-                          {/* 👇 Badge "places restantes" (si fourni) */}
                           {remaining !== null && !booked && canBook && (
                             <span
                               className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] leading-[18px] text-center pointer-events-none"
@@ -203,12 +197,18 @@ export default function BookingModal({
         <button
           className="w-full bg-primary text-white py-3 rounded-xl font-semibold shadow mt-2 disabled:opacity-60 hover:bg-primary/90"
           onClick={handleSubmit}
-          disabled={!canBook || !selected.length}
+          disabled={
+            !canBook ||
+            !selected.length ||
+            (requiredCount && selected.length !== requiredCount)
+          }
           title={!canBook ? 'La réservation est désactivée pour les professeurs' : undefined}
         >
-          {multiSelect
-            ? `Réserver ${selected.length} créneau${selected.length > 1 ? 'x' : ''}`
-            : 'Réserver ce créneau'}
+          {requiredCount
+            ? `Réserver ${selected.length}/${requiredCount} créneau(x)`
+            : (multiSelect
+                ? `Réserver ${selected.length} créneau${selected.length > 1 ? 'x' : ''}`
+                : 'Réserver ce créneau')}
         </button>
       </div>
     </div>

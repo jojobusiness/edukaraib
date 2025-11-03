@@ -1,3 +1,7 @@
+// (fichier entier, seules nouveautés: affichage des prix packs/visio,
+//  choix Mode (Présentiel/Visio) si dispo, choix Pack (1h / 5h / 10h),
+//  et propagation vers BookingModal et la création des lessons)
+
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
@@ -7,13 +11,8 @@ import {
 } from 'firebase/firestore';
 import BookingModal from '../components/BookingModal';
 
-/**
- * Recalcule les créneaux "bloqués" (rouges) ET les "places restantes" pour un professeur,
- * … (contenu inchangé)
- */
 function computeBookedAndRemaining(lessonsDocs, teacherDoc, forStudentId) {
-  const bySlot = new Map(); // "day|hour" -> { individuals: [], groups: [] }
-
+  const bySlot = new Map();
   lessonsDocs.forEach((docu) => {
     const l = docu.data();
     if (!l.slot_day && l.slot_hour == null) return;
@@ -22,10 +21,8 @@ function computeBookedAndRemaining(lessonsDocs, teacherDoc, forStudentId) {
     if (l.is_group) bySlot.get(key).groups.push({ id: docu.id, ...l });
     else bySlot.get(key).individuals.push({ id: docu.id, ...l });
   });
-
   const blocked = [];
   const remainingMap = {};
-
   const teacherGroupEnabled = !!teacherDoc?.group_enabled;
   const teacherDefaultCap =
     typeof teacherDoc?.group_capacity === 'number' && teacherDoc.group_capacity > 1
@@ -37,36 +34,24 @@ function computeBookedAndRemaining(lessonsDocs, teacherDoc, forStudentId) {
     const hour = Number(hourStr);
     const label = `${day}:${hour}`;
 
-    // 1) Individuels : un seul suffit pour bloquer
     const indivBlocks = individuals.some((l) => {
       const st = String(l.status || 'booked');
       return st !== 'rejected' && st !== 'deleted';
     });
-    if (indivBlocks) {
-      blocked.push({ day, hour });
-      continue;
-    }
+    if (indivBlocks) { blocked.push({ day, hour }); continue; }
 
-    // 2) Groupes
     if (groups.length > 0) {
-      // Élève déjà dans un groupe actif sur ce créneau => on bloque
       const childAlreadyIn = !!forStudentId && groups.some((g) => {
         const ids = Array.isArray(g.participant_ids) ? g.participant_ids : [];
         if (!ids.includes(forStudentId)) return false;
         const st = String(g.participantsMap?.[forStudentId]?.status || 'pending');
         return !['removed', 'deleted', 'rejected'].includes(st);
       });
-      if (childAlreadyIn) {
-        blocked.push({ day, hour });
-        continue;
-      }
+      if (childAlreadyIn) { blocked.push({ day, hour }); continue; }
 
-      // Capacité restante = somme(max(capacity - accepted, 0)) sur tous les groupes du slot
       let totalRemaining = 0;
       let hasRoomSomewhere = false;
-
       groups.forEach((g) => {
-        // ⚠️ Priorité à g.capacity si défini (>0), sinon capacité par défaut prof
         const cap = Number(g.capacity || 0) > 0 ? Number(g.capacity)
                   : (teacherDefaultCap > 1 ? teacherDefaultCap : 1);
         const ids = Array.isArray(g.participant_ids) ? g.participant_ids : [];
@@ -89,7 +74,6 @@ function computeBookedAndRemaining(lessonsDocs, teacherDoc, forStudentId) {
       continue;
     }
 
-    // 3) Aucun groupe existant sur ce créneau
     if (teacherGroupEnabled && teacherDefaultCap > 1) {
       remainingMap[label] = teacherDefaultCap;
       continue;
@@ -114,13 +98,9 @@ function countAccepted(l) {
 
 function pickDisplayName(x = {}) {
   return (
-    x.fullName ||
-    x.full_name ||
-    x.name ||
-    x.displayName ||
+    x.fullName || x.full_name || x.name || x.displayName ||
     [x.first_name, x.last_name].filter(Boolean).join(' ') ||
-    (x.profile && (x.profile.full_name || x.profile.name)) ||
-    ''
+    (x.profile && (x.profile.full_name || x.profile.name)) || ''
   );
 }
 function pickAvatar(x = {}) {
@@ -149,11 +129,22 @@ export default function TeacherProfile() {
   const [children, setChildren] = useState([]);
   const [selectedStudentId, setSelectedStudentId] = useState('');
 
+  // ➕ Options de réservation (NOUVEAU)
+  const [bookMode, setBookMode] = useState('presentiel'); // 'presentiel' | 'visio'
+  const [packHours, setPackHours] = useState(1);          // 1 | 5 | 10
+
   // Charger prof + avis
   useEffect(() => {
     const unsubTeacher = onSnapshot(doc(db, 'users', teacherId), (snap) => {
       if (snap.exists()) {
-        setTeacher({ ...snap.data(), id: teacherId });
+        const t = { ...snap.data(), id: teacherId };
+        setTeacher(t);
+        // défaut du mode selon dispo prof
+        if (t.visio_enabled) {
+          setBookMode('presentiel'); // par défaut présentiel, mais visio dispo
+        } else {
+          setBookMode('presentiel');
+        }
       } else {
         setTeacher(null);
       }
@@ -161,7 +152,7 @@ export default function TeacherProfile() {
     return () => unsubTeacher();
   }, [teacherId]);
 
-  // Avis du prof en temps réel
+  // Avis
   useEffect(() => {
     const q = query(collection(db, 'reviews'), where('teacher_id', '==', teacherId));
     const unsub = onSnapshot(q, (snap) => {
@@ -170,36 +161,27 @@ export default function TeacherProfile() {
     return () => unsub();
   }, [teacherId]);
 
-  // Dispos (rouge + badges)
+  // Dispos
   useEffect(() => {
     if (!teacher) return;
-
     const q = query(collection(db, 'lessons'), where('teacher_id', '==', teacherId));
     const unsubLessons = onSnapshot(q, (snap) => {
-      // 1) Calcul de base (bloqués + restants depuis les docs lessons)
       const { blocked, remainingMap } = computeBookedAndRemaining(
-        snap.docs,
-        teacher,
-        selectedStudentId || auth.currentUser?.uid || null
+        snap.docs, teacher, selectedStudentId || auth.currentUser?.uid || null
       );
-
-      // 2) Compléter avec une capacité par défaut sur tous les créneaux "ouverts" du prof
-      //    - si group_enabled && group_capacity>1 => cette capacité
-      //    - sinon (individuel) => 1
       const fill = { ...remainingMap };
       const defCap =
         teacher?.group_enabled && Number(teacher?.group_capacity) > 1
           ? Math.floor(Number(teacher.group_capacity))
           : 1;
 
-      const avail = teacher?.availability || {}; // { 'Lun': [8,9,10], ... }
+      const avail = teacher?.availability || {};
       Object.entries(avail).forEach(([day, hours]) => {
         (hours || []).forEach((h) => {
           const key = `${day}:${h}`;
           const isBlocked = blocked.some((b) => b.day === day && b.hour === h);
-          // On n’écrase pas une valeur issue d’un "lesson" (groupe existant/capacité custom)
           if (!fill[key] && !isBlocked) {
-            fill[key] = defCap; // → 1 en individuel, ou capacité par défaut du prof en groupe
+            fill[key] = defCap;
           }
         });
       });
@@ -216,11 +198,7 @@ export default function TeacherProfile() {
     let cancelled = false;
     (async () => {
       const ids = Array.from(
-        new Set(
-          reviews
-            .map((r) => getReviewerId(r))
-            .filter(Boolean)
-        )
+        new Set(reviews.map((r) => getReviewerId(r)).filter(Boolean))
       ).filter((id) => !(id in reviewerInfo));
 
       if (ids.length === 0) return;
@@ -253,9 +231,9 @@ export default function TeacherProfile() {
     })();
 
     return () => { cancelled = true; };
-  }, [reviews]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [reviews]); // eslint-disable-line
 
-  // Rôle courant + enfants du parent
+  // Rôle courant + enfants
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -287,20 +265,37 @@ export default function TeacherProfile() {
   }, [reviews]);
 
   const meUid = auth.currentUser?.uid;
-
-  // ✅ Blocages côté front :
   const isTeacherUser = currentRole === 'teacher';
   const isOwnProfile = teacherId === auth.currentUser?.uid;
-  const canBook = !isTeacherUser && !isOwnProfile; // profs ne peuvent réserver ni pour eux, ni pour d'autres profs
+  const canBook = !isTeacherUser && !isOwnProfile;
 
-  /**
-   * Réserve 1 seul créneau (utilitaire interne)
-   * … (logique inchangée)
-   */
+  // ➕ util: prix visio effectif
+  const effectiveVisioPrice = (t) => {
+    if (!t?.visio_enabled) return null;
+    return t.visio_same_rate ? Number(t.price_per_hour || 0) : Number(t.visio_price_per_hour || 0);
+  };
+
+  // ➕ util: prix pack fallback si non rempli en base
+  const pack5Display = (t) => {
+    const base = Number(t?.price_per_hour || 0);
+    const v = t?.pack5_price;
+    return (v !== undefined && v !== '' && v !== null)
+      ? Number(v)
+      : (base > 0 ? Number((5 * base * 0.9).toFixed(2)) : null);
+  };
+  const pack10Display = (t) => {
+    const base = Number(t?.price_per_hour || 0);
+    const v = t?.pack10_price;
+    return (v !== undefined && v !== '' && v !== null)
+      ? Number(v)
+      : (base > 0 ? Number((10 * base * 0.9).toFixed(2)) : null);
+  };
+
+  // Réservation: un seul créneau
   const bookSingleSlot = async (slot, context) => {
-    const { teacherId, teacher, me, bookingFor, targetStudentId } = context;
+    const { teacherId, teacher, me, bookingFor, targetStudentId, mode, hourly } = context;
 
-    // 🔒 Doublon exact sur même créneau (indiv ou groupe)
+    // Doublons (même logique)
     const dupIndQ = query(
       collection(db, 'lessons'),
       where('teacher_id', '==', teacherId),
@@ -328,14 +323,10 @@ export default function TeacherProfile() {
       });
 
     if (hasDup) {
-      return {
-        slot,
-        status: 'duplicate',
-        message: `Déjà inscrit(e) sur ${slot.day} ${slot.hour}h.`,
-      };
+      return { slot, status: 'duplicate', message: `Déjà inscrit(e) sur ${slot.day} ${slot.hour}h.` };
     }
 
-    // 1) Essayer de rejoindre un groupe existant
+    // Essayer de rejoindre un groupe existant
     const qExisting = query(
       collection(db, 'lessons'),
       where('teacher_id', '==', teacherId),
@@ -367,14 +358,10 @@ export default function TeacherProfile() {
         type: 'lesson_request', lesson_id: d.id, requester_id: targetStudentId,
         message: `Demande d'ajout au groupe (${slot.day} ${slot.hour}h).`,
       });
-      return {
-        slot,
-        status: 'joined_group',
-        message: `Ajout au groupe demandé pour ${slot.day} ${slot.hour}h.`,
-      };
+      return { slot, status: 'joined_group', message: `Ajout au groupe demandé pour ${slot.day} ${slot.hour}h.` };
     }
 
-    // 2) Créer une demande (groupe ou individuel)
+    // Créer individuel ou groupe
     const groupEnabled = !!teacher?.group_enabled;
     const defaultCap =
       typeof teacher?.group_capacity === 'number' && teacher.group_capacity > 1
@@ -382,7 +369,6 @@ export default function TeacherProfile() {
         : 1;
 
     if (groupEnabled && defaultCap > 1) {
-      // Nouveau groupe
       const newDoc = await addDoc(collection(db, 'lessons'), {
         teacher_id: teacherId,
         student_id: null,
@@ -392,7 +378,7 @@ export default function TeacherProfile() {
         status: 'booked',
         created_at: serverTimestamp(),
         subject_id: Array.isArray(teacher?.subjects) ? teacher.subjects.join(', ') : teacher?.subjects || '',
-        price_per_hour: teacher?.price_per_hour || 0,
+        price_per_hour: hourly || 0,
         slot_day: slot.day,
         slot_hour: slot.hour,
         is_group: true,
@@ -409,19 +395,16 @@ export default function TeacherProfile() {
             added_at: serverTimestamp(),
           },
         },
+        // ➕ champs nouveaux
+        mode,
       });
       await addDoc(collection(db, 'notifications'), {
         user_id: teacherId, read: false, created_at: serverTimestamp(),
         type: 'lesson_request', lesson_id: newDoc.id, requester_id: targetStudentId,
         message: `Demande de créer un groupe (${slot.day} ${slot.hour}h).`,
       });
-      return {
-        slot,
-        status: 'created_group',
-        message: `Demande de création de groupe pour ${slot.day} ${slot.hour}h.`,
-      };
+      return { slot, status: 'created_group', message: `Demande de création de groupe pour ${slot.day} ${slot.hour}h.` };
     } else {
-      // Individuel
       const newDoc = await addDoc(collection(db, 'lessons'), {
         teacher_id: teacherId,
         student_id: targetStudentId,
@@ -431,34 +414,27 @@ export default function TeacherProfile() {
         status: 'booked',
         created_at: serverTimestamp(),
         subject_id: Array.isArray(teacher?.subjects) ? teacher.subjects.join(', ') : teacher?.subjects || '',
-        price_per_hour: teacher?.price_per_hour || 0,
+        price_per_hour: hourly || 0,
         slot_day: slot.day,
         slot_hour: slot.hour,
         is_group: false,
         capacity: 1,
         participant_ids: [],
         participantsMap: {},
+        // ➕ champs nouveaux
+        mode,
       });
       await addDoc(collection(db, 'notifications'), {
         user_id: teacherId, read: false, created_at: serverTimestamp(),
         type: 'lesson_request', lesson_id: newDoc.id, requester_id: targetStudentId,
         message: `Demande de cours individuel (${slot.day} ${slot.hour}h).`,
       });
-      return {
-        slot,
-        status: 'created_individual',
-        message: `Demande de cours individuel pour ${slot.day} ${slot.hour}h.`,
-      };
+      return { slot, status: 'created_individual', message: `Demande de cours individuel pour ${slot.day} ${slot.hour}h.` };
     }
   };
 
-  /**
-   * Handler principal
-   */
   const handleBooking = async (selected) => {
     if (!auth.currentUser) return navigate('/login');
-
-    // 🚫 Blocage prof→prof et prof→lui-même
     if (!canBook) {
       setShowBooking(false);
       setConfirmationMsg("Les comptes professeurs ne peuvent pas réserver de cours.");
@@ -470,13 +446,21 @@ export default function TeacherProfile() {
     const bookingFor = (currentRole === 'parent' && targetStudentId !== me.uid) ? 'child' : 'self';
     const slots = Array.isArray(selected) ? selected : [selected];
 
+    // 🧮 tarif à appliquer (mode présentiel/visio)
+    const base = Number(teacher?.price_per_hour || 0);
+    const visio = effectiveVisioPrice(teacher);
+    const hourly = (bookMode === 'visio' && visio !== null) ? visio : base;
+
     setIsBooking(true);
     setConfirmationMsg('');
     try {
       const results = [];
       for (const slot of slots) {
         try {
-          const r = await bookSingleSlot(slot, { teacherId, teacher, me, bookingFor, targetStudentId });
+          const r = await bookSingleSlot(slot, {
+            teacherId, teacher, me, bookingFor, targetStudentId,
+            mode: bookMode, hourly
+          });
           results.push(r);
         } catch (e) {
           console.error('Booking error (single)', e);
@@ -491,28 +475,14 @@ export default function TeacherProfile() {
       }
 
       const parts = [];
-      if (grouped.created_individual.length)
-        parts.push(`Demandes individuelles envoyées : ${grouped.created_individual.join(', ')}.`);
-      if (grouped.created_group.length)
-        parts.push(`Demandes de création de groupe envoyées : ${grouped.created_group.join(', ')}.`);
-      if (grouped.joined_group.length)
-        parts.push(`Demandes d'ajout à un groupe envoyées : ${grouped.joined_group.join(', ')}.`);
-      if (grouped.duplicate.length)
-        parts.push(`Déjà inscrit(e) sur : ${grouped.duplicate.join(', ')}.`);
-      if (grouped.error.length)
-        parts.push(`Erreurs sur : ${grouped.error.join(', ')}.`);
+      if (grouped.created_individual.length) parts.push(`Demandes individuelles envoyées : ${grouped.created_individual.join(', ')}.`);
+      if (grouped.created_group.length) parts.push(`Demandes de création de groupe envoyées : ${grouped.created_group.join(', ')}.`);
+      if (grouped.joined_group.length) parts.push(`Demandes d'ajout à un groupe envoyées : ${grouped.joined_group.join(', ')}.`);
+      if (grouped.duplicate.length) parts.push(`Déjà inscrit(e) sur : ${grouped.duplicate.join(', ')}.`);
+      if (grouped.error.length) parts.push(`Erreurs sur : ${grouped.error.join(', ')}.`);
 
       setShowBooking(false);
       setConfirmationMsg(parts.length ? parts.join(' ') : "Demandes envoyées.");
-
-      // refresh slots/badges
-      try {
-        await refreshBookedSlots(teacherId, setBookedSlots, {
-          forStudentId: targetStudentId,
-          teacherDoc: teacher,
-          setRemainingBySlot,
-        });
-      } catch {}
     } catch (e) {
       console.error('Booking error (batch)', e);
       setConfirmationMsg("Erreur lors de la réservation. Réessayez plus tard.");
@@ -530,6 +500,11 @@ export default function TeacherProfile() {
       </div>
     );
   }
+
+  const basePrice = Number(teacher.price_per_hour || 0);
+  const visioPrice = effectiveVisioPrice(teacher);
+  const p5 = pack5Display(teacher);
+  const p10 = pack10Display(teacher);
 
   return (
     <div className="min-h-screen flex flex-col items-center bg-gradient-to-br from-white via-gray-100 to-secondary/20 px-4 py-10">
@@ -550,15 +525,40 @@ export default function TeacherProfile() {
           </div>
 
           <div className="text-xs text-gray-500 mb-1">{teacher.location || teacher.city || ''}</div>
-          <div className="text-sm text-gray-600 mb-2 text-center">{teacher.bio}</div>
+          <div className="text-sm text-gray-600 mb-3 text-center">{teacher.bio}</div>
 
-          <span className="inline-block text-yellow-700 font-semibold mb-4">
-            {teacher.price_per_hour !== undefined && teacher.price_per_hour !== null && teacher.price_per_hour !== ''
-              ? `${(Number(String(teacher.price_per_hour).replace(',', '.')) + 10).toFixed(2)} € /h`
-              : 'Prix non précisé'}
-          </span>
+          {/* 🔎 Tarifs affichés */}
+          <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-gray-500">Tarif présentiel</div>
+              <div className="text-lg font-semibold text-yellow-700">
+                {Number.isFinite(basePrice) ? `${basePrice.toFixed(2)} € / h` : '—'}
+              </div>
+            </div>
 
-          {/* Sélecteur parent: l’élève choisi influe sur les disponibilités */}
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-gray-500">Tarif visio</div>
+              <div className="text-lg font-semibold text-yellow-700">
+                {teacher.visio_enabled ? `${(visioPrice ?? basePrice).toFixed(2)} € / h` : 'Non proposé'}
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-gray-500">Pack 5h</div>
+              <div className="text-lg font-semibold">
+                {p5 !== null ? `${p5.toFixed(2)} €` : '—'}
+              </div>
+            </div>
+
+            <div className="rounded-lg border p-3">
+              <div className="text-xs text-gray-500">Pack 10h</div>
+              <div className="text-lg font-semibold">
+                {p10 !== null ? `${p10.toFixed(2)} €` : '—'}
+              </div>
+            </div>
+          </div>
+
+          {/* Sélecteur parent */}
           {currentRole === 'parent' && (
             <div className="w-full bg-gray-50 border rounded-lg p-3 mb-4">
               <label className="block text-sm font-semibold text-gray-700 mb-1">Qui est l’élève ?</label>
@@ -575,11 +575,54 @@ export default function TeacherProfile() {
                 ))}
               </select>
               <p className="text-xs text-gray-500 mt-1">
-                Les créneaux en rouge sont indisponibles pour l’élève sélectionné (déjà inscrit ou pleins).
-                Les pastilles indiquent le nombre de places restantes en groupe.
+                Les créneaux en rouge sont indisponibles pour l’élève sélectionné.
               </p>
             </div>
           )}
+
+          {/* ➕ Choix Mode + Pack */}
+          <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <div className="col-span-1">
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Mode</label>
+              <select
+                className="w-full border rounded px-3 py-2"
+                value={bookMode}
+                onChange={(e) => setBookMode(e.target.value)}
+              >
+                <option value="presentiel">Présentiel</option>
+                {teacher.visio_enabled && <option value="visio">Visio</option>}
+              </select>
+            </div>
+            <div className="col-span-1">
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Pack</label>
+              <select
+                className="w-full border rounded px-3 py-2"
+                value={packHours}
+                onChange={(e) => setPackHours(Number(e.target.value))}
+              >
+                <option value={1}>1h (à l’unité)</option>
+                <option value={5}>5h (Pack)</option>
+                <option value={10}>10h (Pack)</option>
+              </select>
+            </div>
+            <div className="col-span-1 flex items-end">
+              {packHours === 5 && p5 !== null && (
+                <div className="text-sm text-gray-700">
+                  Total pack 5h : <b>{p5.toFixed(2)} €</b>
+                </div>
+              )}
+              {packHours === 10 && p10 !== null && (
+                <div className="text-sm text-gray-700">
+                  Total pack 10h : <b>{p10.toFixed(2)} €</b>
+                </div>
+              )}
+              {packHours === 1 && (
+                <div className="text-sm text-gray-700">
+                  Tarif : <b>{(bookMode === 'visio' && visioPrice !== null ? visioPrice : basePrice).toFixed(2)} €</b> / h
+                </div>
+              )}
+            </div>
+          </div>
 
           {canBook && (
             <button
@@ -600,7 +643,7 @@ export default function TeacherProfile() {
             </div>
           )}
         </div>
-        
+
         {canBook && showBooking && (
           <BookingModal
             availability={teacher.availability || {}}
@@ -610,10 +653,11 @@ export default function TeacherProfile() {
             onClose={() => setShowBooking(false)}
             orderDays={DAYS_ORDER}
             multiSelect={true}
+            // ➕ impose un nombre de créneaux à sélectionner pour les packs
+            requiredCount={packHours > 1 ? packHours : null}
           />
         )}
 
-        {/* Bouton contacter (comme admin) — visible sauf sur son propre profil */}
         {!isOwnProfile && (
           <button
             className="bg-secondary text-white px-6 py-2 rounded-lg font-semibold shadow hover:bg-yellow-500 transition mb-2"
@@ -641,11 +685,7 @@ export default function TeacherProfile() {
             return (
               <div key={r.id} className="bg-gray-50 border rounded-xl px-4 py-3">
                 <div className="flex items-center gap-3 mb-2">
-                  <img
-                    src={avatar}
-                    alt={name}
-                    className="w-8 h-8 rounded-full object-cover border"
-                  />
+                  <img src={avatar} alt={name} className="w-8 h-8 rounded-full object-cover border" />
                   <div className="flex flex-col">
                     <span className="text-sm font-semibold text-gray-800">{name}</span>
                     {r.created_at?.toDate && (
@@ -655,7 +695,6 @@ export default function TeacherProfile() {
                     )}
                   </div>
                 </div>
-
                 <div className="flex items-start gap-2">
                   <span className="text-yellow-500">{'★'.repeat(Math.min(5, Math.max(0, Math.round(rating))))}</span>
                   <span className="italic text-gray-700">{r.comment}</span>

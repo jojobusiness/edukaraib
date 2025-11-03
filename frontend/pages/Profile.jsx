@@ -17,28 +17,7 @@ import StripeConnectButtons from '../components/stripe/StripeConnectButtons';
 /* ====== Contrôles & listes (alignés avec Register) ====== */
 // Communes officielles de Guyane (22)
 const GUYANE_COMMUNES = [
-  'Apatou',
-  'Awala-Yalimapo',
-  'Camopi',
-  'Cayenne',
-  'Grand-Santi',
-  'Iracoubo',
-  'Kourou',
-  'Macouria',
-  'Mana',
-  'Maripasoula',
-  'Matoury',
-  'Montsinéry-Tonnegrande',
-  'Ouanary',
-  'Papaïchton',
-  'Régina',
-  'Rémire-Montjoly',
-  'Roura',
-  'Saint-Élie',
-  'Saint-Georges',
-  'Saint-Laurent-du-Maroni',
-  'Saül',
-  'Sinnamary',
+  'Apatou','Awala-Yalimapo','Camopi','Cayenne','Grand-Santi','Iracoubo','Kourou','Macouria','Mana','Maripasoula','Matoury','Montsinéry-Tonnegrande','Ouanary','Papaïchton','Régina','Rémire-Montjoly','Roura','Saint-Élie','Saint-Georges','Saint-Laurent-du-Maroni','Saül','Sinnamary',
 ];
 
 const SCHOOL_LEVELS = [
@@ -51,9 +30,8 @@ const SCHOOL_LEVELS = [
   'Formation professionnelle','Remise à niveau','Autre',
 ];
 
-const NAME_CHARS_REGEX = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]*$/;  // saisie incrémentale
-const NAME_MIN2_REGEX  = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]{2,}$/; // contrôle final (≥2)
-const PHONE_REGEX = /^[+0-9 ()-]{7,20}$/;
+const NAME_CHARS_REGEX = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]*$/;
+const NAME_MIN2_REGEX  = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]{2,}$/;
 
 const normalize = (s) =>
   (s || '')
@@ -76,7 +54,6 @@ export default function Profile() {
     uid: '',
     email: '',
     role: '',
-    // Séparation nom/prénom côté UI (on garde fullName en base)
     firstName: '',
     lastName: '',
     fullName: '',
@@ -95,9 +72,16 @@ export default function Profile() {
     stripeChargesEnabled: false,
     stripeDetailsSubmitted: false,
 
-    // paramètres cours de groupe
+    // cours de groupe
     group_enabled: false,
     group_capacity: 1,
+
+    // ➕ NOUVEAU: tarifs packs & visio
+    pack5_price: '',   // total pour 5h (≤ 0.9 * 5 * price_per_hour)
+    pack10_price: '',  // total pour 10h (≤ 0.9 * 10 * price_per_hour)
+    visio_enabled: false,
+    visio_same_rate: true,
+    visio_price_per_hour: '',
   });
   const [avatarFile, setAvatarFile] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -111,7 +95,6 @@ export default function Profile() {
         const snap = await getDoc(ref);
         if (snap.exists()) {
           const data = snap.data();
-          // Déduire prénom/nom depuis fullName s’ils ne sont pas en base
           const loadedFirst = data.firstName || (data.fullName ? data.fullName.split(' ')[0] : '');
           const loadedLast  = data.lastName  || (data.fullName ? data.fullName.split(' ').slice(1).join(' ') : '');
           setProfile((prev) => ({
@@ -122,9 +105,14 @@ export default function Profile() {
             role: data.role || data.type || prev.role || 'student',
             firstName: loadedFirst,
             lastName: loadedLast,
-            // valeurs par défaut si absentes en base
             group_enabled: typeof data.group_enabled === 'boolean' ? data.group_enabled : false,
             group_capacity: typeof data.group_capacity === 'number' ? data.group_capacity : 1,
+            // valeurs par défaut si absentes
+            pack5_price: data.pack5_price ?? '',
+            pack10_price: data.pack10_price ?? '',
+            visio_enabled: !!data.visio_enabled,
+            visio_same_rate: data.visio_same_rate !== false, // défaut: true
+            visio_price_per_hour: data.visio_price_per_hour ?? '',
           }));
         } else {
           setProfile((prev) => ({ ...prev, uid: u.uid, email: u.email || '' }));
@@ -143,7 +131,6 @@ export default function Profile() {
     if (f) setAvatarFile(f);
   };
 
-  // ✅ Contrôles au fil de la frappe (similaires à Register)
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
 
@@ -153,7 +140,6 @@ export default function Profile() {
       }
       return;
     }
-
     if (name === 'phone') {
       if (/^[+0-9 ()-]*$/.test(value)) {
         setProfile((p) => ({ ...p, phone: value }));
@@ -161,7 +147,7 @@ export default function Profile() {
       return;
     }
 
-    if (name === 'price_per_hour' || name === 'group_capacity') {
+    if (['price_per_hour','group_capacity','pack5_price','pack10_price','visio_price_per_hour'].includes(name)) {
       setProfile((p) => ({ ...p, [name]: value }));
       return;
     }
@@ -176,46 +162,70 @@ export default function Profile() {
     e.preventDefault();
     if (!profile.uid) return;
 
-    // ✅ Validations finales
+    // Validations finales de base
     if (!NAME_MIN2_REGEX.test(profile.firstName || '')) {
-      return alert('Prénom invalide (2 caractères minimum, lettres/espaces/-/’).');
+      return alert('Prénom invalide (2 caractères minimum).');
     }
     if (!NAME_MIN2_REGEX.test(profile.lastName || '')) {
-      return alert('Nom invalide (2 caractères minimum, lettres/espaces/-/’).');
+      return alert('Nom invalide (2 caractères minimum).');
     }
     if (profile.phone) {
-      const phoneClean = profile.phone.replace(/\D/g, ''); // supprime espaces/symboles
+      const phoneClean = profile.phone.replace(/\D/g, '');
       if (!/^0[1-9]\d{8}$/.test(phoneClean)) {
-        return alert("Le numéro doit commencer par 0, contenir 10 chiffres et ne pas commencer par deux zéros.");
+        return alert("Le numéro doit commencer par 0 et contenir 10 chiffres.");
       }
     }
     if (profile.city && !existsCity(profile.city)) {
-      return alert('Ville inconnue : indique une commune de Guyane (liste officielle).');
+      return alert('Ville inconnue : indique une commune de Guyane.');
     }
     if (profile.birth && profile.birth > TODAY) {
-      return alert("La date de naissance ne peut pas dépasser la date d’aujourd’hui.");
+      return alert("La date de naissance ne peut pas dépasser aujourd’hui.");
     }
 
     // Prix / Capacité
     const priceNum =
       profile.price_per_hour === '' || profile.price_per_hour === null
-        ? null
-        : Number(profile.price_per_hour);
+        ? null : Number(profile.price_per_hour);
     const capacityNum =
       profile.group_capacity === '' || profile.group_capacity === null
-        ? 1
-        : Number(profile.group_capacity);
+        ? 1 : Number(profile.group_capacity);
 
     if (priceNum !== null) {
-      if (Number.isNaN(priceNum) || priceNum < 0) {
-        return alert("Le prix à l'heure doit être un nombre ≥ 0.");
-      }
-      if (priceNum > 1000) {
-        return alert("Le prix à l'heure ne doit pas dépasser 1000 €.");
-      }
+      if (Number.isNaN(priceNum) || priceNum < 0) return alert("Le prix /h doit être un nombre ≥ 0.");
+      if (priceNum > 1000) return alert("Le prix /h ne doit pas dépasser 1000 €.");
     }
     if (Number.isNaN(capacityNum) || capacityNum < 1) {
       return alert('La capacité de groupe doit être un entier ≥ 1.');
+    }
+
+    // ➕ Validations packs (≤ -10% des x5 & x10)
+    const p = Number.isFinite(priceNum) ? priceNum : 0;
+    const maxPack5 = 5 * p * 0.9;   // <= 10% de remise
+    const maxPack10 = 10 * p * 0.9; // <= 10% de remise
+
+    const pack5 = profile.pack5_price === '' ? '' : Number(profile.pack5_price);
+    const pack10 = profile.pack10_price === '' ? '' : Number(profile.pack10_price);
+
+    if (pack5 !== '' && (Number.isNaN(pack5) || pack5 < 0)) {
+      return alert('Pack 5h invalide (nombre ≥ 0).');
+    }
+    if (pack10 !== '' && (Number.isNaN(pack10) || pack10 < 0)) {
+      return alert('Pack 10h invalide (nombre ≥ 0).');
+    }
+    if (pack5 !== '' && pack5 > maxPack5 && p > 0) {
+      return alert(`Le pack 5h ne doit pas dépasser ${maxPack5.toFixed(2)} € (10% de remise max).`);
+    }
+    if (pack10 !== '' && pack10 > maxPack10 && p > 0) {
+      return alert(`Le pack 10h ne doit pas dépasser ${maxPack10.toFixed(2)} € (10% de remise max).`);
+    }
+
+    // ➕ Validations visio
+    let visioRateNum = null;
+    if (profile.visio_enabled && !profile.visio_same_rate) {
+      visioRateNum = profile.visio_price_per_hour === '' ? null : Number(profile.visio_price_per_hour);
+      if (visioRateNum === null || Number.isNaN(visioRateNum) || visioRateNum < 0 || visioRateNum > 1000) {
+        return alert("Tarif visio invalide (0 → 1000 €).");
+      }
     }
 
     setSaving(true);
@@ -230,8 +240,6 @@ export default function Profile() {
       }
 
       const ref = doc(db, 'users', profile.uid);
-
-      // Reconstruire fullName à partir de Prénom + Nom
       const fullName = `${(profile.firstName || '').trim()} ${(profile.lastName || '').trim()}`.trim();
 
       const toSave = {
@@ -245,8 +253,19 @@ export default function Profile() {
         lastName: (profile.lastName || '').trim(),
         city: (profile.city || '').trim(),
         phone: (profile.phone || '').trim(),
+
+        // champs packs (vérifiés)
+        pack5_price: pack5 === '' ? '' : Number(pack5.toFixed(2)),
+        pack10_price: pack10 === '' ? '' : Number(pack10.toFixed(2)),
+
+        // champs visio
+        visio_enabled: !!profile.visio_enabled,
+        visio_same_rate: !!profile.visio_same_rate,
+        visio_price_per_hour: profile.visio_enabled && !profile.visio_same_rate && visioRateNum !== null
+          ? Number(visioRateNum.toFixed(2))
+          : '',
       };
-      delete toSave.uid; // uid n'est pas stocké dans le doc
+      delete toSave.uid;
 
       await updateDoc(ref, toSave);
       setProfile((p) => ({ ...p, avatarUrl, fullName }));
@@ -272,7 +291,7 @@ export default function Profile() {
   };
 
   async function callDeleteAccount() {
-    const idToken = await auth.currentUser.getIdToken(/* forceRefresh */ true);
+    const idToken = await auth.currentUser.getIdToken(true);
     const r = await fetch('/api/delete-account', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
@@ -284,8 +303,7 @@ export default function Profile() {
 
   const handleDeleteAccount = async () => {
     if (!window.confirm(
-      "Supprimer définitivement votre compte ?\n" +
-      "Cette action supprimera votre profil, vos fichiers et (si prof) votre compte Stripe."
+      "Supprimer définitivement votre compte ?\nCette action supprimera votre profil, vos fichiers et (si prof) votre compte Stripe."
     )) return;
 
     try {
@@ -319,6 +337,10 @@ export default function Profile() {
     );
   }
 
+  const basePrice = Number(profile.price_per_hour || 0);
+  const suggested5 = basePrice > 0 ? (5 * basePrice * 0.9).toFixed(2) : '';
+  const suggested10 = basePrice > 0 ? (10 * basePrice * 0.9).toFixed(2) : '';
+
   return (
     <DashboardLayout role={profile.role || 'student'}>
       <div className="w-full max-w-xl mx-auto bg-white rounded-2xl shadow-lg p-8 border border-gray-100 mt-6">
@@ -338,151 +360,165 @@ export default function Profile() {
 
         {/* Form */}
         <form className="space-y-4" onSubmit={handleSave}>
-
           {/* Prénom / Nom */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block mb-1 text-sm font-medium text-gray-700">Prénom</label>
-              <input
-                type="text"
-                name="firstName"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                value={profile.firstName || ''}
-                onChange={handleChange}
-                required
-                placeholder="ex : Sarah"
-              />
+              <input type="text" name="firstName" className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                value={profile.firstName || ''} onChange={handleChange} required placeholder="ex : Sarah" />
             </div>
             <div>
               <label className="block mb-1 text-sm font-medium text-gray-700">Nom</label>
-              <input
-                type="text"
-                name="lastName"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                value={profile.lastName || ''}
-                onChange={handleChange}
-                required
-                placeholder="ex : Dupont"
-              />
+              <input type="text" name="lastName" className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                value={profile.lastName || ''} onChange={handleChange} required placeholder="ex : Dupont" />
             </div>
           </div>
 
           {/* Téléphone */}
           <div>
             <label className="block mb-1 text-sm font-medium text-gray-700">Téléphone</label>
-            <input
-              type="tel"
-              name="phone"
-              pattern="0[1-9][0-9]{8}"
-              maxLength={10}
+            <input type="tel" name="phone" pattern="0[1-9][0-9]{8}" maxLength={10}
               className="w-full border border-gray-300 rounded-lg px-3 py-2"
-              value={profile.phone || ''}
-              onChange={handleChange}
-              placeholder="ex : 0694xxxxxx"
-            />
+              value={profile.phone || ''} onChange={handleChange} placeholder="ex : 0694xxxxxx" />
           </div>
 
-          {/* Ville — LISTE DÉROULANTE */}
+          {/* Ville */}
           <div>
             <label className="block mb-1 text-sm font-medium text-gray-700">Ville (commune)</label>
-            <select
-              name="city"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2"
-              value={profile.city || ''}
-              onChange={handleChange}
-              required
-            >
+            <select name="city" className="w-full border border-gray-300 rounded-lg px-3 py-2"
+              value={profile.city || ''} onChange={handleChange} required>
               <option value="">Sélectionner…</option>
-              {GUYANE_COMMUNES.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
+              {GUYANE_COMMUNES.map((c) => (<option key={c} value={c}>{c}</option>))}
             </select>
           </div>
 
-          {/* Étudiant : niveau & naissance (niveau identique à l’inscription) */}
+          {/* Étudiant */}
           {profile.role === 'student' && (
             <>
               <div>
                 <label className="block mb-1 text-sm font-medium text-gray-700">Niveau scolaire</label>
-                <select
-                  name="level"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                  value={profile.level || ''}
-                  onChange={handleChange}
-                >
+                <select name="level" className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  value={profile.level || ''} onChange={handleChange}>
                   <option value="">Sélectionner…</option>
-                  {SCHOOL_LEVELS.map((lvl) => (
-                    <option key={lvl} value={lvl}>{lvl}</option>
-                  ))}
+                  {SCHOOL_LEVELS.map((lvl) => (<option key={lvl} value={lvl}>{lvl}</option>))}
                 </select>
               </div>
               <div>
                 <label className="block mb-1 text-sm font-medium text-gray-700">Date de naissance</label>
-                <input
-                  type="date"
-                  name="birth"
-                  max={TODAY}
+                <input type="date" name="birth" max={TODAY}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                  value={profile.birth || ''}
-                  onChange={handleChange}
-                />
+                  value={profile.birth || ''} onChange={handleChange}/>
               </div>
             </>
           )}
 
-          {/* Prof — matières/diplôme/bio/prix (prix ≤ 1000€) */}
+          {/* Prof — matières/diplôme/bio/prix */}
           {profile.role === 'teacher' && (
             <>
               <div>
                 <label className="block mb-1 text-sm font-medium text-gray-700">Matières enseignées</label>
-                <input
-                  type="text"
-                  name="subjects"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                  value={profile.subjects || ''}
-                  onChange={handleChange}
-                  placeholder="ex : Maths, Physique"
-                />
+                <input type="text" name="subjects" className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  value={profile.subjects || ''} onChange={handleChange} placeholder="ex : Maths, Physique" />
               </div>
               <div>
                 <label className="block mb-1 text-sm font-medium text-gray-700">Diplômes</label>
-                <input
-                  type="text"
-                  name="diploma"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                  value={profile.diploma || ''}
-                  onChange={handleChange}
-                  placeholder="ex : Master Maths"
-                />
+                <input type="text" name="diploma" className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  value={profile.diploma || ''} onChange={handleChange} placeholder="ex : Master Maths" />
               </div>
               <div>
                 <label className="block mb-1 text-sm font-medium text-gray-700">Bio</label>
-                <textarea
-                  name="bio"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                  value={profile.bio || ''}
-                  onChange={handleChange}
-                  rows={3}
-                />
+                <textarea name="bio" className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  value={profile.bio || ''} onChange={handleChange} rows={3}/>
               </div>
+
+              {/* Prix de base */}
               <div>
-                <label className="block mb-1 text-sm font-medium text-gray-700">Prix à l’heure (€)</label>
-                <input
-                  type="number"
-                  name="price_per_hour"
-                  min={0}
-                  max={1000}
-                  step={1}
+                <label className="block mb-1 text-sm font-medium text-gray-700">Prix à l’heure (présentiel) €</label>
+                <input type="number" name="price_per_hour" min={0} max={1000} step={1}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                  value={profile.price_per_hour ?? ''}
-                  onChange={handleChange}
-                />
+                  value={profile.price_per_hour ?? ''} onChange={handleChange}/>
                 <p className="text-xs text-gray-500 mt-1">Maximum autorisé : 1000 € / h.</p>
+              </div>
+
+              {/* Packs */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block mb-1 text-sm font-medium text-gray-700">
+                    Pack 5h (total) €
+                  </label>
+                  <input type="number" name="pack5_price" min={0} step="0.01"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                    value={profile.pack5_price ?? ''} onChange={handleChange}/>
+                  {basePrice > 0 && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Conseil (≤ -10%) : {suggested5} €
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block mb-1 text-sm font-medium text-gray-700">
+                    Pack 10h (total) €
+                  </label>
+                  <input type="number" name="pack10_price" min={0} step="0.01"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                    value={profile.pack10_price ?? ''} onChange={handleChange}/>
+                  {basePrice > 0 && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Conseil (≤ -10%) : {suggested10} €
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Visio */}
+              <div className="rounded-xl border border-gray-200 p-4 space-y-3 bg-gray-50">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-semibold text-gray-700">
+                    Proposer des cours en visio
+                  </label>
+                  <input
+                    type="checkbox"
+                    name="visio_enabled"
+                    checked={!!profile.visio_enabled}
+                    onChange={handleChange}
+                    className="h-5 w-5"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    name="visio_same_rate"
+                    checked={!!profile.visio_same_rate}
+                    onChange={handleChange}
+                    disabled={!profile.visio_enabled}
+                  />
+                  <label className={`text-sm ${!profile.visio_enabled ? 'text-gray-400' : ''}`}>
+                    Même tarif horaire que le présentiel
+                  </label>
+                </div>
+
+                {!profile.visio_same_rate && profile.visio_enabled && (
+                  <div>
+                    <label className="block mb-1 text-sm font-medium text-gray-700">Tarif visio (€ / h)</label>
+                    <input
+                      type="number"
+                      name="visio_price_per_hour"
+                      min={0}
+                      max={1000}
+                      step="0.5"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                      value={profile.visio_price_per_hour ?? ''}
+                      onChange={handleChange}
+                      disabled={!profile.visio_enabled}
+                    />
+                  </div>
+                )}
               </div>
             </>
           )}
 
-          {/* Paiements (Stripe) pour PROF */}
+          {/* Paiements (Stripe) */}
           {profile.role === 'teacher' && (
             <div className="mt-8 bg-white border border-gray-200 rounded-2xl p-6">
               <h3 className="text-lg font-bold text-primary mb-2">Paiements & RIB (via Stripe)</h3>
@@ -499,7 +535,7 @@ export default function Profile() {
             </div>
           )}
 
-          {/* Réglage des cours de groupe pour PROF */}
+          {/* cours de groupe */}
           {profile.role === 'teacher' && (
             <div className="rounded-xl border border-gray-200 p-4 space-y-3 bg-gray-50">
               <div className="flex items-center justify-between">
@@ -530,19 +566,19 @@ export default function Profile() {
                   disabled={!profile.group_enabled}
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Ce nombre sera utilisé par défaut lors des réservations groupées. Il reste modifiable
-                  ensuite dans “Gérer le groupe” pour chaque cours.
+                  Utilisé par défaut lors des réservations groupées (modifiable par cours).
                 </p>
               </div>
             </div>
           )}
 
+          {/* Disponibilités */}
           {profile.role === 'teacher' && (
             <div className="rounded-xl border border-gray-200 p-4 bg-gray-50">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-md font-bold text-gray-800">Disponibilités hebdomadaires</h3>
-                  <p className="text-xs text-gray-500">Chaque case = 1h. Utilise le panneau pour des ajouts en masse et des presets.</p>
+                  <p className="text-xs text-gray-500">Chaque case = 1h.</p>
                 </div>
                 <button
                   type="button"
@@ -554,103 +590,65 @@ export default function Profile() {
               </div>
             </div>
           )}
-          
-          {/* Fenêtre modale centrée pour les dispos */}
+
+          {/* Drawer disponibilités */}
           {profile.role === 'teacher' && (
             <div
               className={`fixed inset-0 z-50 flex items-center justify-center transition-all duration-300 ${
                 showAvailDrawer ? 'opacity-100 visible' : 'opacity-0 invisible'
               }`}
             >
-              {/* Arrière-plan */}
-              <div
-                onClick={() => setShowAvailDrawer(false)}
-                className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-              />
-
-              {/* Fenêtre */}
+              <div onClick={() => setShowAvailDrawer(false)} className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
               <div
                 className={`relative bg-white rounded-2xl shadow-2xl border border-gray-100 w-full max-w-5xl mx-auto 
                             max-h-[90vh] overflow-hidden flex flex-col transition-all duration-300 ${
                   showAvailDrawer ? 'scale-100 opacity-100' : 'scale-95 opacity-0'
                 }`}
               >
-                {/* En-tête */}
                 <div className="flex items-center justify-between px-6 py-4 border-b bg-primary/5 sticky top-0">
                   <h3 className="text-lg font-semibold text-primary">Éditer mes disponibilités</h3>
-                  <button
-                    type="button"
-                    onClick={() => setShowAvailDrawer(false)}
-                    className="text-gray-500 hover:text-gray-700 text-xl leading-none"
-                    aria-label="Fermer"
-                  >
-                    ×
-                  </button>
+                  <button type="button" onClick={() => setShowAvailDrawer(false)}
+                    className="text-gray-500 hover:text-gray-700 text-xl leading-none" aria-label="Fermer">×</button>
                 </div>
-
-                {/* Contenu scrollable */}
                 <div className="flex-1 overflow-y-auto p-6 bg-white">
                   <TeacherAvailabilityEditor
                     value={profile.availability || {}}
                     onChange={(avail) => setProfile((p) => ({ ...p, availability: avail }))}
                   />
                 </div>
-
-                {/* Footer */}
                 <div className="flex justify-between items-center gap-2 border-t bg-gray-50 p-4 sticky bottom-0">
-                  <p className="text-xs text-gray-500">
-                    Les changements sont pris en compte après avoir cliqué sur <b>Enregistrer</b> (en bas du profil).
-                  </p>
+                  <p className="text-xs text-gray-500">Clique <b>Enregistrer</b> (en bas du profil) pour valider.</p>
                   <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowAvailDrawer(false)}
-                      className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 text-sm font-semibold"
-                    >
-                      Fermer
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold shadow hover:bg-primary/90"
-                      onClick={() => setShowAvailDrawer(false)}
-                    >
-                      Enregistrer
-                    </button>
+                    <button type="button" onClick={() => setShowAvailDrawer(false)}
+                      className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 text-sm font-semibold">Fermer</button>
+                    <button type="submit" className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold shadow hover:bg-primary/90"
+                      onClick={() => setShowAvailDrawer(false)}>Enregistrer</button>
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          <button
-            type="submit"
+          <button type="submit"
             className="w-full bg-primary text-white font-semibold py-2 rounded-lg shadow hover:bg-primary-dark transition disabled:opacity-60"
-            disabled={saving}
-          >
+            disabled={saving}>
             {saving ? 'Enregistrement…' : 'Enregistrer'}
           </button>
         </form>
 
         {/* Actions compte */}
         <div className="mt-8 flex flex-col gap-2">
-          <button
-            onClick={handleLogout}
-            className="w-full bg-gray-200 text-gray-700 font-semibold py-2 rounded-lg hover:bg-gray-300 transition"
-          >
+          <button onClick={handleLogout}
+            className="w-full bg-gray-200 text-gray-700 font-semibold py-2 rounded-lg hover:bg-gray-300 transition">
             Se déconnecter
           </button>
-          <button
-            onClick={handleResetPassword}
-            className="w-full bg-yellow-100 text-yellow-800 font-semibold py-2 rounded-lg hover:bg-yellow-200 transition"
-          >
+          <button onClick={handleResetPassword}
+            className="w-full bg-yellow-100 text-yellow-800 font-semibold py-2 rounded-lg hover:bg-yellow-200 transition">
             Changer de mot de passe
           </button>
-          {/* Suppression de compte */}
-          <button
-            onClick={handleDeleteAccount}
+          <button onClick={handleDeleteAccount}
             className="w-full bg-red-100 text-red-800 font-semibold py-2 rounded-lg hover:bg-red-200 transition"
-            disabled={saving}
-          >
+            disabled={saving}>
             Supprimer mon compte
           </button>
         </div>
