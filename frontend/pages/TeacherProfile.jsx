@@ -262,23 +262,11 @@ export default function TeacherProfile() {
       : (base > 0 ? Number((10 * base * 0.9).toFixed(2)) : null);
   };
 
+// ...imports et tout ton code au-dessus inchangé...
+
   const handleBooking = async (selected) => {
     if (!auth.currentUser) return navigate('/login');
     if (!canBook) {
-      // pack context
-      const isPack = packHours === 5 || packHours === 10;
-      const packId = isPack
-        ? `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${packHours}_${bookMode}`
-        : null;
-      const packPayload = isPack
-        ? {
-            is_pack: true,
-            pack_id: packId,
-            pack_hours: packHours,
-            pack_type: packHours === 5 ? 'pack5' : 'pack10',
-            require_accept_all: true, // utile pour la logique d'acceptation groupée
-          }
-        : {};
       setShowBooking(false);
       setConfirmationMsg("Les comptes professeurs ne peuvent pas réserver de cours.");
       return;
@@ -286,112 +274,155 @@ export default function TeacherProfile() {
 
     const me = auth.currentUser;
     const targetStudentId = selectedStudentId || me.uid;
-    const bookingFor = (currentRole === 'parent' && targetStudentId !== me.uid) ? 'child' : 'self';
+    const bookingFor =
+      currentRole === "parent" && targetStudentId !== me.uid ? "child" : "self";
     const slots = Array.isArray(selected) ? selected : [selected];
 
-    // 🧮 tarif à appliquer selon mode & packs (packs: le paiement est géré côté checkout, ici on stocke l’heure)
+    // --- Définition du pack ---
+    const isPack = packHours === 5 || packHours === 10;
+    const packId = isPack
+      ? `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${packHours}_${bookMode}`
+      : null;
+    const packPayload = isPack
+      ? {
+          is_pack: true,
+          pack_id: packId,
+          pack_hours: packHours,
+          pack_type: packHours === 5 ? "pack5" : "pack10",
+          require_accept_all: true,
+        }
+      : {};
+
+    // 🧮 tarif à appliquer selon mode & packs
     const base = Number(teacher?.price_per_hour || 0);
     const visio = effectiveVisioPrice(teacher);
-    const hourly = (bookMode === 'visio' && visio !== null) ? visio : base;
+    const hourly =
+      bookMode === "visio" && visio !== null ? visio : base;
 
     setIsBooking(true);
-    setConfirmationMsg('');
+    setConfirmationMsg("");
     try {
       const results = [];
-      // boucle de création/join pour chaque créneau
       for (const slot of slots) {
         try {
-          // Doublons
+          // Vérifier doublons
           const dupIndQ = query(
-            collection(db, 'lessons'),
-            where('teacher_id', '==', teacherId),
-            where('slot_day', '==', slot.day),
-            where('slot_hour', '==', slot.hour),
-            where('is_group', '==', false),
-            where('student_id', '==', targetStudentId)
+            collection(db, "lessons"),
+            where("teacher_id", "==", teacherId),
+            where("slot_day", "==", slot.day),
+            where("slot_hour", "==", slot.hour),
+            where("is_group", "==", false),
+            where("student_id", "==", targetStudentId)
           );
           const dupGrpQ = query(
-            collection(db, 'lessons'),
-            where('teacher_id', '==', teacherId),
-            where('slot_day', '==', slot.day),
-            where('slot_hour', '==', slot.hour),
-            where('is_group', '==', true),
-            where('participant_ids', 'array-contains', targetStudentId)
+            collection(db, "lessons"),
+            where("teacher_id", "==", teacherId),
+            where("slot_day", "==", slot.day),
+            where("slot_hour", "==", slot.hour),
+            where("is_group", "==", true),
+            where("participant_ids", "array-contains", targetStudentId)
           );
-          const [dupIndSnap, dupGrpSnap] = await Promise.all([getDocs(dupIndQ), getDocs(dupGrpQ)]);
+          const [dupIndSnap, dupGrpSnap] = await Promise.all([
+            getDocs(dupIndQ),
+            getDocs(dupGrpQ),
+          ]);
           const hasDup =
-            dupIndSnap.docs.some((d) => (d.data()?.status || 'booked') !== 'rejected') ||
+            dupIndSnap.docs.some(
+              (d) => (d.data()?.status || "booked") !== "rejected"
+            ) ||
             dupGrpSnap.docs.some((d) => {
               const dat = d.data();
               const st = dat?.participantsMap?.[targetStudentId]?.status;
-              return st !== 'removed' && st !== 'deleted' && st !== 'rejected';
+              return (
+                st !== "removed" && st !== "deleted" && st !== "rejected"
+              );
             });
           if (hasDup) {
-            results.push({ slot, status: 'duplicate', message: `Déjà inscrit(e) sur ${slot.day} ${slot.hour}h.` });
+            results.push({
+              slot,
+              status: "duplicate",
+              message: `Déjà inscrit(e) sur ${slot.day} ${slot.hour}h.`,
+            });
             continue;
           }
 
-          // Rejoindre un groupe existant s’il y en a (pas pour les packs)
+          // Rejoindre un groupe existant (sauf pour les packs)
           if (!isPack) {
             const qExisting = query(
-            collection(db, 'lessons'),
-            where('teacher_id', '==', teacherId),
-            where('slot_day', '==', slot.day),
-            where('slot_hour', '==', slot.hour),
-            where('is_group', '==', true)
-          );
-          if (joined) continue;
-          }
-          const existSnap = await getDocs(qExisting);
-          let joined = false;
-          for (const d of existSnap.docs) {
-            const l = d.data();
-            const current = Array.isArray(l.participant_ids) ? l.participant_ids : [];
-            if (current.includes(targetStudentId)) {
-              results.push({ slot, status: 'duplicate', message: `Déjà inscrit(e) sur ${slot.day} ${slot.hour}h.` });
+              collection(db, "lessons"),
+              where("teacher_id", "==", teacherId),
+              where("slot_day", "==", slot.day),
+              where("slot_hour", "==", slot.hour),
+              where("is_group", "==", true)
+            );
+            const existSnap = await getDocs(qExisting);
+            let joined = false;
+            for (const d of existSnap.docs) {
+              const l = d.data();
+              const current = Array.isArray(l.participant_ids)
+                ? l.participant_ids
+                : [];
+              if (current.includes(targetStudentId)) {
+                results.push({
+                  slot,
+                  status: "duplicate",
+                  message: `Déjà inscrit(e) sur ${slot.day} ${slot.hour}h.`,
+                });
+                joined = true;
+                break;
+              }
+              await updateDoc(doc(db, "lessons", d.id), {
+                participant_ids: arrayUnion(targetStudentId),
+                [`participantsMap.${targetStudentId}`]: {
+                  parent_id: bookingFor === "child" ? me.uid : null,
+                  booked_by: me.uid,
+                  is_paid: false,
+                  paid_by: null,
+                  paid_at: null,
+                  status: "pending_teacher",
+                  added_at: serverTimestamp(),
+                },
+              });
+              await addDoc(collection(db, "notifications"), {
+                user_id: teacherId,
+                read: false,
+                created_at: serverTimestamp(),
+                type: "lesson_request",
+                lesson_id: d.id,
+                requester_id: targetStudentId,
+                message: `Demande d'ajout au groupe (${slot.day} ${slot.hour}h).`,
+              });
+              results.push({
+                slot,
+                status: "joined_group",
+                message: `Ajout au groupe demandé pour ${slot.day} ${slot.hour}h.`,
+              });
               joined = true;
               break;
             }
-            await updateDoc(doc(db, 'lessons', d.id), {
-              participant_ids: arrayUnion(targetStudentId),
-              [`participantsMap.${targetStudentId}`]: {
-                parent_id: bookingFor === 'child' ? me.uid : null,
-                booked_by: me.uid,
-                is_paid: false,
-                paid_by: null,
-                paid_at: null,
-                status: 'pending_teacher',
-                added_at: serverTimestamp(),
-              },
-            });
-            await addDoc(collection(db, 'notifications'), {
-              user_id: teacherId, read: false, created_at: serverTimestamp(),
-              type: 'lesson_request', lesson_id: d.id, requester_id: targetStudentId,
-              message: `Demande d'ajout au groupe (${slot.day} ${slot.hour}h).`,
-            });
-            results.push({ slot, status: 'joined_group', message: `Ajout au groupe demandé pour ${slot.day} ${slot.hour}h.` });
-            joined = true;
-            break;
+            if (joined) continue;
           }
-          if (joined) continue;
 
           // Créer individuel ou groupe par défaut
           const groupEnabled = !!teacher?.group_enabled;
           const defaultCap =
-            typeof teacher?.group_capacity === 'number' && teacher.group_capacity > 1
+            typeof teacher?.group_capacity === "number" &&
+            teacher.group_capacity > 1
               ? Math.floor(teacher.group_capacity)
               : 1;
 
           if (groupEnabled && defaultCap > 1) {
-            const newDoc = await addDoc(collection(db, 'lessons'), {
+            const newDoc = await addDoc(collection(db, "lessons"), {
               teacher_id: teacherId,
               student_id: null,
-              parent_id: bookingFor === 'child' ? me.uid : null,
+              parent_id: bookingFor === "child" ? me.uid : null,
               booked_by: me.uid,
               booked_for: bookingFor,
-              status: 'booked',
+              status: "booked",
               created_at: serverTimestamp(),
-              subject_id: Array.isArray(teacher?.subjects) ? teacher.subjects.join(', ') : teacher?.subjects || '',
+              subject_id: Array.isArray(teacher?.subjects)
+                ? teacher.subjects.join(", ")
+                : teacher?.subjects || "",
               price_per_hour: hourly || 0,
               slot_day: slot.day,
               slot_hour: slot.hour,
@@ -400,34 +431,44 @@ export default function TeacherProfile() {
               participant_ids: [targetStudentId],
               participantsMap: {
                 [targetStudentId]: {
-                  parent_id: bookingFor === 'child' ? me.uid : null,
+                  parent_id: bookingFor === "child" ? me.uid : null,
                   booked_by: me.uid,
                   is_paid: false,
                   paid_by: null,
                   paid_at: null,
-                  status: 'pending_teacher',
+                  status: "pending_teacher",
                   added_at: serverTimestamp(),
                 },
               },
               mode: bookMode,
-              packPayload,
+              ...packPayload, // ✅ ajout ici
             });
-            await addDoc(collection(db, 'notifications'), {
-              user_id: teacherId, read: false, created_at: serverTimestamp(),
-              type: 'lesson_request', lesson_id: newDoc.id, requester_id: targetStudentId,
+            await addDoc(collection(db, "notifications"), {
+              user_id: teacherId,
+              read: false,
+              created_at: serverTimestamp(),
+              type: "lesson_request",
+              lesson_id: newDoc.id,
+              requester_id: targetStudentId,
               message: `Demande de créer un groupe (${slot.day} ${slot.hour}h).`,
             });
-            results.push({ slot, status: 'created_group', message: `Demande de création de groupe pour ${slot.day} ${slot.hour}h.` });
+            results.push({
+              slot,
+              status: "created_group",
+              message: `Demande de création de groupe pour ${slot.day} ${slot.hour}h.`,
+            });
           } else {
-            const newDoc = await addDoc(collection(db, 'lessons'), {
+            const newDoc = await addDoc(collection(db, "lessons"), {
               teacher_id: teacherId,
               student_id: targetStudentId,
-              parent_id: bookingFor === 'child' ? me.uid : null,
+              parent_id: bookingFor === "child" ? me.uid : null,
               booked_by: me.uid,
               booked_for: bookingFor,
-              status: 'booked',
+              status: "booked",
               created_at: serverTimestamp(),
-              subject_id: Array.isArray(teacher?.subjects) ? teacher.subjects.join(', ') : teacher?.subjects || '',
+              subject_id: Array.isArray(teacher?.subjects)
+                ? teacher.subjects.join(", ")
+                : teacher?.subjects || "",
               price_per_hour: hourly || 0,
               slot_day: slot.day,
               slot_hour: slot.hour,
@@ -436,38 +477,69 @@ export default function TeacherProfile() {
               participant_ids: [],
               participantsMap: {},
               mode: bookMode,
-              packPayload,
+              ...packPayload, // ✅ ajout ici
             });
-            await addDoc(collection(db, 'notifications'), {
-              user_id: teacherId, read: false, created_at: serverTimestamp(),
-              type: 'lesson_request', lesson_id: newDoc.id, requester_id: targetStudentId,
+            await addDoc(collection(db, "notifications"), {
+              user_id: teacherId,
+              read: false,
+              created_at: serverTimestamp(),
+              type: "lesson_request",
+              lesson_id: newDoc.id,
+              requester_id: targetStudentId,
               message: `Demande de cours individuel (${slot.day} ${slot.hour}h).`,
             });
-            results.push({ slot, status: 'created_individual', message: `Demande de cours individuel pour ${slot.day} ${slot.hour}h.` });
+            results.push({
+              slot,
+              status: "created_individual",
+              message: `Demande de cours individuel pour ${slot.day} ${slot.hour}h.`,
+            });
           }
         } catch (e) {
-          console.error('Booking error (single)', e);
-          results.push({ slot, status: 'error', message: `Erreur sur ${slot.day} ${slot.hour}h.` });
+          console.error("Booking error (single)", e);
+          results.push({
+            slot,
+            status: "error",
+            message: `Erreur sur ${slot.day} ${slot.hour}h.`,
+          });
         }
       }
 
-      const grouped = { created_group: [], created_individual: [], joined_group: [], duplicate: [], error: [] };
+      const grouped = {
+        created_group: [],
+        created_individual: [],
+        joined_group: [],
+        duplicate: [],
+        error: [],
+      };
       for (const r of results) {
-        const key = grouped[r.status] ? r.status : 'error';
+        const key = grouped[r.status] ? r.status : "error";
         grouped[key].push(`${r.slot.day} ${r.slot.hour}h`);
       }
 
       const parts = [];
-      if (grouped.created_individual.length) parts.push(`Demandes individuelles envoyées : ${grouped.created_individual.join(', ')}.`);
-      if (grouped.created_group.length) parts.push(`Demandes de création de groupe envoyées : ${grouped.created_group.join(', ')}.`);
-      if (grouped.joined_group.length) parts.push(`Demandes d'ajout à un groupe envoyées : ${grouped.joined_group.join(', ')}.`);
-      if (grouped.duplicate.length) parts.push(`Déjà inscrit(e) sur : ${grouped.duplicate.join(', ')}.`);
-      if (grouped.error.length) parts.push(`Erreurs sur : ${grouped.error.join(', ')}.`);
+      if (grouped.created_individual.length)
+        parts.push(
+          `Demandes individuelles envoyées : ${grouped.created_individual.join(", ")}.`
+        );
+      if (grouped.created_group.length)
+        parts.push(
+          `Demandes de création de groupe envoyées : ${grouped.created_group.join(", ")}.`
+        );
+      if (grouped.joined_group.length)
+        parts.push(
+          `Demandes d'ajout à un groupe envoyées : ${grouped.joined_group.join(", ")}.`
+        );
+      if (grouped.duplicate.length)
+        parts.push(`Déjà inscrit(e) sur : ${grouped.duplicate.join(", ")}.`);
+      if (grouped.error.length)
+        parts.push(`Erreurs sur : ${grouped.error.join(", ")}.`);
 
       setShowBooking(false);
-      setConfirmationMsg(parts.length ? parts.join(' ') : "Demandes envoyées.");
+      setConfirmationMsg(
+        parts.length ? parts.join(" ") : "Demandes envoyées."
+      );
     } catch (e) {
-      console.error('Booking error (batch)', e);
+      console.error("Booking error (batch)", e);
       setConfirmationMsg("Erreur lors de la réservation. Réessayez plus tard.");
     } finally {
       setIsBooking(false);
