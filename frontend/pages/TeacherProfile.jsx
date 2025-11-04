@@ -79,29 +79,6 @@ function computeBookedAndRemaining(lessonsDocs, teacherDoc, forStudentId) {
   return { blocked, remainingMap };
 }
 
-const basePrice = Number(teacher.price_per_hour || 0);
-const visioPrice = effectiveVisioPrice(teacher);
-const p5 = pack5Display(teacher);
-const p10 = pack10Display(teacher);
-
-// --- UNIQUEMENT POUR L’AFFICHAGE DES PRIX (commissions incluses) ---
-const computePack = (rate, hours) => (rate > 0 ? Number((hours * rate * 0.9).toFixed(2)) : null);
-
-const displayHourPresentiel = Number.isFinite(basePrice) ? basePrice + 10 : null;
-
-const effectiveVisio = (visioPrice ?? basePrice);
-const displayHourVisio = teacher.visio_enabled ? (effectiveVisio + 10) : null;
-
-// Packs présentiel (on part de p5/p10 déjà calculés côté présentiel)
-const displayPack5Presentiel  = p5  != null ? p5  + 50  : null;
-const displayPack10Presentiel = p10 != null ? p10 + 100 : null;
-
-// Packs visio (même logique, calculés sur le tarif visio effectif)
-const p5VisioRaw  = teacher.visio_enabled ? computePack(effectiveVisio, 5)  : null;
-const p10VisioRaw = teacher.visio_enabled ? computePack(effectiveVisio, 10) : null;
-const displayPack5Visio  = p5VisioRaw  != null ? p5VisioRaw  + 50  : null;
-const displayPack10Visio = p10VisioRaw != null ? p10VisioRaw + 100 : null;
-
 const DAYS_ORDER = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
 function pickDisplayName(x = {}) {
@@ -140,7 +117,7 @@ export default function TeacherProfile() {
   // ➕ Options de réservation (mode + pack)
   const [bookMode, setBookMode] = useState('presentiel'); // 'presentiel' | 'visio'
   const [packHours, setPackHours] = useState(1);          // 1 | 5 | 10
-
+  
   // Charger prof
   useEffect(() => {
     const unsubTeacher = onSnapshot(doc(db, 'users', teacherId), (snap) => {
@@ -492,6 +469,24 @@ export default function TeacherProfile() {
   const visioPrice = effectiveVisioPrice(teacher);
   const p5 = pack5Display(teacher);
   const p10 = pack10Display(teacher);
+
+  // --- UNIQUEMENT POUR L’AFFICHAGE DES PRIX (commissions incluses) ---
+  const computePack = (rate, hours) => (rate > 0 ? Number((hours * rate * 0.9).toFixed(2)) : null);
+
+  const displayHourPresentiel = Number.isFinite(basePrice) ? basePrice + 10 : null;
+
+  const effectiveVisio = (visioPrice ?? basePrice);
+  const displayHourVisio = teacher.visio_enabled ? (effectiveVisio + 10) : null;
+
+  // Packs présentiel
+  const displayPack5Presentiel  = p5  != null ? p5  + 50  : null;
+  const displayPack10Presentiel = p10 != null ? p10 + 100 : null;
+
+  // Packs visio
+  const p5VisioRaw  = teacher.visio_enabled ? computePack(effectiveVisio, 5)  : null;
+  const p10VisioRaw = teacher.visio_enabled ? computePack(effectiveVisio, 10) : null;
+  const displayPack5Visio  = p5VisioRaw  != null ? p5VisioRaw  + 50  : null;
+  const displayPack10Visio = p10VisioRaw != null ? p10VisioRaw + 100 : null;
 
   // —————————— UI / style inspiré Superprof ——————————
   return (
