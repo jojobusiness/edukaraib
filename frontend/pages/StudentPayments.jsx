@@ -159,12 +159,27 @@ export default function StudentPayments() {
           teacherName: await teacherNameOf(l.teacher_id),
         })));
 
+        // --- Regroupement pack ---
+        const groupMap = new Map();
+        for (const l of enriched) {
+          const key = packKey(l, user.uid); // ici l est directement une "lesson" dans StudentPayments
+          const isPackLesson = isPack(l);
+          if (!groupMap.has(key)) {
+            groupMap.set(key, { ...l, __groupCount: 1 });
+          } else if (isPackLesson) {
+            const rep = groupMap.get(key);
+            rep.__groupCount += 1;
+            groupMap.set(key, rep);
+          }
+        }
+        const groupedRows = Array.from(groupMap.values());
+
         // Éligible pour moi (mêmes règles que tu avais)
-        const eligibleForMe = enriched.filter((l) => isEligibleForMePayment(l, user.uid));
+        const eligibleForMe = groupedRows.filter((l) => isEligibleForMePayment(l, user.uid));
 
         // Payé / non payé pour moi (en respectant participantsMap / is_paid)
         const unpaid = eligibleForMe.filter((l) => !isPaidForStudent(l, user.uid));
-        const paidOnes = enriched.filter((l) => isPaidForStudent(l, user.uid));
+        const paidOnes = groupedRows.filter((l) => isPaidForStudent(l, user.uid));
 
         const keyTime = (l) =>
           (l.start_datetime?.toDate?.() && l.start_datetime.toDate().getTime()) ||

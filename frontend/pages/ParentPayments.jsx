@@ -61,10 +61,31 @@ const isEligibleForChildPayment = (lesson, childId) => {
 const lessonMode = (l) => (String(l.mode) === 'visio' || l.is_visio === true ? 'visio' : 'presentiel');
 const labelMode = (l) => (lessonMode(l) === 'visio' ? 'Visio' : 'Présentiel');
 const detectSource = (l) => {
+  const modeLabel = labelMode(l); // Visio | Présentiel
   const packType = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
-  if (packType === 'pack5' || String(l.pack_hours) === '5' || l.is_pack5 === true) return 'Pack 5h';
-  if (packType === 'pack10' || String(l.pack_hours) === '10' || l.is_pack10 === true) return 'Pack 10h';
-  return labelMode(l);
+  if (packType === 'pack5' || String(l.pack_hours) === '5' || l.is_pack5 === true) return `Pack 5h · ${modeLabel}`;
+  if (packType === 'pack10' || String(l.pack_hours) === '10' || l.is_pack10 === true) return `Pack 10h · ${modeLabel}`;
+  return modeLabel;
+};
+
+// --- Pack helpers (affichage / regroupement) ---
+const isPack = (l) => {
+  const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
+  return pt === 'pack5' || pt === 'pack10' || String(l.pack_hours) === '5' || String(l.pack_hours) === '10' || l.is_pack5 === true || l.is_pack10 === true;
+};
+const packHoursOf = (l) => {
+  if (String(l.pack_hours) === '5' || l.is_pack5 === true) return 5;
+  if (String(l.pack_hours) === '10' || l.is_pack10 === true) return 10;
+  const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
+  return pt === 'pack5' ? 5 : pt === 'pack10' ? 10 : 1;
+};
+// Regroupe toutes les heures d’un pack en UN SEUL item (clé pack)
+const packKey = (l, forStudent) => {
+  if (!isPack(l)) return `lesson:${l.id}:${forStudent}`;
+  const hours = packHoursOf(l);
+  const mode = (String(l.mode) === 'visio' || l.is_visio === true) ? 'visio' : 'presentiel';
+  // Si tu as un champ dédié (ex: l.pack_id), remplace la partie AUTO par l.pack_id
+  return String(l.pack_id || l.pack_group_id || `AUTO:${l.teacher_id}|${l.subject_id || ''}|${mode}|${hours}|${forStudent}`);
 };
 
 export default function ParentPayments() {
@@ -163,15 +184,38 @@ export default function ParentPayments() {
           }
         }
 
-        const notPendingTeacher = (r) => r.lesson.status !== 'pending_teacher';
+        // --- Regroupement pack : 1 ligne pack au lieu de N heures ---
+        const groupMap = new Map();
+        /** rows = [{ lesson, forStudent, teacherName, childName }] */
+        for (const r of rows) {
+          const key = packKey(r.lesson, r.forStudent);
+          const isPackLesson = isPack(r.lesson);
 
-        const unpaid = rows.filter((r) =>
+          if (!groupMap.has(key)) {
+            // On garde un "représentant"
+            groupMap.set(key, { ...r, __groupCount: 1 });
+          } else if (isPackLesson) {
+            // Pour un pack, on compacte les heures en 1 seule ligne (on conserve le 1er représentant)
+            const rep = groupMap.get(key);
+            rep.__groupCount += 1;
+            // On peut éventuellement agréger une date indicative (ex: la plus proche)
+            // Ici, on ne touche pas aux montants: getDisplayAmount() sait déjà calculer total pack (base + 10€/h × 5/10)
+            groupMap.set(key, rep);
+          } else {
+            // Pour un cours non-pack, on ignore ce cas (clé unique par leçon)
+          }
+        }
+        const groupedRows = Array.from(groupMap.values());
+
+          const notPendingTeacher = (r) => r.lesson.status !== 'pending_teacher';
+
+          const unpaid = groupedRows.filter((r) =>
           isEligibleForChildPayment(r.lesson, r.forStudent) &&
           !isPaidForStudent(r.lesson, r.forStudent) &&
           notPendingTeacher(r)
         );
 
-        const paidEligible = rows.filter((r) =>
+        const paidEligible = groupedRows.filter((r) =>
           isPaidForStudent(r.lesson, r.forStudent) &&
           notPendingTeacher(r)
         );
