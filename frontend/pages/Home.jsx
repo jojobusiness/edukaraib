@@ -293,7 +293,7 @@ export default function Home() {
                     </div>
                     {prof.price_per_hour && (
                       <div className="mt-2 font-semibold">
-                        {Number(prof.price_per_hour).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} / h
+                        {(Number(prof.price_per_hour) + 10).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} / h
                       </div>
                     )}
                   </div>

@@ -79,6 +79,29 @@ function computeBookedAndRemaining(lessonsDocs, teacherDoc, forStudentId) {
   return { blocked, remainingMap };
 }
 
+const basePrice = Number(teacher.price_per_hour || 0);
+const visioPrice = effectiveVisioPrice(teacher);
+const p5 = pack5Display(teacher);
+const p10 = pack10Display(teacher);
+
+// --- UNIQUEMENT POUR L’AFFICHAGE DES PRIX (commissions incluses) ---
+const computePack = (rate, hours) => (rate > 0 ? Number((hours * rate * 0.9).toFixed(2)) : null);
+
+const displayHourPresentiel = Number.isFinite(basePrice) ? basePrice + 10 : null;
+
+const effectiveVisio = (visioPrice ?? basePrice);
+const displayHourVisio = teacher.visio_enabled ? (effectiveVisio + 10) : null;
+
+// Packs présentiel (on part de p5/p10 déjà calculés côté présentiel)
+const displayPack5Presentiel  = p5  != null ? p5  + 50  : null;
+const displayPack10Presentiel = p10 != null ? p10 + 100 : null;
+
+// Packs visio (même logique, calculés sur le tarif visio effectif)
+const p5VisioRaw  = teacher.visio_enabled ? computePack(effectiveVisio, 5)  : null;
+const p10VisioRaw = teacher.visio_enabled ? computePack(effectiveVisio, 10) : null;
+const displayPack5Visio  = p5VisioRaw  != null ? p5VisioRaw  + 50  : null;
+const displayPack10Visio = p10VisioRaw != null ? p10VisioRaw + 100 : null;
+
 const DAYS_ORDER = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
 function pickDisplayName(x = {}) {
@@ -496,17 +519,27 @@ export default function TeacherProfile() {
               {/* Tarifs en badges */}
               <div className="mt-4 flex flex-wrap gap-2">
                 <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
-                  Présentiel : <b>{Number.isFinite(basePrice) ? `${basePrice.toFixed(2)} € / h` : '—'}</b>
+                  Présentiel : <b>{displayHourPresentiel != null ? `${displayHourPresentiel.toFixed(2)} € / h` : '—'}</b>
                 </span>
                 <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
-                  Visio : <b>{teacher.visio_enabled ? `${(visioPrice ?? basePrice).toFixed(2)} € / h` : 'Non proposé'}</b>
+                  Visio : <b>{teacher.visio_enabled ? `${displayHourVisio.toFixed(2)} € / h` : 'Non proposé'}</b>
                 </span>
                 <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
-                  Pack 5h : <b>{p5 !== null ? `${p5.toFixed(2)} €` : '—'}</b>
+                  Pack 5h (présentiel) : <b>{displayPack5Presentiel != null ? `${displayPack5Presentiel.toFixed(2)} €` : '—'}</b>
                 </span>
                 <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
-                  Pack 10h : <b>{p10 !== null ? `${p10.toFixed(2)} €` : '—'}</b>
+                  Pack 10h (présentiel) : <b>{displayPack10Presentiel != null ? `${displayPack10Presentiel.toFixed(2)} €` : '—'}</b>
                 </span>
+                {teacher.visio_enabled && (
+                  <>
+                    <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
+                      Pack 5h (visio) : <b>{displayPack5Visio != null ? `${displayPack5Visio.toFixed(2)} €` : '—'}</b>
+                    </span>
+                    <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
+                      Pack 10h (visio) : <b>{displayPack10Visio != null ? `${displayPack10Visio.toFixed(2)} €` : '—'}</b>
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -538,10 +571,23 @@ export default function TeacherProfile() {
             </div>
             <div className="flex items-end">
               <div className="text-sm text-slate-700">
-                {packHours === 5 && p5 !== null && <>Total pack 5h : <b>{p5.toFixed(2)} €</b></>}
-                {packHours === 10 && p10 !== null && <>Total pack 10h : <b>{p10.toFixed(2)} €</b></>}
+                {packHours === 5 && (
+                  <>Total pack 5h : <b>{(
+                    (bookMode === 'visio' ? displayPack5Visio : displayPack5Presentiel)
+                    ?? 0
+                  ).toFixed(2)} €</b></>
+                )}
+                {packHours === 10 && (
+                  <>Total pack 10h : <b>{(
+                    (bookMode === 'visio' ? displayPack10Visio : displayPack10Presentiel)
+                    ?? 0
+                  ).toFixed(2)} €</b></>
+                )}
                 {packHours === 1 && (
-                  <>Tarif : <b>{(bookMode === 'visio' && visioPrice !== null ? visioPrice : basePrice).toFixed(2)} €</b> / h</>
+                  <>Tarif : <b>{(
+                    (bookMode === 'visio' ? displayHourVisio : displayHourPresentiel)
+                    ?? 0
+                  ).toFixed(2)} €</b> / h</>
                 )}
               </div>
             </div>
@@ -676,10 +722,18 @@ export default function TeacherProfile() {
             <hr className="my-4 border-gray-100" />
             <h4 className="text-sm font-semibold text-slate-900">Tarifs</h4>
             <div className="mt-2 text-sm text-slate-700 space-y-1">
-              <div>Présentiel : <b>{Number.isFinite(basePrice) ? `${basePrice.toFixed(2)} € / h` : '—'}</b></div>
-              <div>Visio : <b>{teacher.visio_enabled ? `${(visioPrice ?? basePrice).toFixed(2)} € / h` : '—'}</b></div>
-              <div>Pack 5h : <b>{p5 !== null ? `${p5.toFixed(2)} €` : '—'}</b></div>
-              <div>Pack 10h : <b>{p10 !== null ? `${p10.toFixed(2)} €` : '—'}</b></div>
+              <div>Présentiel : <b>{displayHourPresentiel != null ? `${displayHourPresentiel.toFixed(2)} € / h` : '—'}</b></div>
+              <div>Visio : <b>{teacher.visio_enabled ? `${displayHourVisio.toFixed(2)} € / h` : '—'}</b></div>
+
+              <div>Pack 5h (présentiel) : <b>{displayPack5Presentiel != null ? `${displayPack5Presentiel.toFixed(2)} €` : '—'}</b></div>
+              <div>Pack 10h (présentiel) : <b>{displayPack10Presentiel != null ? `${displayPack10Presentiel.toFixed(2)} €` : '—'}</b></div>
+
+              {teacher.visio_enabled && (
+                <>
+                  <div>Pack 5h (visio) : <b>{displayPack5Visio != null ? `${displayPack5Visio.toFixed(2)} €` : '—'}</b></div>
+                  <div>Pack 10h (visio) : <b>{displayPack10Visio != null ? `${displayPack10Visio.toFixed(2)} €` : '—'}</b></div>
+                </>
+              )}
             </div>
           </div>
         </aside>

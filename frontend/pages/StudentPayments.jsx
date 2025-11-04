@@ -115,44 +115,89 @@ export default function StudentPayments() {
     setUid(user.uid);
     setLoading(true);
 
-    const qLegacy = query(collection(db, 'lessons'), where('student_id', '==', user.uid));
-    const qGroup  = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', user.uid));
+    let unsubscribers = [];
 
-    let combined = new Map();
+    (async () => {
+      // 1) Résoudre toutes mes identités (uid + éventuel doc students)
+      const myAliases = new Set([String(user.uid)]);
 
-    const upsertAndRender = async () => {
-      const rows = Array.from(combined.values());
+      // a) doc students avec user_id == uid
+      try {
+        const s1 = await getDocs(query(collection(db, 'students'), where('user_id', '==', user.uid), limit(1)));
+        if (!s1.empty) {
+          const d = s1.docs[0];
+          myAliases.add(String(d.id));
+          const data = d.data() || {};
+          if (data.uid) myAliases.add(String(data.uid));
+          if (data.user_id) myAliases.add(String(data.user_id));
+        }
+      } catch {}
 
-      const enriched = await Promise.all(rows.map(async (l) => ({
-        ...l,
-        teacherName: await teacherNameOf(l.teacher_id),
-      })));
+      // b) doc students avec uid == uid
+      try {
+        const s2 = await getDocs(query(collection(db, 'students'), where('uid', '==', user.uid), limit(1)));
+        if (!s2.empty) {
+          const d = s2.docs[0];
+          myAliases.add(String(d.id));
+          const data = d.data() || {};
+          if (data.uid) myAliases.add(String(data.uid));
+          if (data.user_id) myAliases.add(String(data.user_id));
+        }
+      } catch {}
 
-      const eligibleForMe = enriched.filter((l) => isEligibleForMePayment(l, user.uid));
-      const unpaid = eligibleForMe.filter((l) => !isPaidForStudent(l, user.uid));
-      const paidOnes = enriched.filter((l) => isPaidForStudent(l, user.uid));
+      const aliases = Array.from(myAliases);
+      const chunks = [];
+      for (let i = 0; i < aliases.length; i += 10) chunks.push(aliases.slice(i, i + 10));
 
-      const keyTime = (l) =>
-        (l.start_datetime?.toDate?.() && l.start_datetime.toDate().getTime()) ||
-        (l.start_datetime?.seconds && l.start_datetime.seconds * 1000) ||
-        (Number.isFinite(l.slot_hour) ? l.slot_hour : 9_999_999);
+      let combined = new Map();
 
-      setToPay(unpaid.sort((a, b) => keyTime(a) - keyTime(b)));
-      setPaid(paidOnes.sort((a, b) => keyTime(b) - keyTime(a)));
-      setLoading(false);
-    };
+      const upsertAndRender = async () => {
+        const rows = Array.from(combined.values());
 
-    const unsubLegacy = onSnapshot(qLegacy, (snap) => {
-      snap.docs.forEach((d) => combined.set(d.id, { id: d.id, ...d.data() }));
-      upsertAndRender();
-    }, (e) => { console.error(e); setLoading(false); });
+        const enriched = await Promise.all(rows.map(async (l) => ({
+          ...l,
+          teacherName: await teacherNameOf(l.teacher_id),
+        })));
 
-    const unsubGroup = onSnapshot(qGroup, (snap) => {
-      snap.docs.forEach((d) => combined.set(d.id, { id: d.id, ...d.data() }));
-      upsertAndRender();
-    }, (e) => { console.error(e); setLoading(false); });
+        // Éligible pour moi (mêmes règles que tu avais)
+        const eligibleForMe = enriched.filter((l) => isEligibleForMePayment(l, user.uid));
 
-    return () => { unsubLegacy(); unsubGroup(); };
+        // Payé / non payé pour moi (en respectant participantsMap / is_paid)
+        const unpaid = eligibleForMe.filter((l) => !isPaidForStudent(l, user.uid));
+        const paidOnes = enriched.filter((l) => isPaidForStudent(l, user.uid));
+
+        const keyTime = (l) =>
+          (l.start_datetime?.toDate?.() && l.start_datetime.toDate().getTime()) ||
+          (l.start_datetime?.seconds && l.start_datetime.seconds * 1000) ||
+          (Number.isFinite(l.slot_hour) ? l.slot_hour : 9_999_999);
+
+        setToPay(unpaid.sort((a, b) => keyTime(a) - keyTime(b)));
+        setPaid(paidOnes.sort((a, b) => keyTime(b) - keyTime(a)));
+        setLoading(false);
+      };
+
+      // 2) Legacy: student_id IN (avec mes aliases)
+      for (const c of chunks) {
+        const qLegacy = query(collection(db, 'lessons'), where('student_id', 'in', c));
+        const unsub = onSnapshot(qLegacy, (snap) => {
+          snap.docs.forEach((d) => combined.set(d.id, { id: d.id, ...d.data() }));
+          upsertAndRender();
+        }, (e) => { console.error(e); setLoading(false); });
+        unsubscribers.push(unsub);
+      }
+
+      // 3) Groupes: array-contains sur participant_ids pour CHAQUE alias
+      aliases.forEach((aid) => {
+        const qGroup = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', aid));
+        const unsub = onSnapshot(qGroup, (snap) => {
+          snap.docs.forEach((d) => combined.set(d.id, { id: d.id, ...d.data() }));
+          upsertAndRender();
+        }, (e) => { console.error(e); setLoading(false); });
+        unsubscribers.push(unsub);
+      });
+    })();
+
+    return () => { unsubscribers.forEach((u) => u && u()); };
   }, []);
 
   const totals = useMemo(() => {
