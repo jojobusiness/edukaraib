@@ -196,13 +196,35 @@ function packLabel(c) {
 const isVisio = (l) => String(l?.mode || '').toLowerCase() === 'visio' || l?.is_visio === true;
 const hasVisioLink = (l) => !!l?.visio?.joinUrl;
 
-function canJoinNow(l) {
-  if (!isVisio(l) || !hasVisioLink(l)) return false;
-  const now = Date.now();
+// remplace l'ancienne canJoinNow par ces deux helpers
+function getJoinState(l) {
+  // 1) si le prof a posé des bornes -> on s'y fie
+  const opensAtIso = l?.visio?.opens_at;
+  const expiresAtIso = l?.visio?.expires_at;
+
+  if (opensAtIso || expiresAtIso) {
+    const now = Date.now();
+    const openMs = opensAtIso ? Date.parse(opensAtIso) : 0;
+    const endMs  = expiresAtIso ? Date.parse(expiresAtIso) : 0;
+    if (openMs && now < openMs) return 'before';
+    if (endMs  && now > endMs ) return 'expired';
+    return 'open';
+  }
+
+  // 2) fallback si pas de bornes stockées: -15min / +1h autour du créneau
   const start = nextOccurrence(l.slot_day, l.slot_hour, new Date());
-  if (!start) return true;
+  if (!start) return 'open'; // si pas de slot exploitable, on n'empêche pas
   const startMs = start.getTime();
-  return now >= (startMs - 15 * 60 * 1000) && now <= (startMs + 3 * 60 * 60 * 1000);
+  const now = Date.now();
+  const windowStart = startMs - 15 * 60 * 1000;   // 15 min avant
+  const windowEnd   = startMs + 60 * 60 * 1000;   // +1h après (obsolète passé 1h)
+  if (now < windowStart) return 'before';
+  if (now > windowEnd)   return 'expired';
+  return 'open';
+}
+
+function canJoinNow(l) {
+  return getJoinState(l) === 'open';
 }
 
 /* =================== PAGE =================== */
@@ -652,18 +674,29 @@ export default function ParentCourses() {
         <div className="flex flex-wrap gap-2">
           {/* Visio */}
           {isVisio(c) && (
-            hasVisioLink(c) ? (
-              <a
-                href={c.visio.joinUrl}
-                target="_blank"
-                rel="noreferrer"
-                className={`px-4 py-2 rounded shadow font-semibold text-white ${canJoinNow(c) ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-gray-400 cursor-not-allowed'}`}
-                title={canJoinNow(c) ? 'Rejoindre la visio' : 'Le lien sera actif à l\'heure du cours'}
-                onClick={(e) => { if (!canJoinNow(c)) e.preventDefault(); }}
-              >
-                🎥 Rejoindre la visio
-              </a>
-            ) : (
+            hasVisioLink(c) ? (() => {
+              const state = getJoinState(c);
+              const disabled = state !== 'open';
+              const title =
+                state === 'before' ? "Le lien sera actif à l'heure du cours"
+                : state === 'expired' ? "Lien expiré"
+                : "Rejoindre la visio";
+
+              return (
+                <a
+                  href={disabled ? undefined : c.visio.joinUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={`px-4 py-2 rounded shadow font-semibold text-white ${
+                    disabled ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
+                  title={title}
+                  onClick={(e) => { if (disabled) e.preventDefault(); }}
+                >
+                  🎥 Rejoindre la visio
+                </a>
+              );
+            })() : (
               <span className="px-3 py-2 rounded bg-gray-100 text-gray-600 font-semibold">
                 🔒 En attente du lien visio
               </span>

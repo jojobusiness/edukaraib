@@ -271,15 +271,51 @@ function packLabel(c) {
 const isVisio = (l) => String(l?.mode || '').toLowerCase() === 'visio' || l?.is_visio === true;
 const hasVisioLink = (l) => !!l?.visio?.joinUrl;
 
+// Use your existing nextOccurrence(day, hour). If you don't have it, keep this fallback:
+function nextOccurrence(day, hour, base = new Date()) {
+  // day like "Lundi" or "2025-11-04", adapt to your format if needed.
+  // If you already have nextOccurrence in this file, REMOVE this function.
+  try {
+    const d = new Date(base);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(day))) {
+      const [Y,M,D] = String(day).split('-').map(Number);
+      d.setFullYear(Y, M-1, D);
+    } else {
+      // basic weekday resolver (Mon..Sun), adjust names to your data
+      const map = { 'lundi':1,'mardi':2,'mercredi':3,'jeudi':4,'vendredi':5,'samedi':6,'dimanche':0 };
+      const want = map[String(day).toLowerCase()] ?? d.getDay();
+      const cur = d.getDay();
+      let add = (want - cur + 7) % 7;
+      if (add === 0 && (d.getHours() > hour || (d.getHours() === hour && d.getMinutes() > 0))) add = 7;
+      d.setDate(d.getDate() + add);
+    }
+    d.setHours(Number(hour || 0), 0, 0, 0);
+    return d;
+  } catch { return null; }
+}
+
+function computeVisioWindow(lesson) {
+  // Window: open right away if you want immediate join, or from 15 min before start
+  const start = nextOccurrence(lesson.slot_day, lesson.slot_hour, new Date());
+  const opensAt = start ? new Date(start.getTime() - 15 * 60 * 1000) : new Date();
+  const durationH = Number(lesson.duration_hours) > 0 ? Number(lesson.duration_hours) : 1; // par défaut 1h
+  const expiresAt = start ? new Date(start.getTime() + durationH * 60 * 60 * 1000) : new Date(Date.now() + durationH * 60 * 60 * 1000);
+  return { opensAt, expiresAt };
+}
+
 function makeJitsiVisio(lesson) {
   const base = lesson.pack_id ? lesson.pack_id : lesson.id;
   const slug = `EduKaraib-${base}-${Math.random().toString(36).slice(2,8)}`;
+  const { opensAt, expiresAt } = computeVisioWindow(lesson);
   return {
     provider: "jitsi",
     roomId: slug,
     joinUrl: `https://meet.jit.si/${slug}`,
+    opens_at: opensAt.toISOString(),
+    expires_at: expiresAt.toISOString(),
     created_by: auth.currentUser?.uid || null,
     created_at: serverTimestamp(),
+    revoked: false, // we can flip this later if you click "Renew"
   };
 }
 
@@ -652,23 +688,13 @@ export default function TeacherLessons() {
   }
 
   async function createVisioLink(lesson) {
-    if (!isVisio(lesson)) {
-      alert("Ce cours n'est pas en visio.");
-      return;
-    }
-    if (hasVisioLink(lesson)) {
-      alert("Le lien visio existe déjà.");
-      return;
-    }
+    if (!isVisio(lesson)) { alert("Ce cours n'est pas en visio."); return; }
+    if (hasVisioLink(lesson)) { alert("Le lien visio existe déjà."); return; }
     try {
       const payload = makeJitsiVisio(lesson);
       await updateDoc(doc(db, 'lessons', lesson.id), { visio: payload });
-      // mise à jour optimiste
       setLessons(prev => prev.map(x => x.id === lesson.id ? { ...x, visio: { ...payload, created_at: new Date() } } : x));
-    } catch (e) {
-      console.error(e);
-      alert("Impossible de créer le lien visio.");
-    }
+    } catch (e) { console.error(e); alert("Impossible de créer le lien visio."); }
   }
 
   // actions groupe (par élève)
@@ -849,24 +875,52 @@ export default function TeacherLessons() {
             {/* Visio actions */}
             {isVisio(lesson) && (
               hasVisioLink(lesson) ? (
-                <>
-                  <a
-                    href={lesson.visio.joinUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded shadow font-semibold"
-                    title="Ouvrir la visio"
-                  >
-                    🎥 Démarrer la visio
-                  </a>
-                  <button
-                    className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded shadow font-semibold"
-                    onClick={() => navigator.clipboard.writeText(lesson.visio.joinUrl)}
-                    title="Copier le lien"
-                  >
-                    🔗 Copier le lien
-                  </button>
-                </>
+                (() => {
+                  const now = Date.now();
+                  const exp = Date.parse(lesson.visio?.expires_at || "");
+                  const rev = !!lesson.visio?.revoked;
+
+                  // Si le lien est révoqué ou expiré → bouton "Renouveler"
+                  if (rev || (exp && now > exp)) {
+                    return (
+                      <button
+                        className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-2 rounded shadow font-semibold"
+                        onClick={async () => {
+                          try {
+                            await updateDoc(doc(db, "lessons", lesson.id), { "visio.revoked": true });
+                            await createVisioLink(lesson);
+                          } catch (e) {
+                            console.error(e);
+                          }
+                        }}
+                      >
+                        ♻️ Renouveler le lien
+                      </button>
+                    );
+                  }
+
+                  // Sinon → démarrer la visio + copier le lien
+                  return (
+                    <>
+                      <a
+                        href={lesson.visio?.joinUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded shadow font-semibold"
+                        title="Ouvrir la visio"
+                      >
+                        🎥 Démarrer la visio
+                      </a>
+                      <button
+                        className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded shadow font-semibold"
+                        onClick={() => navigator.clipboard.writeText(lesson.visio?.joinUrl || "")}
+                        title="Copier le lien"
+                      >
+                        🔗 Copier le lien
+                      </button>
+                    </>
+                  );
+                })()
               ) : (
                 <button
                   className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded shadow font-semibold"
