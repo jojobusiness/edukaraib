@@ -265,6 +265,20 @@ export default function TeacherProfile() {
   const handleBooking = async (selected) => {
     if (!auth.currentUser) return navigate('/login');
     if (!canBook) {
+      // pack context
+      const isPack = packHours === 5 || packHours === 10;
+      const packId = isPack
+        ? `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${packHours}_${bookMode}`
+        : null;
+      const packPayload = isPack
+        ? {
+            is_pack: true,
+            pack_id: packId,
+            pack_hours: packHours,
+            pack_type: packHours === 5 ? 'pack5' : 'pack10',
+            require_accept_all: true, // utile pour la logique d'acceptation groupée
+          }
+        : {};
       setShowBooking(false);
       setConfirmationMsg("Les comptes professeurs ne peuvent pas réserver de cours.");
       return;
@@ -317,14 +331,17 @@ export default function TeacherProfile() {
             continue;
           }
 
-          // Rejoindre un groupe existant s’il y en a
-          const qExisting = query(
+          // Rejoindre un groupe existant s’il y en a (pas pour les packs)
+          if (!isPack) {
+            const qExisting = query(
             collection(db, 'lessons'),
             where('teacher_id', '==', teacherId),
             where('slot_day', '==', slot.day),
             where('slot_hour', '==', slot.hour),
             where('is_group', '==', true)
           );
+          if (joined) continue;
+          }
           const existSnap = await getDocs(qExisting);
           let joined = false;
           for (const d of existSnap.docs) {
@@ -393,6 +410,7 @@ export default function TeacherProfile() {
                 },
               },
               mode: bookMode,
+              packPayload,
             });
             await addDoc(collection(db, 'notifications'), {
               user_id: teacherId, read: false, created_at: serverTimestamp(),
@@ -418,6 +436,7 @@ export default function TeacherProfile() {
               participant_ids: [],
               participantsMap: {},
               mode: bookMode,
+              packPayload,
             });
             await addDoc(collection(db, 'notifications'), {
               user_id: teacherId, read: false, created_at: serverTimestamp(),

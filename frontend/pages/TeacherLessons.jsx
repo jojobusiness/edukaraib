@@ -381,6 +381,23 @@ export default function TeacherLessons() {
             return { ...l, studentName, participantDetails, requesterName };
           })
         );
+        
+        // --- Regroupement visuel des packs : 1 carte par pack_id ---
+        const packCount = new Map();
+        enriched.forEach((l) => {
+          if (l.pack_id) packCount.set(l.pack_id, (packCount.get(l.pack_id) || 0) + 1);
+        });
+        const seenPack = new Set();
+        const compact = [];
+        for (const l of enriched) {
+          if (l.pack_id) {
+            if (seenPack.has(l.pack_id)) continue; // ne garder que la 1ère carte du pack
+            seenPack.add(l.pack_id);
+            compact.push({ ...l, __packCount: packCount.get(l.pack_id) || (l.pack_hours || 1) });
+          } else {
+            compact.push(l);
+          }
+        }
 
         // enrichir pendingIndiv
         const pIndiv = pIndivRaw.map((pi) => {
@@ -407,7 +424,7 @@ export default function TeacherLessons() {
         );
 
         // tri par date décroissante pour la liste principale
-        const enrichedSorted = [...enriched].sort((a, b) => {
+        const enrichedSorted = [...compact].sort((a, b) => {
           const aTs =
             (a.start_datetime?.toDate?.() && a.start_datetime.toDate().getTime()) ||
             (a.start_datetime?.seconds && a.start_datetime.seconds * 1000) ||
@@ -475,6 +492,25 @@ export default function TeacherLessons() {
     try {
       const ref = doc(db, 'lessons', lesson.id);
       await updateDoc(ref, { status, ...(status === 'completed' ? { completed_at: serverTimestamp() } : {}) });
+
+      // Si c'est un pack : propager le même statut à toutes les séances du pack
+      try {
+        if (lesson.pack_id && (status === 'confirmed' || status === 'rejected' || status === 'completed')) {
+          const qPack = query(
+            collection(db, 'lessons'),
+            where('teacher_id', '==', auth.currentUser.uid),
+            where('pack_id', '==', lesson.pack_id)
+          );
+          const packSnap = await getDocs(qPack);
+          const updates = packSnap.docs
+            .filter((d) => d.id !== lesson.id) // la séance courante est déjà MAJ
+            .map((d) => updateDoc(doc(db, 'lessons', d.id), {
+              status,
+              ...(status === 'completed' ? { completed_at: serverTimestamp() } : {}),
+            }));
+          await Promise.all(updates);
+        }
+      } catch {}
 
       // MAJ optimiste
       setLessons((prev) => prev.map((x) => (x.id === lesson.id ? { ...x, status } : x)));
@@ -654,6 +690,11 @@ export default function TeacherLessons() {
             {indivPaidPill}
             {/* ——— NOUVEAU : pastilles mode & pack ——— */}
             <ModePackPills l={lesson} />
+            {lesson.pack_id && (
+              <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded ml-1">
+                {lesson.pack_hours >= 10 ? 'Pack 10h' : 'Pack 5h'} • {(lesson.__packCount || lesson.pack_hours || 1)} séances
+              </span>
+            )}
             {/* ———————————————————————————————— */}
             {isGroup && (
               <>
