@@ -84,6 +84,37 @@ const detectSource = (l) => {
   return labelMode(l);
 };
 
+// --- Pack helpers (affichage / regroupement) ---
+const isPack = (l) => {
+  const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
+  return (
+    pt === 'pack5' ||
+    pt === 'pack10' ||
+    String(l.pack_hours) === '5' ||
+    String(l.pack_hours) === '10' ||
+    l.is_pack5 === true ||
+    l.is_pack10 === true
+  );
+};
+
+const packHoursOf = (l) => {
+  if (String(l.pack_hours) === '5' || l.is_pack5 === true) return 5;
+  if (String(l.pack_hours) === '10' || l.is_pack10 === true) return 10;
+  const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
+  return pt === 'pack5' ? 5 : pt === 'pack10' ? 10 : 1;
+};
+
+// Regroupe toutes les heures d’un pack en UN SEUL item (clé pack)
+const packKey = (l, forStudent) => {
+  if (!isPack(l)) return `lesson:${l.id}:${forStudent}`;
+  const hours = packHoursOf(l);
+  const mode = String(l.mode) === 'visio' || l.is_visio === true ? 'visio' : 'presentiel';
+  // Si tu as un champ dédié (ex: l.pack_id), remplace AUTO par l.pack_id
+  return String(
+    l.pack_id || l.pack_group_id || `AUTO:${l.teacher_id}|${l.subject_id || ''}|${mode}|${hours}|${forStudent}`
+  );
+};
+
 export default function StudentPayments() {
   const [toPay, setToPay] = useState([]);
   const [paid, setPaid] = useState([]);
