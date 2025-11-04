@@ -40,12 +40,28 @@ const toNumber = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const getBaseAmount = (l) =>
-  toNumber(l.total_amount) ||
-  toNumber(l.total_price) ||
-  toNumber(l.amount_paid) ||
-  toNumber(l.amount) ||
-  toNumber(l.price_per_hour);
+const getBaseAmount = (l) => {
+  const isPackLesson = (() => {
+    const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
+    return pt === 'pack5' || pt === 'pack10' || String(l.pack_hours) === '5' || String(l.pack_hours) === '10' || l.is_pack5 === true || l.is_pack10 === true;
+  })();
+  if (isPackLesson) {
+    const hours = billedHours(l);
+    const isVisio = String(l.mode) === 'visio' || l.is_visio === true;
+    const baseRate = isVisio && l.visio_enabled && l.visio_same_rate === false
+      ? toNumber(l.visio_price_per_hour)
+      : toNumber(l.price_per_hour);
+    const packCalc = Number.isFinite(baseRate) ? Number((baseRate * hours * 0.9).toFixed(2)) : 0;
+    return toNumber(l.total_amount) || toNumber(l.total_price) || packCalc;
+  }
+  return (
+    toNumber(l.total_amount) ||
+    toNumber(l.total_price) ||
+    toNumber(l.amount_paid) ||
+    toNumber(l.amount) ||
+    toNumber(l.price_per_hour)
+  );
+};
 
 const getDisplayAmount = (l) => {
   const base = getBaseAmount(l) || 0;
@@ -71,7 +87,7 @@ const isEligibleForMePayment = (lesson, uid) => {
     const st = lesson?.participantsMap?.[uid]?.status;
     return st === 'accepted' || st === 'confirmed';
   }
-  return lesson?.status === 'confirmed' || lesson?.status === 'completed';
+  return ['confirmed','completed','scheduled'].includes(lesson?.status);
 };
 
 // --- NOUVEAU : helpers d'étiquette ---
@@ -176,7 +192,7 @@ export default function StudentPayments() {
         }
       } catch {}
 
-      const aliases = Array.from(myAliases);
+      const aliases = Array.from(new Set(Array.from(myAliases).filter(Boolean).map(String)));
       const chunks = [];
       for (let i = 0; i < aliases.length; i += 10) chunks.push(aliases.slice(i, i + 10));
 

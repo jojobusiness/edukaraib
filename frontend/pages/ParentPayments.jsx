@@ -29,8 +29,23 @@ const fmtDateTime = (start_datetime, slot_day, slot_hour) => {
   return '—';
 };
 const toNumber = (v) => { const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v); return Number.isFinite(n) ? n : 0; };
-const getBaseAmount = (l) =>
-  toNumber(l.total_amount) || toNumber(l.total_price) || toNumber(l.amount_paid) || toNumber(l.amount) || toNumber(l.price_per_hour);
+const getBaseAmount = (l) => {
+  // Packs : si pas de total stocké, on reconstitue (tarif × heures × 0,9)
+  const isPackLesson = (() => {
+    const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
+    return pt === 'pack5' || pt === 'pack10' || String(l.pack_hours) === '5' || String(l.pack_hours) === '10' || l.is_pack5 === true || l.is_pack10 === true;
+  })();
+  if (isPackLesson) {
+    const hours = billedHours(l);
+    const isVisio = String(l.mode) === 'visio' || l.is_visio === true;
+    const baseRate = isVisio && l.visio_enabled && l.visio_same_rate === false
+      ? toNumber(l.visio_price_per_hour)
+      : toNumber(l.price_per_hour);
+    const packCalc = Number.isFinite(baseRate) ? Number((baseRate * hours * 0.9).toFixed(2)) : 0;
+    return toNumber(l.total_amount) || toNumber(l.total_price) || packCalc;
+  }
+  return toNumber(l.total_amount) || toNumber(l.total_price) || toNumber(l.amount_paid) || toNumber(l.amount) || toNumber(l.price_per_hour);
+};
 const getDisplayAmount = (l) => {
   const base = getBaseAmount(l) || 0;
   const fee = billedHours(l) * 10;
@@ -54,7 +69,7 @@ const isEligibleForChildPayment = (lesson, childId) => {
     const st = lesson?.participantsMap?.[childId]?.status;
     return st === 'accepted' || st === 'confirmed';
   }
-  return (lesson.status === 'confirmed' || lesson.status === 'completed') && lesson.student_id === childId;
+  return (['confirmed','completed','scheduled'].includes(lesson.status)) && String(lesson.student_id) === String(childId);
 };
 
 // --- NOUVEAU : helpers d'étiquette ---
@@ -150,12 +165,13 @@ export default function ParentPayments() {
       const kids = kidsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
       // IDs suivis = enfants + le parent lui-même (✅ pour voir ses propres paiements)
-      const childIds = [user.uid];
-      kids.forEach((k) => {
-        childIds.push(k.id);
-        if (k.user_id) childIds.push(k.user_id);
-        if (k.uid) childIds.push(k.uid);
-      });
+      const childIds = Array.from(
+        new Set(
+          [user.uid, ...kids.flatMap(k => [k.id, k.user_id, k.uid])]
+            .filter(Boolean)
+            .map(String)
+        )
+      );
 
       // 2) Abonnements live → legacy student_id IN (par lot) + groupes array-contains (par id suivi)
       const chunks = []; for (let i = 0; i < childIds.length; i += 10) chunks.push(childIds.slice(i, i + 10));
@@ -169,9 +185,12 @@ export default function ParentPayments() {
         for (const l of lessons) {
           // IDs (enfants + parent) présents dans cette leçon
           const presentIds = new Set();
-          if (l.student_id && childIds.includes(l.student_id)) presentIds.add(l.student_id);
+          if (l.student_id && childIds.includes(String(l.student_id))) presentIds.add(String(l.student_id));
           if (Array.isArray(l.participant_ids)) {
-            l.participant_ids.forEach((id) => { if (childIds.includes(id)) presentIds.add(id); });
+            l.participant_ids.forEach((id) => {
+              const sid = String(id);
+              if (childIds.includes(sid)) presentIds.add(sid);
+            });
           }
           // Une ligne PAR id présent
           for (const sid of presentIds) {
@@ -207,16 +226,13 @@ export default function ParentPayments() {
         }
         const groupedRows = Array.from(groupMap.values());
 
-          const notPendingTeacher = (r) => r.lesson.status !== 'pending_teacher';
-
-          const unpaid = groupedRows.filter((r) =>
-          isEligibleForChildPayment(r.lesson, r.forStudent) &&
-          !isPaidForStudent(r.lesson, r.forStudent) &&
-          notPendingTeacher(r)
+        const paidEligible = groupedRows.filter((r) =>
+          isPaidForStudent(r.lesson, r.forStudent)
         );
 
-        const paidEligible = groupedRows.filter((r) =>
-          isPaidForStudent(r.lesson, r.forStudent) &&
+        const unpaid = groupedRows.filter((r) =>
+          isEligibleForChildPayment(r.lesson, r.forStudent) &&
+          !isPaidForStudent(r.lesson, r.forStudent) &&
           notPendingTeacher(r)
         );
 
