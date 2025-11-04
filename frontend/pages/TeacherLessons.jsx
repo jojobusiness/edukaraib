@@ -35,6 +35,8 @@ const fmtTime = (ms) =>
 const fmtFromSlot = (slot_day, slot_hour) =>
   `${slot_day || ''} ${slot_hour != null ? `• ${String(slot_hour).padStart(2, '0')}:00` : ''}`.trim();
 
+const slotLabel = (l) => fmtFromSlot(l.slot_day, l.slot_hour);
+
 function When({ lesson }) {
   const ts = lesson?.start_datetime;
   if (ts?.toDate) {
@@ -289,6 +291,9 @@ export default function TeacherLessons() {
   const [pendingGroup, setPendingGroup] = useState([]); // [{lessonId, lesson, studentId, status, studentName, requesterName}]
   const [pendingIndiv, setPendingIndiv] = useState([]); // lessons individuels en attente (enrichis)
 
+  // Demandes "pack" (regroupées par pack_id)
+  const [pendingPacks, setPendingPacks] = useState([]); // [{ packId, lesson, slots: [ {day,hour,label} ], modeLabel, packLabel }]
+
   // ✅ Branche l'écoute Firestore quand auth est prêt
   useEffect(() => {
     let unsubLessons = null;
@@ -435,7 +440,57 @@ export default function TeacherLessons() {
             (b.created_at?.toDate?.() && b.created_at.toDate().getTime()) || 0;
           return bTs - aTs;
         });
+        // --- PENDING PACKS: 1 ligne par pack_id dans "Demandes" ---
+        const packLessons = enriched.filter(l => !!l.pack_id);
 
+        // un pack est "en attente" si AU MOINS une séance est en statut pending (cours indiv)
+        // ou si AU MOINS un participant du groupe est pending (cours groupe)
+        const packMap = new Map();
+        for (const l of packLessons) {
+          const isPendingIndiv = (!l.is_group && PENDING_SET.has(String(l.status || '')));
+          let isPendingGroup = false;
+          if (l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)) {
+            const pm = l.participantsMap || {};
+            for (const sid of (l.participant_ids || [])) {
+              const st = pm?.[sid]?.status;
+              if (!st || PENDING_SET.has(String(st)) || (st !== 'accepted' && st !== 'confirmed')) {
+                if (st !== 'rejected' && st !== 'removed' && st !== 'deleted') {
+                  isPendingGroup = true;
+                  break;
+                }
+              }
+            }
+          }
+          const isPending = isPendingIndiv || isPendingGroup;
+
+          if (!isPending) continue;
+
+          const key = l.pack_id;
+          if (!packMap.has(key)) {
+            packMap.set(key, {
+              packId: key,
+              lesson: l, // représentant (on s’en sert pour handleStatus)
+              slots: [{ day: l.slot_day, hour: l.slot_hour, label: slotLabel(l) }],
+              modeLabel: modeLabel(l),
+              packLabel: packLabel(l),
+            });
+          } else {
+            const obj = packMap.get(key);
+            obj.slots.push({ day: l.slot_day, hour: l.slot_hour, label: slotLabel(l) });
+          }
+        }
+
+        // tri des créneaux par jour/heure puis tri des packs par 1er créneau
+        const sortedPendingPacks = Array.from(packMap.values()).map((p) => ({
+          ...p,
+          slots: p.slots
+            .filter(s => s.label && s.label.trim())
+            .sort((a, b) => (a.day || '').localeCompare(b.day || '') || Number(a.hour || 0) - Number(b.hour || 0)),
+        }));
+
+        sortedPendingPacks.sort((a, b) => (a.slots[0]?.label || '').localeCompare(b.slots[0]?.label || ''));
+
+        setPendingPacks(sortedPendingPacks);
         setLessons(enrichedSorted);
         setPendingIndiv(pIndiv);
         setPendingGroup(pGroup);
@@ -818,7 +873,51 @@ export default function TeacherLessons() {
                   ))}
                 </div>
               )}
+              {/* PACKS — demandes groupées */}
+              {pendingPacks.length > 0 && (
+                <div className="bg-white p-4 rounded-xl shadow border mb-6">
+                  <div className="font-semibold text-sm mb-3">Packs — demandes groupées</div>
+                  <ul className="space-y-2">
+                    {pendingPacks.map((p) => (
+                      <li key={p.packId} className="border rounded-lg px-3 py-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium">{p.lesson.subject_id || 'Cours'}</span>
+                          <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{p.modeLabel}</span>
+                          <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">{p.packLabel}</span>
+                          <span className="text-xs text-gray-500 ml-1">
+                            • {p.slots.length} horaires
+                          </span>
+                          <div className="ml-auto flex items-center gap-2">
+                            <button
+                              className="px-3 py-1 rounded bg-green-600 text-white text-xs"
+                              onClick={() => handleStatus(p.lesson, 'confirmed')}
+                              title="Accepter tout le pack"
+                            >
+                              ✅ Accepter tout
+                            </button>
+                            <button
+                              className="px-3 py-1 rounded bg-red-600 text-white text-xs"
+                              onClick={() => handleStatus(p.lesson, 'rejected')}
+                              title="Refuser tout le pack"
+                            >
+                              ❌ Refuser tout
+                            </button>
+                          </div>
+                        </div>
 
+                        {/* Liste des horaires du pack (visible) */}
+                        <div className="mt-2 text-xs text-gray-700">
+                          {p.slots.map((s, idx) => (
+                            <span key={idx} className="inline-block bg-gray-50 border rounded px-2 py-0.5 mr-1 mb-1">
+                              {s.label}
+                            </span>
+                          ))}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {demandesGroupes.length > 0 && (
                 <div className="bg-white p-4 rounded-xl shadow border">
                   <div className="font-semibold text-sm mb-3">Groupes — demandes par élève</div>
