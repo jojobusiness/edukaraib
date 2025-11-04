@@ -50,6 +50,16 @@ const isEligibleForChildPayment = (lesson, childId) => {
   return (lesson.status === 'confirmed' || lesson.status === 'completed') && lesson.student_id === childId;
 };
 
+// --- NOUVEAU : helpers d'étiquette ---
+const lessonMode = (l) => (String(l.mode) === 'visio' || l.is_visio === true ? 'visio' : 'presentiel');
+const labelMode = (l) => (lessonMode(l) === 'visio' ? 'Visio' : 'Présentiel');
+const detectSource = (l) => {
+  const packType = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
+  if (packType === 'pack5' || String(l.pack_hours) === '5' || l.is_pack5 === true) return 'Pack 5h';
+  if (packType === 'pack10' || String(l.pack_hours) === '10' || l.is_pack10 === true) return 'Pack 10h';
+  return labelMode(l);
+};
+
 export default function ParentPayments() {
   const [toPay, setToPay] = useState([]);   // [{ lesson, forStudent, teacherName, childName }]
   const [paid, setPaid] = useState([]);
@@ -312,6 +322,7 @@ export default function ParentPayments() {
                       <div className="text-xs text-gray-500">
                         {r.forStudent === auth.currentUser?.uid ? 'Parent' : 'Enfant'} : {r.childName || r.forStudent}
                       </div>
+                      <div className="text-xs text-gray-500">Type : {detectSource(r.lesson)}</div>
                       <div className="text-xs text-gray-500">📅 {fmtDateTime(r.lesson.start_datetime, r.lesson.slot_day, r.lesson.slot_hour)}</div>
                     </div>
 
@@ -356,6 +367,7 @@ export default function ParentPayments() {
                       <span className="text-xs text-gray-600">
                         {r.forStudent === auth.currentUser?.uid ? 'Parent' : 'Enfant'} : {r.childName || r.forStudent}
                       </span>
+                      <span className="text-xs text-gray-600">Type : {detectSource(r.lesson)}</span>
                       <span className="text-xs text-gray-600">Prof : {r.teacherName || r.lesson.teacher_id}</span>
                       <span className="text-green-600 text-xs font-semibold md:ml-auto">Payé</span>
                     </div>

@@ -52,6 +52,19 @@ const coerceLessonDate = (l) => {
 const monthLabel = (i) =>
   new Date(2000, i, 1).toLocaleDateString('fr-FR', { month: 'short' });
 
+// ----- Détection de la source (Présentiel / Visio / Pack) -----
+const detectSource = (l) => {
+  // Pack 5/10
+  const packType =
+    String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
+  if (packType === 'pack5' || String(l.pack_hours) === '5' || l.is_pack5 === true) return 'pack5';
+  if (packType === 'pack10' || String(l.pack_hours) === '10' || l.is_pack10 === true) return 'pack10';
+
+  // Visio / Présentiel
+  const isVisio = String(l.mode) === 'visio' || l.is_visio === true;
+  return isVisio ? 'visio' : 'presentiel';
+};
+
 export default function TeacherEarnings() {
   const [uid, setUid] = useState(auth.currentUser?.uid || null);
 
@@ -230,7 +243,33 @@ export default function TeacherEarnings() {
     };
   }, [lessons, selectedYear]);
 
-  // Historique paiements (déjà encaissés par le prof : basé sur leçons is_paid)
+  // Répartition par source (Présentiel / Visio / Pack 5h / Pack 10h)
+  const sourceBreakdown = useMemo(() => {
+    const acc = {
+      presentiel: { count: 0, gross: 0, net: 0 },
+      visio: { count: 0, gross: 0, net: 0 },
+      pack5: { count: 0, gross: 0, net: 0 },
+      pack10: { count: 0, gross: 0, net: 0 },
+    };
+    lessons.forEach((l) => {
+      if (!l.is_paid) return;
+      const d = getRevenueDate(l);
+      if (d.getFullYear() !== selectedYear) return;
+
+      const src = detectSource(l);
+      const amount = getPaidAmount(l);
+      const fee = Math.min(SITE_FEE_EUR, amount);
+      const net = Math.max(0, amount - fee);
+      const bucket = acc[src] || acc.presentiel;
+
+      bucket.count += 1;
+      bucket.gross += amount;
+      bucket.net += net;
+    });
+    return acc;
+  }, [lessons, selectedYear]);
+
+  // Historique encaissements (déjà payés côté élève)
   const paymentHistory = useMemo(() => {
     const rows = lessons
       .filter((l) => l.is_paid)
@@ -249,6 +288,8 @@ export default function TeacherEarnings() {
           l.student_name || l.studentIdName ||
           l.student_id || '—';
 
+        const source = detectSource(l); // <- NOUVEAU
+
         return {
           id: l.id,
           date,
@@ -256,6 +297,7 @@ export default function TeacherEarnings() {
           payerName,
           studentName,
           subject: l.subject_id || '—',
+          source, // 'presentiel' | 'visio' | 'pack5' | 'pack10'
           gross: amount,
           fee,
           net,
@@ -265,55 +307,6 @@ export default function TeacherEarnings() {
 
     return rows;
   }, [lessons, userNames, studentNames]);
-
-  // ---------- NOUVEAU : Paiements à venir (held) en fonction de la date du cours ----------
-  const upcomingHeld = useMemo(() => {
-    const now = new Date();
-
-    // Prend les payments "held", récupère la leçon liée pour sa date,
-    // garde ceux dont la date du cours est FUTURE.
-    const rows = payments
-      .filter((p) => String(p.status) === 'held')
-      .map((p) => {
-        const lesson = lessonById.get(String(p.lesson_id));
-        const start = lesson ? coerceLessonDate(lesson) : null;
-
-        // Montants : on privilégie les champs du doc payments s'ils existent
-        const gross = Number(p.gross_eur ?? NaN);
-        const netTeacher = Number(p.net_to_teacher_eur ?? NaN);
-        const fee = Number(p.fee_eur ?? NaN);
-
-        const hasAllFromPayment =
-          Number.isFinite(gross) && Number.isFinite(netTeacher) && Number.isFinite(fee);
-
-        // fallback depuis la leçon si nécessaire
-        let amountGross = hasAllFromPayment
-          ? gross
-          : Math.max(0, getPaidAmount(lesson)) + SITE_FEE_EUR; // brut ~ prix prof + 10€
-        let amountNet = hasAllFromPayment
-          ? netTeacher
-          : Math.max(0, getPaidAmount(lesson));                 // net prof ~ prix prof
-
-        // Infos d'affichage
-        const studentId = p.for_student || lesson?.student_id || null;
-        const studentDisplay =
-          (studentId && studentNames[studentId]) || studentId || '—';
-
-        return {
-          paymentId: p.id,
-          lessonId: String(p.lesson_id),
-          start,
-          subject: lesson?.subject_id || '—',
-          studentName: studentDisplay,
-          gross: amountGross,
-          net: amountNet,
-        };
-      })
-      .filter((r) => r.start && r.start.getTime() > now.getTime())
-      .sort((a, b) => a.start - b.start);
-
-    return rows;
-  }, [payments, lessonById, studentNames]);
 
   const loading = loadingLessons || loadingPayments;
 
@@ -345,39 +338,38 @@ export default function TeacherEarnings() {
           versés automatiquement à l’heure du cours.
         </div>
 
-        {/* ---------- Section Paiements à venir (retenus) ---------- */}
+        {/* ---------- Section Répartition par source ---------- */}
         <div className="bg-white rounded-xl shadow p-6 mb-8 border">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-bold text-primary">Paiements à venir (retenus)</h3>
-            {!loading && (
-              <span className="text-xs text-gray-500">
-                {upcomingHeld.length} paiement{upcomingHeld.length > 1 ? 's' : ''} programmé{upcomingHeld.length > 1 ? 's' : ''} à verser
-              </span>
-            )}
-          </div>
-
-          {loading ? (
-            <div className="text-gray-500">Chargement…</div>
-          ) : upcomingHeld.length === 0 ? (
-            <div className="text-gray-500 text-sm">Aucun paiement à venir.</div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {upcomingHeld.map((r) => (
-                <div key={`${r.paymentId}:${r.lessonId}`} className="border rounded-lg px-4 py-3 bg-gray-50 flex flex-col md:flex-row md:items-center gap-2">
-                  <div className="font-semibold text-primary">{r.subject}</div>
-                  <div className="text-xs text-gray-600">Élève : {r.studentName}</div>
+          <h3 className="font-bold text-primary mb-3">Répartition par source</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              { key: 'presentiel', label: 'Présentiel' },
+              { key: 'visio', label: 'Visio' },
+              { key: 'pack5', label: 'Pack 5h' },
+              { key: 'pack10', label: 'Pack 10h' },
+            ].map(({ key, label }) => {
+              const s = sourceBreakdown[key];
+              return (
+                <div key={key} className="rounded-lg border p-4 bg-gray-50">
+                  <div className="text-xs text-gray-500">{label}</div>
+                  <div className="text-lg font-bold">{fmtEUR(s.net)}</div>
                   <div className="text-xs text-gray-600">
-                    📅 {r.start.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
-                  </div>
-                  <div className="md:ml-auto flex items-center gap-3">
-                    <span className="text-xs text-gray-700">Brut&nbsp;: {fmtEUR(r.gross)}</span>
-                    <span className="text-xs text-green-700 font-semibold">Net&nbsp;: {fmtEUR(r.net)}</span>
+                    Brut {fmtEUR(s.gross)} · {s.count} paiement{s.count > 1 ? 's' : ''}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+              );
+            })}
+          </div>
         </div>
+
+        {/* ---------- Section Paiements à venir (retenus) ---------- */}
+        <UpcomingHeldSection
+          loadingLessons={loadingLessons}
+          loadingPayments={loadingPayments}
+          payments={payments}
+          lessonById={lessonById}
+          studentNames={studentNames}
+        />
 
         {/* Résumé (brut/net sur l'année) */}
         <div className="bg-white rounded-xl shadow p-6 mb-8 border">
@@ -400,9 +392,104 @@ export default function TeacherEarnings() {
           <EarningsChart chartData={chartData} commissionRate={0} />
         </div>
 
-        {/* Historique encaissements (déjà payés côté élève) */}
-        <PaymentsTable rows={paymentHistory} />
+        {/* Historique encaissements (déjà payés) */}
+        <PaymentsTable
+          rows={paymentHistory.map((r) => ({
+            ...r,
+            // on enrichit l’intitulé pour que la source soit visible dans le tableau
+            subject: `${r.subject} · ${
+              r.source === 'presentiel' ? 'Présentiel'
+              : r.source === 'visio' ? 'Visio'
+              : r.source === 'pack5' ? 'Pack 5h'
+              : 'Pack 10h'
+            }`,
+          }))}
+        />
       </div>
     </DashboardLayout>
+  );
+}
+
+/** Sous-composant : Paiements retenus à venir (inchangé sauf extraction) */
+function UpcomingHeldSection({ loadingLessons, loadingPayments, payments, lessonById, studentNames }) {
+  const loading = loadingLessons || loadingPayments;
+
+  const upcomingHeld = useMemo(() => {
+    const now = new Date();
+
+    const getPaidAmount = (l) =>
+      toNumber(l?.total_amount) ||
+      toNumber(l?.total_price) ||
+      toNumber(l?.amount_paid) ||
+      toNumber(l?.amount) ||
+      toNumber(l?.price_per_hour);
+
+    const rows = payments
+      .filter((p) => String(p.status) === 'held')
+      .map((p) => {
+        const lesson = lessonById.get(String(p.lesson_id));
+        const start = lesson ? coerceLessonDate(lesson) : null;
+
+        const gross = Number(p.gross_eur ?? NaN);
+        const netTeacher = Number(p.net_to_teacher_eur ?? NaN);
+        const hasAllFromPayment = Number.isFinite(gross) && Number.isFinite(netTeacher);
+
+        let amountGross = hasAllFromPayment
+          ? gross
+          : Math.max(0, getPaidAmount(lesson)) + SITE_FEE_EUR;
+        let amountNet = hasAllFromPayment ? netTeacher : Math.max(0, getPaidAmount(lesson));
+
+        const studentId = p.for_student || lesson?.student_id || null;
+        const studentDisplay = (studentId && studentNames[studentId]) || studentId || '—';
+
+        return {
+          paymentId: p.id,
+          lessonId: String(p.lesson_id),
+          start,
+          subject: lesson?.subject_id || '—',
+          studentName: studentDisplay,
+          gross: amountGross,
+          net: amountNet,
+        };
+      })
+      .filter((r) => r.start && r.start.getTime() > now.getTime())
+      .sort((a, b) => a.start - b.start);
+
+    return rows;
+  }, [payments, lessonById, studentNames]);
+
+  return (
+    <div className="bg-white rounded-xl shadow p-6 mb-8 border">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-bold text-primary">Paiements à venir (retenus)</h3>
+        {!loading && (
+          <span className="text-xs text-gray-500">
+            {upcomingHeld.length} paiement{upcomingHeld.length > 1 ? 's' : ''} programmé{upcomingHeld.length > 1 ? 's' : ''} à verser
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="text-gray-500">Chargement…</div>
+      ) : upcomingHeld.length === 0 ? (
+        <div className="text-gray-500 text-sm">Aucun paiement à venir.</div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {upcomingHeld.map((r) => (
+            <div key={`${r.paymentId}:${r.lessonId}`} className="border rounded-lg px-4 py-3 bg-gray-50 flex flex-col md:flex-row md:items-center gap-2">
+              <div className="font-semibold text-primary">{r.subject}</div>
+              <div className="text-xs text-gray-600">Élève : {r.studentName}</div>
+              <div className="text-xs text-gray-600">
+                📅 {r.start.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
+              </div>
+              <div className="md:ml-auto flex items-center gap-3">
+                <span className="text-xs text-gray-700">Brut&nbsp;: {fmtEUR(r.gross)}</span>
+                <span className="text-xs text-green-700 font-semibold">Net&nbsp;: {fmtEUR(r.net)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

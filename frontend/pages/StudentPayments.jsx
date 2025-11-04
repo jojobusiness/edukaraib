@@ -67,6 +67,16 @@ const isEligibleForMePayment = (lesson, uid) => {
   return lesson?.status === 'confirmed' || lesson?.status === 'completed';
 };
 
+// --- NOUVEAU : helpers d'étiquette ---
+const lessonMode = (l) => (String(l.mode) === 'visio' || l.is_visio === true ? 'visio' : 'presentiel');
+const labelMode = (l) => (lessonMode(l) === 'visio' ? 'Visio' : 'Présentiel');
+const detectSource = (l) => {
+  const packType = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
+  if (packType === 'pack5' || String(l.pack_hours) === '5' || l.is_pack5 === true) return 'Pack 5h';
+  if (packType === 'pack10' || String(l.pack_hours) === '10' || l.is_pack10 === true) return 'Pack 10h';
+  return labelMode(l);
+};
+
 export default function StudentPayments() {
   const [toPay, setToPay] = useState([]);
   const [paid, setPaid] = useState([]);
@@ -246,6 +256,7 @@ export default function StudentPayments() {
                       </span>
                     </div>
                     <div className="text-xs text-gray-500">Professeur : {l.teacherName || l.teacher_id}</div>
+                    <div className="text-xs text-gray-500">Type : {detectSource(l)}</div>
                     <div className="text-xs text-gray-500">📅 {fmtDateTime(l.start_datetime, l.slot_day, l.slot_hour)}</div>
                   </div>
 
@@ -286,6 +297,7 @@ export default function StudentPayments() {
                   <div className="flex flex-col md:flex-row md:items-center gap-2">
                     <span className="font-bold text-primary">{l.subject_id || 'Matière'}</span>
                     <span className="text-xs text-gray-600">{fmtDateTime(l.start_datetime, l.slot_day, l.slot_hour)}</span>
+                    <span className="text-xs text-gray-600">Type : {detectSource(l)}</span>
                     <span className="text-xs text-gray-600">Prof : {l.teacherName || l.teacher_id}</span>
                     <span className="text-green-600 text-xs font-semibold md:ml-auto">Payé</span>
                   </div>

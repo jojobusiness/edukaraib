@@ -87,7 +87,45 @@ function participantStatus(lesson, participantId) {
   return lesson?.participantsMap?.[participantId]?.status || null;
 }
 
-// ----------------------------------------------------------------------------
+// ---- Détection source & montant -------------------------------------------------
+function detectSource(lesson) {
+  const packType = String(lesson.pack_type || lesson.booking_kind || lesson.type || '').toLowerCase();
+  if (packType === 'pack5' || String(lesson.pack_hours) === '5' || lesson.is_pack5 === true) return 'pack5';
+  if (packType === 'pack10' || String(lesson.pack_hours) === '10' || lesson.is_pack10 === true) return 'pack10';
+  const isVisio = String(lesson.mode) === 'visio' || lesson.is_visio === true;
+  return isVisio ? 'visio' : 'presentiel';
+}
+
+/** Calcule le montant *professeur* en CENTIMES selon la source.
+ *  - pack5/pack10 : on prend le total du pack (total_amount/total_price/amount) s'il est déjà stocké.
+ *    sinon fallback = prix/h × heures (heures=5 ou 10 si pack_hours présent).
+ *  - visio : si visio_price_per_hour est présent et visio_same_rate == false -> utiliser ce tarif.
+ *    sinon -> price_per_hour.
+ *  - présentiel : price_per_hour.
+ */
+function computeTeacherAmountCents(lesson) {
+  const source = detectSource(lesson);
+  const hours = toNum(lesson.duration_hours) || 1;
+
+  if (source === 'pack5' || source === 'pack10') {
+    const storedTotal =
+      toNum(lesson.total_amount) || toNum(lesson.total_price) || toNum(lesson.amount);
+    if (storedTotal > 0) return Math.round(storedTotal * 100);
+
+    const baseRate = toNum(lesson.price_per_hour);
+    const packHours = source === 'pack5' ? 5 : 10;
+    return Math.max(0, Math.round(baseRate * packHours * 100));
+  }
+
+  // visio / présentiel
+  let rate = toNum(lesson.price_per_hour);
+  if (source === 'visio') {
+    const visioSame = lesson.visio_same_rate;
+    const visioRate = toNum(lesson.visio_price_per_hour);
+    if (visioSame === false && visioRate > 0) rate = visioRate;
+  }
+  return Math.max(0, Math.round(rate * hours * 100));
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -140,26 +178,28 @@ export default async function handler(req, res) {
     }
   } else {
     if (!(lesson.status === 'confirmed' || lesson.status === 'completed')) {
-      // on autorise aussi si déjà completed (paiement en retard)
       return res.status(400).json({ error: 'LESSON_NOT_CONFIRMED' });
     }
   }
 
-  // Montant = prof + 10€
-  const pricePerHour = toNum(lesson.price_per_hour);
-  const hours = toNum(lesson.duration_hours) || 1;
-  const teacherAmountCents = Math.max(0, Math.round(pricePerHour * hours * 100));
+  // Montant selon source
+  const source = detectSource(lesson);              // 'presentiel' | 'visio' | 'pack5' | 'pack10'
+  const teacherAmountCents = computeTeacherAmountCents(lesson);
   const siteFeeCents = 1000; // +10€
   const totalCents = teacherAmountCents + siteFeeCents;
   if (!(totalCents > 0)) return res.status(400).json({ error: 'INVALID_AMOUNT' });
-
-  // (Option A) — Encaissement sur la plateforme (PAS de transfer_data)
-  // On enverra l'argent au prof plus tard via un cron/CF (Stripe Transfers).
 
   // URLs
   const origin =
     req.headers?.origin ||
     `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}`;
+
+  const productName = lesson.subject_id ? `Cours de ${lesson.subject_id}` : 'Cours particulier';
+  const productDesc =
+    source === 'pack5' ? 'Pack 5h · Montant professeur + 10€ de frais plateforme'
+    : source === 'pack10' ? 'Pack 10h · Montant professeur + 10€ de frais plateforme'
+    : source === 'visio' ? 'Visio · Montant professeur + 10€ de frais plateforme'
+    : 'Présentiel · Montant professeur + 10€ de frais plateforme';
 
   // Métadonnées (sur la Session ET sur le PaymentIntent)
   const commonMetadata = {
@@ -170,6 +210,7 @@ export default async function handler(req, res) {
     site_fee_cents: String(siteFeeCents),
     is_group: String(!!isGroup),
     payer_uid: String(payerUid || ''),
+    lesson_source: source,                         // <- NOUVEAU
   };
 
   const session = await stripe.checkout.sessions.create({
@@ -180,8 +221,8 @@ export default async function handler(req, res) {
         price_data: {
           currency: 'eur',
           product_data: {
-            name: lesson.subject_id ? `Cours de ${lesson.subject_id}` : 'Cours particulier',
-            description: 'Montant professeur + 10€ de frais plateforme',
+            name: productName,
+            description: productDesc,
           },
           unit_amount: totalCents,
         },
@@ -201,6 +242,7 @@ export default async function handler(req, res) {
     lesson_id: String(lessonId),
     for_student: String(participantId),
     teacher_uid: String(lesson.teacher_id || ''),
+    lesson_source: source,                             // <- NOUVEAU
     gross_eur: totalCents / 100,
     fee_eur: siteFeeCents / 100,
     net_to_teacher_eur: teacherAmountCents / 100,
