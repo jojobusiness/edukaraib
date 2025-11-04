@@ -17,6 +17,69 @@ import {
 import { onAuthStateChanged } from 'firebase/auth';
 
 /* ---------- Helpers ---------- */
+
+/* ---------- Email helpers (prof) ---------- */
+async function getUserEmailById(uid) {
+  if (!uid) return null;
+  try {
+    // users/{uid}
+    const s = await getDoc(doc(db, 'users', uid));
+    if (s.exists()) {
+      const d = s.data();
+      return d.email || d.contactEmail || null;
+    }
+  } catch {}
+  // fallback teachers/{uid}
+  try {
+    const t = await getDoc(doc(db, 'teachers', uid));
+    if (t.exists()) {
+      const d = t.data();
+      return d.email || d.contactEmail || null;
+    }
+  } catch {}
+  return null;
+}
+
+async function getMyDisplayName(uid) {
+  try {
+    const u = await getDoc(doc(db, 'users', uid));
+    if (u.exists()) {
+      const d = u.data();
+      return d.fullName || d.name || d.displayName || 'Élève';
+    }
+  } catch {}
+  return 'Élève';
+}
+
+async function emailTeacherAboutInvite(lesson, { accepted }) {
+  const teacherId = lesson?.teacher_id;
+  const teacherEmail = await getUserEmailById(teacherId);
+  if (!teacherEmail) return;
+
+  const me = auth.currentUser;
+  const myName = await getMyDisplayName(me?.uid);
+
+  const title = accepted
+    ? "Invitation acceptée"
+    : "Invitation refusée";
+
+  const message = accepted
+    ? `${myName} a accepté l’invitation pour le cours ${lesson.subject_id || ''} (${lesson.slot_day ?? ''} ${String(lesson.slot_hour ?? '').padStart(2,'0')}h).`
+    : `${myName} a refusé l’invitation pour le cours ${lesson.subject_id || ''} (${lesson.slot_day ?? ''} ${String(lesson.slot_hour ?? '').padStart(2,'0')}h).`;
+
+  await fetch("/api/notify-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to: teacherEmail,
+      title,
+      message,
+      ctaText: "Ouvrir le cours",
+      ctaUrl: `${window.location.origin}/teacher/lessons`
+    })
+  }).catch(() => {});
+}
+
 // Helper: un cours est-il confirmé POUR MOI ?
 const isConfirmedForMe = (lesson, uid) => {
   if (!uid || !lesson) return false;
@@ -358,6 +421,8 @@ export default function MyCourses() {
         ? { ...c, participantsMap: { ...(c.participantsMap||{}), [uid]: { ...(c.participantsMap?.[uid]||{}), status: 'accepted' } } }
         : c
       ));
+      // 🔔 Email au professeur
+      await emailTeacherAboutInvite(lesson, { accepted: true });
     } catch (e) {
       console.error(e);
       alert("Impossible d'accepter l'invitation.");
@@ -373,6 +438,8 @@ export default function MyCourses() {
         [`participantsMap.${uid}`]: null,
       });
       setCourses(prev => prev.filter(c => !(c.id === lesson.id && (c.participant_ids||[]).includes(uid))));
+      // 🔔 Email au professeur
+      await emailTeacherAboutInvite(lesson, { accepted: false });      
     } catch (e) {
       console.error(e);
       alert("Impossible de refuser l'invitation.");

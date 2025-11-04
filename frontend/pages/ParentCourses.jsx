@@ -16,6 +16,67 @@ import {
 } from 'firebase/firestore';
 
 /* ---------- Helpers ---------- */
+
+/* ---------- Email helpers (prof) ---------- */
+async function getUserEmailById(uid) {
+  if (!uid) return null;
+  try {
+    const s = await getDoc(doc(db, 'users', uid));
+    if (s.exists()) {
+      const d = s.data();
+      return d.email || d.contactEmail || null;
+    }
+  } catch {}
+  try {
+    const t = await getDoc(doc(db, 'teachers', uid));
+    if (t.exists()) {
+      const d = t.data();
+      return d.email || d.contactEmail || null;
+    }
+  } catch {}
+  return null;
+}
+
+async function getParentDisplayName(uid) {
+  try {
+    const u = await getDoc(doc(db, 'users', uid));
+    if (u.exists()) {
+      const d = u.data();
+      return d.fullName || d.name || d.displayName || 'Parent';
+    }
+  } catch {}
+  return 'Parent';
+}
+
+async function emailTeacherAboutChildInvite(lesson, childName, { accepted }) {
+  const teacherId = lesson?.teacher_id;
+  const teacherEmail = await getUserEmailById(teacherId);
+  if (!teacherEmail) return;
+
+  const me = auth.currentUser;
+  const parentName = await getParentDisplayName(me?.uid);
+
+  const title = accepted
+    ? "Invitation (enfant) acceptée"
+    : "Invitation (enfant) refusée";
+
+  const message = accepted
+    ? `${parentName} a accepté l’invitation pour ${childName} – cours ${lesson.subject_id || ''} (${lesson.slot_day ?? ''} ${String(lesson.slot_hour ?? '').padStart(2,'0')}h).`
+    : `${parentName} a refusé l’invitation pour ${childName} – cours ${lesson.subject_id || ''} (${lesson.slot_day ?? ''} ${String(lesson.slot_hour ?? '').padStart(2,'0')}h).`;
+
+  await fetch("/api/notify-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to: teacherEmail,
+      title,
+      message,
+      ctaText: "Ouvrir le cours",
+      ctaUrl: `${window.location.origin}/teacher/lessons`
+    })
+  }).catch(() => {});
+}
+
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const codeIndex = (c) => Math.max(0, FR_DAY_CODES.indexOf(c));
 
@@ -419,6 +480,9 @@ export default function ParentCourses() {
     const sid = c.__child;
     try {
       await updateDoc(doc(db, 'lessons', c.id), { [`participantsMap.${sid}.status`]: 'accepted' });
+      // 🔔 Email au professeur
+      const childLabel = studentMap.get(sid) || 'Élève';
+      await emailTeacherAboutChildInvite(c, childLabel, { accepted: true });      
     } catch (e) {
       console.error(e);
       alert("Impossible d'accepter l'invitation.");
@@ -432,6 +496,9 @@ export default function ParentCourses() {
         participant_ids: newIds,
         [`participantsMap.${sid}`]: null,
       });
+      // 🔔 Email au professeur
+      const childLabel = studentMap.get(sid) || 'Élève';
+      await emailTeacherAboutChildInvite(c, childLabel, { accepted: false });      
     } catch (e) {
       console.error(e);
       alert("Impossible de refuser l'invitation.");
