@@ -268,6 +268,21 @@ function packLabel(c) {
   return 'Horaire';
 }
 
+const isVisio = (l) => String(l?.mode || '').toLowerCase() === 'visio' || l?.is_visio === true;
+const hasVisioLink = (l) => !!l?.visio?.joinUrl;
+
+function makeJitsiVisio(lesson) {
+  const base = lesson.pack_id ? lesson.pack_id : lesson.id;
+  const slug = `EduKaraib-${base}-${Math.random().toString(36).slice(2,8)}`;
+  return {
+    provider: "jitsi",
+    roomId: slug,
+    joinUrl: `https://meet.jit.si/${slug}`,
+    created_by: auth.currentUser?.uid || null,
+    created_at: serverTimestamp(),
+  };
+}
+
 /* =================== PAGE =================== */
 export default function TeacherLessons() {
   const [lessons, setLessons] = useState([]);
@@ -636,6 +651,26 @@ export default function TeacherLessons() {
     }
   }
 
+  async function createVisioLink(lesson) {
+    if (!isVisio(lesson)) {
+      alert("Ce cours n'est pas en visio.");
+      return;
+    }
+    if (hasVisioLink(lesson)) {
+      alert("Le lien visio existe déjà.");
+      return;
+    }
+    try {
+      const payload = makeJitsiVisio(lesson);
+      await updateDoc(doc(db, 'lessons', lesson.id), { visio: payload });
+      // mise à jour optimiste
+      setLessons(prev => prev.map(x => x.id === lesson.id ? { ...x, visio: { ...payload, created_at: new Date() } } : x));
+    } catch (e) {
+      console.error(e);
+      alert("Impossible de créer le lien visio.");
+    }
+  }
+
   // actions groupe (par élève)
   async function acceptGroupStudent(lessonId, studentId) {
     try {
@@ -811,6 +846,37 @@ export default function TeacherLessons() {
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">
+            {/* Visio actions */}
+            {isVisio(lesson) && (
+              hasVisioLink(lesson) ? (
+                <>
+                  <a
+                    href={lesson.visio.joinUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded shadow font-semibold"
+                    title="Ouvrir la visio"
+                  >
+                    🎥 Démarrer la visio
+                  </a>
+                  <button
+                    className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded shadow font-semibold"
+                    onClick={() => navigator.clipboard.writeText(lesson.visio.joinUrl)}
+                    title="Copier le lien"
+                  >
+                    🔗 Copier le lien
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded shadow font-semibold"
+                  onClick={() => createVisioLink(lesson)}
+                  title="Créer le lien visio"
+                >
+                  🎥 Créer lien visio
+                </button>
+              )
+            )}
             <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => openDocs(lesson)}>
               📄 Documents
             </button>

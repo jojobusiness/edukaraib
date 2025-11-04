@@ -193,6 +193,18 @@ function packLabel(c) {
   return 'Horaire';
 }
 
+const isVisio = (l) => String(l?.mode || '').toLowerCase() === 'visio' || l?.is_visio === true;
+const hasVisioLink = (l) => !!l?.visio?.joinUrl;
+
+function canJoinNow(l) {
+  if (!isVisio(l) || !hasVisioLink(l)) return false;
+  const now = Date.now();
+  const start = nextOccurrence(l.slot_day, l.slot_hour, new Date());
+  if (!start) return true;
+  const startMs = start.getTime();
+  return now >= (startMs - 15 * 60 * 1000) && now <= (startMs + 3 * 60 * 60 * 1000);
+}
+
 /* =================== PAGE =================== */
 export default function ParentCourses() {
   const [courses, setCourses] = useState([]);
@@ -638,6 +650,25 @@ export default function ParentCourses() {
           <div className="text-gray-500 text-xs">{c.slot_day} {formatHour(c.slot_hour)}</div>
         </div>
         <div className="flex flex-wrap gap-2">
+          {/* Visio */}
+          {isVisio(c) && (
+            hasVisioLink(c) ? (
+              <a
+                href={c.visio.joinUrl}
+                target="_blank"
+                rel="noreferrer"
+                className={`px-4 py-2 rounded shadow font-semibold text-white ${canJoinNow(c) ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-gray-400 cursor-not-allowed'}`}
+                title={canJoinNow(c) ? 'Rejoindre la visio' : 'Le lien sera actif à l\'heure du cours'}
+                onClick={(e) => { if (!canJoinNow(c)) e.preventDefault(); }}
+              >
+                🎥 Rejoindre la visio
+              </a>
+            ) : (
+              <span className="px-3 py-2 rounded bg-gray-100 text-gray-600 font-semibold">
+                🔒 En attente du lien visio
+              </span>
+            )
+          )}
           <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => { setDocLesson(c); setDocOpen(true); }}>
             📄 Documents
           </button>
