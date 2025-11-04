@@ -26,11 +26,9 @@ const SCHOOL_LEVELS = [
   'Formation professionnelle','Remise à niveau','Autre',
 ];
 
-const NAME_CHARS_REGEX = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]*$/; // autorise saisie incrémentale
-const NAME_MIN2_REGEX  = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]{2,}$/; // contrôle final (≥2)
-const PHONE_REGEX = /^[+0-9 ()-]{7,20}$/;
+const NAME_CHARS_REGEX = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]*$/;
+const NAME_MIN2_REGEX  = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]{2,}$/;
 
-// Utils pour comparer sans accents / casse
 const normalize = (s) =>
   (s || '')
     .normalize('NFD')
@@ -52,14 +50,24 @@ export default function Register() {
     role: 'student',
     phone: '', city: '',
     level: '', birth: '',
-    subjects: '', diploma: '', bio: '', price_per_hour: '',
+    subjects: '', diploma: '', bio: '',
 
-    // ➕ NOUVEAU (prof) : packs & visio
-    pack5_price: '',        // total pour 5h (≤ 0.9 * 5 * price_per_hour)
-    pack10_price: '',       // total pour 10h (≤ 0.9 * 10 * price_per_hour)
+    // Présentiel
+    presentiel_enabled: true,
+    price_per_hour: '',
+    pack5_price: '',      // total 5h (≤ 0.9 * 5 * price_per_hour)
+    pack10_price: '',     // total 10h (≤ 0.9 * 10 * price_per_hour)
+
+    // Visio
     visio_enabled: false,
-    visio_same_rate: true,  // si false, on saisit visio_price_per_hour
+    visio_same_rate: true,
     visio_price_per_hour: '',
+    visio_pack5_price: '',   // total 5h visio (≤ 0.9 * 5 * visioRate)
+    visio_pack10_price: '',  // total 10h visio (≤ 0.9 * 10 * visioRate)
+
+    // À propos
+    about_me: '',
+    about_course: '',
   });
   const [photo, setPhoto] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -85,7 +93,6 @@ export default function Register() {
     }
 
     if (name === 'firstName' || name === 'lastName') {
-      // ✅ autorise la frappe lettre par lettre, bloque chiffres/symboles
       if (NAME_CHARS_REGEX.test(value)) {
         setForm((f) => ({ ...f, [name]: value }));
       }
@@ -104,54 +111,75 @@ export default function Register() {
       return alert("Tu dois accepter les Conditions Générales d’Utilisation pour créer un compte.");
     }
 
-    // ✅ validation finale (≥2 caractères)
     if (!NAME_MIN2_REGEX.test(form.firstName)) return alert("Prénom invalide.");
     if (!NAME_MIN2_REGEX.test(form.lastName)) return alert("Nom invalide.");
     if (!form.email) return alert("Adresse email requise.");
     if (!form.password || form.password.length < 6) return alert("Mot de passe trop court (≥6).");
-    if (form.phone) {
-      const phoneClean = form.phone.replace(/\D/g, ''); // supprime espaces et symboles
-      if (!/^0\d{9}$/.test(phoneClean)) {
-        return alert("Le numéro doit commencer par 0 et contenir exactement 10 chiffres.");
-      }
-    }
+
     if (!form.city) return alert("Merci d’indiquer votre ville.");
     if (!existsCity(form.city)) return alert("Ville inconnue : choisissez une commune de Guyane proposée.");
     if (form.birth) {
       if (form.birth > TODAY) return alert("La date de naissance ne peut pas dépasser la date d’aujourd’hui.");
     }
 
-    // ✅ validations spécifiques prof (packs/visio) si role = teacher
+    // Validations spécifiques prof
     if (form.role === 'teacher') {
-      const base = Number(form.price_per_hour || 0);
-      if (Number.isNaN(base) || base < 0 || base > 1000) {
-        return alert("Le prix à l’heure doit être compris entre 0 et 1000 €.");
+      if (!form.presentiel_enabled && !form.visio_enabled) {
+        return alert("Active au moins un mode d’enseignement : présentiel ou visio.");
       }
 
-      // Packs : ≤ -10% du prix * 5/10
-      const maxPack5 = 5 * base * 0.9;
-      const maxPack10 = 10 * base * 0.9;
+      // Présentiel
+      if (form.presentiel_enabled) {
+        const base = Number(form.price_per_hour || 0);
+        if (Number.isNaN(base) || base < 0 || base > 1000) {
+          return alert("Le prix présentiel (€/h) doit être compris entre 0 et 1000 €.");
+        }
+        const maxPack5 = 5 * base * 0.9;
+        const maxPack10 = 10 * base * 0.9;
 
-      if (form.pack5_price !== '') {
-        const p5 = Number(form.pack5_price);
-        if (Number.isNaN(p5) || p5 < 0) return alert("Pack 5h invalide (nombre ≥ 0).");
-        if (base > 0 && p5 > maxPack5) {
-          return alert(`Le pack 5h ne doit pas dépasser ${maxPack5.toFixed(2)} € (10% de remise max).`);
+        if (form.pack5_price !== '') {
+          const p5 = Number(form.pack5_price);
+          if (Number.isNaN(p5) || p5 < 0) return alert("Pack 5h (présentiel) invalide (nombre ≥ 0).");
+          if (base > 0 && p5 > maxPack5) {
+            return alert(`Le pack 5h (présentiel) ne doit pas dépasser ${maxPack5.toFixed(2)} € (10% de remise max).`);
+          }
+        }
+        if (form.pack10_price !== '') {
+          const p10 = Number(form.pack10_price);
+          if (Number.isNaN(p10) || p10 < 0) return alert("Pack 10h (présentiel) invalide (nombre ≥ 0).");
+          if (base > 0 && p10 > maxPack10) {
+            return alert(`Le pack 10h (présentiel) ne doit pas dépasser ${maxPack10.toFixed(2)} € (10% de remise max).`);
+          }
         }
       }
-      if (form.pack10_price !== '') {
-        const p10 = Number(form.pack10_price);
-        if (Number.isNaN(p10) || p10 < 0) return alert("Pack 10h invalide (nombre ≥ 0).");
-        if (base > 0 && p10 > maxPack10) {
-          return alert(`Le pack 10h ne doit pas dépasser ${maxPack10.toFixed(2)} € (10% de remise max).`);
-        }
-      }
 
-      // Visio : tarif distinct optionnel
-      if (form.visio_enabled && !form.visio_same_rate) {
-        const v = Number(form.visio_price_per_hour);
-        if (Number.isNaN(v) || v < 0 || v > 1000) {
-          return alert("Tarif visio invalide (0 → 1000 €).");
+      // Visio
+      if (form.visio_enabled) {
+        let visioRate = 0;
+        if (form.visio_same_rate) {
+          visioRate = Number(form.price_per_hour || 0);
+        } else {
+          visioRate = Number(form.visio_price_per_hour || 0);
+          if (Number.isNaN(visioRate) || visioRate < 0 || visioRate > 1000) {
+            return alert("Tarif visio invalide (0 → 1000 €).");
+          }
+        }
+
+        const vmax5 = 5 * visioRate * 0.9;
+        const vmax10 = 10 * visioRate * 0.9;
+        if (form.visio_pack5_price !== '') {
+          const v5 = Number(form.visio_pack5_price);
+          if (Number.isNaN(v5) || v5 < 0) return alert("Pack 5h (visio) invalide (nombre ≥ 0).");
+          if (visioRate > 0 && v5 > vmax5) {
+            return alert(`Le pack 5h (visio) ne doit pas dépasser ${vmax5.toFixed(2)} € (10% de remise max).`);
+          }
+        }
+        if (form.visio_pack10_price !== '') {
+          const v10 = Number(form.visio_pack10_price);
+          if (Number.isNaN(v10) || v10 < 0) return alert("Pack 10h (visio) invalide (nombre ≥ 0).");
+          if (visioRate > 0 && v10 > vmax10) {
+            return alert(`Le pack 10h (visio) ne doit pas dépasser ${vmax10.toFixed(2)} € (10% de remise max).`);
+          }
         }
       }
     }
@@ -213,32 +241,60 @@ export default function Register() {
 
       if (form.role === 'teacher') {
         // Normalisations nombres
-        const price = form.price_per_hour ? Number(form.price_per_hour) : 0;
-        const pack5 = form.pack5_price === '' ? '' : Number(Number(form.pack5_price).toFixed(2));
-        const pack10 = form.pack10_price === '' ? '' : Number(Number(form.pack10_price).toFixed(2));
-        const visioPrice =
+        const price = form.presentiel_enabled && form.price_per_hour !== ''
+          ? Number(form.price_per_hour) : 0;
+
+        const pack5 = form.presentiel_enabled && form.pack5_price !== ''
+          ? Number(Number(form.pack5_price).toFixed(2)) : '';
+
+        const pack10 = form.presentiel_enabled && form.pack10_price !== ''
+          ? Number(Number(form.pack10_price).toFixed(2)) : '';
+
+        const visioRate =
           form.visio_enabled && !form.visio_same_rate && form.visio_price_per_hour !== ''
             ? Number(Number(form.visio_price_per_hour).toFixed(2))
+            : (form.visio_enabled && form.visio_same_rate ? price : '');
+
+        const visioPack5 =
+          form.visio_enabled && form.visio_pack5_price !== ''
+            ? Number(Number(form.visio_pack5_price).toFixed(2))
+            : '';
+
+        const visioPack10 =
+          form.visio_enabled && form.visio_pack10_price !== ''
+            ? Number(Number(form.visio_pack10_price).toFixed(2))
             : '';
 
         Object.assign(baseData, {
           subjects: form.subjects || '',
           diploma: form.diploma || '',
           bio: form.bio || '',
-          price_per_hour: price,
+          about_me: form.about_me || '',
+          about_course: form.about_course || '',
+
+          // Stripe flags init
           stripeAccountId: '',
           stripePayoutsEnabled: false,
           stripeChargesEnabled: false,
           stripeDetailsSubmitted: false,
+
+          // Groupe par défaut
           group_enabled: false,
           group_capacity: 1,
 
-          // ➕ packs & visio
+          // Modes
+          presentiel_enabled: !!form.presentiel_enabled,
+          price_per_hour: price,
           pack5_price: pack5,
           pack10_price: pack10,
+
           visio_enabled: !!form.visio_enabled,
           visio_same_rate: !!form.visio_same_rate,
-          visio_price_per_hour: visioPrice,
+          visio_price_per_hour: form.visio_enabled
+            ? (form.visio_same_rate ? '' : visioRate)
+            : '',
+          visio_pack5_price: visioPack5,
+          visio_pack10_price: visioPack10,
         });
       }
       
@@ -252,13 +308,6 @@ export default function Register() {
         navigate('/parent/dashboard');
       } else {
         navigate('/dashboard-eleve');
-      }
-
-      if (form.role === 'teacher' && form.price_per_hour) {
-        const price = Number(form.price_per_hour);
-        if (isNaN(price) || price < 0 || price > 1000) {
-          return alert("Le prix doit être compris entre 0 et 1000 €.");
-        }
       }
 
     } catch (err) {
@@ -279,6 +328,18 @@ export default function Register() {
   };
 
   // — UI
+  const effectiveVisioRate = form.visio_enabled
+    ? (form.visio_same_rate ? Number(form.price_per_hour || 0) : Number(form.visio_price_per_hour || 0))
+    : 0;
+  const suggested5 = form.presentiel_enabled && Number(form.price_per_hour || 0) > 0
+    ? (5 * Number(form.price_per_hour) * 0.9).toFixed(2) : '';
+  const suggested10 = form.presentiel_enabled && Number(form.price_per_hour || 0) > 0
+    ? (10 * Number(form.price_per_hour) * 0.9).toFixed(2) : '';
+  const suggestedV5 = form.visio_enabled && effectiveVisioRate > 0
+    ? (5 * effectiveVisioRate * 0.9).toFixed(2) : '';
+  const suggestedV10 = form.visio_enabled && effectiveVisioRate > 0
+    ? (10 * effectiveVisioRate * 0.9).toFixed(2) : '';
+
   return (
     <div className="min-h-screen flex flex-col justify-center items-center bg-gradient-to-br from-white via-gray-100 to-secondary/30 px-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
@@ -438,7 +499,7 @@ export default function Register() {
               </div>
             )}
 
-            {/* Ville : LISTE DÉROULANTE (comme niveaux) */}
+            {/* Ville */}
             <div>
               <label className="block mb-1 text-sm font-medium text-gray-700">Ville (commune)</label>
               <select
@@ -511,73 +572,46 @@ export default function Register() {
                     onChange={handleChange}
                   />
                 </div>
+
+                {/* À propos */}
                 <div>
-                  <label className="block mb-1 text-sm font-medium text-gray-700">Courte bio</label>
+                  <label className="block mb-1 text-sm font-medium text-gray-700">À propos de moi</label>
                   <textarea
-                    name="bio"
+                    name="about_me"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                    placeholder="Présentez-vous en quelques mots..."
-                    value={form.bio}
+                    placeholder="Parle de ton parcours, ta pédagogie, tes passions, etc."
+                    value={form.about_me}
                     onChange={handleChange}
-                    rows={2}
+                    rows={3}
                   />
                 </div>
-
-                {/* Prix /h */}
                 <div>
-                  <label className="block mb-1 text-sm font-medium text-gray-700">Prix à l’heure (présentiel) €</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1}
-                    name="price_per_hour"
+                  <label className="block mb-1 text-sm font-medium text-gray-700">À propos du cours</label>
+                  <textarea
+                    name="about_course"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                    placeholder="ex : 25"
-                    value={form.price_per_hour}
+                    placeholder="Déroulé d’un cours type, supports utilisés, suivi, devoirs, etc."
+                    value={form.about_course}
                     onChange={handleChange}
+                    rows={3}
                   />
                 </div>
 
-                {/* ➕ Packs 5h / 10h */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block mb-1 text-sm font-medium text-gray-700">Pack 5h (total) €</label>
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      name="pack5_price"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                      placeholder="ex : 90 si 20€/h"
-                      value={form.pack5_price}
-                      onChange={handleChange}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      ≤ -10% du total (5 × prix/h)
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block mb-1 text-sm font-medium text-gray-700">Pack 10h (total) €</label>
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      name="pack10_price"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                      placeholder="ex : 180 si 20€/h"
-                      value={form.pack10_price}
-                      onChange={handleChange}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      ≤ -10% du total (10 × prix/h)
-                    </p>
-                  </div>
-                </div>
-
-                {/* ➕ Visio */}
+                {/* Choix des modes */}
                 <div className="rounded-xl border border-gray-200 p-4 space-y-3 bg-gray-50">
+                  <h4 className="text-md font-bold text-gray-800">Modes proposés</h4>
                   <div className="flex items-center justify-between">
-                    <label className="text-sm font-semibold text-gray-700">Proposer des cours en visio</label>
+                    <label className="text-sm font-semibold text-gray-700">Présentiel</label>
+                    <input
+                      type="checkbox"
+                      name="presentiel_enabled"
+                      checked={!!form.presentiel_enabled}
+                      onChange={handleChange}
+                      className="h-5 w-5"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-semibold text-gray-700">Visio</label>
                     <input
                       type="checkbox"
                       name="visio_enabled"
@@ -586,41 +620,130 @@ export default function Register() {
                       className="h-5 w-5"
                     />
                   </div>
+                  <p className="text-xs text-gray-500">Tu peux proposer un seul mode ou les deux.</p>
+                </div>
 
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      name="visio_same_rate"
-                      checked={!!form.visio_same_rate}
-                      onChange={handleChange}
-                      disabled={!form.visio_enabled}
-                    />
-                    <label className={`text-sm ${!form.visio_enabled ? 'text-gray-400' : ''}`}>
-                      Même tarif horaire que le présentiel
-                    </label>
-                  </div>
-
-                  {!form.visio_same_rate && form.visio_enabled && (
+                {/* Présentiel : prix + packs */}
+                {form.presentiel_enabled && (
+                  <>
                     <div>
-                      <label className="block mb-1 text-sm font-medium text-gray-700">Tarif visio (€ / h)</label>
+                      <label className="block mb-1 text-sm font-medium text-gray-700">Prix à l’heure (présentiel) €</label>
                       <input
                         type="number"
-                        name="visio_price_per_hour"
                         min={0}
-                        max={1000}
-                        step="0.5"
+                        step={1}
+                        name="price_per_hour"
                         className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                        value={form.visio_price_per_hour}
+                        placeholder="ex : 25"
+                        value={form.price_per_hour}
                         onChange={handleChange}
-                        disabled={!form.visio_enabled}
                       />
                     </div>
-                  )}
-                </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block mb-1 text-sm font-medium text-gray-700">Pack 5h (total) €</label>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          name="pack5_price"
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                          placeholder="ex : 90 si 20€/h"
+                          value={form.pack5_price}
+                          onChange={handleChange}
+                        />
+                        {Number(form.price_per_hour || 0) > 0 && (
+                          <p className="text-xs text-gray-500 mt-1">Conseil (≤ -10%) : {(5 * Number(form.price_per_hour) * 0.9).toFixed(2)} €</p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block mb-1 text-sm font-medium text-gray-700">Pack 10h (total) €</label>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          name="pack10_price"
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                          placeholder="ex : 180 si 20€/h"
+                          value={form.pack10_price}
+                          onChange={handleChange}
+                        />
+                        {Number(form.price_per_hour || 0) > 0 && (
+                          <p className="text-xs text-gray-500 mt-1">Conseil (≤ -10%) : {(10 * Number(form.price_per_hour) * 0.9).toFixed(2)} €</p>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Visio : tarif (same/diff) + packs visio */}
+                {form.visio_enabled && (
+                  <div className="rounded-xl border border-gray-200 p-4 space-y-3 bg-gray-50">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        name="visio_same_rate"
+                        checked={!!form.visio_same_rate}
+                        onChange={handleChange}
+                      />
+                      <label className="text-sm">Même tarif horaire que le présentiel</label>
+                    </div>
+
+                    {!form.visio_same_rate && (
+                      <div>
+                        <label className="block mb-1 text-sm font-medium text-gray-700">Tarif visio (€ / h)</label>
+                        <input
+                          type="number"
+                          name="visio_price_per_hour"
+                          min={0}
+                          max={1000}
+                          step="0.5"
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                          value={form.visio_price_per_hour}
+                          onChange={handleChange}
+                        />
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block mb-1 text-sm font-medium text-gray-700">Pack 5h visio (total) €</label>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          name="visio_pack5_price"
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                          value={form.visio_pack5_price}
+                          onChange={handleChange}
+                        />
+                        {effectiveVisioRate > 0 && (
+                          <p className="text-xs text-gray-500 mt-1">Conseil (≤ -10%) : {(5 * effectiveVisioRate * 0.9).toFixed(2)} €</p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block mb-1 text-sm font-medium text-gray-700">Pack 10h visio (total) €</label>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          name="visio_pack10_price"
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                          value={form.visio_pack10_price}
+                          onChange={handleChange}
+                        />
+                        {effectiveVisioRate > 0 && (
+                          <p className="text-xs text-gray-500 mt-1">Conseil (≤ -10%) : {(10 * effectiveVisioRate * 0.9).toFixed(2)} €</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </>
             )}
 
-            {/* ➕ CGU obligatoires */}
+            {/* CGU obligatoires */}
             <div className="flex items-start gap-2 mt-2">
               <input
                 id="acceptTerms"

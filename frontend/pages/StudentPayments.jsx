@@ -14,7 +14,13 @@ import {
 import DashboardLayout from '../components/DashboardLayout';
 import fetchWithAuth from '../utils/fetchWithAuth';
 
-const SITE_FEE_EUR = 10; // affichage : prix prof + 10 €
+const billedHours = (l) => {
+  const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
+  if (pt === 'pack5' || String(l.pack_hours) === '5' || l.is_pack5) return 5;
+  if (pt === 'pack10' || String(l.pack_hours) === '10' || l.is_pack10) return 10;
+  const h = Number(l.duration_hours);
+  return Number.isFinite(h) && h > 0 ? Math.floor(h) : 1;
+};
 
 const fmtDateTime = (start_datetime, slot_day, slot_hour) => {
   if (start_datetime?.toDate) {
@@ -42,8 +48,9 @@ const getBaseAmount = (l) =>
   toNumber(l.price_per_hour);
 
 const getDisplayAmount = (l) => {
-  const base = getBaseAmount(l);
-  return (Number.isFinite(base) ? base : 0) + SITE_FEE_EUR;
+  const base = getBaseAmount(l) || 0;
+  const fee = billedHours(l) * 10;
+  return base + fee;
 };
 
 // payé pour un élève (legacy ou groupe)

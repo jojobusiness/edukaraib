@@ -105,19 +105,21 @@ function detectSource(lesson) {
  */
 function computeTeacherAmountCents(lesson) {
   const source = detectSource(lesson);
+  const toNum = (v) => {
+    const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
   const hours = toNum(lesson.duration_hours) || 1;
 
   if (source === 'pack5' || source === 'pack10') {
     const storedTotal =
       toNum(lesson.total_amount) || toNum(lesson.total_price) || toNum(lesson.amount);
     if (storedTotal > 0) return Math.round(storedTotal * 100);
-
     const baseRate = toNum(lesson.price_per_hour);
     const packHours = source === 'pack5' ? 5 : 10;
     return Math.max(0, Math.round(baseRate * packHours * 100));
   }
 
-  // visio / présentiel
   let rate = toNum(lesson.price_per_hour);
   if (source === 'visio') {
     const visioSame = lesson.visio_same_rate;
@@ -125,6 +127,14 @@ function computeTeacherAmountCents(lesson) {
     if (visioSame === false && visioRate > 0) rate = visioRate;
   }
   return Math.max(0, Math.round(rate * hours * 100));
+}
+
+function getBilledHours(lesson) {
+  const packType = String(lesson.pack_type || lesson.booking_kind || lesson.type || '').toLowerCase();
+  if (packType === 'pack5' || String(lesson.pack_hours) === '5' || lesson.is_pack5 === true) return 5;
+  if (packType === 'pack10' || String(lesson.pack_hours) === '10' || lesson.is_pack10 === true) return 10;
+  const h = Number(lesson.duration_hours);
+  return Number.isFinite(h) && h > 0 ? Math.floor(h) : 1; // défaut 1h
 }
 
 export default async function handler(req, res) {
@@ -185,7 +195,8 @@ export default async function handler(req, res) {
   // Montant selon source
   const source = detectSource(lesson);              // 'presentiel' | 'visio' | 'pack5' | 'pack10'
   const teacherAmountCents = computeTeacherAmountCents(lesson);
-  const siteFeeCents = 1000; // +10€
+  const billedHours = getBilledHours(lesson);
+  const siteFeeCents = billedHours * 1000; // 10€ / heure
   const totalCents = teacherAmountCents + siteFeeCents;
   if (!(totalCents > 0)) return res.status(400).json({ error: 'INVALID_AMOUNT' });
 
@@ -210,7 +221,9 @@ export default async function handler(req, res) {
     site_fee_cents: String(siteFeeCents),
     is_group: String(!!isGroup),
     payer_uid: String(payerUid || ''),
-    lesson_source: source,                         // <- NOUVEAU
+    lesson_source: source,
+    billed_hours: String(billedHours),
+    per_hour_site_fee_cents: "1000"                         // <- NOUVEAU
   };
 
   const session = await stripe.checkout.sessions.create({
@@ -248,6 +261,7 @@ export default async function handler(req, res) {
     net_to_teacher_eur: teacherAmountCents / 100,
     status: 'pending',
     created_at: new Date(),
+    billed_hours: billedHours
   }, { merge: true });
 
   return res.json({ url: session.url });

@@ -16,7 +16,7 @@ export default function BookingModal({
 
   canBook = true,
 
-  // ➕ NOUVEAU: imposer un nombre exact de créneaux (ex: pack 5h ou 10h)
+  // ➕ impose un nombre exact de créneaux (ex: pack 5h / 10h)
   requiredCount = null, // null | 5 | 10
 }) {
   const [selected, setSelected] = useState([]);
@@ -29,7 +29,7 @@ export default function BookingModal({
 
   const hours = useMemo(() => {
     const all = Object.values(availability || {}).flat().filter((h) => Number.isInteger(h));
-    if (all.length === 0) return Array.from({ length: 12 }, (_, i) => i + 8);
+    if (all.length === 0) return Array.from({ length: 12 }, (_, i) => i + 8); // 8 → 19h
     const min = Math.max(0, Math.min(...all));
     const max = Math.min(23, Math.max(...all));
     return Array.from({ length: (max - min + 1) }, (_, i) => min + i);
@@ -51,11 +51,8 @@ export default function BookingModal({
     if (multiSelect) {
       setSelected(prev => {
         const exists = prev.some(s => s.day === day && s.hour === hour);
-        if (exists) {
-          return prev.filter(s => !(s.day === day && s.hour === hour));
-        }
-        // ➕ limite par requiredCount
-        if (requiredCount && prev.length >= requiredCount) return prev;
+        if (exists) return prev.filter(s => !(s.day === day && s.hour === hour));
+        if (requiredCount && prev.length >= requiredCount) return prev; // limite pack
         return [...prev, { day, hour }];
       });
     } else {
@@ -74,29 +71,33 @@ export default function BookingModal({
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-40 bg-black/30">
-      <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-md w-full relative border border-gray-100">
-        <button className="absolute right-2 top-2 text-gray-500" onClick={onClose} aria-label="Fermer">
-          ✖
+      <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-3xl w-full relative border border-gray-100">
+        <button
+          className="absolute right-3 top-3 text-gray-500 hover:text-gray-700"
+          onClick={onClose}
+          aria-label="Fermer"
+        >
+          ✕
         </button>
 
-        <h3 className="text-xl font-bold text-primary mb-1">
+        <h3 className="text-xl md:text-2xl font-extrabold text-slate-900 mb-1">
           {multiSelect ? 'Choisissez un ou plusieurs créneaux' : 'Choisissez un créneau'}
         </h3>
 
         {requiredCount && (
-          <div className="mb-2 text-sm">
+          <div className="mb-3 text-sm text-slate-700">
             Pack : sélectionnez <b>{requiredCount}</b> créneau(x). Reste à choisir : <b>{need}</b>.
           </div>
         )}
 
         {!canBook && (
-          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">
+          <div className="mb-3 rounded-xl border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm">
             Les comptes <b>professeurs</b> ne peuvent pas réserver de cours. Connectez-vous en élève/parent.
           </div>
         )}
 
-        {/* Légende */}
-        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-700 mb-3 p-2 rounded-lg bg-gray-50 border border-gray-200">
+        {/* Légende (façon vignette claire) */}
+        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-700 mb-4 p-2 rounded-xl bg-gray-50 border border-gray-200">
           <span className="inline-flex items-center gap-1">
             <span className="inline-block w-3 h-3 rounded bg-green-500" /> Libre
           </span>
@@ -107,7 +108,7 @@ export default function BookingModal({
             <span className="inline-block w-3 h-3 rounded bg-red-500" /> Pris (❌)
           </span>
           <span className="inline-flex items-center gap-1">
-            <span className="inline-block w-3 h-3 rounded bg-gray-100 border" /> Indisponible
+            <span className="inline-block w-3 h-3 rounded bg-gray-200 border" /> Indisponible
           </span>
           {showRemainingLegend && (
             <span className="inline-flex items-center gap-1 ml-auto">
@@ -119,27 +120,28 @@ export default function BookingModal({
           )}
         </div>
 
+        {/* Grille des créneaux */}
         <div className="overflow-x-auto">
           <table className="table-auto border text-xs mb-3">
             <thead>
-              <tr>
-                <th className="px-2 py-1"></th>
+              <tr className="bg-white">
+                <th className="px-2 py-2"></th>
                 {hours.map((h) => (
-                  <th key={h} className="px-2 py-1">{h}h</th>
+                  <th key={h} className="px-2 py-2 font-semibold text-slate-700">{h}h</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {orderDays.map((day) => (
                 <tr key={day}>
-                  <td className="font-bold px-2 py-1">{day}</td>
+                  <td className="font-bold px-2 py-2 text-slate-900">{day}</td>
                   {hours.map((h) => {
                     const booked = isBooked(day, h);
                     const dispo = isAvailable(day, h);
                     const sel = isSelected(day, h);
                     const remaining = remainingFor(day, h);
 
-                    let classes = 'relative w-8 h-8 rounded shadow flex items-center justify-center select-none ';
+                    let classes = 'relative w-9 h-9 rounded-lg shadow flex items-center justify-center select-none transition ';
                     if (!canBook) {
                       classes += 'bg-gray-100 text-gray-300 cursor-not-allowed';
                     } else if (booked) {

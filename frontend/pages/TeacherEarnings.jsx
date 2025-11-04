@@ -19,6 +19,15 @@ import PaymentsTable from '../components/earnings/PaymentsTable';
 const SITE_FEE_EUR = 10;
 
 // ----- Helpers -----
+
+const billedHours = (l) => {
+  const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
+  if (pt === 'pack5' || String(l.pack_hours) === '5' || l.is_pack5) return 5;
+  if (pt === 'pack10' || String(l.pack_hours) === '10' || l.is_pack10) return 10;
+  const h = Number(l.duration_hours);
+  return Number.isFinite(h) && h > 0 ? Math.floor(h) : 1;
+};
+
 const fmtEUR = (n) =>
   new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(n);
 
@@ -224,7 +233,7 @@ export default function TeacherEarnings() {
       if (d.getFullYear() !== selectedYear) return;
 
       const amount = getPaidAmount(l);  // montant payé par l'élève (inclut +10€ côté front/stockage)
-      const fee = Math.min(SITE_FEE_EUR, amount);
+      const fee = Math.min(billedHours(row.lesson) * 10, amount);
       const mIdx = d.getMonth();
 
       base[mIdx].gains += amount;
@@ -258,7 +267,7 @@ export default function TeacherEarnings() {
 
       const src = detectSource(l);
       const amount = getPaidAmount(l);
-      const fee = Math.min(SITE_FEE_EUR, amount);
+      const fee = Math.min(billedHours(row.lesson) * 10, amount);
       const net = Math.max(0, amount - fee);
       const bucket = acc[src] || acc.presentiel;
 
@@ -276,7 +285,7 @@ export default function TeacherEarnings() {
       .map((l) => {
         const date = getRevenueDate(l);
         const amount = getPaidAmount(l);
-        const fee = Math.min(SITE_FEE_EUR, amount);
+        const fee = Math.min(billedHours(row.lesson) * 10, amount);
         const net = Math.max(0, amount - fee);
 
         let payerId =
