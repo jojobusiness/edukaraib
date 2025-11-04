@@ -118,6 +118,20 @@ const getStartMs = (lesson) => {
   return null;
 };
 
+/* ---------- affichage mode / pack ---------- */
+function modeLabel(c) {
+  const m = String(c?.mode || '').toLowerCase();
+  const isVisio = m === 'visio' || c?.is_visio === true;
+  return isVisio ? 'Visio' : 'Présentiel';
+}
+function packLabel(c) {
+  const hours = Number(c?.pack_hours ?? c?.packHours ?? 0);
+  if (hours >= 10) return 'Pack 10h';
+  if (hours >= 5) return 'Pack 5h';
+  if (c?.is_pack) return 'Pack';
+  return 'Horaire';
+}
+
 /* =================== PAGE =================== */
 export default function ParentCourses() {
   const [courses, setCourses] = useState([]);
@@ -436,6 +450,10 @@ export default function ParentCourses() {
           <div className="flex items-center gap-2">
             <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
             <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800">En attente</span>
+            {/* ——— NOUVEAU : pastilles mode & pack ——— */}
+            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{modeLabel(c)}</span>
+            <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">{packLabel(c)}</span>
+            {/* ———————————————————————————————— */}
           </div>
           <div className="text-gray-700 text-sm flex flex-wrap items-center gap-2">
             <span className="opacity-80">Élève&nbsp;:</span>
@@ -531,6 +549,10 @@ export default function ParentCourses() {
           <div className="flex items-center gap-2">
             <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
             {statusBadge(displayedStatus)}
+            {/* ——— NOUVEAU : pastilles mode & pack ——— */}
+            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{modeLabel(c)}</span>
+            <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">{packLabel(c)}</span>
+            {/* ———————————————————————————————— */}
             {group && <ParticipantsPopover c={c} />}
           </div>
 
@@ -585,7 +607,7 @@ export default function ParentCourses() {
                   const childrenLabel = kidsConfirmed.length > 1
                     ? `Participants: ${kidsConfirmed.map((id) => studentMap.get(id) || id).join(', ')}`
                     : (studentMap.get(kidsConfirmed[0]) || c.student_id);
-                  return `${c.subject_id || 'Cours'} · ${c.slot_day} ${formatHour(c.slot_hour)} · ${childrenLabel} · avec ${teacherNameFor(c.teacher_id)}`;
+                  return `${c.subject_id || 'Cours'} · ${c.slot_day} ${formatHour(c.slot_hour)} · ${modeLabel(c)} • ${packLabel(c)} · ${childrenLabel} · avec ${teacherNameFor(c.teacher_id)}`;
                 })()
               : 'Aucun cours confirmé à venir'}
           </div>
@@ -611,6 +633,10 @@ export default function ParentCourses() {
                         <div className="flex gap-2 items-center mb-1">
                           <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
                           <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded">Invitation</span>
+                          {/* ——— NOUVEAU : pastilles mode & pack ——— */}
+                          <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{modeLabel(c)}</span>
+                          <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">{packLabel(c)}</span>
+                          {/* ———————————————————————————————— */}
                         </div>
                         <div className="text-gray-700 text-sm">Élève : <span className="font-semibold">{studentMap.get(c.__child) || c.__child}</span></div>
                         <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>

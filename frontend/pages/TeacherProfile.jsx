@@ -1,7 +1,3 @@
-// (fichier entier, seules nouveautés: affichage des prix packs/visio,
-//  choix Mode (Présentiel/Visio) si dispo, choix Pack (1h / 5h / 10h),
-//  et propagation vers BookingModal et la création des lessons)
-
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';

@@ -165,6 +165,20 @@ const getStartMs = (lesson) => {
   return null;
 };
 
+/* ---------- affichage mode / pack ---------- */
+function modeLabel(c) {
+  const m = String(c?.mode || '').toLowerCase();
+  const isVisio = m === 'visio' || c?.is_visio === true;
+  return isVisio ? 'Visio' : 'Présentiel';
+}
+function packLabel(c) {
+  const hours = Number(c?.pack_hours ?? c?.packHours ?? 0);
+  if (hours >= 10) return 'Pack 10h';
+  if (hours >= 5) return 'Pack 5h';
+  if (c?.is_pack) return 'Pack';
+  return 'Horaire';
+}
+
 /* =================== PAGE =================== */
 export default function MyCourses() {
   const [courses, setCourses] = useState([]);
@@ -435,6 +449,10 @@ export default function MyCourses() {
           <div className="flex items-center gap-2">
             <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
             {statusBadge(displayedStatus)}
+            {/* ——— NOUVEAU : pastilles mode & pack ——— */}
+            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{modeLabel(c)}</span>
+            <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">{packLabel(c)}</span>
+            {/* ———————————————————————————————— */}
             {group && <ParticipantsPopover c={c} />}
           </div>
           <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>
@@ -471,7 +489,7 @@ export default function MyCourses() {
           <div className="text-xl font-bold text-primary">Prochain cours</div>
           <div className="text-gray-700 mt-1">
             {nextCourse
-              ? `${nextCourse.subject_id || 'Cours'} · ${nextCourse.slot_day} ${formatHour(nextCourse.slot_hour)} · avec ${teacherNameFor(nextCourse.teacher_id)}`
+              ? `${nextCourse.subject_id || 'Cours'} · ${nextCourse.slot_day} ${formatHour(nextCourse.slot_hour)} · ${modeLabel(nextCourse)} • ${packLabel(nextCourse)} · avec ${teacherNameFor(nextCourse.teacher_id)}`
               : 'Aucun cours confirmé à venir'}
           </div>
         </div>
@@ -496,6 +514,10 @@ export default function MyCourses() {
                         <div className="flex gap-2 items-center mb-1">
                           <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
                           <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded">Invitation</span>
+                          {/* ——— NOUVEAU : pastilles mode & pack ——— */}
+                          <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{modeLabel(c)}</span>
+                          <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">{packLabel(c)}</span>
+                          {/* ———————————————————————————————— */}
                         </div>
                         <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>
                         <div className="text-gray-500 text-xs">{c.slot_day} {formatHour(c.slot_hour)}</div>

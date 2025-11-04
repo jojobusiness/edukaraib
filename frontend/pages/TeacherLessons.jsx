@@ -252,6 +252,20 @@ const getStartMs = (lesson) => {
   return null; // si seulement slot_day/slot_hour (pas de date) → pas d’auto-règle
 };
 
+/* ---------- affichage mode / pack ---------- */
+function modeLabel(c) {
+  const m = String(c?.mode || '').toLowerCase();
+  const isVisio = m === 'visio' || c?.is_visio === true;
+  return isVisio ? 'Visio' : 'Présentiel';
+}
+function packLabel(c) {
+  const hours = Number(c?.pack_hours ?? c?.packHours ?? 0);
+  if (hours >= 10) return 'Pack 10h';
+  if (hours >= 5) return 'Pack 5h';
+  if (c?.is_pack) return 'Pack';
+  return 'Horaire';
+}
+
 /* =================== PAGE =================== */
 export default function TeacherLessons() {
   const [lessons, setLessons] = useState([]);
@@ -447,6 +461,16 @@ export default function TeacherLessons() {
   const openDocs = (lesson) => { setDocLesson(lesson); setDocOpen(true); };
   const openGroup = (lesson) => { setGroupLesson(lesson); setGroupOpen(true); };
 
+  /* ---------- affichage mode/pack helpers UI ---------- */
+  function ModePackPills({ l }) {
+    return (
+      <>
+        <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded ml-1">{modeLabel(l)}</span>
+        <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded ml-1">{packLabel(l)}</span>
+      </>
+    );
+  }
+
   async function handleStatus(lesson, status) {
     try {
       const ref = doc(db, 'lessons', lesson.id);
@@ -487,22 +511,14 @@ export default function TeacherLessons() {
         message,
       });
       
-      // --- ENVOI EMAIL lié au statut (parents uniquement) ---
+      // --- ENVOI EMAIL lié au statut (parents uniquement + élèves si mail) ---
       const parentRecipients = new Set();
-      
-      // Pour chaque élève participant, on remonte au parent
       for (const sid of (lesson.participant_ids || [])) {
         const pid = await getParentIdForStudent(sid, lesson);
         if (pid) parentRecipients.add(pid);
       }
-
-      // Ajoute aussi le booker (souvent le parent) si présent
       if (lesson.booked_by) parentRecipients.add(lesson.booked_by);
 
-      // Si tu avais déjà un Set "recipients" avec prof/parents,
-      // on n’envoie le mail QU’aux parents, donc on ignore les élèves ici.
-
-      // --- ENVOI EMAIL lié au statut ---
       await sendEmailsToUsers(
         Array.from(recipients),
         {
@@ -515,9 +531,8 @@ export default function TeacherLessons() {
           ctaUrl: `${window.location.origin}/smart-dashboard`,
           ctaText: "Voir le cours",
         },
-        lesson // <-- on passe le contexte pour remonter au parent si besoin
+        lesson
       );
-      // --- /ENVOI EMAIL ---
 
       if (status === 'confirmed') {
         const snap = await getDoc(ref);
@@ -637,6 +652,9 @@ export default function TeacherLessons() {
             <span className="font-bold text-primary">{lesson.subject_id || 'Matière'}</span>
             <StatusPill status={displayedStatus} />
             {indivPaidPill}
+            {/* ——— NOUVEAU : pastilles mode & pack ——— */}
+            <ModePackPills l={lesson} />
+            {/* ———————————————————————————————— */}
             {isGroup && (
               <>
                 <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded ml-1">👥 {used}/{capacity}</span>
@@ -770,6 +788,10 @@ export default function TeacherLessons() {
                           {lesson.slot_day} {String(lesson.slot_hour).padStart(2, '0')}h
                         </span>
                         <span className="text-sm font-medium">{lesson.subject_id || 'Cours'}</span>
+                        {/* ——— NOUVEAU : pastilles mode & pack ——— */}
+                        <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{modeLabel(lesson)}</span>
+                        <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">{packLabel(lesson)}</span>
+                        {/* ———————————————————————————————— */}
                         <span className="text-xs text-gray-600">
                           • Élève : <span className="font-medium">{studentName || studentId}</span>
                           {requesterName ? <span className="text-gray-500"> (demande faite par {requesterName})</span> : null}
@@ -850,6 +872,9 @@ export default function TeacherLessons() {
                       <div className="flex gap-2 items-center mb-1">
                         <span className="font-bold text-primary">{l.subject_id || 'Matière'}</span>
                         <StatusPill status="completed" />
+                        {/* ——— NOUVEAU : pastilles mode & pack ——— */}
+                        <ModePackPills l={l} />
+                        {/* ———————————————————————————————— */}
                       </div>
                       <div className="text-gray-700">
                         {(Array.isArray(l.participant_ids) && l.participant_ids.length > 0)
