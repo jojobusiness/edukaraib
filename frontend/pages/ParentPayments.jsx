@@ -72,6 +72,24 @@ const isEligibleForChildPayment = (lesson, childId) => {
   return (['confirmed','completed','scheduled'].includes(lesson.status)) && String(lesson.student_id) === String(childId);
 };
 
+// --- NOUVEAU : le prof doit avoir validé (pas "pending_teacher"/"booked"/"pending") ---
+const notPendingTeacher = (row) => {
+  const l = row?.lesson;
+  const sid = row?.forStudent;
+  if (!l) return false;
+
+  // Cours en groupe : on regarde le statut de l'élève dans participantsMap
+  if (l.is_group) {
+    const st = l?.participantsMap?.[sid]?.status || '';
+    // on considère payables uniquement si plus "en attente prof"
+    return !['pending_teacher', 'requested', 'pending', 'booked'].includes(String(st));
+  }
+
+  // Cours individuel : on regarde le statut global de la leçon
+  const st = String(l.status || '');
+  return !['pending_teacher', 'requested', 'pending', 'booked'].includes(st);
+};
+
 // --- NOUVEAU : helpers d'étiquette ---
 const lessonMode = (l) => (String(l.mode) === 'visio' || l.is_visio === true ? 'visio' : 'presentiel');
 const labelMode = (l) => (lessonMode(l) === 'visio' ? 'Visio' : 'Présentiel');
