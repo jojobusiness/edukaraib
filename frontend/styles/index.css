@@ -35,3 +35,33 @@
     @apply border border-gray-200 rounded-lg shadow-md p-4 bg-white;
   }
 }
+
+/* ===== Mobile fluid & safe areas ===== */
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    background: #f8fafc; /* très léger gris */
+    font-size: clamp(14px, 1.8vw, 16px);
+    line-height: 1.5;
+  }
+  img, video, canvas, svg { max-width: 100%; height: auto; }
+}
+
+/* conteneur responsive avec safe-area */
+@layer utilities {
+  .container-fluid {
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+    margin-left: auto;
+    margin-right: auto;
+    width: 100%;
+    max-width: 1200px;
+  }
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .actions { @apply flex flex-wrap gap-2; }
+  .actions > * { flex: 1 1 auto; min-width: 140px; }
+  @screen md {
+    .actions { flex-wrap: nowrap; }
+    .actions > * { flex: 0 0 auto; }
+  }
+}
