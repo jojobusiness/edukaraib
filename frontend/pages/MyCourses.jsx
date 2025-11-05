@@ -245,6 +245,14 @@ function packLabel(c) {
 const isVisio = (l) => String(l?.mode || '').toLowerCase() === 'visio' || l?.is_visio === true;
 const hasVisioLink = (l) => !!l?.visio?.joinUrl;
 
+// --- NOUVEAU : payé pour moi ? ---
+const isPaidForMe = (l, uid) => {
+  if (!l) return false;
+  return l.is_group
+    ? !!l?.participantsMap?.[uid]?.is_paid
+    : !!l?.is_paid;
+};
+
 // remplace l'ancienne canJoinNow par ces deux helpers
 function getJoinState(l) {
   // 1) si le prof a posé des bornes -> on s'y fie
@@ -563,7 +571,32 @@ export default function MyCourses() {
         <div className="flex flex-wrap gap-2">
           {/* Visio */}
           {isVisio(c) && (
-            hasVisioLink(c) ? (() => {
+            (() => {
+              const uid = auth.currentUser?.uid;
+              const isPaid = isPaidForMe(c, uid);
+
+              // Pas de lien = prof n’a pas encore créé le lien
+              if (!hasVisioLink(c)) {
+                return (
+                  <span className="px-3 py-2 rounded bg-gray-100 text-gray-600 font-semibold">
+                    🔒 En attente du lien visio
+                  </span>
+                );
+              }
+
+              // Lien créé mais pas payé = verrouillé
+              if (!isPaid) {
+                return (
+                  <span
+                    className="px-3 py-2 rounded bg-amber-100 text-amber-800 font-semibold"
+                    title="Réglez le cours pour débloquer la visio"
+                  >
+                    🔒 Paiement requis
+                  </span>
+                );
+              }
+
+              // Payé : appliquer la fenêtre d’ouverture
               const state = getJoinState(c);
               const disabled = state !== 'open';
               const title =
@@ -585,11 +618,7 @@ export default function MyCourses() {
                   🎥 Rejoindre la visio
                 </a>
               );
-            })() : (
-              <span className="px-3 py-2 rounded bg-gray-100 text-gray-600 font-semibold">
-                🔒 En attente du lien visio
-              </span>
-            )
+            })()
           )}
           {showDocs && (
             <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => { setDocLesson(c); setDocOpen(true); }}>

@@ -196,6 +196,14 @@ function packLabel(c) {
 const isVisio = (l) => String(l?.mode || '').toLowerCase() === 'visio' || l?.is_visio === true;
 const hasVisioLink = (l) => !!l?.visio?.joinUrl;
 
+// --- NOUVEAU : payé pour l'enfant ? ---
+const isPaidForChild = (l, sid) => {
+  if (!l) return false;
+  return l.is_group
+    ? !!l?.participantsMap?.[sid]?.is_paid
+    : !!l?.is_paid; // cours indiv : payé globalement
+};
+
 // remplace l'ancienne canJoinNow par ces deux helpers
 function getJoinState(l) {
   // 1) si le prof a posé des bornes -> on s'y fie
@@ -672,36 +680,60 @@ export default function ParentCourses() {
           <div className="text-gray-500 text-xs">{c.slot_day} {formatHour(c.slot_hour)}</div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {/* Visio */}
-          {isVisio(c) && (
-            hasVisioLink(c) ? (() => {
-              const state = getJoinState(c);
-              const disabled = state !== 'open';
-              const title =
-                state === 'before' ? "Le lien sera actif à l'heure du cours"
-                : state === 'expired' ? "Lien expiré"
-                : "Rejoindre la visio";
+        {/* Visio */}
+        {isVisio(c) && (
+          (() => {
+            // Les enfants affichés sur la carte (prop "kids") représentent les participants concernés.
+            const concernedKids = Array.isArray(kids) ? kids : [];
+            const anyonePaid = concernedKids.length
+              ? concernedKids.some((sid) => isPaidForChild(c, sid))
+              : isPaidForChild(c, c.student_id); // fallback indiv
 
+            // Pas de lien : prof n’a pas créé le lien
+            if (!hasVisioLink(c)) {
               return (
-                <a
-                  href={disabled ? undefined : c.visio.joinUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={`px-4 py-2 rounded shadow font-semibold text-white ${
-                    disabled ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'
-                  }`}
-                  title={title}
-                  onClick={(e) => { if (disabled) e.preventDefault(); }}
-                >
-                  🎥 Rejoindre la visio
-                </a>
+                <span className="px-3 py-2 rounded bg-gray-100 text-gray-600 font-semibold">
+                  🔒 En attente du lien visio
+                </span>
               );
-            })() : (
-              <span className="px-3 py-2 rounded bg-gray-100 text-gray-600 font-semibold">
-                🔒 En attente du lien visio
-              </span>
-            )
-          )}
+            }
+
+            // Lien créé mais aucun des enfants concernés n’a payé
+            if (!anyonePaid) {
+              return (
+                <span
+                  className="px-3 py-2 rounded bg-amber-100 text-amber-800 font-semibold"
+                  title="Réglez le cours pour débloquer la visio"
+                >
+                  🔒 Paiement requis
+                </span>
+              );
+            }
+
+            // Payé : appliquer la fenêtre d’ouverture
+            const state = getJoinState(c);
+            const disabled = state !== 'open';
+            const title =
+              state === 'before' ? "Le lien sera actif à l'heure du cours"
+              : state === 'expired' ? "Lien expiré"
+              : "Rejoindre la visio";
+
+            return (
+              <a
+                href={disabled ? undefined : c.visio.joinUrl}
+                target="_blank"
+                rel="noreferrer"
+                className={`px-4 py-2 rounded shadow font-semibold text-white ${
+                  disabled ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
+                title={title}
+                onClick={(e) => { if (disabled) e.preventDefault(); }}
+              >
+                🎥 Rejoindre la visio
+              </a>
+            );
+          })()
+        )}
           <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => { setDocLesson(c); setDocOpen(true); }}>
             📄 Documents
           </button>
