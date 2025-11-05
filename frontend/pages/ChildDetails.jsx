@@ -14,13 +14,9 @@ import DashboardLayout from '../components/DashboardLayout';
 // --- Helpers ---
 function formatDateMaybe(ts) {
   if (!ts) return '';
-  // Firestore Timestamp
   if (typeof ts?.toDate === 'function') return ts.toDate().toLocaleString('fr-FR');
-  // Objet { seconds, nanoseconds }
   if (typeof ts?.seconds === 'number') return new Date(ts.seconds * 1000).toLocaleString('fr-FR');
-  // Nombre (ms)
   if (typeof ts === 'number') return new Date(ts).toLocaleString('fr-FR');
-  // String ISO
   if (typeof ts === 'string') {
     const d = new Date(ts);
     return isNaN(d.getTime()) ? '' : d.toLocaleString('fr-FR');
@@ -33,9 +29,7 @@ function pad2(n) {
 }
 
 /**
- * Rend une info date/heure lisible pour une leçon selon ton schéma :
- * - si start_datetime existe => on l’affiche formaté
- * - sinon si slot_day/slot_hour existent => "Lun • 10:00"
+ * Rend une info date/heure lisible pour une leçon
  */
 function renderWhen(lesson) {
   if (lesson?.start_datetime) {
@@ -44,18 +38,18 @@ function renderWhen(lesson) {
   }
   if (lesson?.slot_day || lesson?.slot_hour != null) {
     const d = lesson.slot_day || '';
-    const h = lesson.slot_hour != null ? `${pad2(lesson.slot_hour)}:00` : '';
+    const h = lesson?.slot_hour != null ? `${pad2(lesson.slot_hour)}:00` : '';
     const sep = d && h ? ' • ' : '';
     return `📅 ${d}${sep}${h}`.trim();
   }
   return '📅 Date ?';
 }
 
-const statusColors = {
-  booked: 'bg-yellow-100 text-yellow-800',
-  confirmed: 'bg-green-100 text-green-800',
-  completed: 'bg-gray-100 text-gray-700',
-  rejected: 'bg-red-100 text-red-700',
+const statusStyles = {
+  booked: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
+  confirmed: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
+  completed: 'bg-gray-50 text-gray-700 ring-1 ring-gray-200',
+  rejected: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
 };
 
 export default function ChildDetails() {
@@ -93,17 +87,11 @@ export default function ChildDetails() {
         const snapshot = await getDocs(qLessons);
         const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 
-        // tri (les plus récents en premier si start_datetime, sinon par slot_hour)
+        // tri
         data.sort((a, b) => {
-          const aTs = a.start_datetime?.seconds
-            || a.start_datetime?.toMillis?.()
-            || 0;
-          const bTs = b.start_datetime?.seconds
-            || b.start_datetime?.toMillis?.()
-            || 0;
+          const aTs = a.start_datetime?.seconds || a.start_datetime?.toMillis?.() || 0;
+          const bTs = b.start_datetime?.seconds || b.start_datetime?.toMillis?.() || 0;
           if (bTs !== aTs) return bTs - aTs;
-
-          // fallback sur slot_hour si pas de start_datetime
           const ah = typeof a.slot_hour === 'number' ? a.slot_hour : -1;
           const bh = typeof b.slot_hour === 'number' ? b.slot_hour : -1;
           return bh - ah;
@@ -125,48 +113,74 @@ export default function ChildDetails() {
 
   return (
     <DashboardLayout role="parent">
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-3xl mx-auto container-fluid py-4">
         <Link
           to="/parent/children"
-          className="text-primary hover:underline text-sm mb-4 inline-block"
+          className="inline-flex items-center gap-2 text-sm text-primary hover:text-primary-dark transition mb-4"
         >
-          ← Retour à la liste
+          <span>←</span> Retour à la liste
         </Link>
 
         {/* Carte enfant */}
         {loadingChild ? (
-          <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center mb-8">
-            Chargement...
+          <div className="bg-white border rounded-2xl shadow-sm p-6 mb-8">
+            <div className="animate-pulse flex items-center gap-4">
+              <div className="w-16 h-16 rounded-full bg-gray-100" />
+              <div className="flex-1 space-y-3">
+                <div className="h-4 bg-gray-100 rounded w-1/2" />
+                <div className="h-3 bg-gray-100 rounded w-1/3" />
+                <div className="h-3 bg-gray-100 rounded w-1/4" />
+              </div>
+            </div>
           </div>
         ) : child ? (
-          <div className="bg-white p-8 rounded-2xl shadow-xl border mb-8 flex flex-col items-center">
-            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center text-3xl text-primary mb-3">
-              👦
-            </div>
-            <div className="text-2xl font-bold text-primary mb-1">{child.full_name}</div>
-            <div className="text-sm text-gray-600 mb-2">
-              Niveau : <b>{child.school_level || "?"}</b>
-            </div>
-            <div className="text-xs text-gray-500">
-              Né(e) le {child.birth_date || "?"}
+          <div className="relative overflow-hidden bg-white border rounded-3xl shadow-sm mb-8">
+            <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary via-emerald-500 to-primary" />
+            <div className="p-6 md:p-8 flex flex-col items-center text-center">
+              <div className="w-20 h-20 rounded-2xl bg-primary/10 ring-1 ring-primary/20 flex items-center justify-center text-3xl text-primary mb-3">
+                👦
+              </div>
+              <div className="text-2xl font-extrabold text-gray-900">{child.full_name}</div>
+              <div className="text-sm text-gray-600 mt-1">
+                <span className="inline-flex items-center gap-1">
+                  🎓 <b>{child.school_level || "?"}</b>
+                </span>
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                🎂 Né(e) le {child.birth_date || "?"}
+              </div>
             </div>
           </div>
         ) : (
-          <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center mb-8">
+          <div className="bg-white border rounded-2xl shadow-sm p-6 mb-8 text-center text-gray-600">
             Enfant introuvable.
           </div>
         )}
 
         {/* Historique des cours */}
-        <div className="bg-white p-6 rounded-xl shadow border">
-          <h3 className="font-bold text-primary mb-4">Historique des cours</h3>
+        <div className="bg-white/90 backdrop-blur border rounded-2xl shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-gray-900">Historique des cours</h3>
+            {!loadingCourses && courses?.length > 0 && (
+              <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 ring-1 ring-gray-200">
+                {courses.length} cours
+              </span>
+            )}
+          </div>
 
           {loadingCourses ? (
-            <div className="text-gray-500">Chargement…</div>
+            <div className="space-y-3">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="animate-pulse border rounded-xl p-4 bg-gray-50">
+                  <div className="h-4 bg-gray-100 rounded w-1/3 mb-2" />
+                  <div className="h-3 bg-gray-100 rounded w-1/2" />
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="flex flex-col gap-3">
               {courses.length === 0 && (
-                <div className="text-gray-400 text-sm">
+                <div className="text-gray-500 text-sm bg-gray-50 border rounded-xl p-4 text-center">
                   Aucun cours réservé pour cet enfant.
                 </div>
               )}
@@ -174,18 +188,19 @@ export default function ChildDetails() {
               {courses.map((c) => (
                 <div
                   key={c.id}
-                  className="border rounded-lg px-4 py-3 flex flex-col md:flex-row md:items-center gap-2 bg-gray-50"
+                  className="border rounded-xl px-4 py-3 flex flex-col md:flex-row md:items-center gap-2 bg-gray-50 hover:bg-white transition shadow-sm"
                 >
-                  <span className="font-bold text-primary">{c.subject_id || "Matière"}</span>
+                  <span className="font-semibold text-gray-900">
+                    {c.subject_id || "Matière"}
+                  </span>
 
-                  <span className="text-gray-600 text-sm">
+                  <span className="text-gray-600 text-sm md:ml-auto">
                     {renderWhen(c)}
                   </span>
 
                   <span
-                    className={`text-xs px-3 py-1 rounded-full font-semibold ${
-                      statusColors[c.status] || 'bg-gray-200'
-                    }`}
+                    className={`text-xs px-3 py-1 rounded-full font-semibold ${statusStyles[c.status] || 'bg-gray-50 text-gray-700 ring-1 ring-gray-200'}`}
+                    title={c.status}
                   >
                     {c.status === 'booked'
                       ? 'En attente'
