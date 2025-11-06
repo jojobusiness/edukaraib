@@ -205,20 +205,6 @@ async function resolvePersonName(id, cacheRef) {
   return id;
 }
 
-/* ---------- helpers “confirmé pour l’enfant” ---------- */
-function isGroupLesson(l) {
-  return Array.isArray(l?.participant_ids) && l.participant_ids.length > 0;
-}
-function isConfirmedForChild(l, sid) {
-  if (!sid) return false;
-  if (l?.status === 'completed') return false; // ✅ exclure terminés
-  if (isGroupLesson(l)) {
-    const st = l?.participantsMap?.[sid]?.status;
-    return st === 'accepted' || st === 'confirmed';
-  }
-  return l?.student_id === sid && l?.status === 'confirmed';
-}
-
 /* ---------- helpers auto-règles (globaux) ---------- */
 const isIndividualPaid = (l) => l && !l.is_group && (l.is_paid === true);
 const hasAnyConfirmedParticipant = (l) => {
