@@ -403,17 +403,23 @@ export default function TeacherLessons() {
             let studentName = '';
             if (l.student_id) studentName = await resolvePersonName(l.student_id, nameCacheRef.current);
 
-            // participants (liste + statut paiement)
+            // APRÈS — prend d’abord participantsMap, sinon participant_ids
+            const pm = l.participantsMap || {};
+            const idsFromMap = Object.keys(pm);
+            const baseIds = idsFromMap.length
+              ? idsFromMap
+              : (Array.isArray(l.participant_ids) ? Array.from(new Set(l.participant_ids)) : []);
+
             let participantDetails = [];
-            if (Array.isArray(l.participant_ids) && l.participant_ids.length > 0) {
-              const pm = l.participantsMap || {};
+            if (baseIds.length > 0) {
               participantDetails = await Promise.all(
-                l.participant_ids.map(async (sid) => {
+                baseIds.map(async (sid) => {
                   const parentId = pm?.[sid]?.parent_id || pm?.[sid]?.booked_by || null;
                   return {
                     id: sid,
                     name: await resolvePersonName(sid, nameCacheRef.current, { parentId }),
                     is_paid: !!pm?.[sid]?.is_paid,
+                    // on considère accepted ou confirmed comme "confirmé"
                     status: pm?.[sid]?.status || 'accepted',
                   };
                 })
@@ -569,8 +575,11 @@ export default function TeacherLessons() {
 
   // Helper : y a-t-il au moins un participant confirmé/accepté ?
   const hasAnyConfirmedParticipantUI = (l) => {
-    if (!Array.isArray(l.participantDetails)) return false;
-    return l.participantDetails.some((p) => p.status === 'accepted' || p.status === 'confirmed');
+    if (Array.isArray(l.participantDetails) && l.participantDetails.length) {
+      return l.participantDetails.some((p) => p.status === 'accepted' || p.status === 'confirmed');
+    }
+    const pm = l.participantsMap || {};
+    return Object.values(pm).some((v) => v?.status === 'accepted' || v?.status === 'confirmed');
   };
 
   // vues confirmés/terminés (⚠ exclure 'completed' des confirmés)
@@ -631,6 +640,7 @@ export default function TeacherLessons() {
                 pm[sid] = { ...(pm[sid] || {}), status: 'accepted' };
               }
               newData.participantsMap = pm;
+              newData.participant_ids = Object.keys(pm);
             }
 
             if (status === 'completed') {
@@ -794,13 +804,17 @@ export default function TeacherLessons() {
   }, [lessons]);
 
   const Card = ({ lesson, showActionsForPending }) => {
-    const isGroup = !!lesson.is_group || (Array.isArray(lesson.participant_ids) && lesson.participant_ids.length > 0);
-    const confirmedParticipants = (lesson.participantDetails || []).filter(
-      (p) => p.status === 'accepted' || p.status === 'confirmed'
-    );
+  const isGroup = !!lesson.is_group ||
+    (Array.isArray(lesson.participant_ids) && lesson.participant_ids.length > 0) ||
+    (lesson.participantsMap && Object.keys(lesson.participantsMap).length > 0);
 
-    const capacity = lesson.capacity || (isGroup ? lesson.participant_ids.length : 1);
-    const used = isGroup ? confirmedParticipants.length : (lesson.student_id ? 1 : 0);
+  const confirmedParticipants = (lesson.participantDetails || []).filter(
+    (p) => p.status === 'accepted' || p.status === 'confirmed'
+  );
+
+  const pmCount = lesson.participantsMap ? Object.keys(lesson.participantsMap).length : 0;
+  const capacity = lesson.capacity || (isGroup ? (pmCount || (lesson.participant_ids?.length || 0)) : 1);
+  const used = isGroup ? confirmedParticipants.length : (lesson.student_id ? 1 : 0);
 
     const showList = openParticipantsFor === lesson.id;
 
