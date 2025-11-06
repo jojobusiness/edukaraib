@@ -595,22 +595,22 @@ export default function ParentCourses() {
     const arr = [];
     for (const { lesson: c, kids } of displayGroups) {
       if (c.status === 'completed') continue; // pas ici
-      if (Array.isArray(c.participant_ids) && c.participant_ids.length) {s
-        // groupé
-        const pm = c.participantsMap || {};
+
+      if (Array.isArray(c.participant_ids) && c.participant_ids.length) {
+        // --- groupé ---
         const confirmedKids = kids.filter((sid) => isConfirmedForChild(c, sid));
-        // individuel
-        if (c.status === 'confirmed' && kids.length) {
-          arr.push({ c, confirmedKids: kids.slice(0, 1) });
+        if (confirmedKids.length) {
+          arr.push({ c, confirmedKids });
         }
       } else {
-        // individuel
+        // --- individuel ---
         if (c.status === 'confirmed' && kids.length) {
           arr.push({ c, confirmedKids: kids.slice(0, 1) });
         }
       }
     }
-    // petit tri optionnel (jour + heure)
+
+    // tri optionnel (jour + heure)
     arr.sort((a, b) =>
       (['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].indexOf(a.c.slot_day) - ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].indexOf(b.c.slot_day)) ||
       ((a.c.slot_hour || 0) - (b.c.slot_hour || 0))
