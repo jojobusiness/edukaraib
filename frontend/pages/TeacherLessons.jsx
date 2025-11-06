@@ -371,15 +371,16 @@ export default function TeacherLessons() {
           (l) => !l.is_group && !l.pack_id && PENDING_SET.has(String(l.status || ''))
         );
 
-        // ----- Construire pendingGroup par élève (tout statut != accepted/confirmed)
-        const pGroupRaw = [];
-        raw
-          .filter((l) =>
-            !l.pack_id && ( // <— AJOUT : exclure les packs ici
-              !!l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)
-            )
+      // ----- Construire pendingGroup par élève (tout statut != accepted/confirmed)
+      const pGroupRaw = [];
+      raw
+        .filter((l) =>
+          !l.pack_id && ( // ⬅️ IMPORTANT : exclure les packs ici
+            !!l.is_group ||
+            (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)
           )
-          .forEach((l) => {
+        )
+        .forEach((l) => {
           const ids = Array.isArray(l.participant_ids) ? Array.from(new Set(l.participant_ids)) : [];
           const pm = l.participantsMap || {};
           ids.forEach((sid) => {
@@ -503,37 +504,41 @@ export default function TeacherLessons() {
             (b.created_at?.toDate?.() && b.created_at.toDate().getTime()) || 0;
           return bTs - aTs;
         });
-        // --- PENDING PACKS: 1 ligne par pack_id dans "Demandes" ---
-        // ⚠️ Inclure aussi les packs individuels (pas seulement les groupes)
+        // --- PENDING PACKS: 1 ligne par pack_id dans "Demandes"
         const packLessons = enriched.filter(l => !!l.pack_id);
 
-        // un pack est "en attente" si AU MOINS une séance est en statut pending (cours indiv)
-        // ou si AU MOINS un participant du groupe est pending (cours groupe)
-        const packMap = new Map();
-        for (const l of packLessons) {
-          const isPendingIndiv = (!l.is_group && PENDING_SET.has(String(l.status || '')));
-          let isPendingGroup = false;
+        // helper: est-ce que cette séance rend le pack "en attente" ?
+        function isLessonPendingForPack(l) {
+          const st = String(l.status || '');
+          const pendingByStatus = PENDING_SET.has(st) || l.pending_teacher === true;
+
+          // groupe : si au moins un participant n’est pas accepté/confirmé → pending
+          let pendingByGroup = false;
           if (l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)) {
             const pm = l.participantsMap || {};
             for (const sid of (l.participant_ids || [])) {
-              const st = pm?.[sid]?.status;
-              if (!st || PENDING_SET.has(String(st)) || (st !== 'accepted' && st !== 'confirmed')) {
-                if (st !== 'rejected' && st !== 'removed' && st !== 'deleted') {
-                  isPendingGroup = true;
+              const pst = pm?.[sid]?.status;
+              if (!pst || PENDING_SET.has(String(pst)) || (pst !== 'accepted' && pst !== 'confirmed')) {
+                if (pst !== 'rejected' && pst !== 'removed' && pst !== 'deleted') {
+                  pendingByGroup = true;
                   break;
                 }
               }
             }
           }
-          const isPending = isPendingIndiv || isPendingGroup;
 
-          if (!isPending) continue;
+          return pendingByStatus || pendingByGroup;
+        }
+
+        const packMap = new Map();
+        for (const l of packLessons) {
+          if (!isLessonPendingForPack(l)) continue;
 
           const key = l.pack_id;
           if (!packMap.has(key)) {
             packMap.set(key, {
               packId: key,
-              lesson: l, // représentant (on s’en sert pour handleStatus)
+              lesson: l, // représentant utilisé pour handleStatus
               slots: [{ day: l.slot_day, hour: l.slot_hour, label: slotLabel(l) }],
               modeLabel: modeLabel(l),
               packLabel: packLabel(l),
@@ -544,15 +549,16 @@ export default function TeacherLessons() {
           }
         }
 
-        // tri des créneaux par jour/heure puis tri des packs par 1er créneau
+        // trier les créneaux et la liste
         const sortedPendingPacks = Array.from(packMap.values()).map((p) => ({
           ...p,
           slots: p.slots
             .filter(s => s.label && s.label.trim())
             .sort((a, b) => (a.day || '').localeCompare(b.day || '') || Number(a.hour || 0) - Number(b.hour || 0)),
         }));
-
         sortedPendingPacks.sort((a, b) => (a.slots[0]?.label || '').localeCompare(b.slots[0]?.label || ''));
+
+        setPendingPacks(sortedPendingPacks);
 
         setPendingPacks(sortedPendingPacks);
         setLessons(enrichedSorted);
@@ -1043,6 +1049,11 @@ export default function TeacherLessons() {
     return list;
   }, [pendingGroup]);
 
+  const pendingTotal = useMemo(
+    () => demandesIndividuelles.length + demandesGroupes.length + pendingPacks.length,
+    [demandesIndividuelles, demandesGroupes, pendingPacks]
+  );
+
   return (
     <DashboardLayout role="teacher">
       <div className="max-w-5xl mx-auto">
@@ -1053,14 +1064,16 @@ export default function TeacherLessons() {
           <div className="flex items-baseline justify-between mb-4">
             <h3 className="text-xl font-semibold">Demandes de cours</h3>
               <span className="text-sm text-gray-500">
-                {demandesIndividuelles.length + demandesGroupes.length + pendingPacks.length} en attente
+                {pendingTotal} en attente
               </span>
           </div>
 
           {loading ? (
             <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Chargement…</div>
-          ) : (demandesIndividuelles.length + demandesGroupes.length) === 0 ? (
-            <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucune demande de cours pour le moment.</div>
+          ) : pendingTotal === 0 ? (
+            <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">
+              Aucune demande de cours pour le moment.
+            </div>
           ) : (
             <>
               {demandesIndividuelles.length > 0 && (
