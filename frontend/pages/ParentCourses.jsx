@@ -971,9 +971,9 @@ export default function ParentCourses() {
             <section className="mb-8">
               <div className="flex items-baseline justify-between mb-3">
                 <h3 className="text-lg font-semibold">Cours confirmés</h3>
-                <span className="text-sm text-gray-500">{confirmedCourses.length}</span>
+                <span className="text-sm text-gray-500">{confirmedRows.length}</span>
               </div>
-              {confirmedCourses.length === 0 ? (
+              {confirmedRows.length === 0 ? (
                 <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucun cours confirmé.</div>
               ) : (
                 <div className="grid grid-cols-1 gap-4">
@@ -988,18 +988,14 @@ export default function ParentCourses() {
             <section className="mb-8">
               <div className="flex items-baseline justify-between mb-3">
                 <h3 className="text-lg font-semibold">Cours refusés</h3>
-                <span className="text-sm text-gray-500">{rejectedCourses.length}</span>
+                <span className="text-sm text-gray-500">{rejectedRows.length}</span>
               </div>
-              {rejectedCourses.length === 0 ? (
+              {rejectedRows.length === 0 ? (
                 <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucun cours refusé.</div>
               ) : (
                 <div className="grid grid-cols-1 gap-4">
-                  {rejectedCourses.map((c) => (
-                    <CourseCard key={c.id} c={c} kids={
-                      isGroupLesson(c)
-                        ? (c.participant_ids || []).filter((sid) => kidsSet.has(sid))
-                        : (kidsSet.has(c.student_id) ? [c.student_id] : [])
-                    } />
+                  {rejectedRows.map(({ c, sid }) => (
+                    <CourseCard key={`${c.id}:${sid}`} c={c} kids={[sid]} />
                   ))}
                 </div>
               )}
@@ -1009,13 +1005,13 @@ export default function ParentCourses() {
             <section className="mb-8">
               <div className="flex items-baseline justify-between mb-3">
                 <h3 className="text-lg font-semibold">Cours terminés</h3>
-                <span className="text-sm text-gray-500">{completedCourses.length}</span>
+                <span className="text-sm text-gray-500">{completedRows.length}</span>
               </div>
-              {completedCourses.length === 0 ? (
+              {completedRows.length === 0 ? (
                 <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucun cours terminé.</div>
               ) : (
                 <div className="grid grid-cols-1 gap-4">
-                  {rejectedRows.map(({ c, sid }) => (
+                  {completedRows.map(({ c, sid }) => (
                     <CourseCard key={`${c.id}:${sid}`} c={c} kids={[sid]} />
                   ))}
                 </div>
