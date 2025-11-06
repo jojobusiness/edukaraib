@@ -37,6 +37,22 @@ const packKey = (l, forStudent) => {
   return String(l.pack_id || l.pack_group_id || `AUTO:${l.teacher_id}|${l.subject_id || ''}|${mode}|${hours}|${forStudent}`);
 };
 
+// clé d’affichage pack SANS le sid (pour éviter 1 ligne par enfant)
+const packDisplayKey = (l) => {
+  if (!isPack(l)) {
+    // pour les horaires simples, on garde 1 ligne par leçon
+    return `lesson:${l.id}`;
+  }
+  const hours = packHoursOf(l);
+  const mode = (String(l.mode) === 'visio' || l.is_visio === true) ? 'visio' : 'presentiel';
+  // si tu as pack_id / pack_group_id en BD, privilégie-le :
+  return String(
+    l.pack_id ||
+    l.pack_group_id ||
+    `AUTO:${l.teacher_id}|${l.subject_id || ''}|${mode}|${hours}`
+  );
+};
+
 /* ---------- Email helpers (prof) ---------- */
 async function getUserEmailById(uid) {
   if (!uid) return null;
@@ -469,14 +485,20 @@ export default function ParentCourses() {
   // invitations
   const invitations = useMemo(() => {
     const kidsSetLocal = new Set(kidIds);
-    const list = [];
+    const tmp = [];
     for (const c of courses) {
       const pm = c.participantsMap || {};
       const ids = c.participant_ids || [];
       const invitedChild = ids.find((sid) => kidsSetLocal.has(sid) && pm?.[sid]?.status === 'invited_student');
-      if (invitedChild) list.push({ ...c, __child: invitedChild });
+      if (invitedChild) tmp.push({ ...c, __child: invitedChild });
     }
-    return list;
+    // déduplique par cours + packDisplayKey pour ne garder qu’une carte
+    const m = new Map();
+    for (const it of tmp) {
+      const key = `${it.id}:${packDisplayKey(it)}`;
+      if (!m.has(key)) m.set(key, it);
+    }
+    return Array.from(m.values());
   }, [courses, kidIds]);
 
   // --- Construire les vues par “élève” suivi (enfants + parent) ---
@@ -501,6 +523,31 @@ export default function ParentCourses() {
     }
     return out;
   }, [courses, kidIds]);
+
+  // Regroupement par pack (SANS sid) pour l’affichage Confirmés/Terminés/Refusés
+  const displayGroups = useMemo(() => {
+    const m = new Map();
+    for (const r of rows) {
+      const c = r.lesson;
+      const key = packDisplayKey(c);
+      if (!m.has(key)) {
+        m.set(key, { lesson: c, kids: [] });
+      }
+      // on agrége les enfants concernés (sans doublons)
+      const entry = m.get(key);
+      if (Array.isArray(c.participant_ids) && c.participant_ids.length) {
+        // groupé → on mémorise chaque sid visible dans rows
+        if (!entry.kids.includes(r.sid)) entry.kids.push(r.sid);
+      } else {
+        // individuel → un seul sid
+        if (!entry.kids.includes(r.sid)) entry.kids.push(r.sid);
+      }
+      // garde la version la plus fraîche de la leçon
+      entry.lesson = c;
+      m.set(key, entry);
+    }
+    return Array.from(m.values()); // [{ lesson, kids }]
+  }, [rows]);
 
   // --- Regroupement pack : 1 ligne par pack ---
   const groupedRows = useMemo(() => {
@@ -547,68 +594,64 @@ export default function ParentCourses() {
     return out;
   }, [groupedRows]);
 
-  // Confirmés — exclure les cours terminés
   const confirmedCourses = useMemo(() => {
     const arr = [];
-    const kidsSetLocal = new Set(kidIds);
-
-    for (const r of groupedRows) {
-      const c = r.lesson;
+    for (const { lesson: c, kids } of displayGroups) {
       if (c.status === 'completed') continue; // pas ici
-
-      if (isGroupLesson(c)) {
+      if (Array.isArray(c.participant_ids) && c.participant_ids.length) {
+        // groupé : on ne retient que les enfants acceptés/confirmés
         const pm = c.participantsMap || {};
-        const ids = c.participant_ids || [];
-        const confirmedKids = ids.filter((sid) =>
-          kidsSetLocal.has(sid) && (pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed')
+        const confirmedKids = kids.filter(
+          (sid) => pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed'
         );
         if (confirmedKids.length) arr.push({ c, confirmedKids });
       } else {
-        if (c.status === 'confirmed' && kidsSetLocal.has(r.sid)) {
-          arr.push({ c, confirmedKids: [r.sid] });
+        // individuel
+        if (c.status === 'confirmed' && kids.length) {
+          arr.push({ c, confirmedKids: kids.slice(0, 1) });
         }
       }
     }
+    // petit tri optionnel (jour + heure)
+    arr.sort((a, b) =>
+      (['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].indexOf(a.c.slot_day) - ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].indexOf(b.c.slot_day)) ||
+      ((a.c.slot_hour || 0) - (b.c.slot_hour || 0))
+    );
     return arr;
-  }, [groupedRows, kidIds]);
+  }, [displayGroups]);
 
   // Terminés
   const completedCourses = useMemo(() => {
     const arr = [];
-    const kidsSetLocal = new Set(kidIds);
-
-    for (const r of groupedRows) {
-      const c = r.lesson;
+    for (const { lesson: c, kids } of displayGroups) {
       if (c.status !== 'completed') continue;
-
-      if (isGroupLesson(c)) {
+      if (Array.isArray(c.participant_ids) && c.participant_ids.length) {
         const pm = c.participantsMap || {};
-        const ids = c.participant_ids || [];
-        const confirmedKids = ids.filter((sid) =>
-          kidsSetLocal.has(sid) && (pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed')
+        const confirmedKids = kids.filter(
+          (sid) => pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed'
         );
         if (confirmedKids.length) arr.push({ c, confirmedKids });
       } else {
-        if (kidsSetLocal.has(r.sid)) {
-          arr.push({ c, confirmedKids: [r.sid] });
-        }
+        if (kids.length) arr.push({ c, confirmedKids: kids.slice(0, 1) });
       }
     }
     return arr;
-  }, [groupedRows, kidIds]);
+  }, [displayGroups]);
 
   // Refusés
   const rejectedCourses = useMemo(() => {
-    const kidsSetLocal = new Set(kidIds);
-    return groupedRows
-      .map((r) => r.lesson)
-      .filter((c) =>
-        c.status === 'rejected' && (
-          (isGroupLesson(c) && (c.participant_ids || []).some((sid) => kidsSetLocal.has(sid))) ||
-          (!isGroupLesson(c) && kidsSetLocal.has(c.student_id))
-        )
-      );
-  }, [groupedRows, kidIds]);
+    const out = [];
+    for (const { lesson: c, kids } of displayGroups) {
+      if (c.status !== 'rejected') continue;
+      if (Array.isArray(c.participant_ids) && c.participant_ids.length) {
+        // s'il y avait des enfants concernés, on l’affiche
+        if (kids.length) out.push(c);
+      } else {
+        if (kids.length) out.push(c);
+      }
+    }
+    return out;
+  }, [displayGroups]);
 
   // actions invitations
   async function acceptInvite(c) {

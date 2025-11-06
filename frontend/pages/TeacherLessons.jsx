@@ -504,7 +504,12 @@ export default function TeacherLessons() {
           return bTs - aTs;
         });
         // --- PENDING PACKS: 1 ligne par pack_id dans "Demandes" ---
-        const packLessons = enriched.filter(l => !!l.pack_id);
+        const packLessons = enriched.filter(l =>
+          !l.pack_id && (
+            !!l.is_group ||
+            (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)
+          )
+        );
 
         // un pack est "en attente" si AU MOINS une séance est en statut pending (cours indiv)
         // ou si AU MOINS un participant du groupe est pending (cours groupe)
@@ -649,6 +654,30 @@ export default function TeacherLessons() {
 
             await updateDoc(refDoc, newData);
           }
+          // ✅ Met à jour le state local (affichage) tout de suite
+          setLessons(prev => prev.map(l => {
+            if (!lesson.pack_id) {
+              // Cours simple
+              return l.id === lesson.id ? { ...l, status } : l;
+            }
+            if (l.pack_id !== lesson.pack_id) return l;
+
+            const isGrp = l.is_group || Array.isArray(l.participant_ids);
+            let next = { ...l, status, pending_teacher: false };
+
+            if (isGrp) {
+              const ids = Array.isArray(l.participant_ids)
+                ? l.participant_ids
+                : Object.keys(l.participantsMap || {});
+              const pm = { ...(l.participantsMap || {}) };
+              ids.forEach(sid => {
+                pm[sid] = { ...(pm[sid] || {}), status: 'accepted' };
+              });
+              next.participantsMap = pm;
+              next.participant_ids = ids;
+            }
+            return next;
+          }));
         }
       } catch (err) {
         console.error('Erreur propagation pack:', err);
@@ -739,6 +768,17 @@ export default function TeacherLessons() {
       await updateDoc(doc(db, 'lessons', lessonId), {
         [`participantsMap.${studentId}.status`]: 'confirmed',
       });
+      // ✅ Mise à jour immédiate de l'affichage
+      setLessons(prev => prev.map(l => {
+        if (l.id !== lessonId) return l;
+        const pm = { ...(l.participantsMap || {}) };
+        pm[studentId] = { ...(pm[studentId] || {}), status: 'accepted' };
+        return {
+          ...l,
+          participantsMap: pm,
+          participant_ids: Array.from(new Set([...(l.participant_ids || []), studentId])),
+        };
+      }));
       try { await createPaymentDueNotificationsForLesson(lessonId, { onlyForStudentId: studentId }); } catch {}
     } catch (e) {
       console.error(e);
@@ -812,8 +852,14 @@ export default function TeacherLessons() {
     (p) => p.status === 'accepted' || p.status === 'confirmed'
   );
 
-  const pmCount = lesson.participantsMap ? Object.keys(lesson.participantsMap).length : 0;
-  const capacity = lesson.capacity || (isGroup ? (pmCount || (lesson.participant_ids?.length || 0)) : 1);
+  // capacity: take an explicit capacity/max if present, else default 10 for groups, 1 for individual
+  const declaredCap =
+    lesson.capacity ??
+    lesson.max_group_size ??
+    lesson.group_size ??
+    (isGroup ? 10 : 1);
+
+  const capacity = declaredCap;
   const used = isGroup ? confirmedParticipants.length : (lesson.student_id ? 1 : 0);
 
     const showList = openParticipantsFor === lesson.id;
