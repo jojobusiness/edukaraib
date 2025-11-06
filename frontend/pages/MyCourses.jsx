@@ -196,7 +196,12 @@ function isConfirmedForUser(l, uid) {
   if (l?.status === 'completed') return false; // ✅ exclure les terminés
   if (isGroupLesson(l)) {
     const st = l?.participantsMap?.[uid]?.status;
-    return st === 'accepted' || st === 'confirmed';
+    if (st === 'accepted' || st === 'confirmed') return true;
+    // ✅ fallback : si le prof a confirmé globalement (cas pack) et que je suis bien dans le groupe
+    if ((l.status === 'confirmed' || l.status === 'completed') && (l.participant_ids || []).includes(uid)) {
+      return true;
+    }
+    return false;
   }
   return l?.student_id === uid && l?.status === 'confirmed';
 }
@@ -432,6 +437,8 @@ export default function MyCourses() {
     return courses.filter((c) => {
       // Groupe : si je suis dans participant_ids et que mon statut n'est pas accepté/confirmé/rejeté/retiré
       if (Array.isArray(c.participant_ids) && c.participant_ids.includes(uid)) {
+        // ✅ si le cours est déjà confirmé globalement, on ne l'affiche pas en "En attente"
+        if (c.status === 'confirmed' || c.status === 'completed') return false;
         const st = String(c.participantsMap?.[uid]?.status || 'pending');
         return !['accepted','confirmed','rejected','removed','deleted'].includes(st);
       }

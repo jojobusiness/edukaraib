@@ -104,6 +104,18 @@ const statusColors = {
   rejected: 'bg-red-100 text-red-700',
 };
 
+// Statuts “en attente” (cours individuels)
+const PENDING_LESSON_STATUSES = new Set([
+  'booked',
+  'pending',
+  'pending_teacher',
+  'pending_parent',
+  'requested',
+  'awaiting',
+  'awaiting_confirmation',
+  'reinvited',
+]);
+
 /* ---------- noms ---------- */
 async function fetchUserProfile(uid) {
   if (!uid) return null;
@@ -460,18 +472,25 @@ export default function ParentCourses() {
         const ids = c.participant_ids || [];
         ids.forEach((sid) => {
           if (!kidsSet.has(sid)) return;
-          const st = pm?.[sid]?.status;
-          if (st !== 'accepted' && st !== 'confirmed') {
+          const st = String(pm?.[sid]?.status || '');
+          // ✅ exclure si le cours est déjà confirmé globalement
+          if (c.status === 'confirmed' || c.status === 'completed') {
+            // on ne le met pas en "En attente"
+          } else if (!['accepted', 'confirmed', 'rejected', 'removed', 'deleted'].includes(st)) {
             out.push({ c, sid });
           }
         });
       } else {
-        if (c.status === 'booked' && kidsSet.has(c.student_id)) {
+        // ✅ utiliser l’ensemble des statuts “pending”, pas seulement 'booked'
+        if (kidsSet.has(c.student_id) && PENDING_LESSON_STATUSES.has(String(c.status || ''))) {
           out.push({ c, sid: c.student_id });
         }
       }
     }
-    out.sort((a, b) => (FR_DAY_CODES.indexOf(a.c.slot_day) - FR_DAY_CODES.indexOf(b.c.slot_day)) || ((a.c.slot_hour||0)-(b.c.slot_hour||0)));
+    out.sort((a, b) =>
+      (FR_DAY_CODES.indexOf(a.c.slot_day) - FR_DAY_CODES.indexOf(b.c.slot_day)) ||
+      ((a.c.slot_hour || 0) - (b.c.slot_hour || 0))
+    );
     return out;
   }, [courses, kidsSet]);
 
@@ -503,7 +522,9 @@ export default function ParentCourses() {
         const confirmedKids = ids.filter((sid) => kidsSet.has(sid) && (pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed'));
         if (confirmedKids.length) arr.push({ c, confirmedKids });
       } else {
-        if (kidsSet.has(c.student_id)) arr.push({ c, confirmedKids: [c.student_id] });
+        if (kidsSet.has(c.student_id) && isConfirmedForChild(c, c.student_id)) {
+          arr.push({ c, confirmedKids: [c.student_id] });
+        }
       }
     }
     return arr;
