@@ -18,23 +18,20 @@ import {
 /* ---------- Helpers ---------- */
 
 // ---------- PACK HELPERS ----------
-const isPack = (l) => {
-  const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
-  return pt === 'pack5' || pt === 'pack10' || String(l.pack_hours) === '5' || String(l.pack_hours) === '10' || l.is_pack5 === true || l.is_pack10 === true;
+const isPack = (l) => !!l?.pack_id || String(l.pack_hours) === '5' || String(l.pack_hours) === '10' || l.is_pack5 === true || l.is_pack10 === true;
+
+const packKey = (l, forStudent) => {
+  if (!isPack(l)) return `${l.id}:${forStudent}`;
+  const hours = Number(l.pack_hours) || (l.is_pack10 ? 10 : 5);
+  const mode = (String(l.mode) === 'visio' || l.is_visio === true) ? 'visio' : 'presentiel';
+  return String(l.pack_id || l.pack_group_id || `AUTO:${l.teacher_id}|${l.subject_id || ''}|${mode}|${hours}|${forStudent}`);
 };
+
 const packHoursOf = (l) => {
   if (String(l.pack_hours) === '5' || l.is_pack5 === true) return 5;
   if (String(l.pack_hours) === '10' || l.is_pack10 === true) return 10;
   const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
   return pt === 'pack5' ? 5 : pt === 'pack10' ? 10 : 1;
-};
-// clé de regroupement : toutes les heures du même pack -> 1 ligne
-const packKey = (l, forStudent) => {
-  if (!isPack(l)) return `lesson:${l.id}:${forStudent}`;
-  const hours = packHoursOf(l);
-  const mode = (String(l.mode) === 'visio' || l.is_visio === true) ? 'visio' : 'presentiel';
-  // si tu as un champ pack_id / pack_group_id dans ta BD, remplace la partie AUTO par ce champ
-  return String(l.pack_id || l.pack_group_id || `AUTO:${l.teacher_id}|${l.subject_id || ''}|${mode}|${hours}|${forStudent}`);
 };
 
 // clé d’affichage pack SANS le sid (pour éviter 1 ligne par enfant)
@@ -151,6 +148,20 @@ const PENDING_LESSON_STATUSES = new Set([
   'awaiting_confirmation',
   'reinvited',
 ]);
+
+/* ---------- helpers “confirmé pour l’enfant” ---------- */
+function isGroupLesson(l) {
+  return Array.isArray(l?.participant_ids) && l.participant_ids.length > 0;
+}
+function isConfirmedForChild(l, sid) {
+  if (!sid) return false;
+  if (l?.status === 'completed') return false; // on exclut les terminés ici
+  if (isGroupLesson(l)) {
+    const st = l?.participantsMap?.[sid]?.status;
+    return st === 'accepted' || st === 'confirmed';
+  }
+  return l?.student_id === sid && l?.status === 'confirmed';
+}
 
 /* ---------- noms ---------- */
 async function fetchUserProfile(uid) {
@@ -598,13 +609,14 @@ export default function ParentCourses() {
     const arr = [];
     for (const { lesson: c, kids } of displayGroups) {
       if (c.status === 'completed') continue; // pas ici
-      if (Array.isArray(c.participant_ids) && c.participant_ids.length) {
-        // groupé : on ne retient que les enfants acceptés/confirmés
+      if (Array.isArray(c.participant_ids) && c.participant_ids.length) {s
+        // groupé
         const pm = c.participantsMap || {};
-        const confirmedKids = kids.filter(
-          (sid) => pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed'
-        );
-        if (confirmedKids.length) arr.push({ c, confirmedKids });
+        const confirmedKids = kids.filter((sid) => isConfirmedForChild(c, sid));
+        // individuel
+        if (c.status === 'confirmed' && kids.length) {
+          arr.push({ c, confirmedKids: kids.slice(0, 1) });
+        }
       } else {
         // individuel
         if (c.status === 'confirmed' && kids.length) {
@@ -619,7 +631,7 @@ export default function ParentCourses() {
     );
     return arr;
   }, [displayGroups]);
-
+   
   // Terminés
   const completedCourses = useMemo(() => {
     const arr = [];

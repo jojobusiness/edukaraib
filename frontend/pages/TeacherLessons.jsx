@@ -505,7 +505,7 @@ export default function TeacherLessons() {
         });
         // --- PENDING PACKS: 1 ligne par pack_id dans "Demandes" ---
         const packLessons = enriched.filter(l =>
-          !l.pack_id && (
+          !!l.pack_id && (       //  <<<<<  DOIT ÊTRE pack_id
             !!l.is_group ||
             (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)
           )
