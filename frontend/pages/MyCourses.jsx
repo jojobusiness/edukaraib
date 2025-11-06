@@ -234,12 +234,12 @@ function modeLabel(c) {
   const isVisio = m === 'visio' || c?.is_visio === true;
   return isVisio ? 'Visio' : 'Présentiel';
 }
+
 function packLabel(c) {
   const hours = Number(c?.pack_hours ?? c?.packHours ?? 0);
   if (hours >= 10) return 'Pack 10h';
   if (hours >= 5) return 'Pack 5h';
-  if (c?.is_pack) return 'Pack';
-  return 'Horaire';
+  return ''; // pas d’étiquette "Horaire"
 }
 
 const isVisio = (l) => String(l?.mode || '').toLowerCase() === 'visio' || l?.is_visio === true;

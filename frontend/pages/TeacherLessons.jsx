@@ -260,12 +260,12 @@ function modeLabel(c) {
   const isVisio = m === 'visio' || c?.is_visio === true;
   return isVisio ? 'Visio' : 'Présentiel';
 }
+
 function packLabel(c) {
   const hours = Number(c?.pack_hours ?? c?.packHours ?? 0);
   if (hours >= 10) return 'Pack 10h';
   if (hours >= 5) return 'Pack 5h';
-  if (c?.is_pack) return 'Pack';
-  return 'Horaire';
+  return ''; // pas d’étiquette "Horaire"
 }
 
 const isVisio = (l) => String(l?.mode || '').toLowerCase() === 'visio' || l?.is_visio === true;
@@ -367,13 +367,19 @@ export default function TeacherLessons() {
         const raw = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
         // ----- Construire pendingIndiv (tous statuts “pending”)
-        const pIndivRaw = raw.filter((l) => !l.is_group && PENDING_SET.has(String(l.status || '')));
+        const pIndivRaw = raw.filter(
+          (l) => !l.is_group && !l.pack_id && PENDING_SET.has(String(l.status || ''))
+        );
 
         // ----- Construire pendingGroup par élève (tout statut != accepted/confirmed)
         const pGroupRaw = [];
         raw
-          .filter((l) => !!l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0))
-          .forEach((l) =>  {
+          .filter((l) =>
+            !l.pack_id && ( // <— AJOUT : exclure les packs ici
+              !!l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)
+            )
+          )
+          .forEach((l) => {
           const ids = Array.isArray(l.participant_ids) ? Array.from(new Set(l.participant_ids)) : [];
           const pm = l.participantsMap || {};
           ids.forEach((sid) => {
@@ -480,7 +486,7 @@ export default function TeacherLessons() {
         );
 
         // tri par date décroissante pour la liste principale
-        const enrichedSorted = [...compact].sort((a, b) => {
+        const enrichedSorted = [...enriched].sort((a, b) => {
           const aTs =
             (a.start_datetime?.toDate?.() && a.start_datetime.toDate().getTime()) ||
             (a.start_datetime?.seconds && a.start_datetime.seconds * 1000) ||
@@ -586,10 +592,13 @@ export default function TeacherLessons() {
 
   /* ---------- affichage mode/pack helpers UI ---------- */
   function ModePackPills({ l }) {
+    const p = packLabel(l);
     return (
       <>
         <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded ml-1">{modeLabel(l)}</span>
-        <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded ml-1">{packLabel(l)}</span>
+        {p ? (
+          <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded ml-1">{p}</span>
+        ) : null}
       </>
     );
   }
@@ -600,6 +609,7 @@ export default function TeacherLessons() {
       await updateDoc(ref, { status, ...(status === 'completed' ? { completed_at: serverTimestamp() } : {}) });
 
       // Si c'est un pack : propager le même statut à toutes les séances du pack
+      // Si c'est un pack : propager le même statut à toutes les séances du pack
       try {
         if (lesson.pack_id && (status === 'confirmed' || status === 'rejected' || status === 'completed')) {
           const qPack = query(
@@ -608,15 +618,31 @@ export default function TeacherLessons() {
             where('pack_id', '==', lesson.pack_id)
           );
           const packSnap = await getDocs(qPack);
-          const updates = packSnap.docs
-            .filter((d) => d.id !== lesson.id) // la séance courante est déjà MAJ
-            .map((d) => updateDoc(doc(db, 'lessons', d.id), {
-              status,
-              ...(status === 'completed' ? { completed_at: serverTimestamp() } : {}),
-            }));
-          await Promise.all(updates);
+
+          for (const d of packSnap.docs) {
+            const data = d.data();
+            const refDoc = doc(db, 'lessons', d.id);
+            const newData = { status, pending_teacher: false };
+
+            // Cours groupe → confirmer chaque élève
+            if (data.is_group || Array.isArray(data.participant_ids)) {
+              const pm = { ...(data.participantsMap || {}) };
+              for (const sid of data.participant_ids || []) {
+                pm[sid] = { ...(pm[sid] || {}), status: 'accepted' };
+              }
+              newData.participantsMap = pm;
+            }
+
+            if (status === 'completed') {
+              newData.completed_at = serverTimestamp();
+            }
+
+            await updateDoc(refDoc, newData);
+          }
         }
-      } catch {}
+      } catch (err) {
+        console.error('Erreur propagation pack:', err);
+      }
 
       // MAJ optimiste
       setLessons((prev) => prev.map((x) => (x.id === lesson.id ? { ...x, status } : x)));
@@ -806,11 +832,6 @@ export default function TeacherLessons() {
             {indivPaidPill}
             {/* ——— NOUVEAU : pastilles mode & pack ——— */}
             <ModePackPills l={lesson} />
-            {lesson.pack_id && (
-              <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded ml-1">
-                {lesson.pack_hours >= 10 ? 'Pack 10h' : 'Pack 5h'} • {(lesson.__packCount || lesson.pack_hours || 1)} séances
-              </span>
-            )}
             {/* ———————————————————————————————— */}
             {isGroup && (
               <>
