@@ -96,19 +96,18 @@ function detectSource(lesson) {
   return isVisio ? 'visio' : 'presentiel';
 }
 
-/** Calcule le montant *professeur* en CENTIMES selon la source.
- *  - pack5/pack10 : on prend le total du pack (total_amount/total_price/amount) s'il est déjà stocké.
- *    sinon fallback = prix/h × heures (heures=5 ou 10 si pack_hours présent).
- *  - visio : si visio_price_per_hour est présent et visio_same_rate == false -> utiliser ce tarif.
- *    sinon -> price_per_hour.
- *  - présentiel : price_per_hour.
- */
+function computeBaseRateEuro(lesson) {
+  const isVisio = String(lesson.mode) === 'visio' || lesson.is_visio === true;
+  const visioSame = lesson.visio_same_rate;
+  const visioRate = toNum(lesson.visio_price_per_hour);
+  const baseRate = toNum(lesson.price_per_hour);
+  if (isVisio && visioSame === false && visioRate > 0) return visioRate;
+  return baseRate;
+}
+
+/** Calcule le montant *professeur* en CENTIMES pour 1 leçon (hors pack). */
 function computeTeacherAmountCents(lesson) {
   const source = detectSource(lesson);
-  const toNum = (v) => {
-    const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v);
-    return Number.isFinite(n) ? n : 0;
-  };
   const hours = toNum(lesson.duration_hours) || 1;
 
   if (source === 'pack5' || source === 'pack10') {
@@ -120,12 +119,7 @@ function computeTeacherAmountCents(lesson) {
     return Math.max(0, Math.round(baseRate * packHours * 100));
   }
 
-  let rate = toNum(lesson.price_per_hour);
-  if (source === 'visio') {
-    const visioSame = lesson.visio_same_rate;
-    const visioRate = toNum(lesson.visio_price_per_hour);
-    if (visioSame === false && visioRate > 0) rate = visioRate;
-  }
+  const rate = computeBaseRateEuro(lesson);
   return Math.max(0, Math.round(rate * hours * 100));
 }
 
@@ -137,6 +131,28 @@ function getBilledHours(lesson) {
   return Number.isFinite(h) && h > 0 ? Math.floor(h) : 1; // défaut 1h
 }
 
+function isPack(lesson) {
+  const s = detectSource(lesson);
+  return s === 'pack5' || s === 'pack10' || String(lesson.pack_hours) === '5' || String(lesson.pack_hours) === '10' || lesson.is_pack5 === true || lesson.is_pack10 === true;
+}
+function packHoursOf(lesson) {
+  if (String(lesson.pack_hours) === '5' || lesson.is_pack5 === true) return 5;
+  if (String(lesson.pack_hours) === '10' || lesson.is_pack10 === true) return 10;
+  const pt = String(lesson.pack_type || lesson.booking_kind || lesson.type || '').toLowerCase();
+  if (pt === 'pack5') return 5;
+  if (pt === 'pack10') return 10;
+  return 0;
+}
+
+function isEligibleToPay(lesson, participantId) {
+  const isGroup = Array.isArray(lesson?.participant_ids) && lesson.participant_ids.length > 0;
+  if (isGroup) {
+    const st = participantStatus(lesson, participantId);
+    return st === 'accepted' || st === 'confirmed';
+  }
+  return lesson.status === 'confirmed' || lesson.status === 'completed';
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
@@ -146,10 +162,10 @@ export default async function handler(req, res) {
   if (!auth) return;
   const payerUid = auth.uid;
 
-  const { lessonId, forStudent } = readBody(req);
+  const { lessonId, forStudent, packKey } = readBody(req);
   if (!lessonId) return res.status(400).json({ error: 'MISSING_LESSON_ID' });
 
-  // Leçon
+  // Leçon "pivot"
   const snap = await adminDb.collection('lessons').doc(String(lessonId)).get();
   if (!snap.exists) return res.status(404).json({ error: 'LESSON_NOT_FOUND' });
   const lesson = snap.data();
@@ -174,36 +190,114 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: 'NOT_ALLOWED' });
   }
 
-  // Déjà payé ?
-  if (isAlreadyPaid(lesson, participantId)) {
-    return res.status(400).json({ error: 'ALREADY_PAID' });
+  // Cas simple : si pas de packKey et pas un pack → paiement à l’unité comme avant
+  const origin =
+    req.headers?.origin ||
+    `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}`;
+
+  // --------- MODE PACK (paiement groupé) ------------------------------------
+  let lessonsToBill = [ { id: String(lessonId), ...lesson } ];
+  let packMode = false;
+  let effectivePackHours = 0;
+
+  if (packKey || isPack(lesson)) {
+    packMode = true;
+
+    // 1) chercher toutes les leçons du même pack/critères
+    let candidates = [];
+    if (lesson.pack_id) {
+      const q = await adminDb
+        .collection('lessons')
+        .where('teacher_id', '==', String(lesson.teacher_id))
+        .where('pack_id', '==', String(lesson.pack_id))
+        .get();
+      candidates = q.docs.map(d => ({ id: d.id, ...d.data() }));
+    } else {
+      // fallback : mêmes critères "logiques"
+      const q = await adminDb
+        .collection('lessons')
+        .where('teacher_id', '==', String(lesson.teacher_id))
+        .where('subject_id', '==', String(lesson.subject_id || ''))
+        .where('mode', '==', String(lesson.mode || 'presentiel'))
+        .where('pack_hours', '==', packHoursOf(lesson) || 0)
+        .get();
+      candidates = q.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+
+    // 2) filtrer pour l’élève/parent ciblé & non payées & éligibles
+    const sameStudent = (l) => {
+      if (String(l.student_id) === String(participantId)) return true;
+      if (Array.isArray(l.participant_ids) && l.participant_ids.map(String).includes(String(participantId))) return true;
+      if (l.participantsMap && l.participantsMap[participantId]) return true;
+      return false;
+    };
+
+    const eligible = candidates.filter(l =>
+      isPack(l) &&
+      sameStudent(l) &&
+      !isAlreadyPaid(l, participantId) &&
+      isEligibleToPay(l, participantId)
+    );
+
+    // fallback si rien → on reste sur la leçon courante
+    lessonsToBill = eligible.length ? eligible : lessonsToBill;
+    effectivePackHours = packHoursOf(lessonsToBill[0]) || lessonsToBill.length || 1;
   }
 
-  // Éligible à payer ?
-  const isGroup = Array.isArray(lesson?.participant_ids) && lesson.participant_ids.length > 0;
-  if (isGroup) {
-    const st = participantStatus(lesson, participantId);
-    if (!(st === 'accepted' || st === 'confirmed')) {
-      return res.status(400).json({ error: 'PARTICIPANT_NOT_CONFIRMED' });
+  // Déjà payé ? (si pack → on vérifie s’il reste au moins 1 leçon à payer)
+  if (!packMode) {
+    if (isAlreadyPaid(lesson, participantId)) {
+      return res.status(400).json({ error: 'ALREADY_PAID' });
     }
   } else {
-    if (!(lesson.status === 'confirmed' || lesson.status === 'completed')) {
-      return res.status(400).json({ error: 'LESSON_NOT_CONFIRMED' });
+    const anyToPay = lessonsToBill.some(l => !isAlreadyPaid(l, participantId));
+    if (!anyToPay) {
+      return res.status(400).json({ error: 'ALREADY_PAID' });
+    }
+  }
+
+  // Eligibilité finale
+  if (!packMode) {
+    if (!isEligibleToPay(lesson, participantId)) {
+      return res.status(400).json({ error: 'NOT_CONFIRMED' });
+    }
+  } else {
+    const allEligible = lessonsToBill.every(l => isEligibleToPay(l, participantId));
+    if (!allEligible) {
+      return res.status(400).json({ error: 'NOT_CONFIRMED_SOME' });
     }
   }
 
   // Montant selon source
-  const source = detectSource(lesson);              // 'presentiel' | 'visio' | 'pack5' | 'pack10'
-  const teacherAmountCents = computeTeacherAmountCents(lesson);
-  const billedHours = getBilledHours(lesson);
+  let source = detectSource(lesson); // 'presentiel' | 'visio' | 'pack5' | 'pack10'
+  let teacherAmountCents;
+  let billedHours;
+  let isPackPayment = false;
+  let lessonIds = [ String(lessonId) ];
+
+  if (!packMode) {
+    teacherAmountCents = computeTeacherAmountCents(lesson);
+    billedHours = getBilledHours(lesson);
+  } else {
+    // Paiement PACK (1 seul lien)
+    isPackPayment = true;
+    lessonIds = lessonsToBill.map(l => String(l.id));
+
+    // base rate à partir de la leçon pivot (les packs doivent être homogènes)
+    const baseRateEuro = computeBaseRateEuro(lesson);
+    const hours = effectivePackHours > 0 ? effectivePackHours : lessonsToBill.length;
+    // Remise pack : 10% => 0.9
+    teacherAmountCents = Math.round(baseRateEuro * hours * 0.9 * 100);
+    billedHours = hours;
+
+    // ajuster source pack
+    const ph = packHoursOf(lesson);
+    source = ph === 10 ? 'pack10' : 'pack5';
+  }
+
   const siteFeeCents = billedHours * 1000; // 10€ / heure
   const totalCents = teacherAmountCents + siteFeeCents;
   if (!(totalCents > 0)) return res.status(400).json({ error: 'INVALID_AMOUNT' });
-
-  // URLs
-  const origin =
-    req.headers?.origin ||
-    `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}`;
 
   const productName = lesson.subject_id ? `Cours de ${lesson.subject_id}` : 'Cours particulier';
   const productDesc =
@@ -214,16 +308,19 @@ export default async function handler(req, res) {
 
   // Métadonnées (sur la Session ET sur le PaymentIntent)
   const commonMetadata = {
-    lesson_id: String(lessonId),
-    for_student: String(participantId),           // élève ciblé (clé pour maj participantsMap)
-    teacher_uid: String(lesson.teacher_id || ''), // prof
+    lesson_id: String(lessonId),                 // id pivot (utilisé avant)
+    lesson_ids: lessonIds.join(','),             // <- NOUVEAU : toutes les leçons ciblées quand pack
+    for_student: String(participantId),
+    teacher_uid: String(lesson.teacher_id || ''),
     teacher_amount_cents: String(teacherAmountCents),
     site_fee_cents: String(siteFeeCents),
-    is_group: String(!!isGroup),
+    is_group: String(!!(Array.isArray(lesson?.participant_ids) && lesson.participant_ids.length > 0)),
     payer_uid: String(payerUid || ''),
     lesson_source: source,
     billed_hours: String(billedHours),
-    per_hour_site_fee_cents: "1000"                         // <- NOUVEAU
+    per_hour_site_fee_cents: "1000",
+    is_pack: String(isPackPayment ? 1 : 0),      // <- NOUVEAU
+    pack_hours: String(isPackPayment ? billedHours : '') // <- NOUVEAU
   };
 
   const session = await stripe.checkout.sessions.create({
@@ -234,7 +331,7 @@ export default async function handler(req, res) {
         price_data: {
           currency: 'eur',
           product_data: {
-            name: productName,
+            name: isPackPayment ? `${productName} — ${billedHours}h` : productName,
             description: productDesc,
           },
           unit_amount: totalCents,
@@ -253,15 +350,17 @@ export default async function handler(req, res) {
   await adminDb.collection('payments').doc(session.id).set({
     session_id: session.id,
     lesson_id: String(lessonId),
+    lesson_ids: lessonIds,                             // <- NOUVEAU
     for_student: String(participantId),
     teacher_uid: String(lesson.teacher_id || ''),
-    lesson_source: source,                             // <- NOUVEAU
+    lesson_source: source,
     gross_eur: totalCents / 100,
     fee_eur: siteFeeCents / 100,
     net_to_teacher_eur: teacherAmountCents / 100,
     status: 'pending',
     created_at: new Date(),
-    billed_hours: billedHours
+    billed_hours: billedHours,
+    is_pack: isPackPayment,
   }, { merge: true });
 
   return res.json({ url: session.url });

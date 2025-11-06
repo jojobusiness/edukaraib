@@ -121,6 +121,8 @@ const packKey = (l, forStudent) => {
   return String(l.pack_id || l.pack_group_id || `AUTO:${l.teacher_id}|${l.subject_id || ''}|${mode}|${hours}|${forStudent}`);
 };
 
+const isPackRow = (row) => isPack(row.lesson);
+
 export default function ParentPayments() {
   const [toPay, setToPay] = useState([]);   // [{ lesson, forStudent, teacherName, childName }]
   const [paid, setPaid] = useState([]);
@@ -310,7 +312,12 @@ export default function ParentPayments() {
 
       const data = await fetchWithAuth('/api/pay/create-checkout-session', {
         method: 'POST',
-        body: JSON.stringify({ lessonId: row.lesson.id, forStudent: row.forStudent }),
+        body: JSON.stringify({
+          lessonId: row.lesson.id,
+          forStudent: row.forStudent,
+          // >> NOUVEAU : si c’est un pack, on passe la clé de regroupement
+          packKey: isPackRow(row) ? packKey(row.lesson, row.forStudent) : null,
+        }),
       });
       if (!data?.url) throw new Error('Lien de paiement introuvable.');
       window.location.href = data.url;

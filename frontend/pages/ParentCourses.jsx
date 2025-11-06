@@ -17,6 +17,26 @@ import {
 
 /* ---------- Helpers ---------- */
 
+// ---------- PACK HELPERS ----------
+const isPack = (l) => {
+  const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
+  return pt === 'pack5' || pt === 'pack10' || String(l.pack_hours) === '5' || String(l.pack_hours) === '10' || l.is_pack5 === true || l.is_pack10 === true;
+};
+const packHoursOf = (l) => {
+  if (String(l.pack_hours) === '5' || l.is_pack5 === true) return 5;
+  if (String(l.pack_hours) === '10' || l.is_pack10 === true) return 10;
+  const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
+  return pt === 'pack5' ? 5 : pt === 'pack10' ? 10 : 1;
+};
+// clé de regroupement : toutes les heures du même pack -> 1 ligne
+const packKey = (l, forStudent) => {
+  if (!isPack(l)) return `lesson:${l.id}:${forStudent}`;
+  const hours = packHoursOf(l);
+  const mode = (String(l.mode) === 'visio' || l.is_visio === true) ? 'visio' : 'presentiel';
+  // si tu as un champ pack_id / pack_group_id dans ta BD, remplace la partie AUTO par ce champ
+  return String(l.pack_id || l.pack_group_id || `AUTO:${l.teacher_id}|${l.subject_id || ''}|${mode}|${hours}|${forStudent}`);
+};
+
 /* ---------- Email helpers (prof) ---------- */
 async function getUserEmailById(uid) {
   if (!uid) return null;
@@ -462,81 +482,133 @@ export default function ParentCourses() {
   // --- Construire les vues par “élève” suivi (enfants + parent) ---
 
   const kidsSet = useMemo(() => new Set(kidIds), [kidIds]);
+    // --- Lignes brutes (cours × élève/parent suivi) ---
+  const rows = useMemo(() => {
+    const kidsSetLocal = new Set(kidIds);
+    const out = [];
+
+    for (const c of courses) {
+      // groupe
+      if (Array.isArray(c.participant_ids) && c.participant_ids.length) {
+        c.participant_ids.forEach((sid) => {
+          if (kidsSetLocal.has(sid)) out.push({ lesson: c, sid });
+        });
+      }
+      // individuel
+      else if (c.student_id && kidsSetLocal.has(c.student_id)) {
+        out.push({ lesson: c, sid: c.student_id });
+      }
+    }
+    return out;
+  }, [courses, kidIds]);
+
+  // --- Regroupement pack : 1 ligne par pack ---
+  const groupedRows = useMemo(() => {
+    const m = new Map();
+    for (const r of rows) {
+      const key = packKey(r.lesson, r.sid);
+      if (!m.has(key)) {
+        m.set(key, { ...r, __groupCount: 1 });
+      } else if (isPack(r.lesson)) {
+        const rep = m.get(key);
+        rep.__groupCount += 1;
+        m.set(key, rep);
+      }
+    }
+    return Array.from(m.values()); // [{ lesson, sid, __groupCount }]
+  }, [rows]);
 
   // En attente
   const pendingItems = useMemo(() => {
     const out = [];
-    for (const c of courses) {
+    for (const r of groupedRows) {
+      const c = r.lesson;
+      const sid = r.sid;
+
       if (isGroupLesson(c)) {
-        const pm = c.participantsMap || {};
-        const ids = c.participant_ids || [];
-        ids.forEach((sid) => {
-          if (!kidsSet.has(sid)) return;
-          const st = String(pm?.[sid]?.status || '');
-          // ✅ exclure si le cours est déjà confirmé globalement
-          if (c.status === 'confirmed' || c.status === 'completed') {
-            // on ne le met pas en "En attente"
-          } else if (!['accepted', 'confirmed', 'rejected', 'removed', 'deleted'].includes(st)) {
-            out.push({ c, sid });
-          }
-        });
+        const st = String(c?.participantsMap?.[sid]?.status || '');
+        // si la leçon n'est pas déjà confirmée globalement, on liste les enfants dont le statut n'est pas accepté/confirmé/rejeté
+        if (c.status !== 'confirmed' && c.status !== 'completed' &&
+            !['accepted','confirmed','rejected','removed','deleted'].includes(st)) {
+          out.push({ c, sid });
+        }
       } else {
-        // ✅ utiliser l’ensemble des statuts “pending”, pas seulement 'booked'
-        if (kidsSet.has(c.student_id) && PENDING_LESSON_STATUSES.has(String(c.status || ''))) {
-          out.push({ c, sid: c.student_id });
+        // pour l’individuel : on considère comme "en attente" les statuts pending (jeu d’états que tu as déjà défini)
+        if (PENDING_LESSON_STATUSES.has(String(c.status || ''))) {
+          out.push({ c, sid });
         }
       }
     }
+    // tri (même logique que chez toi)
     out.sort((a, b) =>
       (FR_DAY_CODES.indexOf(a.c.slot_day) - FR_DAY_CODES.indexOf(b.c.slot_day)) ||
       ((a.c.slot_hour || 0) - (b.c.slot_hour || 0))
     );
     return out;
-  }, [courses, kidsSet]);
+  }, [groupedRows]);
 
   // Confirmés — exclure les cours terminés
   const confirmedCourses = useMemo(() => {
     const arr = [];
-    for (const c of courses) {
-      if (c.status === 'completed') continue; // ✅ ne pas dupliquer
-      if (isGroupLesson(c)) {
-        const pm = c.participantsMap || {};
-        const ids = c.participant_ids || [];
-        const confirmedKids = ids.filter((sid) => kidsSet.has(sid) && (pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed'));
-        if (confirmedKids.length) arr.push({ c, confirmedKids });
-      } else {
-        if (c.status === 'confirmed' && kidsSet.has(c.student_id)) arr.push({ c, confirmedKids: [c.student_id] });
-      }
-    }
-    return arr;
-  }, [courses, kidsSet]);
+    const kidsSetLocal = new Set(kidIds);
 
-  // Terminés
-  const completedCourses = useMemo(() => {
-    const arr = [];
-    for (const c of courses) {
-      if (c.status !== 'completed') continue;
+    for (const r of groupedRows) {
+      const c = r.lesson;
+      if (c.status === 'completed') continue; // pas ici
+
       if (isGroupLesson(c)) {
         const pm = c.participantsMap || {};
         const ids = c.participant_ids || [];
-        const confirmedKids = ids.filter((sid) => kidsSet.has(sid) && (pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed'));
+        const confirmedKids = ids.filter((sid) =>
+          kidsSetLocal.has(sid) && (pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed')
+        );
         if (confirmedKids.length) arr.push({ c, confirmedKids });
       } else {
-        if (kidsSet.has(c.student_id) && isConfirmedForChild(c, c.student_id)) {
-          arr.push({ c, confirmedKids: [c.student_id] });
+        if (c.status === 'confirmed' && kidsSetLocal.has(r.sid)) {
+          arr.push({ c, confirmedKids: [r.sid] });
         }
       }
     }
     return arr;
-  }, [courses, kidsSet]);
+  }, [groupedRows, kidIds]);
+
+  // Terminés
+  const completedCourses = useMemo(() => {
+    const arr = [];
+    const kidsSetLocal = new Set(kidIds);
+
+    for (const r of groupedRows) {
+      const c = r.lesson;
+      if (c.status !== 'completed') continue;
+
+      if (isGroupLesson(c)) {
+        const pm = c.participantsMap || {};
+        const ids = c.participant_ids || [];
+        const confirmedKids = ids.filter((sid) =>
+          kidsSetLocal.has(sid) && (pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed')
+        );
+        if (confirmedKids.length) arr.push({ c, confirmedKids });
+      } else {
+        if (kidsSetLocal.has(r.sid)) {
+          arr.push({ c, confirmedKids: [r.sid] });
+        }
+      }
+    }
+    return arr;
+  }, [groupedRows, kidIds]);
 
   // Refusés
   const rejectedCourses = useMemo(() => {
-    return courses.filter((c) => c.status === 'rejected' && (
-      (isGroupLesson(c) && (c.participant_ids || []).some((sid) => kidsSet.has(sid))) ||
-      (!isGroupLesson(c) && kidsSet.has(c.student_id))
-    ));
-  }, [courses, kidsSet]);
+    const kidsSetLocal = new Set(kidIds);
+    return groupedRows
+      .map((r) => r.lesson)
+      .filter((c) =>
+        c.status === 'rejected' && (
+          (isGroupLesson(c) && (c.participant_ids || []).some((sid) => kidsSetLocal.has(sid))) ||
+          (!isGroupLesson(c) && kidsSetLocal.has(c.student_id))
+        )
+      );
+  }, [groupedRows, kidIds]);
 
   // actions invitations
   async function acceptInvite(c) {
