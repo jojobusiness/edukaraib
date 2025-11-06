@@ -563,93 +563,90 @@ export default function ParentCourses() {
   }, [rows]);
 
   // En attente
+// En attente — 1 carte par leçon (pack non regroupé)
   const pendingItems = useMemo(() => {
     const out = [];
-    for (const r of groupedRows) {
-      const c = r.lesson;
-      const sid = r.sid;
-
+    for (const { lesson: c, sid } of rows) {
       if (isGroupLesson(c)) {
         const st = String(c?.participantsMap?.[sid]?.status || '');
-        // si la leçon n'est pas déjà confirmée globalement, on liste les enfants dont le statut n'est pas accepté/confirmé/rejeté
-        if (c.status !== 'confirmed' && c.status !== 'completed' &&
-            !['accepted','confirmed','rejected','removed','deleted'].includes(st)) {
+        // si l'enfant n'a pas encore accepté/confirmé/rejeté → en attente
+        if (!['accepted','confirmed','rejected','removed','deleted'].includes(st)) {
           out.push({ c, sid });
         }
       } else {
-        // pour l’individuel : on considère comme "en attente" les statuts pending (jeu d’états que tu as déjà défini)
-        if (PENDING_LESSON_STATUSES.has(String(c.status || ''))) {
+        // individuel : statut global “pending”
+        if (sid === c.student_id && PENDING_LESSON_STATUSES.has(String(c.status || ''))) {
           out.push({ c, sid });
         }
       }
     }
-    // tri (même logique que chez toi)
     out.sort((a, b) =>
       (FR_DAY_CODES.indexOf(a.c.slot_day) - FR_DAY_CODES.indexOf(b.c.slot_day)) ||
       ((a.c.slot_hour || 0) - (b.c.slot_hour || 0))
     );
     return out;
-  }, [groupedRows]);
+  }, [rows]);
 
-  const confirmedCourses = useMemo(() => {
-    const arr = [];
-    for (const { lesson: c, kids } of displayGroups) {
+  // Confirmés — 1 ligne par leçon × enfant
+  const confirmedRows = useMemo(() => {
+    const out = [];
+    for (const { lesson: c, sid } of rows) {
       if (c.status === 'completed') continue; // pas ici
-
-      if (Array.isArray(c.participant_ids) && c.participant_ids.length) {
-        // --- groupé ---
-        const confirmedKids = kids.filter((sid) => isConfirmedForChild(c, sid));
-        if (confirmedKids.length) {
-          arr.push({ c, confirmedKids });
+      if (isGroupLesson(c)) {
+        const st = c?.participantsMap?.[sid]?.status;
+        if (st === 'accepted' || st === 'confirmed') {
+          out.push({ c, sid });
         }
       } else {
-        // --- individuel ---
-        if (c.status === 'confirmed' && kids.length) {
-          arr.push({ c, confirmedKids: kids.slice(0, 1) });
+        if (sid === c.student_id && c.status === 'confirmed') {
+          out.push({ c, sid });
         }
       }
     }
-
-    // tri optionnel (jour + heure)
-    arr.sort((a, b) =>
-      (['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].indexOf(a.c.slot_day) - ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].indexOf(b.c.slot_day)) ||
+    out.sort((a, b) =>
+      (FR_DAY_CODES.indexOf(a.c.slot_day) - FR_DAY_CODES.indexOf(b.c.slot_day)) ||
       ((a.c.slot_hour || 0) - (b.c.slot_hour || 0))
     );
-    return arr;
-  }, [displayGroups]);
+    return out;
+  }, [rows]);
    
-  // Terminés
-  const completedCourses = useMemo(() => {
-    const arr = [];
-    for (const { lesson: c, kids } of displayGroups) {
-      if (c.status !== 'completed') continue;
-      if (Array.isArray(c.participant_ids) && c.participant_ids.length) {
-        const pm = c.participantsMap || {};
-        const confirmedKids = kids.filter(
-          (sid) => pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed'
-        );
-        if (confirmedKids.length) arr.push({ c, confirmedKids });
-      } else {
-        if (kids.length) arr.push({ c, confirmedKids: kids.slice(0, 1) });
-      }
-    }
-    return arr;
-  }, [displayGroups]);
-
-  // Refusés
-  const rejectedCourses = useMemo(() => {
+  // Terminés — 1 ligne par leçon × enfant
+  const completedRows = useMemo(() => {
     const out = [];
-    for (const { lesson: c, kids } of displayGroups) {
-      if (c.status !== 'rejected') continue;
-      if (Array.isArray(c.participant_ids) && c.participant_ids.length) {
-        // s'il y avait des enfants concernés, on l’affiche
-        if (kids.length) out.push(c);
+    for (const { lesson: c, sid } of rows) {
+      if (c.status !== 'completed') continue;
+      if (isGroupLesson(c)) {
+        const st = c?.participantsMap?.[sid]?.status;
+        if (st === 'accepted' || st === 'confirmed') {
+          out.push({ c, sid });
+        }
       } else {
-        if (kids.length) out.push(c);
+        if (sid === c.student_id) {
+          out.push({ c, sid });
+        }
       }
     }
     return out;
-  }, [displayGroups]);
+  }, [rows]);
+
+  // Refusés — 1 ligne par leçon × enfant
+  const rejectedRows = useMemo(() => {
+    const out = [];
+    for (const { lesson: c, sid } of rows) {
+      if (c.status !== 'rejected') continue;
+      if (isGroupLesson(c)) {
+        // si l'enfant était dans ce cours
+        if ((c.participant_ids || []).includes(sid)) {
+          out.push({ c, sid });
+        }
+      } else {
+        if (sid === c.student_id) {
+          out.push({ c, sid });
+        }
+      }
+    }
+    return out;
+  }, [rows]);
 
   // actions invitations
   async function acceptInvite(c) {
@@ -980,8 +977,8 @@ export default function ParentCourses() {
                 <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucun cours confirmé.</div>
               ) : (
                 <div className="grid grid-cols-1 gap-4">
-                  {confirmedCourses.map(({ c, confirmedKids }) => (
-                    <CourseCard key={c.id} c={c} kids={confirmedKids} />
+                  {confirmedRows.map(({ c, sid }) => (
+                    <CourseCard key={`${c.id}:${sid}`} c={c} kids={[sid]} />
                   ))}
                 </div>
               )}
@@ -1018,8 +1015,8 @@ export default function ParentCourses() {
                 <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Aucun cours terminé.</div>
               ) : (
                 <div className="grid grid-cols-1 gap-4">
-                  {completedCourses.map(({ c, confirmedKids }) => (
-                    <CourseCard key={c.id} c={c} kids={confirmedKids} />
+                  {rejectedRows.map(({ c, sid }) => (
+                    <CourseCard key={`${c.id}:${sid}`} c={c} kids={[sid]} />
                   ))}
                 </div>
               )}

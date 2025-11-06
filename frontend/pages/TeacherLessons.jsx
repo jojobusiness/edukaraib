@@ -504,12 +504,8 @@ export default function TeacherLessons() {
           return bTs - aTs;
         });
         // --- PENDING PACKS: 1 ligne par pack_id dans "Demandes" ---
-        const packLessons = enriched.filter(l =>
-          !!l.pack_id && (       //  <<<<<  DOIT ÊTRE pack_id
-            !!l.is_group ||
-            (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)
-          )
-        );
+        // ⚠️ Inclure aussi les packs individuels (pas seulement les groupes)
+        const packLessons = enriched.filter(l => !!l.pack_id);
 
         // un pack est "en attente" si AU MOINS une séance est en statut pending (cours indiv)
         // ou si AU MOINS un participant du groupe est pending (cours groupe)
@@ -1056,9 +1052,9 @@ export default function TeacherLessons() {
         <section className="mb-10">
           <div className="flex items-baseline justify-between mb-4">
             <h3 className="text-xl font-semibold">Demandes de cours</h3>
-            <span className="text-sm text-gray-500">
-              {demandesIndividuelles.length + demandesGroupes.length} en attente
-            </span>
+              <span className="text-sm text-gray-500">
+                {demandesIndividuelles.length + demandesGroupes.length + pendingPacks.length} en attente
+              </span>
           </div>
 
           {loading ? (
