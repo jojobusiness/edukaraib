@@ -117,17 +117,23 @@ const PENDING_LESSON_STATUSES = new Set([
 ]);
 
 /* ---------- helpers “confirmé pour l’enfant” ---------- */
-function isGroupLesson(l) {
-  return Array.isArray(l?.participant_ids) && l.participant_ids.length > 0;
-}
+function isGroupLesson(l) { return !!l?.is_group || Array.isArray(l?.participant_ids); }
+
 function isConfirmedForChild(l, sid) {
-  if (!sid) return false;
-  if (l?.status === 'completed') return false; // on exclut les terminés ici
-  if (isGroupLesson(l)) {
-    const st = l?.participantsMap?.[sid]?.status;
-    return st === 'accepted' || st === 'confirmed';
-  }
-  return l?.student_id === sid && l?.status === 'confirmed';
+  if (!sid || !l) return false;
+  if (l.status === 'completed') return false; // pas dans confirmés
+  const st = l?.participantsMap?.[sid]?.status;
+  // ➜ on considère "accepted" OU "confirmed" comme confirmés côté parent
+  if (st === 'accepted' || st === 'confirmed') return true;
+  // fallback : global confirmé + child présent
+  if ((l.status === 'confirmed' || l.status === 'completed') && (l.participant_ids || []).includes(sid)) return true;
+  return false;
+}
+
+function isRejectedForChild(l, sid) {
+  if (!sid || !l) return false;
+  const st = l?.participantsMap?.[sid]?.status;
+  return st === 'rejected' || l.status === 'rejected';
 }
 
 /* ---------- noms ---------- */
@@ -277,7 +283,12 @@ export default function ParentCourses() {
       query(collection(db, 'students'), where('parent_id', '==', me.uid)),
       async (kidsSnap) => {
         const kids = kidsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        const ids = kids.map(k => k.id);
+        // ➜ Inclure l’ID du document *et* l’UID utilisateur s’il existe (ex: k.user_uid)
+        const ids = [];
+        for (const k of kids) {
+          if (k.id) ids.push(k.id);
+          if (k.user_uid) ids.push(k.user_uid);
+        }
 
         // nom du parent
         let parentLabel = 'Moi (parent)';
@@ -289,11 +300,18 @@ export default function ParentCourses() {
           }
         } catch {}
 
-        const newMap = new Map(kids.map(k => [k.id, k.full_name || k.fullName || k.name || 'Enfant']));
+        // ➜ Mapper les 2 clés (student.id ET user_uid) vers le même nom
+        const newMap = new Map();
+        for (const k of kids) {
+          const label = k.full_name || k.fullName || k.name || 'Enfant';
+          if (k.id) newMap.set(k.id, label);
+          if (k.user_uid) newMap.set(k.user_uid, label);
+        }
         newMap.set(me.uid, parentLabel);
         setStudentMap(newMap);
 
-        setKidIds([...ids, me.uid]);
+        // ➜ Ajouter aussi le parent lui-même (cas cours indiv du parent)
+        setKidIds([...new Set([...ids, me.uid])]);
       },
       () => { setLoading(false); }
     );
@@ -453,7 +471,11 @@ export default function ParentCourses() {
     for (const c of courses) {
       const pm = c.participantsMap || {};
       const ids = c.participant_ids || [];
-      const invitedChild = ids.find((sid) => kidsSetLocal.has(sid) && pm?.[sid]?.status === 'invited_student');
+      const invitedChild = ids.find((sid) => {
+        if (!kidsSetLocal.has(sid)) return false;
+        const st = pm?.[sid]?.status;
+        return st === 'invited_student' || st === 'invited'; // ➜ tolère les 2 valeurs
+      });
       if (invitedChild) tmp.push({ ...c, __child: invitedChild });
     }
     // déduplique par cours + packDisplayKey pour ne garder qu’une carte
@@ -563,8 +585,18 @@ export default function ParentCourses() {
   async function acceptInvite(c) {
     const sid = c.__child;
     try {
-      await updateDoc(doc(db, 'lessons', c.id), { [`participantsMap.${sid}.status`]: 'accepted' });
+      await updateDoc(doc(db, 'lessons', c.id), { [`participantsMap.${childId}.status`]: 'accepted' });
       // 🔔 Email au professeur
+       setRows(prev => prev.map(r => r.id === lesson.id
+        ? {
+            ...r,
+            participantsMap: {
+              ...(r.participantsMap || {}),
+              [childId]: { ...(r.participantsMap?.[childId] || {}), status: 'accepted' }
+            }
+          }
+        : r
+      ));
       const childLabel = studentMap.get(sid) || 'Élève';
       await emailTeacherAboutChildInvite(c, childLabel, { accepted: true });      
     } catch (e) {
@@ -577,9 +609,19 @@ export default function ParentCourses() {
     try {
       const newIds = (c.participant_ids || []).filter(x => x !== sid);
       await updateDoc(doc(db, 'lessons', c.id), {
-        participant_ids: newIds,
-        [`participantsMap.${sid}`]: null,
+        [`participantsMap.${childId}.status`]: 'rejected',
       });
+      // MAJ locale optimiste :
+      setRows(prev => prev.map(r => r.id === lesson.id
+        ? {
+            ...r,
+            participantsMap: {
+              ...(r.participantsMap || {}),
+              [childId]: { ...(r.participantsMap?.[childId] || {}), status: 'rejected' }
+            }
+          }
+        : r
+      ));
       // 🔔 Email au professeur
       const childLabel = studentMap.get(sid) || 'Élève';
       await emailTeacherAboutChildInvite(c, childLabel, { accepted: false });      

@@ -819,18 +819,17 @@ export default function TeacherLessons() {
   async function rejectGroupStudent(lessonId, studentId) {
     try {
       await updateDoc(doc(db, 'lessons', lessonId), {
-        participant_ids: arrayRemove(studentId),
-        [`participantsMap.${studentId}`]: deleteField(),
+        [`participantsMap.${studentId}.status`]: 'rejected',
       });
 
       setPendingGroup(prev => prev.filter(g => !(g.lessonId === lessonId && g.studentId === studentId)));
 
       setLessons(prev => prev.map(l => {
         if (l.id !== lessonId) return l;
-        const nextIds = (l.participant_ids || []).filter(id => id !== studentId);
         const pm = { ...(l.participantsMap || {}) };
-        delete pm[studentId];
-        return { ...l, participant_ids: nextIds, participantsMap: pm };
+        pm[studentId] = { ...(pm[studentId] || {}), status: 'rejected' };
+        // on conserve participant_ids tel quel pour que les filtres trouvent la ligne
+        return { ...l, participantsMap: pm };
       }));
     } catch (e) {
       console.error(e);

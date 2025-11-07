@@ -423,62 +423,65 @@ export default function MyCourses() {
     return courses.filter(l => {
       const pm = l.participantsMap || {};
       return isGroupLesson(l)
-        && l.participant_ids.includes(uid)
+        && (l.participant_ids || []).includes(uid)
         && pm?.[uid]?.status === 'invited_student';
     });
   }, [courses]);
 
-  // Listes “en attente / confirmés / …” PAR UTILISATEUR
+  // ====== LISTES POUR L'UI (élève courant) ======
   const uid = auth.currentUser?.uid;
 
   // 🟡 En attente
-  const pendingRows = useMemo(() => {
+  const booked = useMemo(() => {
+    if (!uid) return [];
     const out = [];
-    for (const c of lessons) {
-      if (Array.isArray(c.participant_ids) && c.participant_ids.includes(me.uid)) {
-        const st = String(c?.participantsMap?.[me.uid]?.status || '');
+    for (const c of courses) {
+      if (Array.isArray(c.participant_ids) && c.participant_ids.includes(uid)) {
+        const st = String(c?.participantsMap?.[uid]?.status || '');
         if (!['accepted', 'confirmed', 'rejected', 'removed', 'deleted'].includes(st)) {
           out.push(c);
         }
-      } else if (c.student_id === me.uid && PENDING_LESSON_STATUSES.has(String(c.status || ''))) {
+      } else if (c.student_id === uid && PENDING_LESSON_STATUSES.has(String(c.status || ''))) {
         out.push(c);
       }
     }
     return out;
-  }, [lessons, me.uid]);
+  }, [courses, uid]);
 
-  // ✅ Confirmés (exclure terminés)
-  const confirmedRows = useMemo(() => {
+  // 🟢 Confirmés (exclure terminés)
+  const confirmed = useMemo(() => {
+    if (!uid) return [];
     const out = [];
-    for (const c of lessons) {
+    for (const c of courses) {
       if (c.status === 'completed') continue;
-      if (Array.isArray(c.participant_ids) && c.participant_ids.includes(me.uid)) {
-        const st = c?.participantsMap?.[me.uid]?.status;
+      if (Array.isArray(c.participant_ids) && c.participant_ids.includes(uid)) {
+        const st = c?.participantsMap?.[uid]?.status;
         if (st === 'accepted' || st === 'confirmed' || c.status === 'confirmed') {
           out.push(c);
         }
-      } else if (c.student_id === me.uid && c.status === 'confirmed') {
+      } else if (c.student_id === uid && c.status === 'confirmed') {
         out.push(c);
       }
     }
     return out;
-  }, [lessons, me.uid]);
+  }, [courses, uid]);
 
   // 🔴 Refusés
-  const rejectedRows = useMemo(() => {
+  const rejected = useMemo(() => {
+    if (!uid) return [];
     const out = [];
-    for (const c of lessons) {
-      if (Array.isArray(c.participant_ids) && c.participant_ids.includes(me.uid)) {
-        const pst = String(c?.participantsMap?.[me.uid]?.status || '');
+    for (const c of courses) {
+      if (Array.isArray(c.participant_ids) && c.participant_ids.includes(uid)) {
+        const pst = String(c?.participantsMap?.[uid]?.status || '');
         if (['rejected', 'removed', 'deleted'].includes(pst) || c.status === 'rejected') {
           out.push(c);
         }
-      } else if (c.student_id === me.uid && c.status === 'rejected') {
+      } else if (c.student_id === uid && c.status === 'rejected') {
         out.push(c);
       }
     }
     return out;
-  }, [lessons, me.uid]);
+  }, [courses, uid]);
 
   const completed = useMemo(() => courses.filter(c => c.status === 'completed'), [courses]);
 
@@ -610,7 +613,6 @@ export default function MyCourses() {
               const uid = auth.currentUser?.uid;
               const isPaid = isPaidForMe(c, uid);
 
-              // Pas de lien = prof n’a pas encore créé le lien
               if (!hasVisioLink(c)) {
                 return (
                   <span className="px-3 py-2 rounded bg-gray-100 text-gray-600 font-semibold">
@@ -619,7 +621,6 @@ export default function MyCourses() {
                 );
               }
 
-              // Lien créé mais pas payé = verrouillé
               if (!isPaid) {
                 return (
                   <span
@@ -631,7 +632,6 @@ export default function MyCourses() {
                 );
               }
 
-              // Payé : appliquer la fenêtre d’ouverture
               const state = getJoinState(c);
               const disabled = state !== 'open';
               const title =
@@ -655,11 +655,18 @@ export default function MyCourses() {
               );
             })()
           )}
+
+          {/* Documents — pas en refusé */}
           {displayedStatus === 'rejected' ? null : (
-            <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => { setDocLesson(c); setDocOpen(true); }}>
+            <button
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold"
+              onClick={() => { setDocLesson(c); setDocOpen(true); }}
+            >
               📄 Documents
             </button>
           )}
+
+          {/* Avis */}
           {c.status === 'completed' && (
             <button
               className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded shadow font-semibold"
