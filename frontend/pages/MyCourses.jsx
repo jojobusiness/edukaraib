@@ -189,30 +189,25 @@ async function resolvePersonName(id, cache) {
 }
 
 /* ---------- logique “confirmé/pending” PAR PARTICIPANT ---------- */
-function isGroupLesson(l) {
-  return Array.isArray(l?.participant_ids) && l.participant_ids.length > 0;
+// helpers (haut de fichier)
+function isGroupLesson(l) { return !!l?.is_group || Array.isArray(l?.participant_ids); }
+const isVisio = (l) => String(l?.mode || '').toLowerCase() === 'visio' || l?.is_visio === true;
+const hasVisioLink = (l) => !!l?.visio?.joinUrl;
+
+// suppose que currentUserId est l'uid de l'élève courant
+function isConfirmedForMe(l, uid) {
+  if (!uid || !l) return false;
+  if (l.status === 'completed') return false;
+  const st = l?.participantsMap?.[uid]?.status;
+  return st === 'accepted' || st === 'confirmed' ||
+         ((l.status === 'confirmed' || l.status === 'completed') && (l.participant_ids || []).includes(uid));
 }
-function isConfirmedForUser(l, uid) {
-  if (l?.status === 'completed') return false; // ✅ exclure les terminés
-  if (isGroupLesson(l)) {
-    const st = l?.participantsMap?.[uid]?.status;
-    if (st === 'accepted' || st === 'confirmed') return true;
-    // ✅ fallback : si le prof a confirmé globalement (cas pack) et que je suis bien dans le groupe
-    if ((l.status === 'confirmed' || l.status === 'completed') && (l.participant_ids || []).includes(uid)) {
-      return true;
-    }
-    return false;
-  }
-  return l?.student_id === uid && l?.status === 'confirmed';
+function isRejectedForMe(l, uid) {
+  if (!uid || !l) return false;
+  const st = l?.participantsMap?.[uid]?.status;
+  return st === 'rejected' || l.status === 'rejected';
 }
-function isPendingForUser(l, uid) {
-  if (isGroupLesson(l)) {
-    const st = l?.participantsMap?.[uid]?.status;
-    return !['accepted', 'confirmed', 'rejected', 'removed', 'deleted'].includes(String(st || ''));
-  }
-  if (l?.student_id !== uid) return false;
-  return PENDING_LESSON_STATUSES.has(String(l?.status || ''));
-}
+
 
 /* ---------- helpers auto-règles (globaux) ---------- */
 const isIndividualPaid = (l) => l && !l.is_group && (l.is_paid === true);
@@ -246,9 +241,6 @@ function packLabel(c) {
   if (hours >= 5) return 'Pack 5h';
   return ''; // pas d’étiquette "Horaire"
 }
-
-const isVisio = (l) => String(l?.mode || '').toLowerCase() === 'visio' || l?.is_visio === true;
-const hasVisioLink = (l) => !!l?.visio?.joinUrl;
 
 // --- NOUVEAU : payé pour moi ? ---
 const isPaidForMe = (l, uid) => {
@@ -453,9 +445,10 @@ export default function MyCourses() {
     if (!uid) return [];
     const out = [];
     for (const c of courses) {
-      if (c.status === 'completed') continue;
+      if (c.status === 'completed') continue; // ✨ exclure les terminés
       if (Array.isArray(c.participant_ids) && c.participant_ids.includes(uid)) {
         const st = c?.participantsMap?.[uid]?.status;
+        // ✨ groupe : accepted OU confirmed par participant, OU confirmed global
         if (st === 'accepted' || st === 'confirmed' || c.status === 'confirmed') {
           out.push(c);
         }

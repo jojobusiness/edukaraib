@@ -118,16 +118,15 @@ const PENDING_LESSON_STATUSES = new Set([
 
 /* ---------- helpers “confirmé pour l’enfant” ---------- */
 function isGroupLesson(l) { return !!l?.is_group || Array.isArray(l?.participant_ids); }
+const isVisio = (l) => String(l?.mode || '').toLowerCase() === 'visio' || l?.is_visio === true;
+const hasVisioLink = (l) => !!l?.visio?.joinUrl;
 
 function isConfirmedForChild(l, sid) {
   if (!sid || !l) return false;
-  if (l.status === 'completed') return false; // pas dans confirmés
+  if (l.status === 'completed') return false;
   const st = l?.participantsMap?.[sid]?.status;
-  // ➜ on considère "accepted" OU "confirmed" comme confirmés côté parent
-  if (st === 'accepted' || st === 'confirmed') return true;
-  // fallback : global confirmé + child présent
-  if ((l.status === 'confirmed' || l.status === 'completed') && (l.participant_ids || []).includes(sid)) return true;
-  return false;
+  return st === 'accepted' || st === 'confirmed'
+    || ((l.status === 'confirmed' || l.status === 'completed') && (l.participant_ids || []).includes(sid));
 }
 
 function isRejectedForChild(l, sid) {
@@ -210,9 +209,6 @@ function packLabel(c) {
   if (hours >= 5) return 'Pack 5h';
   return ''; // pas d’étiquette "Horaire"
 }
-
-const isVisio = (l) => String(l?.mode || '').toLowerCase() === 'visio' || l?.is_visio === true;
-const hasVisioLink = (l) => !!l?.visio?.joinUrl;
 
 // --- NOUVEAU : payé pour l'enfant ? ---
 const isPaidForChild = (l, sid) => {

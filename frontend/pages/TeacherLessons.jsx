@@ -371,22 +371,25 @@ export default function TeacherLessons() {
           (l) => !l.is_group && !l.pack_id && PENDING_SET.has(String(l.status || ''))
         );
 
-      // ----- Construire pendingGroup par élève (tout statut != accepted/confirmed)
+      // ----- Construire pendingGroup par élève (tout statut != accepted/confirmed) — exclut PACKS
       const pGroupRaw = [];
       raw
         .filter((l) =>
-          !l.pack_id && ( // ⬅️ IMPORTANT : exclure les packs ici
+          !l.pack_id && (
             !!l.is_group ||
-            (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)
+            (Array.isArray(l.participant_ids) && l.participant_ids.length > 0) ||
+            (l.participantsMap && Object.keys(l.participantsMap).length > 0)
           )
         )
         .forEach((l) => {
-          const ids = Array.isArray(l.participant_ids) ? Array.from(new Set(l.participant_ids)) : [];
+          const ids = Array.isArray(l.participant_ids)
+            ? Array.from(new Set(l.participant_ids))
+            : Object.keys(l.participantsMap || {});
           const pm = l.participantsMap || {};
           ids.forEach((sid) => {
-            const st = pm?.[sid]?.status;
-            if (!st || PENDING_SET.has(String(st)) || (st !== 'accepted' && st !== 'confirmed')) {
-              if (st === 'rejected' || st === 'removed' || st === 'deleted') return;
+            const st = String(pm?.[sid]?.status || '');
+            // On considère "pending" tout ce qui n’est PAS accepté/confirmé/rejeté/removed/deleted
+            if (!['accepted', 'confirmed', 'rejected', 'removed', 'deleted'].includes(st)) {
               pGroupRaw.push({
                 lessonId: l.id,
                 lesson: l,
@@ -600,9 +603,10 @@ export default function TeacherLessons() {
   // Confirmés : inclut groupes si au moins 1 participant est accepté/confirmé
   const confirmes = useMemo(() => {
     return lessons.filter((l) => {
-      if (l.status === 'completed') return false; // pas dans confirmés
+      if (l.status === 'completed') return false; // pas ici
       if (l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length)) {
         const pm = l.participantsMap || {};
+        // confirmé si au moins un élève est accepté/confirmé OU si status global 'confirmed'
         return (l.participant_ids || []).some((sid) => {
           const st = pm?.[sid]?.status;
           return st === 'accepted' || st === 'confirmed';
