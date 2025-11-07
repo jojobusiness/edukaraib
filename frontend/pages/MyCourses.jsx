@@ -431,18 +431,18 @@ export default function MyCourses() {
   // Listes “en attente / confirmés / …” PAR UTILISATEUR
   const uid = auth.currentUser?.uid;
 
+  // 🟡 En attente
   const booked = useMemo(() => {
     const uid = auth.currentUser?.uid;
     if (!uid) return [];
     return courses.filter((c) => {
-      // Groupe : si je suis dans participant_ids et que mon statut n'est pas accepté/confirmé/rejeté/retiré
+      // Cours groupé : je suis inscrit et mon statut est "pending"
       if (Array.isArray(c.participant_ids) && c.participant_ids.includes(uid)) {
-        // ✅ si le cours est déjà confirmé globalement, on ne l'affiche pas en "En attente"
-        if (c.status === 'confirmed' || c.status === 'completed') return false;
+        if (c.status === 'completed') return false;
         const st = String(c.participantsMap?.[uid]?.status || 'pending');
-        return !['accepted','confirmed','rejected','removed','deleted'].includes(st);
+        return !['accepted', 'confirmed', 'rejected', 'removed', 'deleted'].includes(st);
       }
-      // Individuel : si je suis l'élève et que le statut global est "pending"
+      // Cours individuel : statut global en attente
       if (c.student_id === uid) {
         return PENDING_LESSON_STATUSES.has(String(c.status || ''));
       }
@@ -450,8 +450,37 @@ export default function MyCourses() {
     });
   }, [courses, auth.currentUser?.uid]);
 
-  const confirmed = useMemo(() => courses.filter(c => isConfirmedForUser(c, uid)), [courses, uid]);
-  const rejected = useMemo(() => courses.filter(c => c.status === 'rejected'), [courses]);
+  // 🟢 Confirmés
+  const confirmed = useMemo(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return [];
+    return courses.filter((c) => {
+      if (c.status === 'completed') return false;
+
+      if (Array.isArray(c.participant_ids) && c.participant_ids.includes(uid)) {
+        const st = c.participantsMap?.[uid]?.status;
+        // ✅ accepté, confirmé, ou statut global confirmé
+        return ['accepted', 'confirmed'].includes(st) || c.status === 'confirmed';
+      }
+
+      return c.student_id === uid && c.status === 'confirmed';
+    });
+  }, [courses, auth.currentUser?.uid]);
+
+  // 🔴 Refusés
+  const rejected = useMemo(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return [];
+    return courses.filter((c) => {
+      if (Array.isArray(c.participant_ids) && c.participant_ids.includes(uid)) {
+        const st = String(c?.participantsMap?.[uid]?.status || '');
+        // ✅ rejet individuel ou global
+        return ['rejected', 'removed', 'deleted'].includes(st) || c.status === 'rejected';
+      }
+      return c.student_id === uid && c.status === 'rejected';
+    });
+  }, [courses, auth.currentUser?.uid]);
+
   const completed = useMemo(() => courses.filter(c => c.status === 'completed'), [courses]);
 
   function teacherNameFor(id) {
@@ -577,7 +606,7 @@ export default function MyCourses() {
         </div>
         <div className="flex flex-wrap gap-2">
           {/* Visio */}
-          {isVisio(c) && (
+          {displayedStatus === 'confirmed' && isVisio(c) && (
             (() => {
               const uid = auth.currentUser?.uid;
               const isPaid = isPaidForMe(c, uid);

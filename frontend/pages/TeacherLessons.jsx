@@ -589,17 +589,33 @@ export default function TeacherLessons() {
     return Object.values(pm).some((v) => v?.status === 'accepted' || v?.status === 'confirmed');
   };
 
-  // vues confirmés/terminés (⚠ exclure 'completed' des confirmés)
+  // vrai si (cours groupé) ET (tous les participants sont rejected)
+  function isGroupFullyRejected(l) {
+    const pm = l?.participantsMap || {};
+    const vals = Object.values(pm);
+    if (!l?.is_group || !vals.length) return false;
+    return vals.every(v => v?.status === 'rejected');
+  }
+
+  // Confirmés : inclut groupes si au moins 1 participant est accepté/confirmé
   const confirmes = useMemo(() => {
     return lessons.filter((l) => {
-      if (l.status === 'completed') return false; // ✅ ne pas dupliquer
-      if (l.is_group) return hasAnyConfirmedParticipantUI(l) || l.status === 'confirmed';
+      if (l.status === 'completed') return false; // pas dans confirmés
+      if (l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length)) {
+        const pm = l.participantsMap || {};
+        return (l.participant_ids || []).some((sid) => {
+          const st = pm?.[sid]?.status;
+          return st === 'accepted' || st === 'confirmed';
+        }) || l.status === 'confirmed';
+      }
       return l.status === 'confirmed';
     });
   }, [lessons]);
 
-  // ✅ Cours refusés
-  const refuses = useMemo(() => lessons.filter((l) => l.status === 'rejected'), [lessons]);
+  // Refusés : soit statut global rejeté, soit au moins un participant marqué rejeté/removed/deleted
+  const refuses = useMemo(() => {
+    return lessons.filter((l) => l.status === 'rejected' || isGroupFullyRejected(l));
+  }, [lessons]);
 
   const termines = useMemo(() => lessons.filter((l) => l.status === 'completed'), [lessons]);
 
@@ -773,14 +789,24 @@ export default function TeacherLessons() {
       // ✅ Mise à jour immédiate de l'affichage
       setLessons(prev => prev.map(l => {
         if (l.id !== lessonId) return l;
+
+        // participantsMap -> status 'confirmed' (comme en base)
         const pm = { ...(l.participantsMap || {}) };
-        pm[studentId] = { ...(pm[studentId] || {}), status: 'accepted' };
+        pm[studentId] = { ...(pm[studentId] || {}), status: 'confirmed' };
+
+        const ids = Array.isArray(l.participant_ids)
+          ? Array.from(new Set([...l.participant_ids, studentId]))
+          : [studentId];
+
         return {
           ...l,
           participantsMap: pm,
-          participant_ids: Array.from(new Set([...(l.participant_ids || []), studentId])),
+          participant_ids: ids,
         };
       }));
+
+      // ✅ Enlève la ligne de "Demandes" immédiatement
+      setPendingGroup(prev => prev.filter(g => !(g.lessonId === lessonId && g.studentId === studentId)));
       try { await createPaymentDueNotificationsForLesson(lessonId, { onlyForStudentId: studentId }); } catch {}
     } catch (e) {
       console.error(e);
@@ -793,6 +819,17 @@ export default function TeacherLessons() {
         participant_ids: arrayRemove(studentId),
         [`participantsMap.${studentId}`]: deleteField(),
       });
+      // ✅ Enlève la ligne de "Demandes"
+      setPendingGroup(prev => prev.filter(g => !(g.lessonId === lessonId && g.studentId === studentId)));
+
+      // ✅ MAJ locale de la leçon (retire l'élève)
+      setLessons(prev => prev.map(l => {
+        if (l.id !== lessonId) return l;
+        const nextIds = (l.participant_ids || []).filter(id => id !== studentId);
+        const pm = { ...(l.participantsMap || {}) };
+        delete pm[studentId];
+        return { ...l, participant_ids: nextIds, participantsMap: pm };
+      }));
     } catch (e) {
       console.error(e);
       alert("Impossible de refuser l'élève.");
@@ -955,15 +992,14 @@ export default function TeacherLessons() {
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {/* Visio actions */}
-            {isVisio(lesson) && (
+           {/* Visio actions */}
+            {displayedStatus === 'confirmed' && isVisio(lesson) && (
               hasVisioLink(lesson) ? (
                 (() => {
                   const now = Date.now();
                   const exp = Date.parse(lesson.visio?.expires_at || "");
                   const rev = !!lesson.visio?.revoked;
 
-                  // Si le lien est révoqué ou expiré → bouton "Renouveler"
                   if (rev || (exp && now > exp)) {
                     return (
                       <button
@@ -972,9 +1008,7 @@ export default function TeacherLessons() {
                           try {
                             await updateDoc(doc(db, "lessons", lesson.id), { "visio.revoked": true });
                             await createVisioLink(lesson);
-                          } catch (e) {
-                            console.error(e);
-                          }
+                          } catch (e) { console.error(e); }
                         }}
                       >
                         ♻️ Renouveler le lien
@@ -982,7 +1016,6 @@ export default function TeacherLessons() {
                     );
                   }
 
-                  // Sinon → démarrer la visio + copier le lien
                   return (
                     <>
                       <a

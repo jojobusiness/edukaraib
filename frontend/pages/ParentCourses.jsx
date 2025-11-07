@@ -17,39 +17,6 @@ import {
 
 /* ---------- Helpers ---------- */
 
-// ---------- PACK HELPERS ----------
-const isPack = (l) => !!l?.pack_id || String(l.pack_hours) === '5' || String(l.pack_hours) === '10' || l.is_pack5 === true || l.is_pack10 === true;
-
-const packKey = (l, forStudent) => {
-  if (!isPack(l)) return `${l.id}:${forStudent}`;
-  const hours = Number(l.pack_hours) || (l.is_pack10 ? 10 : 5);
-  const mode = (String(l.mode) === 'visio' || l.is_visio === true) ? 'visio' : 'presentiel';
-  return String(l.pack_id || l.pack_group_id || `AUTO:${l.teacher_id}|${l.subject_id || ''}|${mode}|${hours}|${forStudent}`);
-};
-
-const packHoursOf = (l) => {
-  if (String(l.pack_hours) === '5' || l.is_pack5 === true) return 5;
-  if (String(l.pack_hours) === '10' || l.is_pack10 === true) return 10;
-  const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
-  return pt === 'pack5' ? 5 : pt === 'pack10' ? 10 : 1;
-};
-
-// clé d’affichage pack SANS le sid (pour éviter 1 ligne par enfant)
-const packDisplayKey = (l) => {
-  if (!isPack(l)) {
-    // pour les horaires simples, on garde 1 ligne par leçon
-    return `lesson:${l.id}`;
-  }
-  const hours = packHoursOf(l);
-  const mode = (String(l.mode) === 'visio' || l.is_visio === true) ? 'visio' : 'presentiel';
-  // si tu as pack_id / pack_group_id en BD, privilégie-le :
-  return String(
-    l.pack_id ||
-    l.pack_group_id ||
-    `AUTO:${l.teacher_id}|${l.subject_id || ''}|${mode}|${hours}`
-  );
-};
-
 /* ---------- Email helpers (prof) ---------- */
 async function getUserEmailById(uid) {
   if (!uid) return null;
@@ -492,15 +459,12 @@ export default function ParentCourses() {
     // déduplique par cours + packDisplayKey pour ne garder qu’une carte
     const m = new Map();
     for (const it of tmp) {
-      const key = `${it.id}:${packDisplayKey(it)}`;
+      const key = `${it.id}:${it.__child}`;
       if (!m.has(key)) m.set(key, it);
     }
     return Array.from(m.values());
   }, [courses, kidIds]);
 
-  // --- Construire les vues par “élève” suivi (enfants + parent) ---
-
-  const kidsSet = useMemo(() => new Set(kidIds), [kidIds]);
     // --- Lignes brutes (cours × élève/parent suivi) ---
   const rows = useMemo(() => {
     const kidsSetLocal = new Set(kidIds);
@@ -521,93 +485,43 @@ export default function ParentCourses() {
     return out;
   }, [courses, kidIds]);
 
-  // Regroupement par pack (SANS sid) pour l’affichage Confirmés/Terminés/Refusés
-  const displayGroups = useMemo(() => {
-    const m = new Map();
-    for (const r of rows) {
-      const c = r.lesson;
-      const key = packDisplayKey(c);
-      if (!m.has(key)) {
-        m.set(key, { lesson: c, kids: [] });
-      }
-      // on agrége les enfants concernés (sans doublons)
-      const entry = m.get(key);
-      if (Array.isArray(c.participant_ids) && c.participant_ids.length) {
-        // groupé → on mémorise chaque sid visible dans rows
-        if (!entry.kids.includes(r.sid)) entry.kids.push(r.sid);
-      } else {
-        // individuel → un seul sid
-        if (!entry.kids.includes(r.sid)) entry.kids.push(r.sid);
-      }
-      // garde la version la plus fraîche de la leçon
-      entry.lesson = c;
-      m.set(key, entry);
-    }
-    return Array.from(m.values()); // [{ lesson, kids }]
-  }, [rows]);
-
-  // --- Regroupement pack : 1 ligne par pack ---
-  const groupedRows = useMemo(() => {
-    const m = new Map();
-    for (const r of rows) {
-      const key = packKey(r.lesson, r.sid);
-      if (!m.has(key)) {
-        m.set(key, { ...r, __groupCount: 1 });
-      } else if (isPack(r.lesson)) {
-        const rep = m.get(key);
-        rep.__groupCount += 1;
-        m.set(key, rep);
-      }
-    }
-    return Array.from(m.values()); // [{ lesson, sid, __groupCount }]
-  }, [rows]);
-
-  // En attente
-// En attente — 1 carte par leçon (pack non regroupé)
+  // 🟡 En attente
   const pendingItems = useMemo(() => {
     const out = [];
     for (const { lesson: c, sid } of rows) {
       if (isGroupLesson(c)) {
         const st = String(c?.participantsMap?.[sid]?.status || '');
-        // si l'enfant n'a pas encore accepté/confirmé/rejeté → en attente
-        if (!['accepted','confirmed','rejected','removed','deleted'].includes(st)) {
+        // en attente si pas accepté/confirmé/rejeté/supprimé
+        if (!['accepted', 'confirmed', 'rejected', 'removed', 'deleted'].includes(st)) {
           out.push({ c, sid });
         }
-      } else {
-        // individuel : statut global “pending”
-        if (sid === c.student_id && PENDING_LESSON_STATUSES.has(String(c.status || ''))) {
-          out.push({ c, sid });
-        }
+      } else if (sid === c.student_id && PENDING_LESSON_STATUSES.has(String(c.status || ''))) {
+        out.push({ c, sid });
       }
     }
-    out.sort((a, b) =>
+    return out.sort((a, b) =>
       (FR_DAY_CODES.indexOf(a.c.slot_day) - FR_DAY_CODES.indexOf(b.c.slot_day)) ||
       ((a.c.slot_hour || 0) - (b.c.slot_hour || 0))
     );
-    return out;
   }, [rows]);
 
-  // Confirmés — 1 ligne par leçon × enfant
   const confirmedRows = useMemo(() => {
     const out = [];
     for (const { lesson: c, sid } of rows) {
-      if (c.status === 'completed') continue; // pas ici
+      if (c.status === 'completed') continue;
       if (isGroupLesson(c)) {
         const st = c?.participantsMap?.[sid]?.status;
-        if (st === 'accepted' || st === 'confirmed') {
+        if (['accepted', 'confirmed'].includes(st) || c.status === 'confirmed') {
           out.push({ c, sid });
         }
-      } else {
-        if (sid === c.student_id && c.status === 'confirmed') {
-          out.push({ c, sid });
-        }
+      } else if (sid === c.student_id && c.status === 'confirmed') {
+        out.push({ c, sid });
       }
     }
-    out.sort((a, b) =>
+    return out.sort((a, b) =>
       (FR_DAY_CODES.indexOf(a.c.slot_day) - FR_DAY_CODES.indexOf(b.c.slot_day)) ||
       ((a.c.slot_hour || 0) - (b.c.slot_hour || 0))
     );
-    return out;
   }, [rows]);
    
   // Terminés — 1 ligne par leçon × enfant
@@ -629,18 +543,15 @@ export default function ParentCourses() {
     return out;
   }, [rows]);
 
-  // Refusés — 1 ligne par leçon × enfant
+  // 🔴 Refusés
   const rejectedRows = useMemo(() => {
     const out = [];
     for (const { lesson: c, sid } of rows) {
-      if (c.status !== 'rejected') continue;
-      if (isGroupLesson(c)) {
-        // si l'enfant était dans ce cours
-        if ((c.participant_ids || []).includes(sid)) {
-          out.push({ c, sid });
-        }
-      } else {
-        if (sid === c.student_id) {
+      if (!isGroupLesson(c) && c.status === 'rejected' && sid === c.student_id) {
+        out.push({ c, sid });
+      } else if (isGroupLesson(c)) {
+        const pst = String(c?.participantsMap?.[sid]?.status || '');
+        if (['rejected', 'removed', 'deleted'].includes(pst) || c.status === 'rejected') {
           out.push({ c, sid });
         }
       }
@@ -812,7 +723,7 @@ export default function ParentCourses() {
         </div>
         <div className="flex flex-wrap gap-2">
         {/* Visio */}
-        {isVisio(c) && (
+        {displayedStatus === 'confirmed' && isVisio(c) && (
           (() => {
             // Les enfants affichés sur la carte (prop "kids") représentent les participants concernés.
             const concernedKids = Array.isArray(kids) ? kids : [];
