@@ -491,7 +491,6 @@ export default function ParentCourses() {
     for (const { lesson: c, sid } of rows) {
       if (isGroupLesson(c)) {
         const st = String(c?.participantsMap?.[sid]?.status || '');
-        // en attente si pas accepté/confirmé/rejeté/supprimé
         if (!['accepted', 'confirmed', 'rejected', 'removed', 'deleted'].includes(st)) {
           out.push({ c, sid });
         }
@@ -505,13 +504,14 @@ export default function ParentCourses() {
     );
   }, [rows]);
 
+  // ✅ Confirmés (au moins accepté/confirmé au niveau participant; exclure terminés)
   const confirmedRows = useMemo(() => {
     const out = [];
     for (const { lesson: c, sid } of rows) {
       if (c.status === 'completed') continue;
       if (isGroupLesson(c)) {
         const st = c?.participantsMap?.[sid]?.status;
-        if (['accepted', 'confirmed'].includes(st) || c.status === 'confirmed') {
+        if (st === 'accepted' || st === 'confirmed' || c.status === 'confirmed') {
           out.push({ c, sid });
         }
       } else if (sid === c.student_id && c.status === 'confirmed') {
@@ -523,7 +523,23 @@ export default function ParentCourses() {
       ((a.c.slot_hour || 0) - (b.c.slot_hour || 0))
     );
   }, [rows]);
-   
+
+  // 🔴 Refusés
+  const rejectedRows = useMemo(() => {
+    const out = [];
+    for (const { lesson: c, sid } of rows) {
+      if (!isGroupLesson(c) && c.status === 'rejected' && sid === c.student_id) {
+        out.push({ c, sid });
+      } else if (isGroupLesson(c)) {
+        const pst = String(c?.participantsMap?.[sid]?.status || '');
+        if (['rejected', 'removed', 'deleted'].includes(pst) || c.status === 'rejected') {
+          out.push({ c, sid });
+        }
+      }
+    }
+    return out;
+  }, [rows]);
+
   // Terminés — 1 ligne par leçon × enfant
   const completedRows = useMemo(() => {
     const out = [];
@@ -536,22 +552,6 @@ export default function ParentCourses() {
         }
       } else {
         if (sid === c.student_id) {
-          out.push({ c, sid });
-        }
-      }
-    }
-    return out;
-  }, [rows]);
-
-  // 🔴 Refusés
-  const rejectedRows = useMemo(() => {
-    const out = [];
-    for (const { lesson: c, sid } of rows) {
-      if (!isGroupLesson(c) && c.status === 'rejected' && sid === c.student_id) {
-        out.push({ c, sid });
-      } else if (isGroupLesson(c)) {
-        const pst = String(c?.participantsMap?.[sid]?.status || '');
-        if (['rejected', 'removed', 'deleted'].includes(pst) || c.status === 'rejected') {
           out.push({ c, sid });
         }
       }
@@ -616,9 +616,6 @@ export default function ParentCourses() {
           <div className="text-gray-500 text-xs">{c.slot_day} {formatHour(c.slot_hour)}</div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => { setDocLesson(c); setDocOpen(true); }}>
-            📄 Documents
-          </button>
         </div>
       </div>
     );
@@ -722,22 +719,16 @@ export default function ParentCourses() {
           <div className="text-gray-500 text-xs">{c.slot_day} {formatHour(c.slot_hour)}</div>
         </div>
         <div className="flex flex-wrap gap-2">
-        {/* Visio */}
-        {displayedStatus === 'confirmed' && isVisio(c) && (
-          (() => {
-            // Les enfants affichés sur la carte (prop "kids") représentent les participants concernés.
+          {/* Visio — seulement si confirmé */}
+          {displayedStatus === 'confirmed' && isVisio(c) && (() => {
             const concernedKids = Array.isArray(kids) ? kids : [];
             const anyonePaid = concernedKids.length
               ? concernedKids.some((sid) => isPaidForChild(c, sid))
-              : isPaidForChild(c, c.student_id); // fallback indiv
+              : isPaidForChild(c, c.student_id);
 
             // Pas de lien : prof n’a pas créé le lien
             if (!hasVisioLink(c)) {
-              return (
-                <span className="px-3 py-2 rounded bg-gray-100 text-gray-600 font-semibold">
-                  🔒 En attente du lien visio
-                </span>
-              );
+              return <span className="px-3 py-2 rounded bg-gray-100 text-gray-600 font-semibold">🔒 En attente du lien visio</span>;
             }
 
             // Lien créé mais aucun des enfants concernés n’a payé
@@ -752,33 +743,34 @@ export default function ParentCourses() {
               );
             }
 
-            // Payé : appliquer la fenêtre d’ouverture
             const state = getJoinState(c);
             const disabled = state !== 'open';
-            const title =
-              state === 'before' ? "Le lien sera actif à l'heure du cours"
-              : state === 'expired' ? "Lien expiré"
-              : "Rejoindre la visio";
+            const title = state === 'before' ? "Le lien sera actif à l'heure du cours" : state === 'expired' ? "Lien expiré" : "Rejoindre la visio";
 
             return (
               <a
                 href={disabled ? undefined : c.visio.joinUrl}
                 target="_blank"
                 rel="noreferrer"
-                className={`px-4 py-2 rounded shadow font-semibold text-white ${
-                  disabled ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'
-                }`}
+                className={`px-4 py-2 rounded shadow font-semibold text-white ${disabled ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'}`}
                 title={title}
                 onClick={(e) => { if (disabled) e.preventDefault(); }}
               >
                 🎥 Rejoindre la visio
               </a>
             );
-          })()
-        )}
-          <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => { setDocLesson(c); setDocOpen(true); }}>
-            📄 Documents
-          </button>
+          })()}
+
+          {/* Documents — pas si refusé */}
+          {displayedStatus === 'rejected' ? null : (
+            <button
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold"
+              onClick={() => { setDocLesson(c); setDocOpen(true); }}
+            >
+              📄 Documents
+            </button>
+          )}
+
           {c.status === 'completed' && (
             <button
               className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded shadow font-semibold"

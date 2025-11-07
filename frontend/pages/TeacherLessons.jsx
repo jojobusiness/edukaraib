@@ -783,46 +783,48 @@ export default function TeacherLessons() {
   // actions groupe (par élève)
   async function acceptGroupStudent(lessonId, studentId) {
     try {
+      // 1) valider l'élève dans le groupe
       await updateDoc(doc(db, 'lessons', lessonId), {
         [`participantsMap.${studentId}.status`]: 'confirmed',
       });
-      // ✅ Mise à jour immédiate de l'affichage
+
+      // 2) MAJ immédiate de l'affichage
       setLessons(prev => prev.map(l => {
         if (l.id !== lessonId) return l;
-
-        // participantsMap -> status 'confirmed' (comme en base)
         const pm = { ...(l.participantsMap || {}) };
         pm[studentId] = { ...(pm[studentId] || {}), status: 'confirmed' };
-
         const ids = Array.isArray(l.participant_ids)
           ? Array.from(new Set([...l.participant_ids, studentId]))
           : [studentId];
 
-        return {
-          ...l,
-          participantsMap: pm,
-          participant_ids: ids,
-        };
+        // si le cours était encore "booked", on met "confirmed" pour qu’il sorte de Demandes
+        const nextStatus = l.status === 'booked' ? 'confirmed' : l.status;
+
+        return { ...l, participantsMap: pm, participant_ids: ids, status: nextStatus };
       }));
 
-      // ✅ Enlève la ligne de "Demandes" immédiatement
+      // 3) si le statut global est encore "booked", passe-le à "confirmed" en base
+      await updateDoc(doc(db, 'lessons', lessonId), { status: 'confirmed' });
+
+      // enlever la ligne de Demandes (UI)
       setPendingGroup(prev => prev.filter(g => !(g.lessonId === lessonId && g.studentId === studentId)));
+
       try { await createPaymentDueNotificationsForLesson(lessonId, { onlyForStudentId: studentId }); } catch {}
     } catch (e) {
       console.error(e);
       alert("Impossible d'accepter l'élève.");
     }
   }
+
   async function rejectGroupStudent(lessonId, studentId) {
     try {
       await updateDoc(doc(db, 'lessons', lessonId), {
         participant_ids: arrayRemove(studentId),
         [`participantsMap.${studentId}`]: deleteField(),
       });
-      // ✅ Enlève la ligne de "Demandes"
+
       setPendingGroup(prev => prev.filter(g => !(g.lessonId === lessonId && g.studentId === studentId)));
 
-      // ✅ MAJ locale de la leçon (retire l'élève)
       setLessons(prev => prev.map(l => {
         if (l.id !== lessonId) return l;
         const nextIds = (l.participant_ids || []).filter(id => id !== studentId);
@@ -980,7 +982,6 @@ export default function TeacherLessons() {
           </div>
           <div className="text-gray-500 text-sm"><When lesson={lesson} /></div>
         </div>
-
         {showActionsForPending ? (
           <div className="flex gap-2">
             <button className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => handleStatus(lesson, 'confirmed')}>
@@ -992,75 +993,93 @@ export default function TeacherLessons() {
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">
-           {/* Visio actions */}
-            {displayedStatus === 'confirmed' && isVisio(lesson) && (
-              hasVisioLink(lesson) ? (
-                (() => {
-                  const now = Date.now();
-                  const exp = Date.parse(lesson.visio?.expires_at || "");
-                  const rev = !!lesson.visio?.revoked;
+            {/* Rien si refusé ou en attente */}
+            {displayedStatus === 'rejected' || displayedStatus === 'booked' ? null : (
+              <>
+                {/* Visio */}
+                {displayedStatus === 'confirmed' && isVisio(lesson) && (
+                  hasVisioLink(lesson) ? (
+                    (() => {
+                      const now = Date.now();
+                      const exp = Date.parse(lesson.visio?.expires_at || "");
+                      const rev = !!lesson.visio?.revoked;
 
-                  if (rev || (exp && now > exp)) {
-                    return (
-                      <button
-                        className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-2 rounded shadow font-semibold"
-                        onClick={async () => {
-                          try {
-                            await updateDoc(doc(db, "lessons", lesson.id), { "visio.revoked": true });
-                            await createVisioLink(lesson);
-                          } catch (e) { console.error(e); }
-                        }}
-                      >
-                        ♻️ Renouveler le lien
-                      </button>
-                    );
-                  }
+                      if (rev || (exp && now > exp)) {
+                        return (
+                          <button
+                            className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-2 rounded shadow font-semibold"
+                            onClick={async () => {
+                              try {
+                                await updateDoc(doc(db, "lessons", lesson.id), { "visio.revoked": true });
+                                await createVisioLink(lesson);
+                              } catch (e) { console.error(e); }
+                            }}
+                          >
+                            ♻️ Renouveler le lien
+                          </button>
+                        );
+                      }
 
-                  return (
-                    <>
-                      <a
-                        href={lesson.visio?.joinUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded shadow font-semibold"
-                        title="Ouvrir la visio"
-                      >
-                        🎥 Démarrer la visio
-                      </a>
-                      <button
-                        className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded shadow font-semibold"
-                        onClick={() => navigator.clipboard.writeText(lesson.visio?.joinUrl || "")}
-                        title="Copier le lien"
-                      >
-                        🔗 Copier le lien
-                      </button>
-                    </>
-                  );
-                })()
-              ) : (
+                      return (
+                        <>
+                          <a
+                            href={lesson.visio?.joinUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded shadow font-semibold"
+                            title="Ouvrir la visio"
+                          >
+                            🎥 Démarrer la visio
+                          </a>
+                          <button
+                            className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded shadow font-semibold"
+                            onClick={() => navigator.clipboard.writeText(lesson.visio?.joinUrl || "")}
+                            title="Copier le lien"
+                          >
+                            🔗 Copier le lien
+                          </button>
+                        </>
+                      );
+                    })()
+                  ) : (
+                    <button
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded shadow font-semibold"
+                      onClick={() => createVisioLink(lesson)}
+                      title="Créer le lien visio"
+                    >
+                      🎥 Créer lien visio
+                    </button>
+                  )
+                )}
+
+                {/* Documents */}
                 <button
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded shadow font-semibold"
-                  onClick={() => createVisioLink(lesson)}
-                  title="Créer le lien visio"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold"
+                  onClick={() => openDocs(lesson)}
                 >
-                  🎥 Créer lien visio
+                  📄 Documents
                 </button>
-              )
+
+                {/* Gérer groupe */}
+                <button
+                  className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded shadow font-semibold"
+                  onClick={() => openGroup(lesson)}
+                  title="Gérer capacité et participants"
+                >
+                  👥 Gérer le groupe
+                </button>
+
+                {/* Terminer */}
+                <button
+                  className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded shadow font-semibold"
+                  onClick={() => handleStatus(lesson, 'completed')}
+                  disabled={lesson.status === 'completed'}
+                  title={lesson.status === 'completed' ? 'Déjà terminé' : 'Marquer comme terminé'}
+                >
+                  ✅ Terminé
+                </button>
+              </>
             )}
-            <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => openDocs(lesson)}>
-              📄 Documents
-            </button>
-            <button className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => openGroup(lesson)} title="Gérer capacité et participants">
-              👥 Gérer le groupe
-            </button>
-            <button
-              className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded shadow font-semibold"
-              onClick={() => handleStatus(lesson, 'completed')}
-              disabled={lesson.status === 'completed'}
-              title={lesson.status === 'completed' ? 'Déjà terminé' : 'Marquer comme terminé'}
-            >
-              ✅ Terminé
-            </button>
           </div>
         )}
       </div>

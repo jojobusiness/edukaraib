@@ -432,54 +432,53 @@ export default function MyCourses() {
   const uid = auth.currentUser?.uid;
 
   // 🟡 En attente
-  const booked = useMemo(() => {
-    const uid = auth.currentUser?.uid;
-    if (!uid) return [];
-    return courses.filter((c) => {
-      // Cours groupé : je suis inscrit et mon statut est "pending"
-      if (Array.isArray(c.participant_ids) && c.participant_ids.includes(uid)) {
-        if (c.status === 'completed') return false;
-        const st = String(c.participantsMap?.[uid]?.status || 'pending');
-        return !['accepted', 'confirmed', 'rejected', 'removed', 'deleted'].includes(st);
+  const pendingRows = useMemo(() => {
+    const out = [];
+    for (const c of lessons) {
+      if (Array.isArray(c.participant_ids) && c.participant_ids.includes(me.uid)) {
+        const st = String(c?.participantsMap?.[me.uid]?.status || '');
+        if (!['accepted', 'confirmed', 'rejected', 'removed', 'deleted'].includes(st)) {
+          out.push(c);
+        }
+      } else if (c.student_id === me.uid && PENDING_LESSON_STATUSES.has(String(c.status || ''))) {
+        out.push(c);
       }
-      // Cours individuel : statut global en attente
-      if (c.student_id === uid) {
-        return PENDING_LESSON_STATUSES.has(String(c.status || ''));
+    }
+    return out;
+  }, [lessons, me.uid]);
+
+  // ✅ Confirmés (exclure terminés)
+  const confirmedRows = useMemo(() => {
+    const out = [];
+    for (const c of lessons) {
+      if (c.status === 'completed') continue;
+      if (Array.isArray(c.participant_ids) && c.participant_ids.includes(me.uid)) {
+        const st = c?.participantsMap?.[me.uid]?.status;
+        if (st === 'accepted' || st === 'confirmed' || c.status === 'confirmed') {
+          out.push(c);
+        }
+      } else if (c.student_id === me.uid && c.status === 'confirmed') {
+        out.push(c);
       }
-      return false;
-    });
-  }, [courses, auth.currentUser?.uid]);
-
-  // 🟢 Confirmés
-  const confirmed = useMemo(() => {
-    const uid = auth.currentUser?.uid;
-    if (!uid) return [];
-    return courses.filter((c) => {
-      if (c.status === 'completed') return false;
-
-      if (Array.isArray(c.participant_ids) && c.participant_ids.includes(uid)) {
-        const st = c.participantsMap?.[uid]?.status;
-        // ✅ accepté, confirmé, ou statut global confirmé
-        return ['accepted', 'confirmed'].includes(st) || c.status === 'confirmed';
-      }
-
-      return c.student_id === uid && c.status === 'confirmed';
-    });
-  }, [courses, auth.currentUser?.uid]);
+    }
+    return out;
+  }, [lessons, me.uid]);
 
   // 🔴 Refusés
-  const rejected = useMemo(() => {
-    const uid = auth.currentUser?.uid;
-    if (!uid) return [];
-    return courses.filter((c) => {
-      if (Array.isArray(c.participant_ids) && c.participant_ids.includes(uid)) {
-        const st = String(c?.participantsMap?.[uid]?.status || '');
-        // ✅ rejet individuel ou global
-        return ['rejected', 'removed', 'deleted'].includes(st) || c.status === 'rejected';
+  const rejectedRows = useMemo(() => {
+    const out = [];
+    for (const c of lessons) {
+      if (Array.isArray(c.participant_ids) && c.participant_ids.includes(me.uid)) {
+        const pst = String(c?.participantsMap?.[me.uid]?.status || '');
+        if (['rejected', 'removed', 'deleted'].includes(pst) || c.status === 'rejected') {
+          out.push(c);
+        }
+      } else if (c.student_id === me.uid && c.status === 'rejected') {
+        out.push(c);
       }
-      return c.student_id === uid && c.status === 'rejected';
-    });
-  }, [courses, auth.currentUser?.uid]);
+    }
+    return out;
+  }, [lessons, me.uid]);
 
   const completed = useMemo(() => courses.filter(c => c.status === 'completed'), [courses]);
 
@@ -656,12 +655,12 @@ export default function MyCourses() {
               );
             })()
           )}
-          {showDocs && (
+          {displayedStatus === 'rejected' ? null : (
             <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => { setDocLesson(c); setDocOpen(true); }}>
               📄 Documents
             </button>
           )}
-          {showReview && (
+          {c.status === 'completed' && (
             <button
               className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded shadow font-semibold"
               onClick={() => { setReviewLesson(c); setReviewOpen(true); }}
