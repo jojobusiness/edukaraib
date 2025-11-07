@@ -191,6 +191,7 @@ function isRejectedForMe(l, uid) {
   return st === 'rejected' || l.status === 'rejected';
 }
 
+function isConfirmedForUser(l, uid) { return isConfirmedForMe(l, uid); }
 
 /* ---------- helpers auto-règles (globaux) ---------- */
 const isIndividualPaid = (l) => l && !l.is_group && (l.is_paid === true);
@@ -385,7 +386,7 @@ export default function MyCourses() {
     const now = new Date();
     const uid = auth.currentUser?.uid;
     const list = courses
-      .filter(l => isConfirmedForUser(l, uid) && FR_DAY_CODES.includes(l.slot_day))
+      .filter(l => isConfirmedForMe(l, uid) && FR_DAY_CODES.includes(l.slot_day))
       .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) } ))
       .filter(l => l.startAt && l.startAt > now)
       .sort((a, b) => a.startAt - b.startAt);
