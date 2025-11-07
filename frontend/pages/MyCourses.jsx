@@ -80,23 +80,6 @@ async function emailTeacherAboutInvite(lesson, { accepted }) {
   }).catch(() => {});
 }
 
-// Helper: un cours est-il confirmé POUR MOI ?
-const isConfirmedForMe = (lesson, uid) => {
-  if (!uid || !lesson) return false;
-
-  // ✅ Ne pas considérer “confirmé” si la leçon est terminée
-  if (lesson.status === 'completed') return false;
-
-  // Cours groupé: je suis "accepted" ou "confirmed" dans participantsMap
-  if (lesson.is_group) {
-    const st = lesson?.participantsMap?.[uid]?.status;
-    return st === 'accepted' || st === 'confirmed';
-  }
-
-  // Cours individuel: statut global confirmé
-  return lesson.status === 'confirmed';
-};
-
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const codeIndex = (c) => Math.max(0, FR_DAY_CODES.indexOf(c));
 
