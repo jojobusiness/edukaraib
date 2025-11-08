@@ -278,20 +278,20 @@ export default function TeacherProfile() {
       currentRole === "parent" && targetStudentId !== me.uid ? "child" : "self";
     const slots = Array.isArray(selected) ? selected : [selected];
 
-    // --- Définition du pack ---
-    const isPack = packHours === 5 || packHours === 10;
-    const packId = isPack
-      ? `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${packHours}_${bookMode}`
-      : null;
-    const packPayload = isPack
-      ? {
-          is_pack: true,
-          pack_id: packId,
-          pack_hours: packHours,
-          pack_type: packHours === 5 ? "pack5" : "pack10",
-          require_accept_all: true,
-        }
-      : {};
+  // --- Définition du pack (par PARTICIPANT) ---
+  const isPack = packHours === 5 || packHours === 10;
+  const packId = isPack
+    ? `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${packHours}_${bookMode}`
+    : null;
+  // champs pack pour le participant ciblé UNIQUEMENT
+  const packFieldsForParticipant = (sid) => (isPack ? {
+    pack: true,
+    pack_id: packId,
+    pack_hours: packHours,
+    pack_type: packHours === 5 ? 'pack5' : 'pack10',
+    pack_mode: bookMode, // presentiel|visio
+    require_accept_all: true,
+  } : {});
 
     // 🧮 tarif à appliquer selon mode & packs
     const base = Number(teacher?.price_per_hour || 0);
@@ -381,6 +381,7 @@ export default function TeacherProfile() {
                   paid_at: null,
                   status: "pending_teacher",
                   added_at: serverTimestamp(),
+                  ...packFieldsForParticipant(targetStudentId),
                 },
               });
               await addDoc(collection(db, "notifications"), {
@@ -438,10 +439,10 @@ export default function TeacherProfile() {
                   paid_at: null,
                   status: "pending_teacher",
                   added_at: serverTimestamp(),
+                  ...packFieldsForParticipant(targetStudentId),
                 },
               },
               mode: bookMode,
-              ...packPayload, // ✅ ajout ici
             });
             await addDoc(collection(db, "notifications"), {
               user_id: teacherId,
@@ -474,10 +475,20 @@ export default function TeacherProfile() {
               slot_hour: slot.hour,
               is_group: false,
               capacity: 1,
-              participant_ids: [],
-              participantsMap: {},
+              participant_ids: [targetStudentId],
+              participantsMap: {
+                [targetStudentId]: {
+                  parent_id: bookingFor === "child" ? me.uid : null,
+                  booked_by: me.uid,
+                  is_paid: false,
+                  paid_by: null,
+                  paid_at: null,
+                  status: "pending_teacher",
+                  added_at: serverTimestamp(),
+                  ...packFieldsForParticipant(targetStudentId),
+                },
+              },
               mode: bookMode,
-              ...packPayload, // ✅ ajout ici
             });
             await addDoc(collection(db, "notifications"), {
               user_id: teacherId,

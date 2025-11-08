@@ -88,22 +88,6 @@ function participantStatus(lesson, participantId) {
 }
 
 // ---- Détection source & montant -------------------------------------------------
-function detectSource(lesson) {
-  const packType = String(lesson.pack_type || lesson.booking_kind || lesson.type || '').toLowerCase();
-  if (packType === 'pack5' || String(lesson.pack_hours) === '5' || lesson.is_pack5 === true) return 'pack5';
-  if (packType === 'pack10' || String(lesson.pack_hours) === '10' || lesson.is_pack10 === true) return 'pack10';
-  const isVisio = String(lesson.mode) === 'visio' || lesson.is_visio === true;
-  return isVisio ? 'visio' : 'presentiel';
-}
-
-function computeBaseRateEuro(lesson) {
-  const isVisio = String(lesson.mode) === 'visio' || lesson.is_visio === true;
-  const visioSame = lesson.visio_same_rate;
-  const visioRate = toNum(lesson.visio_price_per_hour);
-  const baseRate = toNum(lesson.price_per_hour);
-  if (isVisio && visioSame === false && visioRate > 0) return visioRate;
-  return baseRate;
-}
 
 /** Calcule le montant *professeur* en CENTIMES pour 1 leçon (hors pack). */
 function computeTeacherAmountCents(lesson) {
@@ -123,18 +107,6 @@ function computeTeacherAmountCents(lesson) {
   return Math.max(0, Math.round(rate * hours * 100));
 }
 
-function getBilledHours(lesson) {
-  const packType = String(lesson.pack_type || lesson.booking_kind || lesson.type || '').toLowerCase();
-  if (packType === 'pack5' || String(lesson.pack_hours) === '5' || lesson.is_pack5 === true) return 5;
-  if (packType === 'pack10' || String(lesson.pack_hours) === '10' || lesson.is_pack10 === true) return 10;
-  const h = Number(lesson.duration_hours);
-  return Number.isFinite(h) && h > 0 ? Math.floor(h) : 1; // défaut 1h
-}
-
-function isPack(lesson) {
-  const s = detectSource(lesson);
-  return s === 'pack5' || s === 'pack10' || String(lesson.pack_hours) === '5' || String(lesson.pack_hours) === '10' || lesson.is_pack5 === true || lesson.is_pack10 === true;
-}
 function packHoursOf(lesson) {
   if (String(lesson.pack_hours) === '5' || lesson.is_pack5 === true) return 5;
   if (String(lesson.pack_hours) === '10' || lesson.is_pack10 === true) return 10;
@@ -151,6 +123,47 @@ function isEligibleToPay(lesson, participantId) {
     return st === 'accepted' || st === 'confirmed';
   }
   return lesson.status === 'confirmed' || lesson.status === 'completed';
+}
+
+function participantPackInfo(lesson, participantId) {
+  const p = lesson?.participantsMap?.[participantId] || {};
+  const packHours =
+    Number(p.pack_hours) ||
+    (String(p.pack_type || '').toLowerCase() === 'pack5' ? 5 :
+     String(p.pack_type || '').toLowerCase() === 'pack10' ? 10 : 0);
+  return { packHours };
+}
+function isPackFor(lesson, participantId) {
+  return participantPackInfo(lesson, participantId).packHours > 0;
+}
+function detectSourceFor(lesson, participantId) {
+  const { packHours } = participantPackInfo(lesson, participantId);
+  if (packHours === 5) return 'pack5';
+  if (packHours === 10) return 'pack10';
+  const isVisio = String(lesson.mode) === 'visio' || lesson.is_visio === true;
+  return isVisio ? 'visio' : 'presentiel';
+}
+function getBilledHoursFor(lesson, participantId) {
+  const { packHours } = participantPackInfo(lesson, participantId);
+  if (packHours) return packHours;
+  const h = Number(lesson.duration_hours);
+  return Number.isFinite(h) && h > 0 ? Math.floor(h) : 1;
+}
+function computeBaseRateEuroFor(lesson, participantId) {
+  const isVisio = String(lesson.mode) === 'visio' || lesson.is_visio === true;
+  const visioSame = lesson.visio_same_rate;
+  const visioRate = Number(
+    typeof lesson.visio_price_per_hour === 'string'
+      ? lesson.visio_price_per_hour.replace(',', '.')
+      : lesson.visio_price_per_hour
+  );
+  const baseRate = Number(
+    typeof lesson.price_per_hour === 'string'
+      ? lesson.price_per_hour.replace(',', '.')
+      : lesson.price_per_hour
+  );
+  if (isVisio && visioSame === false && visioRate > 0) return visioRate;
+  return baseRate;
 }
 
 export default async function handler(req, res) {
@@ -268,31 +281,34 @@ export default async function handler(req, res) {
     }
   }
 
-  // Montant selon source
-  let source = detectSource(lesson); // 'presentiel' | 'visio' | 'pack5' | 'pack10'
+  // Montant selon source (PAR PARTICIPANT)
+  let source = detectSourceFor(lesson, participantId);
   let teacherAmountCents;
   let billedHours;
   let isPackPayment = false;
   let lessonIds = [ String(lessonId) ];
 
   if (!packMode) {
-    teacherAmountCents = computeTeacherAmountCents(lesson);
-    billedHours = getBilledHours(lesson);
+    // 1 leçon
+    const rateEuro = computeBaseRateEuroFor(lesson, participantId);
+    const hours = getBilledHoursFor(lesson, participantId);
+    const isPackHere = isPackFor(lesson, participantId);
+    if (isPackHere) {
+      teacherAmountCents = Math.round(rateEuro * hours * 0.9 * 100);
+      source = hours === 10 ? 'pack10' : 'pack5';
+    } else {
+      teacherAmountCents = Math.round(rateEuro * hours * 100);
+    }
+    billedHours = hours;
   } else {
-    // Paiement PACK (1 seul lien)
+    // Paiement PACK (1 seul lien) pour CET élève
     isPackPayment = true;
     lessonIds = lessonsToBill.map(l => String(l.id));
-
-    // base rate à partir de la leçon pivot (les packs doivent être homogènes)
-    const baseRateEuro = computeBaseRateEuro(lesson);
+    const rateEuro = computeBaseRateEuroFor(lesson, participantId);
     const hours = effectivePackHours > 0 ? effectivePackHours : lessonsToBill.length;
-    // Remise pack : 10% => 0.9
-    teacherAmountCents = Math.round(baseRateEuro * hours * 0.9 * 100);
+    teacherAmountCents = Math.round(rateEuro * hours * 0.9 * 100);
     billedHours = hours;
-
-    // ajuster source pack
-    const ph = packHoursOf(lesson);
-    source = ph === 10 ? 'pack10' : 'pack5';
+    source = hours === 10 ? 'pack10' : 'pack5';
   }
 
   const siteFeeCents = billedHours * 1000; // 10€ / heure

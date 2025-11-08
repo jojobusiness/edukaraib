@@ -100,38 +100,61 @@ const detectSource = (l) => {
   return labelMode(l);
 };
 
-// --- Pack helpers (affichage / regroupement) ---
-const isPack = (l) => {
-  const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
-  return (
-    pt === 'pack5' ||
-    pt === 'pack10' ||
-    String(l.pack_hours) === '5' ||
-    String(l.pack_hours) === '10' ||
-    l.is_pack5 === true ||
-    l.is_pack10 === true
-  );
+// ==== Helpers par élève (moi) ====
+const entryForMe = (l, uid) => l?.participantsMap?.[uid] || null;
+
+const isPackForMe = (l, uid) => {
+  const e = entryForMe(l, uid);
+  if (!e) return false;
+  return !!(e.pack?.enabled) || e.is_pack5 === true || e.is_pack10 === true ||
+    String(e.pack?.hours) === '5' || String(e.pack?.hours) === '10';
 };
 
-const packHoursOf = (l) => {
-  if (String(l.pack_hours) === '5' || l.is_pack5 === true) return 5;
-  if (String(l.pack_hours) === '10' || l.is_pack10 === true) return 10;
-  const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
-  return pt === 'pack5' ? 5 : pt === 'pack10' ? 10 : 1;
+const packHoursForMe = (l, uid) => {
+  const e = entryForMe(l, uid);
+  if (!e) return 1;
+  if (e.is_pack5 === true || String(e.pack?.hours) === '5') return 5;
+  if (e.is_pack10 === true || String(e.pack?.hours) === '10') return 10;
+  return 1;
 };
 
-// Regroupe toutes les heures d’un pack en UN SEUL item (clé pack)
-const packKey = (l, forStudent) => {
-  if (!isPack(l)) return `lesson:${l.id}:${forStudent}`;
-  const hours = packHoursOf(l);
-  const mode = String(l.mode) === 'visio' || l.is_visio === true ? 'visio' : 'presentiel';
-  // Si tu as un champ dédié (ex: l.pack_id), remplace AUTO par l.pack_id
+const packKeyForMe = (l, uid) => {
+  if (!isPackForMe(l, uid)) return `lesson:${l.id}:${uid}`;
+  const hours = packHoursForMe(l, uid);
+  const mode = (String(l.mode) === 'visio' || l.is_visio === true) ? 'visio' : 'presentiel';
   return String(
-    l.pack_id || l.pack_group_id || `AUTO:${l.teacher_id}|${l.subject_id || ''}|${mode}|${hours}|${forStudent}`
+    l.pack_id || l.pack_group_id || `AUTO:${l.teacher_id}|${l.subject_id || ''}|${mode}|${hours}|${uid}`
   );
 };
 
-const isPackLesson = (l) => isPack(l);
+const detectSourceForMe = (l, uid) => {
+  if (isPackForMe(l, uid)) return packHoursForMe(l, uid) === 10 ? 'Pack 10h' : 'Pack 5h';
+  return (String(l.mode) === 'visio' || l.is_visio === true) ? 'Visio' : 'Présentiel';
+};
+
+const billedHoursForMe = (l, uid) => {
+  const ph = packHoursForMe(l, uid);
+  if (ph > 1) return ph;
+  const h = Number(l.duration_hours);
+  return Number.isFinite(h) && h > 0 ? Math.floor(h) : 1;
+};
+
+const getDisplayAmountForMe = (l, uid) => {
+  const isVisio = String(l.mode) === 'visio' || l.is_visio === true;
+  const baseRate = isVisio && l.visio_enabled && l.visio_same_rate === false
+    ? toNumber(l.visio_price_per_hour)
+    : toNumber(l.price_per_hour);
+
+  let base = 0;
+  const hours = billedHoursForMe(l, uid);
+  if (isPackForMe(l, uid)) {
+    base = Number.isFinite(baseRate) ? Number((baseRate * hours * 0.9).toFixed(2)) : 0;
+  } else {
+    base = toNumber(l.total_amount) || toNumber(l.total_price) || toNumber(l.amount) || baseRate;
+  }
+  const fee = hours * 10;
+  return (base || 0) + fee;
+};
 
 export default function StudentPayments() {
   const [toPay, setToPay] = useState([]);
@@ -211,8 +234,8 @@ export default function StudentPayments() {
         // --- Regroupement pack ---
         const groupMap = new Map();
         for (const l of enriched) {
-          const key = packKey(l, user.uid); // ici l est directement une "lesson" dans StudentPayments
-          const isPackLesson = isPack(l);
+          const key = packKeyForMe(l, user.uid);
+          const isPackLesson = isPackForMe(l, user.uid);
           if (!groupMap.has(key)) {
             groupMap.set(key, { ...l, __groupCount: 1 });
           } else if (isPackLesson) {
@@ -290,7 +313,7 @@ export default function StudentPayments() {
           lessonId: lesson.id,
           forStudent: uid,
           // >> NOUVEAU : si c’est un pack, on passe la clé de regroupement
-          packKey: isPackLesson(lesson) ? packKey(lesson, uid) : null,
+          packKey: isPackForMe(lesson, uid) ? packKeyForMe(lesson, uid) : null,
         }),
       });
       if (!data?.url) throw new Error('Lien de paiement introuvable.');
@@ -373,11 +396,11 @@ export default function StudentPayments() {
                     <div className="font-bold text-primary">
                       {l.subject_id || 'Matière'}{' '}
                       <span className="text-gray-600 text-xs ml-2">
-                        {getDisplayAmount(l) ? `${getDisplayAmount(l).toFixed(2)} €` : ''}
+                        {getDisplayAmountForMe(l, uid) ? `${getDisplayAmountForMe(l, uid).toFixed(2)} €` : ''}
                       </span>
                     </div>
                     <div className="text-xs text-gray-500">Professeur : {l.teacherName || l.teacher_id}</div>
-                    <div className="text-xs text-gray-500">Type : {detectSource(l)}</div>
+                    <div className="text-xs text-gray-500">Type : {detectSourceForMe(l, uid)}</div>
                     <div className="text-xs text-gray-500">📅 {fmtDateTime(l.start_datetime, l.slot_day, l.slot_hour)}</div>
                   </div>
 

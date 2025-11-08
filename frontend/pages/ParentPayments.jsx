@@ -101,27 +101,65 @@ const detectSource = (l) => {
   return modeLabel;
 };
 
-// --- Pack helpers (affichage / regroupement) ---
-const isPack = (l) => {
-  const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
-  return pt === 'pack5' || pt === 'pack10' || String(l.pack_hours) === '5' || String(l.pack_hours) === '10' || l.is_pack5 === true || l.is_pack10 === true;
-};
-const packHoursOf = (l) => {
-  if (String(l.pack_hours) === '5' || l.is_pack5 === true) return 5;
-  if (String(l.pack_hours) === '10' || l.is_pack10 === true) return 10;
-  const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
-  return pt === 'pack5' ? 5 : pt === 'pack10' ? 10 : 1;
-};
-// Regroupe toutes les heures d’un pack en UN SEUL item (clé pack)
-const packKey = (l, forStudent) => {
-  if (!isPack(l)) return `lesson:${l.id}:${forStudent}`;
-  const hours = packHoursOf(l);
-  const mode = (String(l.mode) === 'visio' || l.is_visio === true) ? 'visio' : 'presentiel';
-  // Si tu as un champ dédié (ex: l.pack_id), remplace la partie AUTO par l.pack_id
-  return String(l.pack_id || l.pack_group_id || `AUTO:${l.teacher_id}|${l.subject_id || ''}|${mode}|${hours}|${forStudent}`);
+// ==== Helpers par élève (participant) ====
+const entryFor = (l, sid) => l?.participantsMap?.[sid] || null;
+
+const isPackFor = (l, sid) => {
+  const e = entryFor(l, sid);
+  if (!e) return false;
+  // compat anciens champs
+  return !!(e.pack?.enabled) || e.is_pack5 === true || e.is_pack10 === true ||
+    String(e.pack?.hours) === '5' || String(e.pack?.hours) === '10';
 };
 
-const isPackRow = (row) => isPack(row.lesson);
+const packHoursFor = (l, sid) => {
+  const e = entryFor(l, sid);
+  if (!e) return 1;
+  if (e.is_pack5 === true || String(e.pack?.hours) === '5') return 5;
+  if (e.is_pack10 === true || String(e.pack?.hours) === '10') return 10;
+  return 1;
+};
+
+const packKeyFor = (l, sid) => {
+  if (!isPackFor(l, sid)) return `lesson:${l.id}:${sid}`;
+  const hours = packHoursFor(l, sid);
+  const mode = (String(l.mode) === 'visio' || l.is_visio === true) ? 'visio' : 'presentiel';
+  return String(
+    l.pack_id || l.pack_group_id || `AUTO:${l.teacher_id}|${l.subject_id || ''}|${mode}|${hours}|${sid}`
+  );
+};
+
+const detectSourceFor = (l, sid) => {
+  if (isPackFor(l, sid)) return packHoursFor(l, sid) === 10 ? 'Pack 10h · ' + (String(l.mode)==='visio'||l.is_visio?'Visio':'Présentiel')
+                                                          : 'Pack 5h · ' + (String(l.mode)==='visio'||l.is_visio?'Visio':'Présentiel');
+  return (String(l.mode) === 'visio' || l.is_visio === true) ? 'Visio' : 'Présentiel';
+};
+
+const billedHoursFor = (l, sid) => {
+  // si pack, 5 ou 10h; sinon retombe sur la durée (par défaut 1h)
+  const ph = packHoursFor(l, sid);
+  if (ph > 1) return ph;
+  const h = Number(l.duration_hours);
+  return Number.isFinite(h) && h > 0 ? Math.floor(h) : 1;
+};
+
+const getDisplayAmountFor = (l, sid) => {
+  // base (pack -> tarif * heures * 0.9; sinon prix heure)
+  const isVisio = String(l.mode) === 'visio' || l.is_visio === true;
+  const baseRate = isVisio && l.visio_enabled && l.visio_same_rate === false
+    ? toNumber(l.visio_price_per_hour)
+    : toNumber(l.price_per_hour);
+
+  let base = 0;
+  const hours = billedHoursFor(l, sid);
+  if (isPackFor(l, sid)) {
+    base = Number.isFinite(baseRate) ? Number((baseRate * hours * 0.9).toFixed(2)) : 0;
+  } else {
+    base = toNumber(l.total_amount) || toNumber(l.total_price) || toNumber(l.amount) || baseRate;
+  }
+  const fee = hours * 10; // +10€/h affichage
+  return (base || 0) + fee;
+};
 
 export default function ParentPayments() {
   const [toPay, setToPay] = useState([]);   // [{ lesson, forStudent, teacherName, childName }]
@@ -227,21 +265,15 @@ export default function ParentPayments() {
         const groupMap = new Map();
         /** rows = [{ lesson, forStudent, teacherName, childName }] */
         for (const r of rows) {
-          const key = packKey(r.lesson, r.forStudent);
-          const isPackLesson = isPack(r.lesson);
+          const key = packKeyFor(r.lesson, r.forStudent);
+          const isPackLesson = isPackFor(r.lesson, r.forStudent);
 
           if (!groupMap.has(key)) {
-            // On garde un "représentant"
             groupMap.set(key, { ...r, __groupCount: 1 });
           } else if (isPackLesson) {
-            // Pour un pack, on compacte les heures en 1 seule ligne (on conserve le 1er représentant)
             const rep = groupMap.get(key);
             rep.__groupCount += 1;
-            // On peut éventuellement agréger une date indicative (ex: la plus proche)
-            // Ici, on ne touche pas aux montants: getDisplayAmount() sait déjà calculer total pack (base + 10€/h × 5/10)
             groupMap.set(key, rep);
-          } else {
-            // Pour un cours non-pack, on ignore ce cas (clé unique par leçon)
           }
         }
         const groupedRows = Array.from(groupMap.values());
@@ -315,8 +347,7 @@ export default function ParentPayments() {
         body: JSON.stringify({
           lessonId: row.lesson.id,
           forStudent: row.forStudent,
-          // >> NOUVEAU : si c’est un pack, on passe la clé de regroupement
-          packKey: isPackRow(row) ? packKey(row.lesson, row.forStudent) : null,
+          packKey: isPackFor(row.lesson, row.forStudent) ? packKeyFor(row.lesson, row.forStudent) : null,
         }),
       });
       if (!data?.url) throw new Error('Lien de paiement introuvable.');
@@ -407,14 +438,14 @@ export default function ParentPayments() {
                       <div className="font-bold text-primary">
                         {r.lesson.subject_id || 'Matière'}{' '}
                         <span className="text-gray-600 text-xs ml-2">
-                          {getDisplayAmount(r.lesson) ? `${getDisplayAmount(r.lesson).toFixed(2)} €` : ''}
+                          {getDisplayAmountFor(r.lesson, r.forStudent) ? `${getDisplayAmountFor(r.lesson, r.forStudent).toFixed(2)} €` : ''}
                         </span>
                       </div>
                       <div className="text-xs text-gray-500">Professeur : {r.teacherName || r.lesson.teacher_id}</div>
                       <div className="text-xs text-gray-500">
                         {r.forStudent === auth.currentUser?.uid ? 'Parent' : 'Enfant'} : {r.childName || r.forStudent}
                       </div>
-                      <div className="text-xs text-gray-500">Type : {detectSource(r.lesson)}</div>
+                      <div className="text-xs text-gray-500">Type : {detectSourceFor(r.lesson, r.forStudent)}</div>
                       <div className="text-xs text-gray-500">📅 {fmtDateTime(r.lesson.start_datetime, r.lesson.slot_day, r.lesson.slot_hour)}</div>
                     </div>
 

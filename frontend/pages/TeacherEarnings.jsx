@@ -233,7 +233,7 @@ export default function TeacherEarnings() {
       if (d.getFullYear() !== selectedYear) return;
 
       const amount = getPaidAmount(l);  // montant payé par l'élève (inclut +10€ côté front/stockage)
-      const fee = Math.min(billedHours(row.lesson) * 10, amount);
+      const fee = Math.min(billedHours(l) * 10, amount);
       const mIdx = d.getMonth();
 
       base[mIdx].gains += amount;
@@ -267,7 +267,7 @@ export default function TeacherEarnings() {
 
       const src = detectSource(l);
       const amount = getPaidAmount(l);
-      const fee = Math.min(billedHours(row.lesson) * 10, amount);
+      const fee = Math.min(billedHours(l) * 10, amount);;
       const net = Math.max(0, amount - fee);
       const bucket = acc[src] || acc.presentiel;
 
@@ -285,7 +285,7 @@ export default function TeacherEarnings() {
       .map((l) => {
         const date = getRevenueDate(l);
         const amount = getPaidAmount(l);
-        const fee = Math.min(billedHours(row.lesson) * 10, amount);
+        const fee = Math.min(billedHours(l) * 10, amount);
         const net = Math.max(0, amount - fee);
 
         let payerId =

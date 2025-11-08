@@ -579,48 +579,32 @@ export default function ParentCourses() {
 
   // actions invitations
   async function acceptInvite(c) {
-    const sid = c.__child;
+    // c vient de invitations.map(c) et contient __child = l’ID de l’élève invité
+    const childId = c.__child;
     try {
-      await updateDoc(doc(db, 'lessons', c.id), { [`participantsMap.${childId}.status`]: 'accepted' });
-      // 🔔 Email au professeur
-       setRows(prev => prev.map(r => r.id === lesson.id
-        ? {
-            ...r,
-            participantsMap: {
-              ...(r.participantsMap || {}),
-              [childId]: { ...(r.participantsMap?.[childId] || {}), status: 'accepted' }
-            }
-          }
-        : r
-      ));
-      const childLabel = studentMap.get(sid) || 'Élève';
-      await emailTeacherAboutChildInvite(c, childLabel, { accepted: true });      
+      await updateDoc(doc(db, 'lessons', c.id), {
+        [`participantsMap.${childId}.status`]: 'accepted',
+      });
+
+      // Email prof
+      const childLabel = studentMap.get(childId) || 'Élève';
+      await emailTeacherAboutChildInvite(c, childLabel, { accepted: true });
     } catch (e) {
       console.error(e);
       alert("Impossible d'accepter l'invitation.");
     }
   }
+
   async function declineInvite(c) {
-    const sid = c.__child;
+    const childId = c.__child;
     try {
-      const newIds = (c.participant_ids || []).filter(x => x !== sid);
       await updateDoc(doc(db, 'lessons', c.id), {
         [`participantsMap.${childId}.status`]: 'rejected',
       });
-      // MAJ locale optimiste :
-      setRows(prev => prev.map(r => r.id === lesson.id
-        ? {
-            ...r,
-            participantsMap: {
-              ...(r.participantsMap || {}),
-              [childId]: { ...(r.participantsMap?.[childId] || {}), status: 'rejected' }
-            }
-          }
-        : r
-      ));
-      // 🔔 Email au professeur
-      const childLabel = studentMap.get(sid) || 'Élève';
-      await emailTeacherAboutChildInvite(c, childLabel, { accepted: false });      
+
+      // Email prof
+      const childLabel = studentMap.get(childId) || 'Élève';
+      await emailTeacherAboutChildInvite(c, childLabel, { accepted: false });
     } catch (e) {
       console.error(e);
       alert("Impossible de refuser l'invitation.");
