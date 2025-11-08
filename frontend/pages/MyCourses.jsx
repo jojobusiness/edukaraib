@@ -621,15 +621,15 @@ export default function MyCourses() {
             </span>
 
             {packLabel(c) && (
-              <span
-                className={`text-xs px-2 py-0.5 rounded ${
-                  displayedStatus === 'booked'
-                    ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                    : 'bg-amber-100 text-amber-800'
-                }`}
-              >
-                {packLabel(c)}
-              </span>
+              (() => {
+                const st = displayedStatus; // 'booked', 'pending', 'confirmed', 'rejected', etc.
+                const show = ['booked', 'pending', 'rejected', 'removed', 'deleted'].includes(st);
+                return show ? (
+                  <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-200">
+                    {packLabel(c)}
+                  </span>
+                ) : null;
+              })()
             )}
             {/* ———————————————————————————————— */}
             {group && displayedStatus === 'confirmed' && <ParticipantsPopover c={c} />}

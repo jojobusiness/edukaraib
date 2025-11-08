@@ -636,9 +636,22 @@ export default function ParentCourses() {
           <div className="flex items-center gap-2">
             <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
             <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800">En attente</span>
-            {/* ——— NOUVEAU : pastilles mode & pack ——— */}
-            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{modeLabel(c)}</span>
-            <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">{packLabel(c)}</span>
+            {/* ——— Pastilles mode & pack ——— */}
+            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
+              {modeLabel(c)}
+            </span>
+
+            {packLabel(c) && (
+              (() => {
+                const st = displayedStatus;
+                const show = ['booked', 'pending', 'rejected', 'removed', 'deleted'].includes(st);
+                return show ? (
+                  <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-200">
+                    {packLabel(c)}
+                  </span>
+                ) : null;
+              })()
+            )}
             {/* ———————————————————————————————— */}
           </div>
           <div className="text-gray-700 text-sm flex flex-wrap items-center gap-2">
@@ -763,16 +776,9 @@ export default function ParentCourses() {
           <div className="flex items-center gap-2">
             <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
             {statusBadge(displayedStatus)}
-            {/* ——— Pastilles mode & pack ——— */}
-            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
-              {modeLabel(c)}
-            </span>
-
-            {packLabel(c) && (
-              <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-200">
-                {packLabel(c)}
-              </span>
-            )}
+            {/* ——— NOUVEAU : pastilles mode & pack ——— */}
+            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{modeLabel(c)}</span>
+            <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">{packLabel(c)}</span>
             {/* ———————————————————————————————— */}
             {group && displayedStatus === 'confirmed' && <ParticipantsPopover c={c} />}
           </div>
