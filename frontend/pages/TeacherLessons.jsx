@@ -414,6 +414,37 @@ function packKeyTeacher(lesson) {
   return `AUTO:${lesson.teacher_id}|${lesson.subject_id || ''}|${mode}|${hours}|${owner}`;
 }
 
+// 🔎 même pack que la carte courante (clé pack_id ou clé AUTO:…)
+function samePackKey(a, b) {
+  const ka = packKeyTeacher(a);
+  const kb = packKeyTeacher(b);
+  return ka && kb && ka === kb;
+}
+
+// ✅ confirme tous les participants d’une leçon groupée
+function confirmAllParticipantsLocal(lesson) {
+  const ids = Array.isArray(lesson.participant_ids) && lesson.participant_ids.length
+    ? Array.from(new Set(lesson.participant_ids))
+    : Object.keys(lesson.participantsMap || {});
+  const pm = { ...(lesson.participantsMap || {}) };
+  ids.forEach((sid) => {
+    pm[sid] = { ...(pm[sid] || {}), status: 'confirmed' };
+  });
+  return { ids, pm };
+}
+
+// ❌ rejette tous les participants d’une leçon groupée
+function rejectAllParticipantsLocal(lesson) {
+  const ids = Array.isArray(lesson.participant_ids) && lesson.participant_ids.length
+    ? Array.from(new Set(lesson.participant_ids))
+    : Object.keys(lesson.participantsMap || {});
+  const pm = { ...(lesson.participantsMap || {}) };
+  ids.forEach((sid) => {
+    pm[sid] = { ...(pm[sid] || {}), status: 'rejected' };
+  });
+  return { ids, pm };
+}
+
 /* =================== PAGE =================== */
 export default function TeacherLessons() {
   const [lessons, setLessons] = useState([]);
@@ -893,6 +924,71 @@ export default function TeacherLessons() {
     }
   }
 
+  // ✅ Accepter TOUT un pack : on confirme les participants de CHAQUE séance du pack,
+  // on met status='confirmed' + pending_teacher=false (comme une demande de groupe classique)
+  async function acceptWholePack(repLesson) {
+    try {
+      // cible toutes les séances du même pack (avec l’état local, c’est plus rapide et suffisant)
+      const targets = lessons.filter((l) => samePackKey(l, repLesson));
+      // MAJ Firestore
+      for (const l of targets) {
+        const { ids, pm } = confirmAllParticipantsLocal(l);
+        await updateDoc(doc(db, 'lessons', l.id), {
+          participantsMap: pm,
+          participant_ids: ids,
+          status: 'confirmed',
+          pending_teacher: false,
+        });
+      }
+      // MAJ UI
+      setLessons((prev) => prev.map((l) => {
+        if (!samePackKey(l, repLesson)) return l;
+        const { ids, pm } = confirmAllParticipantsLocal(l);
+        return { ...l, participantsMap: pm, participant_ids: ids, status: 'confirmed', pending_teacher: false };
+      }));
+      // Retire la ligne pack de la section "Demandes"
+      setPendingPacks((prev) => prev.filter((p) => !samePackKey(p.lesson, repLesson)));
+    } catch (e) {
+      console.error(e);
+      alert("Impossible d'accepter tout le pack.");
+    }
+  }
+
+  // ❌ Refuser TOUT un pack : on rejette les participants de CHAQUE séance,
+  // le cours RESTE 'booked' si certains élèves d’autres séances ne sont pas rejetés,
+  // et passe 'rejected' seulement si TOUS les participants de cette séance sont rejetés.
+  async function rejectWholePack(repLesson) {
+    try {
+      const targets = lessons.filter((l) => samePackKey(l, repLesson));
+      for (const l of targets) {
+        const { ids, pm } = rejectAllParticipantsLocal(l);
+
+        // statut global : 'rejected' uniquement si "groupe entièrement rejeté"
+        const willBeFullyRejected = ids.length > 0 && ids.every((sid) => (pm[sid]?.status === 'rejected'));
+        const nextStatus = willBeFullyRejected ? 'rejected' : 'booked';
+
+        await updateDoc(doc(db, 'lessons', l.id), {
+          participantsMap: pm,
+          participant_ids: ids,
+          status: nextStatus,
+          pending_teacher: false,
+        });
+      }
+      // MAJ UI
+      setLessons((prev) => prev.map((l) => {
+        if (!samePackKey(l, repLesson)) return l;
+        const { ids, pm } = rejectAllParticipantsLocal(l);
+        const fully = ids.length > 0 && ids.every((sid) => (pm[sid]?.status === 'rejected'));
+        return { ...l, participantsMap: pm, participant_ids: ids, status: (fully ? 'rejected' : 'booked'), pending_teacher: false };
+      }));
+      // Retire la ligne pack de la section "Demandes"
+      setPendingPacks((prev) => prev.filter((p) => !samePackKey(p.lesson, repLesson)));
+    } catch (e) {
+      console.error(e);
+      alert("Impossible de refuser tout le pack.");
+    }
+  }
+
   async function createVisioLink(lesson) {
     if (!isVisio(lesson)) { alert("Ce cours n'est pas en visio."); return; }
     if (hasVisioLink(lesson)) { alert("Le lien visio existe déjà."); return; }
@@ -1274,14 +1370,15 @@ export default function TeacherLessons() {
                           <div className="ml-auto flex items-center gap-2">
                             <button
                               className="px-3 py-1 rounded bg-green-600 text-white text-xs"
-                              onClick={() => handleStatus(p.lesson, 'confirmed')}
+                              onClick={() => acceptWholePack(p.lesson)}
                               title="Accepter tout le pack"
                             >
                               ✅ Accepter tout
                             </button>
+
                             <button
                               className="px-3 py-1 rounded bg-red-600 text-white text-xs"
-                              onClick={() => handleStatus(p.lesson, 'rejected')}
+                              onClick={() => rejectWholePack(p.lesson)}
                               title="Refuser tout le pack"
                             >
                               ❌ Refuser tout
