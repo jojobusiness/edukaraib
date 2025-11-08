@@ -264,6 +264,22 @@ function getJoinState(l) {
 const myParticipantStatus = (l, uid) =>
   (l?.participantsMap?.[uid]?.status) || null;
 
+// renvoie true s’il reste un paiement dû pour l’utilisateur courant
+const needsPaymentForUser = (l, uid) => {
+  // champs possibles selon tes données
+  const isPaid = (v) => v === true || v === 'paid' || v === 'succeeded';
+
+  if (isGroupLesson(l) && uid) {
+    const p = l.participantsMap?.[uid];
+    if (!p) return false;
+    // on check d’abord le paid spécifique au participant, sinon un éventuel état global
+    return !isPaid(p?.paid ?? p?.payment_status ?? l?.payment_status);
+  }
+
+  // cours individuel
+  return !isPaid(l?.paid ?? l?.payment_status);
+};
+
 /* =================== PAGE =================== */
 export default function MyCourses() {
   const [courses, setCourses] = useState([]);
@@ -508,14 +524,30 @@ export default function MyCourses() {
     </span>
   );
 
+  // Affiche la pastille paiement pour l’utilisateur courant uniquement si la séance est confirmée
   function paymentBadgeForMe(c) {
     const uid = auth.currentUser?.uid;
-    const group = isGroupLesson(c);
-    const paid = group ? !!c.participantsMap?.[uid]?.is_paid : !!c.is_paid;
-    return (
-      <span className={`text-[11px] px-2 py-0.5 rounded-full ${paid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-        {paid ? 'Payé' : 'À payer'}
-      </span>
+
+    // 1) statut effectif pour moi (groupe -> participantsMap; sinon status global)
+    const st = (c?.participantsMap?.[uid]?.status) || c?.status || 'pending';
+    if (st !== 'confirmed') return null; // rien si en attente / refusé
+
+    // 2) payé ?
+    const isPaid = (v) => v === true || v === 'paid' || v === 'succeeded';
+    const p = c?.participantsMap?.[uid];
+    const paid =
+      isPaid(p?.is_paid) ||
+      isPaid(p?.paid) ||
+      isPaid(p?.payment_status) ||
+      isPaid(c?.is_paid) ||
+      isPaid(c?.paid) ||
+      isPaid(c?.payment_status);
+
+    // 3) badge
+    return paid ? (
+      <span className="text-[11px] px-2 py-0.5 rounded-full bg-green-100 text-green-700">Payé</span>
+    ) : (
+      <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">À payer</span>
     );
   }
 
@@ -583,9 +615,22 @@ export default function MyCourses() {
           <div className="flex items-center gap-2">
             <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
             {statusBadge(displayedStatus)}
-            {/* ——— NOUVEAU : pastilles mode & pack ——— */}
-            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{modeLabel(c)}</span>
-            <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">{packLabel(c)}</span>
+            {/* ——— Pastilles mode & pack ——— */}
+            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
+              {modeLabel(c)}
+            </span>
+
+            {packLabel(c) && (
+              <span
+                className={`text-xs px-2 py-0.5 rounded ${
+                  displayedStatus === 'booked'
+                    ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                    : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                {packLabel(c)}
+              </span>
+            )}
             {/* ———————————————————————————————— */}
             {group && displayedStatus === 'confirmed' && <ParticipantsPopover c={c} />}
           </div>

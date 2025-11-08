@@ -245,9 +245,19 @@ function getJoinState(l) {
   return 'open';
 }
 
-function canJoinNow(l) {
-  return getJoinState(l) === 'open';
-}
+// renvoie true s’il reste un paiement dû pour un enfant précis
+const childNeedsPayment = (l, childId) => {
+  const isPaid = (v) => v === true || v === 'paid' || v === 'succeeded';
+
+  if (isGroupLesson(l) && childId) {
+    const p = l.participantsMap?.[childId];
+    if (!p) return false;
+    return !isPaid(p?.paid ?? p?.payment_status ?? l?.payment_status);
+  }
+  // individuel (réservé pour cet enfant)
+  return !isPaid(l?.paid ?? l?.payment_status);
+};
+
 
 /* =================== PAGE =================== */
 export default function ParentCourses() {
@@ -698,13 +708,29 @@ export default function ParentCourses() {
     );
   }
 
+  // Affiche la pastille paiement pour UN enfant donné uniquement si sa séance est confirmée
   function paymentBadgeForChild(c, sid) {
-    const group = isGroupLesson(c);
-    const paid = group ? !!c.participantsMap?.[sid]?.is_paid : !!c.is_paid;
-    return (
-      <span className={`text-[11px] px-2 py-0.5 rounded-full ${paid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-        {paid ? 'Payé' : 'À payer'}
-      </span>
+    // 1) statut effectif de cet enfant
+    const st = (c?.participantsMap?.[sid]?.status) || c?.status || 'pending';
+    if (st !== 'confirmed') return null; // rien si en attente / refusé
+
+    // 2) payé ?
+    const isPaid = (v) => v === true || v === 'paid' || v === 'succeeded';
+    // Priorité au paiement côté participant, fallback éventuel sur un état global
+    const p = c?.participantsMap?.[sid];
+    const paid =
+      isPaid(p?.is_paid) ||
+      isPaid(p?.paid) ||
+      isPaid(p?.payment_status) ||
+      isPaid(c?.is_paid) ||
+      isPaid(c?.paid) ||
+      isPaid(c?.payment_status);
+
+    // 3) badge
+    return paid ? (
+      <span className="text-[11px] px-2 py-0.5 rounded-full bg-green-100 text-green-700">Payé</span>
+    ) : (
+      <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">À payer</span>
     );
   }
 
@@ -737,9 +763,16 @@ export default function ParentCourses() {
           <div className="flex items-center gap-2">
             <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
             {statusBadge(displayedStatus)}
-            {/* ——— NOUVEAU : pastilles mode & pack ——— */}
-            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{modeLabel(c)}</span>
-            <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">{packLabel(c)}</span>
+            {/* ——— Pastilles mode & pack ——— */}
+            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
+              {modeLabel(c)}
+            </span>
+
+            {packLabel(c) && (
+              <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-200">
+                {packLabel(c)}
+              </span>
+            )}
             {/* ———————————————————————————————— */}
             {group && displayedStatus === 'confirmed' && <ParticipantsPopover c={c} />}
           </div>
