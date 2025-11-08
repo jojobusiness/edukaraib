@@ -346,17 +346,6 @@ function isGroupFullyRejected(lesson) {
   return ids.every((sid) => isParticipantRejectedStatus(pm?.[sid]?.status));
 }
 
-// au moins un élève rejeté ET pas un rejet total
-function hasPartialRejection(lesson) {
-  const pm = lesson?.participantsMap || {};
-  const ids = Array.isArray(lesson?.participant_ids)
-    ? lesson.participant_ids
-    : Object.keys(pm || {});
-  if (!ids.length) return false;
-  const anyRejected = ids.some((sid) => isParticipantRejectedStatus(pm?.[sid]?.status));
-  return anyRejected && !isGroupFullyRejected(lesson);
-}
-
 // ===== Helpers pack (détection ultra tolérante) =====
 function getPackHoursFromEntry(entry = {}) {
   // on accepte plusieurs schémas possibles
@@ -421,6 +410,36 @@ function samePackKey(a, b) {
   return ka && kb && ka === kb;
 }
 
+/** Retourne le nom lisible de la personne qui a fait la demande (parent ou élève) */
+function requesterName(lesson, { userMap, parentMap, studentMap } = {}) {
+  // on essaye dans l'ordre le plus courant
+  const uid =
+    lesson?.booked_by ||
+    lesson?.requested_by ||
+    lesson?.created_by ||
+    lesson?.parent_id ||
+    null;
+
+  // 1) si on a une map complète des users
+  if (userMap && uid && userMap.get(uid)) {
+    const u = userMap.get(uid);
+    return u.displayName || u.name || u.fullName || u.email || "Parent";
+  }
+
+  // 2) sinon on essaie parentMap / studentMap si tu les as déjà
+  if (parentMap && uid && parentMap.get(uid)) {
+    const p = parentMap.get(uid);
+    return p.name || p.fullName || p.email || "Parent";
+  }
+  if (studentMap && uid && studentMap.get(uid)) {
+    const s = studentMap.get(uid);
+    return s.name || s.fullName || s.email || "Élève";
+  }
+
+  // 3) dernier recours: libellé générique
+  return "Parent";
+}
+
 // ✅ confirme tous les participants d’une leçon groupée
 function confirmAllParticipantsLocal(lesson) {
   const ids = Array.isArray(lesson.participant_ids) && lesson.participant_ids.length
@@ -433,16 +452,18 @@ function confirmAllParticipantsLocal(lesson) {
   return { ids, pm };
 }
 
-// ❌ rejette tous les participants d’une leçon groupée
-function rejectAllParticipantsLocal(lesson) {
-  const ids = Array.isArray(lesson.participant_ids) && lesson.participant_ids.length
-    ? Array.from(new Set(lesson.participant_ids))
-    : Object.keys(lesson.participantsMap || {});
-  const pm = { ...(lesson.participantsMap || {}) };
-  ids.forEach((sid) => {
-    pm[sid] = { ...(pm[sid] || {}), status: 'rejected' };
-  });
-  return { ids, pm };
+// helpers au même endroit que tes autres helpers
+const REJECTED_SET = new Set(['rejected','removed','deleted']);
+
+function hasPendingParticipant(l) {
+  const ids = Array.isArray(l.participant_ids) ? l.participant_ids : Object.keys(l.participantsMap || {});
+  for (const sid of ids) {
+    const st = String(l?.participantsMap?.[sid]?.status || '');
+    if (!REJECTED_SET.has(st) && st !== 'accepted' && st !== 'confirmed') {
+      return true; // encore en attente côté participant
+    }
+  }
+  return false;
 }
 
 /* =================== PAGE =================== */
@@ -677,6 +698,9 @@ export default function TeacherLessons() {
           const key = packKeyTeacher(l);
           if (!key) continue;
 
+          // 🧠 ignorer le pack si tous les participants sont refusés
+          if (!hasPendingParticipant(l)) continue;
+
           const existing = packMap.get(key);
           const slotObj = { day: l.slot_day, hour: l.slot_hour, label: slotLabel(l) };
           const pLabel = (() => {
@@ -736,14 +760,6 @@ export default function TeacherLessons() {
     const pm = l.participantsMap || {};
     return Object.values(pm).some((v) => v?.status === 'accepted' || v?.status === 'confirmed');
   };
-
-  // vrai si (cours groupé) ET (tous les participants sont rejected)
-  function isGroupFullyRejected(l) {
-    const pm = l?.participantsMap || {};
-    const vals = Object.values(pm);
-    if (!l?.is_group || !vals.length) return false;
-    return vals.every(v => v?.status === 'rejected');
-  }
 
   // Confirmés : inclut groupes si au moins 1 participant est accepté/confirmé
   const confirmes = useMemo(() => {
@@ -1372,6 +1388,12 @@ export default function TeacherLessons() {
               {pendingPacks.length > 0 && (
                 <div className="bg-white p-4 rounded-xl shadow border mb-6">
                   <div className="font-semibold text-sm mb-3">Packs — demandes groupées</div>
+                  {/* NOUVEAU */}
+                  <p className="text-sm text-gray-600">
+                    Demande faite par <span className="font-medium">
+                      {requesterName(item.lesson || l, { userMap, parentMap, studentMap })}
+                    </span>
+                  </p>
                   <ul className="space-y-2">
                     {pendingPacks.map((p) => (
                       <li key={p.packId} className="border rounded-lg px-3 py-2">
@@ -1522,9 +1544,11 @@ export default function TeacherLessons() {
 
                     {/* ✅ Afficher qui a fait la demande (utile pour les packs) */}
                     {l.requesterName ? (
-                      <div className="text-xs text-gray-500 mb-1">
-                        Demande faite par <span className="font-semibold">{l.requesterName}</span>
-                      </div>
+                      <p className="text-sm text-gray-600 mt-1">
+                        Demande faite par <span className="font-medium">
+                          {requesterName(l, { userMap, parentMap, studentMap })}
+                        </span>
+                      </p>
                     ) : null}
 
                     <div className="text-gray-700">
