@@ -1609,7 +1609,7 @@ export default function TeacherLessons() {
                     <div className="flex gap-2 items-center mb-1">
                       <span className="font-bold text-primary">{l.subject_id || 'Matière'}</span>
                       <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
-                        Refusé (cours groupé)
+                        Refusé {isGroupLessonStrict(l) ? '(cours groupé)' : '(cours individuel)'}
                       </span>
                       {/* Pastilles mode & pack */}
                       <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded ml-1">
