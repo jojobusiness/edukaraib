@@ -264,21 +264,17 @@ function getJoinState(l) {
 const myParticipantStatus = (l, uid) =>
   (l?.participantsMap?.[uid]?.status) || null;
 
-// renvoie true s’il reste un paiement dû pour l’utilisateur courant
-const needsPaymentForUser = (l, uid) => {
-  // champs possibles selon tes données
-  const isPaid = (v) => v === true || v === 'paid' || v === 'succeeded';
-
-  if (isGroupLesson(l) && uid) {
-    const p = l.participantsMap?.[uid];
-    if (!p) return false;
-    // on check d’abord le paid spécifique au participant, sinon un éventuel état global
-    return !isPaid(p?.paid ?? p?.payment_status ?? l?.payment_status);
-  }
-
-  // cours individuel
-  return !isPaid(l?.paid ?? l?.payment_status);
-};
+function packLabelForMe(c) {
+  const uid = auth.currentUser?.uid;
+  const hours = Number(
+    c?.participantsMap?.[uid]?.pack_hours ??
+    c?.participantsMap?.[uid]?.packHours ??
+    c?.pack_hours ?? c?.packHours ?? 0
+  );
+  if (hours >= 10) return 'Pack 10h';
+  if (hours >= 5) return 'Pack 5h';
+  return '';
+}
 
 /* =================== PAGE =================== */
 export default function MyCourses() {
@@ -620,11 +616,14 @@ export default function MyCourses() {
               {modeLabel(c)}
             </span>
 
-            {packLabel(c) && (
-              <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-200">
-                {packLabel(c)}
-              </span>
-            )}
+            {(() => {
+              const lab = packLabelForMe(c);
+              return lab ? (
+                <span className="text-[11px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded ml-1">
+                  {lab}
+                </span>
+              ) : null;
+            })()}
             {/* ———————————————————————————————— */}
             {group && displayedStatus === 'confirmed' && <ParticipantsPopover c={c} />}
           </div>
@@ -717,7 +716,7 @@ export default function MyCourses() {
           <div className="text-xl font-bold text-primary">Prochain cours</div>
           <div className="text-gray-700 mt-1">
             {nextCourse
-              ? `${nextCourse.subject_id || 'Cours'} · ${nextCourse.slot_day} ${formatHour(nextCourse.slot_hour)} · ${modeLabel(nextCourse)} • ${packLabel(nextCourse)} · avec ${teacherNameFor(nextCourse.teacher_id)}`
+              ? `${nextCourse.subject_id || 'Cours'} · ${nextCourse.slot_day} ${formatHour(nextCourse.slot_hour)} · ${modeLabel(nextCourse)} • ${packLabelForMe(nextCourse)} · avec ${teacherNameFor(nextCourse.teacher_id)}`
               : 'Aucun cours confirmé à venir'}
           </div>
         </div>
@@ -747,11 +746,14 @@ export default function MyCourses() {
                             {modeLabel(c)}
                           </span>
 
-                          {packLabel(c) && (
-                            <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-200">
-                              {packLabel(c)}
-                            </span>
-                          )}
+                          {(() => {
+                            const lab = packLabelForMe(c);
+                            return lab ? (
+                              <span className="text-[11px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded ml-1">
+                                {lab}
+                              </span>
+                            ) : null;
+                          })()}
                           {/* ———————————————————————————————— */}
                         </div>
                         <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>

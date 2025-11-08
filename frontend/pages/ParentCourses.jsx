@@ -245,18 +245,19 @@ function getJoinState(l) {
   return 'open';
 }
 
-// renvoie true s’il reste un paiement dû pour un enfant précis
-const childNeedsPayment = (l, childId) => {
-  const isPaid = (v) => v === true || v === 'paid' || v === 'succeeded';
+// --- Pastille Pack calculée POUR UN ENFANT PRÉCIS ---
+function packLabelForChild(c, sid) {
+  // On lit d’abord sur le participant, puis fallback sur la leçon
+  const hours = Number(
+    c?.participantsMap?.[sid]?.pack_hours ??
+    c?.participantsMap?.[sid]?.packHours ??
+    c?.pack_hours ?? c?.packHours ?? 0
+  );
+  if (hours >= 10) return 'Pack 10h';
+  if (hours >= 5) return 'Pack 5h';
+  return ''; // pas d’étiquette si horaire
+}
 
-  if (isGroupLesson(l) && childId) {
-    const p = l.participantsMap?.[childId];
-    if (!p) return false;
-    return !isPaid(p?.paid ?? p?.payment_status ?? l?.payment_status);
-  }
-  // individuel (réservé pour cet enfant)
-  return !isPaid(l?.paid ?? l?.payment_status);
-};
 
 
 /* =================== PAGE =================== */
@@ -637,15 +638,17 @@ export default function ParentCourses() {
             <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
             <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-800">En attente</span>
             {/* ——— Pastilles mode & pack ——— */}
-            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
+            <span className="text-[11px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded ml-1">
               {modeLabel(c)}
             </span>
-
-            {packLabel(c) && (
-              <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-200">
-                {packLabel(c)}
-              </span>
-            )}
+            {(() => {
+              const lab = packLabelForChild(c, sid);
+              return lab ? (
+                <span className="text-[11px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded ml-1">
+                  {lab}
+                </span>
+              ) : null;
+            })()}
             {/* ———————————————————————————————— */}
           </div>
           <div className="text-gray-700 text-sm flex flex-wrap items-center gap-2">
@@ -771,8 +774,26 @@ export default function ParentCourses() {
             <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
             {statusBadge(displayedStatus)}
             {/* ——— NOUVEAU : pastilles mode & pack ——— */}
-            <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{modeLabel(c)}</span>
-            <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">{packLabel(c)}</span>
+            <span className="text-[11px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded ml-1">
+              {modeLabel(c)}
+            </span>
+            {(() => {
+              // si tu as la liste des enfants concernés dans `kids`
+              const hoursMax = (kids || []).reduce((acc, sid) => {
+                const h = Number(
+                  c?.participantsMap?.[sid]?.pack_hours ??
+                  c?.participantsMap?.[sid]?.packHours ?? 0
+                );
+                return Math.max(acc, h);
+              }, Number(c?.pack_hours ?? c?.packHours ?? 0));
+
+              const lab = hoursMax >= 10 ? 'Pack 10h' : hoursMax >= 5 ? 'Pack 5h' : '';
+              return lab ? (
+                <span className="text-[11px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded ml-1">
+                  {lab}
+                </span>
+              ) : null;
+            })()}
             {/* ———————————————————————————————— */}
             {group && displayedStatus === 'confirmed' && <ParticipantsPopover c={c} />}
           </div>
@@ -877,7 +898,7 @@ export default function ParentCourses() {
                   const childrenLabel = kidsConfirmed.length > 1
                     ? `Participants: ${kidsConfirmed.map((id) => studentMap.get(id) || id).join(', ')}`
                     : (studentMap.get(kidsConfirmed[0]) || c.student_id);
-                  return `${c.subject_id || 'Cours'} · ${c.slot_day} ${formatHour(c.slot_hour)} · ${modeLabel(c)} • ${packLabel(c)} · ${childrenLabel} · avec ${teacherNameFor(c.teacher_id)}`;
+                  return `${c.subject_id || 'Cours'} · ${c.slot_day} ${formatHour(c.slot_hour)} · ${modeLabel(c)} • ${packLabelForChild(c)} · ${childrenLabel} · avec ${teacherNameFor(c.teacher_id)}`;
                 })()
               : 'Aucun cours confirmé à venir'}
           </div>
