@@ -710,11 +710,26 @@ export default function ParentCourses() {
 
   function CourseCard({ c, kids }) {
     const group = isGroupLesson(c);
+    const pm = c?.participantsMap || {};
 
-    // ✅ priorité à “Terminé”
-    const displayedStatus = c.status === 'completed'
-      ? 'completed'
-      : ((c.is_group && (kids?.length > 0)) ? 'confirmed' : c.status);
+    // --- statut affiché cohérent quand on passe des “kids” précis ---
+    const displayedStatus = (() => {
+      if (c.status === 'completed') return 'completed';
+
+      if (group && Array.isArray(kids) && kids.length) {
+        const allRejected = kids.every((sid) => pm?.[sid]?.status === 'rejected');
+        if (allRejected) return 'rejected';
+
+        const anyAccepted = kids.some((sid) => ['accepted','confirmed'].includes(pm?.[sid]?.status));
+        if (anyAccepted) return 'confirmed';
+
+        // sinon, encore en attente pour ces kids
+        return 'booked';
+      }
+
+      // individuel : on garde le statut global
+      return c.status || 'booked';
+    })();
 
     return (
       <div className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between">
