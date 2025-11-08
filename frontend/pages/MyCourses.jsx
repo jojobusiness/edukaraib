@@ -261,9 +261,8 @@ function getJoinState(l) {
   return 'open';
 }
 
-function canJoinNow(l) {
-  return getJoinState(l) === 'open';
-}
+const myParticipantStatus = (l, uid) =>
+  (l?.participantsMap?.[uid]?.status) || null;
 
 /* =================== PAGE =================== */
 export default function MyCourses() {
@@ -562,10 +561,21 @@ export default function MyCourses() {
     const when = (c.slot_day || c.slot_hour != null) ? `${c.slot_day} ${formatHour(c.slot_hour)}` : '';
     const group = isGroupLesson(c);
 
-    // ✅ priorité à “Terminé”
-    const displayedStatus = c.status === 'completed'
-      ? 'completed'
-      : (isConfirmedForMe(c, auth.currentUser?.uid) ? 'confirmed' : c.status);
+    // ✅ priorité “Terminé”, puis statut PAR PARTICIPANT pour les groupes
+    const displayedStatus = (() => {
+      if (c.status === 'completed') return 'completed';
+
+      const uid = auth.currentUser?.uid;
+      if (isGroupLesson(c) && uid) {
+        const pst = myParticipantStatus(c, uid);
+        if (pst === 'rejected' || pst === 'removed' || pst === 'deleted') return 'rejected';
+        if (pst === 'accepted' || pst === 'confirmed') return 'confirmed';
+        return 'booked'; // encore en attente pour toi
+      }
+
+      // cours individuel : on garde le statut global
+      return c.status || 'booked';
+    })();
 
     return (
       <div className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between">
@@ -577,7 +587,7 @@ export default function MyCourses() {
             <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{modeLabel(c)}</span>
             <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">{packLabel(c)}</span>
             {/* ———————————————————————————————— */}
-            {group && <ParticipantsPopover c={c} />}
+            {group && displayedStatus === 'confirmed' && <ParticipantsPopover c={c} />}
           </div>
           <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>
           <div className="text-gray-500 text-xs">{when}</div>
@@ -634,7 +644,7 @@ export default function MyCourses() {
           )}
 
           {/* Documents — pas en refusé */}
-          {displayedStatus === 'rejected' ? null : (
+          {(displayedStatus === 'confirmed' || displayedStatus === 'completed') && (
             <button
               className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold"
               onClick={() => { setDocLesson(c); setDocOpen(true); }}

@@ -741,7 +741,7 @@ export default function ParentCourses() {
             <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{modeLabel(c)}</span>
             <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">{packLabel(c)}</span>
             {/* ———————————————————————————————— */}
-            {group && <ParticipantsPopover c={c} />}
+            {group && displayedStatus === 'confirmed' && <ParticipantsPopover c={c} />}
           </div>
 
           {/* Enfants confirmés/acceptés */}
@@ -802,7 +802,7 @@ export default function ParentCourses() {
           })()}
 
           {/* Documents — pas si refusé */}
-          {displayedStatus === 'rejected' ? null : (
+          {(displayedStatus === 'confirmed' || displayedStatus === 'completed') && (
             <button
               className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded shadow font-semibold"
               onClick={() => { setDocLesson(c); setDocOpen(true); }}
