@@ -490,6 +490,18 @@ function packLabelForLesson(l, sid = null) {
   return '';
 }
 
+// === Détection stricte d'un cours groupé ===
+// vrai seulement si is_group === true OU s'il y a AU MOINS 2 participants
+function countParticipants(l) {
+  const ids = Array.isArray(l?.participant_ids) && l.participant_ids.length
+    ? l.participant_ids
+    : Object.keys(l?.participantsMap || {});
+  return ids.length || 0;
+}
+function isGroupLessonStrict(l) {
+  return l?.is_group === true || countParticipants(l) >= 2;
+}
+
 /* =================== PAGE =================== */
 export default function TeacherLessons() {
   const [lessons, setLessons] = useState([]);
@@ -545,15 +557,8 @@ export default function TeacherLessons() {
       // ----- Construire pendingGroup par élève (tout statut != accepted/confirmed) — exclut PACKS
       const pGroupRaw = [];
       raw
-        .filter((l) =>
-          // ⛔️ exclure tout ce qui est un pack (pack_id OU participantsMap avec pack 5/10h)
-          !isLessonPartOfPack(l) && (
-            !!l.is_group ||
-            (Array.isArray(l.participant_ids) && l.participant_ids.length > 0) ||
-            (l.participantsMap && Object.keys(l.participantsMap).length > 0)
-          )
-        )
-        .forEach((l) => {
+        .filter((l) => !isLessonPartOfPack(l) && isGroupLessonStrict(l))
+        .forEach((l) =>  {
           const ids = Array.isArray(l.participant_ids)
             ? Array.from(new Set(l.participant_ids))
             : Object.keys(l.participantsMap || {});
@@ -813,9 +818,10 @@ export default function TeacherLessons() {
       if (l.status === 'completed') continue;
 
       let isConfirmed = false;
-      if (l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length)) {
+      if (isGroupLessonStrict(l)) {
         const pm = l.participantsMap || {};
-        isConfirmed = (l.participant_ids || []).some((sid) => {
+        const ids = Array.isArray(l.participant_ids) ? l.participant_ids : Object.keys(pm);
+        isConfirmed = ids.some((sid) => {
           const st = pm?.[sid]?.status;
           return st === 'accepted' || st === 'confirmed';
         }) || l.status === 'confirmed';
@@ -832,9 +838,8 @@ export default function TeacherLessons() {
 
   // 🔴 Refusés : individuel(status global) OU groupe (au moins 1 participant rejeté) OU status global 'rejected'
   const refuses = useMemo(() => {
-    return lessons.filter((l) => {
-      // Individuel
-      if (!l.is_group && l.status === 'rejected') return true;
+  return lessons.filter((l) => {
+    if (!isGroupLessonStrict(l) && l.status === 'rejected') return true;
 
       // Groupe : un seul élève rejeté suffit, ou statut global rejeté
       const pm = l.participantsMap || {};
@@ -1187,9 +1192,7 @@ export default function TeacherLessons() {
   }, [lessons]);
 
   const Card = ({ lesson, showActionsForPending }) => {
-  const isGroup = !!lesson.is_group ||
-    (Array.isArray(lesson.participant_ids) && lesson.participant_ids.length > 0) ||
-    (lesson.participantsMap && Object.keys(lesson.participantsMap).length > 0);
+  const isGroup = isGroupLessonStrict(lesson);
 
   const confirmedParticipants = (lesson.participantDetails || []).filter(
     (p) => p.status === 'accepted' || p.status === 'confirmed'
