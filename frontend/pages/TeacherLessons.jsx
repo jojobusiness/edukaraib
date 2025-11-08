@@ -733,11 +733,8 @@ export default function TeacherLessons() {
         }
 
         // 1) on prend toutes les leçons qui appartiennent à un pack (pack_id OU pack via participantsMap)
-        const packLessons = enriched.filter((l) =>
-          isLessonPartOfPack(l) &&
-          // ❗️ n’inclure ici QUE les packs de cours groupés
-          (l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0))
-        );
+        // => on inclut désormais aussi les packs d’individuels
+        const packLessons = enriched.filter((l) => isLessonPartOfPack(l));
 
         // 2) on regroupe avec une clé stable (pack_id sinon AUTO:...|owner)
         const packMap = new Map();
@@ -1017,19 +1014,29 @@ export default function TeacherLessons() {
       const targets = lessons.filter((l) => samePackKey(l, repLesson));
       // MAJ Firestore
       for (const l of targets) {
-        const { ids, pm } = confirmAllParticipantsLocal(l);
-        await updateDoc(doc(db, 'lessons', l.id), {
-          participantsMap: pm,
-          participant_ids: ids,
-          status: 'confirmed',
-          pending_teacher: false,
-        });
+        if (l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)) {
+          const { ids, pm } = confirmAllParticipantsLocal(l);
+          await updateDoc(doc(db, 'lessons', l.id), {
+            participantsMap: pm,
+            participant_ids: ids,
+            status: 'confirmed',
+            pending_teacher: false,
+          });
+        } else {
+          await updateDoc(doc(db, 'lessons', l.id), {
+            status: 'confirmed',
+            pending_teacher: false,
+          });
+        }
       }
       // MAJ UI
       setLessons((prev) => prev.map((l) => {
         if (!samePackKey(l, repLesson)) return l;
-        const { ids, pm } = confirmAllParticipantsLocal(l);
-        return { ...l, participantsMap: pm, participant_ids: ids, status: 'confirmed', pending_teacher: false };
+        if (l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)) {
+          const { ids, pm } = confirmAllParticipantsLocal(l);
+          return { ...l, participantsMap: pm, participant_ids: ids, status: 'confirmed', pending_teacher: false };
+        }
+        return { ...l, status: 'confirmed', pending_teacher: false };
       }));
       // Retire la ligne pack de la section "Demandes"
       setPendingPacks((prev) => prev.filter((p) => !samePackKey(p.lesson, repLesson)));
@@ -1046,33 +1053,44 @@ export default function TeacherLessons() {
     const targets = lessons.filter((l) => samePackKey(l, repLesson));
 
     for (const l of targets) {
-      const pm = { ...(l.participantsMap || {}) };
-      const ids = Array.isArray(l.participant_ids) && l.participant_ids.length
-        ? Array.from(new Set(l.participant_ids))
-        : Object.keys(pm);
+      if (l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)) {
+        const pm = { ...(l.participantsMap || {}) };
+        const ids = Array.isArray(l.participant_ids) && l.participant_ids.length
+          ? Array.from(new Set(l.participant_ids))
+          : Object.keys(pm);
 
-      ids.forEach((sid) => {
-        pm[sid] = { ...(pm[sid] || {}), status: 'rejected' };
-      });
+        ids.forEach((sid) => {
+          pm[sid] = { ...(pm[sid] || {}), status: 'rejected' };
+        });
 
-      await updateDoc(doc(db, 'lessons', l.id), {
-        participantsMap: pm,
-        participant_ids: ids,
-        pending_teacher: false,
-        // ⛔ pas de status:'rejected' ici
-      });
+        await updateDoc(doc(db, 'lessons', l.id), {
+          participantsMap: pm,
+          participant_ids: ids,
+          pending_teacher: false, // ⛔ pas de status:'rejected' global
+        });
+      } else {
+        // individuel : on laisse le statut global tel quel (booked/pending_teacher),
+        // on enlève juste la pendance prof pour sortir du bloc "Demandes"
+        await updateDoc(doc(db, 'lessons', l.id), {
+          pending_teacher: false,
+          // pas de status:'rejected' ici pour ne pas marquer tout le cours comme refusé
+        });
+      }
     }
 
     setLessons(prev => prev.map((l) => {
       if (!samePackKey(l, repLesson)) return l;
-      const pm = { ...(l.participantsMap || {}) };
-      const ids = Array.isArray(l.participant_ids) && l.participant_ids.length
-        ? Array.from(new Set(l.participant_ids))
-        : Object.keys(pm);
-      ids.forEach((sid) => {
-        pm[sid] = { ...(pm[sid] || {}), status: 'rejected' };
-      });
-      return { ...l, participantsMap: pm, participant_ids: ids, pending_teacher: false };
+      if (l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)) {
+        const pm = { ...(l.participantsMap || {}) };
+        const ids = Array.isArray(l.participant_ids) && l.participant_ids.length
+          ? Array.from(new Set(l.participant_ids))
+          : Object.keys(pm);
+        ids.forEach((sid) => {
+          pm[sid] = { ...(pm[sid] || {}), status: 'rejected' };
+        });
+        return { ...l, participantsMap: pm, participant_ids: ids, pending_teacher: false };
+      }
+      return { ...l, pending_teacher: false };
     }));
 
     setPendingPacks(prev => prev.filter(p => !samePackKey(p.lesson, repLesson)));
@@ -1443,7 +1461,11 @@ export default function TeacherLessons() {
               {/* PACKS — demandes groupées */}
               {pendingPacks.length > 0 && (
                 <div className="bg-white p-4 rounded-xl shadow border mb-6">
-                  <div className="font-semibold text-sm mb-3">Packs — demandes groupées</div>
+                <div className="font-semibold text-sm mb-3">
+                  {pendingPacks.some(p => p.lesson?.is_group || (Array.isArray(p.lesson?.participant_ids) && p.lesson.participant_ids.length > 0))
+                    ? 'Packs — demandes groupées'
+                    : 'Packs — demandes individuelles'}
+                </div>
                   {/* NOUVEAU */}
                   <ul className="space-y-2">
                     {pendingPacks.map((p) => (
