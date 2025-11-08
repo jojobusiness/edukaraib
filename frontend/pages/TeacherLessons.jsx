@@ -319,23 +319,44 @@ function makeJitsiVisio(lesson) {
   };
 }
 
-// élèves refusés / retirés / supprimés
+// ——— Helpers "rejet" pour les cours groupés ———
+
+// Un élève est-il marqué comme refusé/retiré/supprimé ?
+function isParticipantRejectedStatus(st) {
+  const s = String(st || '').toLowerCase();
+  return s === 'rejected' || s === 'removed' || s === 'deleted';
+}
+
+// Retourne la liste des élèves refusés pour un cours groupé
 function getRejectedStudents(lesson) {
   const pm = lesson?.participantsMap || {};
   const ids = Array.isArray(lesson?.participant_ids)
     ? lesson.participant_ids
-    : Object.keys(pm);
-  return ids.filter((sid) => {
-    const st = String(pm?.[sid]?.status || '');
-    return st === 'rejected' || st === 'removed' || st === 'deleted';
-  });
+    : Object.keys(pm || {});
+  return ids.filter((sid) => isParticipantRejectedStatus(pm?.[sid]?.status));
+}
+
+// true si TOUS les élèves d’un cours groupé sont refusés/retirés/supprimés
+function isGroupFullyRejected(lesson) {
+  const pm = lesson?.participantsMap || {};
+  const ids = Array.isArray(lesson?.participant_ids)
+    ? lesson.participant_ids
+    : Object.keys(pm || {});
+  if (!ids.length) return false; // pas de participants -> pas "full rejected"
+  return ids.every((sid) => isParticipantRejectedStatus(pm?.[sid]?.status));
 }
 
 function hasPartialRejection(lesson) {
-  if (!lesson?.is_group && !Array.isArray(lesson?.participant_ids)) return false;
+  const isGroup =
+    !!lesson?.is_group ||
+    (Array.isArray(lesson?.participant_ids) && lesson.participant_ids.length > 0) ||
+    (lesson?.participantsMap && Object.keys(lesson.participantsMap).length > 0);
+
+  if (!isGroup) return false;
   const rej = getRejectedStudents(lesson);
   return rej.length > 0 && !isGroupFullyRejected(lesson);
 }
+
 
 /* =================== PAGE =================== */
 export default function TeacherLessons() {
