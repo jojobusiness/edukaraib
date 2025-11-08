@@ -785,20 +785,30 @@ export default function TeacherLessons() {
     return Object.values(pm).some((v) => v?.status === 'accepted' || v?.status === 'confirmed');
   };
 
-  // Confirmés : inclut groupes si au moins 1 participant est accepté/confirmé
+  // Confirmés (dédupliqué par id) : groupe (≥1 participant accepté/confirmé) ou statut global 'confirmed'
   const confirmes = useMemo(() => {
-    return lessons.filter((l) => {
-      if (l.status === 'completed') return false; // pas ici
+    const seen = new Set();
+    const out = [];
+
+    for (const l of lessons) {
+      if (l.status === 'completed') continue;
+
+      let isConfirmed = false;
       if (l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length)) {
         const pm = l.participantsMap || {};
-        // confirmé si au moins un élève est accepté/confirmé OU si status global 'confirmed'
-        return (l.participant_ids || []).some((sid) => {
+        isConfirmed = (l.participant_ids || []).some((sid) => {
           const st = pm?.[sid]?.status;
           return st === 'accepted' || st === 'confirmed';
         }) || l.status === 'confirmed';
+      } else {
+        isConfirmed = l.status === 'confirmed';
       }
-      return l.status === 'confirmed';
-    });
+
+      if (isConfirmed) {
+        if (!seen.has(l.id)) { seen.add(l.id); out.push(l); }
+      }
+    }
+    return out;
   }, [lessons]);
 
   // 🔴 Refusés : individuel(status global) OU groupe (au moins 1 participant rejeté) OU status global 'rejected'

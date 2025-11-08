@@ -533,23 +533,28 @@ export default function ParentCourses() {
     );
   }, [rows]);
 
-  // ✅ Confirmés (au moins accepté/confirmé AU NIVEAU PARTICIPANT ; exclure terminés)
+  // ✅ Confirmés (dédupliqué par c.id + sid) — exclure terminés
   const confirmedRows = useMemo(() => {
+    const seen = new Set();
     const out = [];
+
     for (const { lesson: c, sid } of rows) {
       if (c.status === 'completed') continue;
 
       if (Array.isArray(c.participant_ids) && c.participant_ids.length) {
-        // GROUPE : on NE regarde QUE le statut du participant, pas le statut global
+        // Groupe : confirmé si ce participant est accepté/confirmé
         const st = c?.participantsMap?.[sid]?.status;
         if (st === 'accepted' || st === 'confirmed') {
-          out.push({ c, sid });
+          const key = `${c.id}:${sid}`;
+          if (!seen.has(key)) { seen.add(key); out.push({ c, sid }); }
         }
       } else if (sid === c.student_id && c.status === 'confirmed') {
-        // INDIVIDUEL : on conserve la logique existante
-        out.push({ c, sid });
+        // Individuel
+        const key = `${c.id}:${sid}`;
+        if (!seen.has(key)) { seen.add(key); out.push({ c, sid }); }
       }
     }
+
     return out.sort((a, b) =>
       (FR_DAY_CODES.indexOf(a.c.slot_day) - FR_DAY_CODES.indexOf(b.c.slot_day)) ||
       ((a.c.slot_hour || 0) - (b.c.slot_hour || 0))

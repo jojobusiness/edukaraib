@@ -435,20 +435,26 @@ export default function MyCourses() {
     return out;
   }, [courses, uid]);
 
-  // 🟢 Confirmés (exclure terminés)
+  // 🟢 Confirmés (dédupliqué)
   const confirmed = useMemo(() => {
     if (!uid) return [];
+    const seen = new Set();
     const out = [];
+
     for (const c of courses) {
-      if (c.status === 'completed') continue; // ✨ exclure les terminés
+      if (c.status === 'completed') continue;
+
       if (Array.isArray(c.participant_ids) && c.participant_ids.includes(uid)) {
+        // Groupe : confirmé si moi (uid) accepté/confirmé
         const st = c?.participantsMap?.[uid]?.status;
-        // ✨ groupe : accepted OU confirmed par participant, OU confirmed global
-        if (st === 'accepted' || st === 'confirmed' || c.status === 'confirmed') {
-          out.push(c);
+        if (st === 'accepted' || st === 'confirmed') {
+          const key = `${c.id}:${uid}`;
+          if (!seen.has(key)) { seen.add(key); out.push(c); }
         }
       } else if (c.student_id === uid && c.status === 'confirmed') {
-        out.push(c);
+        // Individuel
+        const key = `${c.id}:${uid}`;
+        if (!seen.has(key)) { seen.add(key); out.push(c); }
       }
     }
     return out;
