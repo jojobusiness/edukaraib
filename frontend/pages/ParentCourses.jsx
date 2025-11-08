@@ -522,17 +522,20 @@ export default function ParentCourses() {
     );
   }, [rows]);
 
-  // ✅ Confirmés (au moins accepté/confirmé au niveau participant; exclure terminés)
+  // ✅ Confirmés (au moins accepté/confirmé AU NIVEAU PARTICIPANT ; exclure terminés)
   const confirmedRows = useMemo(() => {
     const out = [];
     for (const { lesson: c, sid } of rows) {
       if (c.status === 'completed') continue;
-      if (isGroupLesson(c)) {
+
+      if (Array.isArray(c.participant_ids) && c.participant_ids.length) {
+        // GROUPE : on NE regarde QUE le statut du participant, pas le statut global
         const st = c?.participantsMap?.[sid]?.status;
-        if (st === 'accepted' || st === 'confirmed' || c.status === 'confirmed') {
+        if (st === 'accepted' || st === 'confirmed') {
           out.push({ c, sid });
         }
       } else if (sid === c.student_id && c.status === 'confirmed') {
+        // INDIVIDUEL : on conserve la logique existante
         out.push({ c, sid });
       }
     }

@@ -761,24 +761,24 @@ export default function TeacherLessons() {
     });
   }, [lessons]);
 
-  // Refusés :
-  //  - statut global 'rejected'
-  //  - OU (cours groupé) avec AU MOINS un élève refusé/retiré/supprimé
+  // 🔴 Refusés : individuel(status global) OU groupe (au moins 1 participant rejeté) OU status global 'rejected'
   const refuses = useMemo(() => {
     return lessons.filter((l) => {
-      // individuel refusé (statut global)
+      // Individuel
       if (!l.is_group && l.status === 'rejected') return true;
 
-      // groupe : afficher si au moins 1 élève est rejeté/retiré/supprimé
-      if (
-        l.is_group ||
-        (Array.isArray(l.participant_ids) && l.participant_ids.length > 0) ||
-        (l.participantsMap && Object.keys(l.participantsMap).length > 0)
-      ) {
-        return hasPartialRejection(l) || l.status === 'rejected';
-      }
+      // Groupe : un seul élève rejeté suffit, ou statut global rejeté
+      const pm = l.participantsMap || {};
+      const ids = Array.isArray(l.participant_ids) && l.participant_ids.length
+        ? l.participant_ids
+        : Object.keys(pm);
 
-      return false;
+      const anyRejected = ids.some((sid) => {
+        const st = String(pm?.[sid]?.status || '').toLowerCase();
+        return st === 'rejected' || st === 'removed' || st === 'deleted';
+      });
+
+      return anyRejected || l.status === 'rejected';
     });
   }, [lessons]);
 
@@ -1492,6 +1492,7 @@ export default function TeacherLessons() {
                 }
 
                 // groupe : on n’affiche que les élèves refusés
+                // ... à la place du rendu groupe existant :
                 const rejectedIds = getRejectedStudents(l);
                 const rejectedNames = rejectedIds.map((sid) => {
                   const pd = (l.participantDetails || []).find((p) => p.id === sid);
@@ -1505,7 +1506,7 @@ export default function TeacherLessons() {
                       <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
                         Refusé (cours groupé)
                       </span>
-                      {/* pastilles mode & pack */}
+                      {/* Pastilles mode & pack */}
                       <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded ml-1">
                         {String(l?.mode || '').toLowerCase() === 'visio' || l?.is_visio ? 'Visio' : 'Présentiel'}
                       </span>
@@ -1518,6 +1519,13 @@ export default function TeacherLessons() {
                         ) : null;
                       })()}
                     </div>
+
+                    {/* ✅ Afficher qui a fait la demande (utile pour les packs) */}
+                    {l.requesterName ? (
+                      <div className="text-xs text-gray-500 mb-1">
+                        Demande faite par <span className="font-semibold">{l.requesterName}</span>
+                      </div>
+                    ) : null}
 
                     <div className="text-gray-700">
                       Élève(s) refusé(s) :
@@ -1537,7 +1545,6 @@ export default function TeacherLessons() {
                     <div className="text-gray-500 text-sm mt-1">
                       <When lesson={l} />
                     </div>
-                    {/* Pas d’actions / pas de visio / pas de “Gérer le groupe” pour une carte refusée */}
                   </div>
                 );
               })}
