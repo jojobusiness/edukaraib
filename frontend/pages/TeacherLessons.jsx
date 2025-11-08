@@ -648,6 +648,21 @@ export default function TeacherLessons() {
           const found = enriched.find((e) => e.id === pi.id);
           return found || pi;
         });
+        
+        // ❗ Indiv + Pack : 1 seule carte par pack dans "Demandes individuelles"
+        const seenIndivPack = new Set();
+        const pIndivCollapsed = [];
+        for (const l of pIndiv) {
+          const isGroup = !!l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0);
+          if (!isGroup && isLessonPartOfPack(l)) {
+            const key = packKeyTeacher(l);
+            if (key) {
+              if (seenIndivPack.has(key)) continue;   // déjà une carte pour ce pack
+              seenIndivPack.add(key);
+            }
+          }
+          pIndivCollapsed.push(l);
+        }
 
         // enrichir pendingGroup avec noms d'élève + "demande faite par"
         const pGroup = await Promise.all(
@@ -713,7 +728,11 @@ export default function TeacherLessons() {
         }
 
         // 1) on prend toutes les leçons qui appartiennent à un pack (pack_id OU pack via participantsMap)
-        const packLessons = enriched.filter((l) => isLessonPartOfPack(l));
+        const packLessons = enriched.filter((l) =>
+          isLessonPartOfPack(l) &&
+          // ❗️ n’inclure ici QUE les packs de cours groupés
+          (l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0))
+        );
 
         // 2) on regroupe avec une clé stable (pack_id sinon AUTO:...|owner)
         const packMap = new Map();
@@ -758,7 +777,7 @@ export default function TeacherLessons() {
 
         setPendingPacks(sortedPendingPacks);
         setLessons(enrichedSorted);
-        setPendingIndiv(pIndiv);
+        setPendingIndiv(pIndivCollapsed);
         setPendingGroup(pGroup);
         setLoading(false);
       }, (err) => {
