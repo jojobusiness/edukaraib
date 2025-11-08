@@ -621,15 +621,9 @@ export default function MyCourses() {
             </span>
 
             {packLabel(c) && (
-              (() => {
-                const st = displayedStatus; // 'booked', 'pending', 'confirmed', 'rejected', etc.
-                const show = ['booked', 'pending', 'rejected', 'removed', 'deleted'].includes(st);
-                return show ? (
-                  <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-200">
-                    {packLabel(c)}
-                  </span>
-                ) : null;
-              })()
+              <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-200">
+                {packLabel(c)}
+              </span>
             )}
             {/* ———————————————————————————————— */}
             {group && displayedStatus === 'confirmed' && <ParticipantsPopover c={c} />}
@@ -748,9 +742,16 @@ export default function MyCourses() {
                         <div className="flex gap-2 items-center mb-1">
                           <span className="font-bold text-primary">{c.subject_id || 'Matière'}</span>
                           <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded">Invitation</span>
-                          {/* ——— NOUVEAU : pastilles mode & pack ——— */}
-                          <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{modeLabel(c)}</span>
-                          <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">{packLabel(c)}</span>
+                          {/* ——— Pastilles mode & pack ——— */}
+                          <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
+                            {modeLabel(c)}
+                          </span>
+
+                          {packLabel(c) && (
+                            <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-200">
+                              {packLabel(c)}
+                            </span>
+                          )}
                           {/* ———————————————————————————————— */}
                         </div>
                         <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>

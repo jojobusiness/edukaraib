@@ -642,15 +642,9 @@ export default function ParentCourses() {
             </span>
 
             {packLabel(c) && (
-              (() => {
-                const st = displayedStatus;
-                const show = ['booked', 'pending', 'rejected', 'removed', 'deleted'].includes(st);
-                return show ? (
-                  <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-200">
-                    {packLabel(c)}
-                  </span>
-                ) : null;
-              })()
+              <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-200">
+                {packLabel(c)}
+              </span>
             )}
             {/* ———————————————————————————————— */}
           </div>
