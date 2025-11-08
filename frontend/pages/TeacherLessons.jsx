@@ -550,62 +550,64 @@ export default function TeacherLessons() {
         const raw = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
         // ----- Construire pendingIndiv (tous statuts “pending”)
-        const pIndivRaw = raw.filter(
-          (l) => !l.is_group && !l.pack_id && PENDING_SET.has(String(l.status || ''))
-        );
-
-      // ----- Construire pendingGroup par élève (tout statut != accepted/confirmed) — exclut PACKS
-      const pGroupRaw = [];
-      raw
-        .filter((l) => !isLessonPartOfPack(l) && isGroupLessonStrict(l))
-        .forEach((l) =>  {
-          const ids = Array.isArray(l.participant_ids)
-            ? Array.from(new Set(l.participant_ids))
-            : Object.keys(l.participantsMap || {});
-          const pm = l.participantsMap || {};
-          ids.forEach((sid) => {
-            const st = String(pm?.[sid]?.status || '');
-            // On considère "pending" tout ce qui n’est PAS accepté/confirmé/rejeté/removed/deleted
-            if (!['accepted', 'confirmed', 'rejected', 'removed', 'deleted'].includes(st)) {
-              pGroupRaw.push({
-                lessonId: l.id,
-                lesson: l,
-                studentId: sid,
-                status: st || 'booked',
-              });
-            }
-          });
+        const pIndivRaw = raw.filter((l) => {
+          const isPending = PENDING_SET.has(String(l.status || ''));
+          // we only keep true individual lessons that are NOT part of a pack
+          return !l.is_group && !isLessonPartOfPack(l) && isPending;
         });
 
-        // enrichir noms + détails participants (confirmés uniquement pour popover) + requester
-        const enriched = await Promise.all(
-          raw.map(async (l) => {
-            // élève principal (legacy)
-            let studentName = '';
-            if (l.student_id) studentName = await resolvePersonName(l.student_id, nameCacheRef.current);
-
-            // APRÈS — prend d’abord participantsMap, sinon participant_ids
+        // ----- Construire pendingGroup par élève (tout statut != accepted/confirmed) — exclut PACKS
+        const pGroupRaw = [];
+        raw
+          .filter((l) => !isLessonPartOfPack(l) && isGroupLessonStrict(l))
+          .forEach((l) =>  {
+            const ids = Array.isArray(l.participant_ids)
+              ? Array.from(new Set(l.participant_ids))
+              : Object.keys(l.participantsMap || {});
             const pm = l.participantsMap || {};
-            const idsFromMap = Object.keys(pm);
-            const baseIds = idsFromMap.length
-              ? idsFromMap
-              : (Array.isArray(l.participant_ids) ? Array.from(new Set(l.participant_ids)) : []);
+            ids.forEach((sid) => {
+              const st = String(pm?.[sid]?.status || '');
+              // On considère "pending" tout ce qui n’est PAS accepté/confirmé/rejeté/removed/deleted
+              if (!['accepted', 'confirmed', 'rejected', 'removed', 'deleted'].includes(st)) {
+                pGroupRaw.push({
+                  lessonId: l.id,
+                  lesson: l,
+                  studentId: sid,
+                  status: st || 'booked',
+                });
+              }
+            });
+          });
 
-            let participantDetails = [];
-            if (baseIds.length > 0) {
-              participantDetails = await Promise.all(
-                baseIds.map(async (sid) => {
-                  const parentId = pm?.[sid]?.parent_id || pm?.[sid]?.booked_by || null;
-                  return {
-                    id: sid,
-                    name: await resolvePersonName(sid, nameCacheRef.current, { parentId }),
-                    is_paid: !!pm?.[sid]?.is_paid,
-                    // on considère accepted ou confirmed comme "confirmé"
-                    status: pm?.[sid]?.status || 'accepted',
-                  };
-                })
-              );
-            }
+          // enrichir noms + détails participants (confirmés uniquement pour popover) + requester
+          const enriched = await Promise.all(
+            raw.map(async (l) => {
+              // élève principal (legacy)
+              let studentName = '';
+              if (l.student_id) studentName = await resolvePersonName(l.student_id, nameCacheRef.current);
+
+              // APRÈS — prend d’abord participantsMap, sinon participant_ids
+              const pm = l.participantsMap || {};
+              const idsFromMap = Object.keys(pm);
+              const baseIds = idsFromMap.length
+                ? idsFromMap
+                : (Array.isArray(l.participant_ids) ? Array.from(new Set(l.participant_ids)) : []);
+
+              let participantDetails = [];
+              if (baseIds.length > 0) {
+                participantDetails = await Promise.all(
+                  baseIds.map(async (sid) => {
+                    const parentId = pm?.[sid]?.parent_id || pm?.[sid]?.booked_by || null;
+                    return {
+                      id: sid,
+                      name: await resolvePersonName(sid, nameCacheRef.current, { parentId }),
+                      is_paid: !!pm?.[sid]?.is_paid,
+                      // on considère accepted ou confirmed comme "confirmé"
+                      status: pm?.[sid]?.status || 'accepted',
+                    };
+                  })
+                );
+              }
 
             // requester (qui a cliqué)
             let requesterName = '';
@@ -1462,9 +1464,11 @@ export default function TeacherLessons() {
               {pendingPacks.length > 0 && (
                 <div className="bg-white p-4 rounded-xl shadow border mb-6">
                 <div className="font-semibold text-sm mb-3">
-                  {pendingPacks.some(p => p.lesson?.is_group || (Array.isArray(p.lesson?.participant_ids) && p.lesson.participant_ids.length > 0))
-                    ? 'Packs — demandes groupées'
-                    : 'Packs — demandes individuelles'}
+                  {
+                    pendingPacks.some(p => Array.isArray(p.lesson?.participant_ids) && (p.lesson.participant_ids.length >= 2 || p.lesson?.is_group === true))
+                      ? 'Packs — demandes groupées'
+                      : 'Packs — demandes individuelles'
+                  }
                 </div>
                   {/* NOUVEAU */}
                   <ul className="space-y-2">
