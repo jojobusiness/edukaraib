@@ -1389,15 +1389,16 @@ export default function TeacherLessons() {
                 <div className="bg-white p-4 rounded-xl shadow border mb-6">
                   <div className="font-semibold text-sm mb-3">Packs — demandes groupées</div>
                   {/* NOUVEAU */}
-                  <p className="text-sm text-gray-600">
-                    Demande faite par <span className="font-medium">
-                      {requesterName(item.lesson || l, { userMap, parentMap, studentMap })}
-                    </span>
-                  </p>
                   <ul className="space-y-2">
                     {pendingPacks.map((p) => (
                       <li key={p.packId} className="border rounded-lg px-3 py-2">
                         <div className="flex items-center gap-2 flex-wrap">
+                          {/* Sous-texte : demandeur */}
+                          {p?.lesson?.requesterName ? (
+                            <p className="text-xs text-gray-500 mt-1">
+                              Demande faite par <span className="font-semibold">{p.lesson.requesterName}</span>
+                            </p>
+                          ) : null}
                           <span className="text-sm font-medium">{p.lesson.subject_id || 'Cours'}</span>
                           <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{p.modeLabel}</span>
                           <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">{p.packLabel}</span>
@@ -1545,9 +1546,7 @@ export default function TeacherLessons() {
                     {/* ✅ Afficher qui a fait la demande (utile pour les packs) */}
                     {l.requesterName ? (
                       <p className="text-sm text-gray-600 mt-1">
-                        Demande faite par <span className="font-medium">
-                          {requesterName(l, { userMap, parentMap, studentMap })}
-                        </span>
+                        Demande faite par <span className="font-medium">{l.requesterName}</span>
                       </p>
                     ) : null}
 
