@@ -45,33 +45,40 @@ function computeBookedAndRemaining(lessonsDocs, teacherDoc, forStudentId) {
       });
       if (childAlreadyIn) { blocked.push({ day, hour }); continue; }
 
-      let totalRemaining = 0;
-      let hasRoomSomewhere = false;
+      // 👉 Au lieu de SUM toutes les places restantes des groupes,
+      //    on prend le MAX parmi les groupes disponibles pour CE créneau,
+      //    et on compte TOUS les participants "actifs" (pending/accepted/confirmed).
+      let slotRemaining = 0;
+      let hasAnyAvailableGroup = false;
+
       groups.forEach((g) => {
-        const cap = Number(g.capacity || 0) > 0 ? Number(g.capacity)
-                  : (teacherDefaultCap > 1 ? teacherDefaultCap : 1);
+        const cap = Number(g.capacity || 0) > 0
+          ? Number(g.capacity)
+          : (teacherDefaultCap > 1 ? teacherDefaultCap : 1);
+
         const ids = Array.isArray(g.participant_ids) ? g.participant_ids : [];
-        const pm = g.participantsMap || {};
-        let accepted = 0;
+        const pm  = g.participantsMap || {};
+
+        // Compter comme "occupé" tout statut NON rejeté/supprimé (donc pending inclus)
+        let occupied = 0;
         ids.forEach((sid) => {
-          const st = pm?.[sid]?.status;
-          if (st === 'accepted' || st === 'confirmed') accepted += 1;
+          const st = String(pm?.[sid]?.status || 'pending').toLowerCase();
+          const isOut = (st === 'rejected' || st === 'removed' || st === 'deleted');
+          if (!isOut) occupied += 1;
         });
-        const remains = Math.max(0, cap - accepted);
-        if (remains > 0) hasRoomSomewhere = true;
-        totalRemaining += remains;
+
+        const remains = Math.max(0, cap - occupied);
+        if (remains > 0) {
+          hasAnyAvailableGroup = true;
+          slotRemaining = Math.max(slotRemaining, remains); // 👈 MAX, pas SOMME
+      }
       });
 
-      if (!hasRoomSomewhere) {
+      if (!hasAnyAvailableGroup) {
         blocked.push({ day, hour });
-      } else if (totalRemaining > 0) {
-        remainingMap[label] = totalRemaining;
+      } else {
+        remainingMap[label] = slotRemaining;
       }
-      continue;
-    }
-
-    if (teacherGroupEnabled && teacherDefaultCap > 1) {
-      remainingMap[label] = teacherDefaultCap;
       continue;
     }
   }

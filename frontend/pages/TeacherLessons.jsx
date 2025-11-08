@@ -357,15 +357,33 @@ function hasPartialRejection(lesson) {
   return rej.length > 0 && !isGroupFullyRejected(lesson);
 }
 
-// ===== Packs détectés via participantsMap (fallback si pas de pack_id) =====
+// ===== Helpers pack (détection ultra tolérante) =====
+function getPackHoursFromEntry(entry = {}) {
+  // on accepte plusieurs schémas possibles
+  const v =
+    Number(entry?.pack_hours) ||
+    Number(entry?.packHours) ||
+    Number(entry?.pack?.hours) ||
+    (entry?.is_pack10 ? 10 : 0) ||
+    (entry?.is_pack5 ? 5 : 0) ||
+    (entry?.pack === '10h' ? 10 : 0) ||
+    (entry?.pack === '5h' ? 5 : 0);
+
+  if (v >= 10) return 10;
+  if (v >= 5) return 5;
+  return 0;
+}
+
+/** Renvoie l’ID de l’élève pour lequel un pack (5h/10h) est actif, sinon null */
 function getPackOwner(lesson) {
-  // Renvoie l'ID de l'élève pour lequel le pack est actif, sinon null
   const pm = lesson?.participantsMap || {};
-  const ids = Array.isArray(lesson?.participant_ids) ? lesson.participant_ids : Object.keys(pm);
+  const ids = Array.isArray(lesson?.participant_ids) && lesson.participant_ids.length
+    ? Array.from(new Set(lesson.participant_ids))
+    : Object.keys(pm);
+
   for (const sid of ids) {
-    const e = pm[sid] || {};
-    const hours = Number(e?.pack?.hours || (e.is_pack10 ? 10 : e.is_pack5 ? 5 : 0));
-    if (hours === 5 || hours === 10) return sid; // pack trouvé pour cet élève
+    const hours = getPackHoursFromEntry(pm[sid] || {});
+    if (hours === 5 || hours === 10) return sid;
   }
   return null;
 }
@@ -374,24 +392,25 @@ function getPackHoursForOwner(lesson) {
   const pm = lesson?.participantsMap || {};
   const owner = getPackOwner(lesson);
   if (!owner) return 0;
-  const e = pm[owner] || {};
-  const hours = Number(e?.pack?.hours || (e.is_pack10 ? 10 : e.is_pack5 ? 5 : 0));
-  return hours === 10 ? 10 : hours === 5 ? 5 : 0;
+  return getPackHoursFromEntry(pm[owner] || {});
 }
 
 function isLessonPartOfPack(lesson) {
-  // Vrai si pack_id présent OU si un participant a pack 5/10h dans participantsMap
-  if (lesson?.pack_id) return true;
-  return getPackOwner(lesson) !== null;
+  if (lesson?.pack_id) return true;        // cas standard
+  return getPackOwner(lesson) !== null;    // cas “pack” stocké dans participantsMap
 }
 
 function packKeyTeacher(lesson) {
-  // Clé d’agrégation : utilise pack_id si dispo; sinon reconstruit une clé stable par élève
+  // Clé stable d’agrégation: pack_id si dispo, sinon clé “AUTO:…|owner”
   if (lesson?.pack_id) return String(lesson.pack_id);
   const owner = getPackOwner(lesson);
   if (!owner) return null;
+
   const hours = getPackHoursForOwner(lesson);
-  const mode = (String(lesson?.mode || '').toLowerCase() === 'visio' || lesson?.is_visio === true) ? 'visio' : 'presentiel';
+  const mode = (String(lesson?.mode || '').toLowerCase() === 'visio' || lesson?.is_visio === true)
+    ? 'visio'
+    : 'presentiel';
+
   return `AUTO:${lesson.teacher_id}|${lesson.subject_id || ''}|${mode}|${hours}|${owner}`;
 }
 
@@ -586,17 +605,27 @@ export default function TeacherLessons() {
         });
         // --- PENDING PACKS: 1 ligne par pack (avec ou sans pack_id)
         // helper: est-ce que cette séance rend le pack "en attente" ?
+        // helper: est-ce que cette séance rend le pack "en attente" ?
         function isLessonPendingForPack(l) {
           const st = String(l.status || '');
           const pendingByStatus = PENDING_SET.has(st) || l.pending_teacher === true;
 
-          // groupe : si au moins un participant n’est pas accepté/confirmé → pending
+          // groupe : si AU MOINS un participant n’est pas accepté/confirmé, on considère "pending"
+          const pm = l.participantsMap || {};
+          const ids = (Array.isArray(l.participant_ids) && l.participant_ids.length)
+            ? l.participant_ids
+            : Object.keys(pm);
+
           let pendingByGroup = false;
-          if (l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)) {
-            const pm = l.participantsMap || {};
-            for (const sid of (l.participant_ids || [])) {
-              const pst = pm?.[sid]?.status;
-              if (!pst || PENDING_SET.has(String(pst)) || (pst !== 'accepted' && pst !== 'confirmed')) {
+          if (ids.length) {
+            for (const sid of ids) {
+              const pst = String(pm?.[sid]?.status || '');
+              if (
+                !pst ||
+                PENDING_SET.has(pst) ||
+                (pst !== 'accepted' && pst !== 'confirmed')  // donc pending si ni accepté ni confirmé
+              ) {
+                // mais on ignore ceux qui sont explicitement refusés/retirés/supprimés
                 if (pst !== 'rejected' && pst !== 'removed' && pst !== 'deleted') {
                   pendingByGroup = true;
                   break;
