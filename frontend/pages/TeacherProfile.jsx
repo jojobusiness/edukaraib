@@ -312,7 +312,7 @@ export default function TeacherProfile() {
       const results = [];
       for (const slot of slots) {
         try {
-          // Vérifier doublons
+          // Vérifier doublons + réactiver si précédemment "rejected"
           const dupIndQ = query(
             collection(db, "lessons"),
             where("teacher_id", "==", teacherId),
@@ -329,30 +329,107 @@ export default function TeacherProfile() {
             where("is_group", "==", true),
             where("participant_ids", "array-contains", targetStudentId)
           );
-          const [dupIndSnap, dupGrpSnap] = await Promise.all([
-            getDocs(dupIndQ),
-            getDocs(dupGrpQ),
-          ]);
-          const hasDup =
-            dupIndSnap.docs.some(
-              (d) => (d.data()?.status || "booked") !== "rejected"
-            ) ||
-            dupGrpSnap.docs.some((d) => {
-              const dat = d.data();
-              const st = dat?.participantsMap?.[targetStudentId]?.status;
-              return (
-                st !== "removed" && st !== "deleted" && st !== "rejected"
-              );
-            });
-          if (hasDup) {
-            results.push({
-              slot,
-              status: "duplicate",
-              message: `Déjà inscrit(e) sur ${slot.day} ${slot.hour}h.`,
-            });
+
+          const [dupIndSnap, dupGrpSnap] = await Promise.all([getDocs(dupIndQ), getDocs(dupGrpQ)]);
+
+          // 1) INDIVIDUEL : s'il existe un cours non rejeté -> DUPLICATE
+          const existingInd = dupIndSnap.docs[0]?.data();
+          const existingIndId = dupIndSnap.docs[0]?.id;
+          if (existingInd) {
+            const st = String(existingInd.status || "booked").toLowerCase();
+            if (!["rejected", "removed", "deleted"].includes(st)) {
+              results.push({ slot, status: "duplicate", message: `Déjà inscrit(e) sur ${slot.day} ${slot.hour}h.` });
+              continue;
+            }
+          }
+
+          // 2) GROUPE : s'il existe un groupe où je suis déjà "actif" -> DUPLICATE
+          let alreadyActiveInGroup = false;
+          let rejectedInGroupDoc = null; // doc à "réactiver" si statut rejeté
+          for (const d of dupGrpSnap.docs) {
+            const g = d.data();
+            const pm = g.participantsMap || {};
+            const pst = String(pm?.[targetStudentId]?.status || "pending").toLowerCase();
+            if (!["rejected", "removed", "deleted"].includes(pst)) {
+              // actif (pending/accepted/confirmed) -> duplicate
+              alreadyActiveInGroup = true;
+              break;
+            }
+            if (["rejected", "removed", "deleted"].includes(pst)) {
+              rejectedInGroupDoc = { id: d.id, data: g };
+              // on ne break pas ici : on préfère d'abord vérifier s'il y a un actif
+            }
+          }
+
+          if (alreadyActiveInGroup) {
+            results.push({ slot, status: "duplicate", message: `Déjà inscrit(e) sur ${slot.day} ${slot.hour}h.` });
             continue;
           }
 
+          // 3) RÉACTIVER AU LIEU DE CRÉER :
+          //    a) individuel rejeté -> repasser à booked/pending_teacher
+          if (existingInd && ["rejected", "removed", "deleted"].includes(String(existingInd.status || "").toLowerCase())) {
+            await updateDoc(doc(db, "lessons", existingIndId), {
+              status: "booked", // statut global de la leçon
+              // remettre la présence de l'élève (sécurité)
+              participant_ids: Array.from(new Set([...(existingInd.participant_ids || []), targetStudentId])),
+              [`participantsMap.${targetStudentId}`]: {
+                ...(existingInd.participantsMap?.[targetStudentId] || {}),
+                parent_id: bookingFor === "child" ? me.uid : null,
+                booked_by: me.uid,
+                is_paid: false,
+                paid_by: null,
+                paid_at: null,
+                status: "pending_teacher",
+                added_at: serverTimestamp(),
+                ...packFieldsForParticipant(targetStudentId), // ⬅️ réinjecte pack/visio éventuels
+              },
+              // ne change pas mode global d'une ancienne leçon ; le pack_mode est porté par le participant
+            });
+            await addDoc(collection(db, "notifications"), {
+              user_id: teacherId,
+              read: false,
+              created_at: serverTimestamp(),
+              type: "lesson_request",
+              lesson_id: existingIndId,
+              requester_id: targetStudentId,
+              message: `Relance de demande (individuel) ${slot.day} ${slot.hour}h.`,
+            });
+            results.push({ slot, status: "revived_individual", message: `Demande réactivée (individuel) ${slot.day} ${slot.hour}h.` });
+            continue;
+          }
+
+          //    b) groupe où je suis "rejected" -> passer ce participant en pending_teacher
+          if (rejectedInGroupDoc) {
+            const { id: gId, data: g } = rejectedInGroupDoc;
+            await updateDoc(doc(db, "lessons", gId), {
+              participant_ids: Array.from(new Set([...(g.participant_ids || []), targetStudentId])),
+              [`participantsMap.${targetStudentId}`]: {
+                ...(g.participantsMap?.[targetStudentId] || {}),
+                parent_id: bookingFor === "child" ? me.uid : null,
+                booked_by: me.uid,
+                is_paid: false,
+                paid_by: null,
+                paid_at: null,
+                status: "pending_teacher",
+                added_at: serverTimestamp(),
+                ...packFieldsForParticipant(targetStudentId), // ⬅️ réinjecte pack/visio éventuels
+              },
+            });
+            await addDoc(collection(db, "notifications"), {
+              user_id: teacherId,
+              read: false,
+              created_at: serverTimestamp(),
+              type: "lesson_request",
+              lesson_id: gId,
+              requester_id: targetStudentId,
+              message: `Relance de demande (groupe) ${slot.day} ${slot.hour}h.`,
+            });
+            results.push({ slot, status: "revived_group", message: `Demande réactivée (groupe) ${slot.day} ${slot.hour}h.` });
+            continue;
+          }
+
+          // 4) Si pas de réactivation possible : logique précédente
           // Rejoindre un groupe existant (sauf pour les packs)
           if (!isPack) {
             const qExisting = query(
@@ -366,15 +443,9 @@ export default function TeacherProfile() {
             let joined = false;
             for (const d of existSnap.docs) {
               const l = d.data();
-              const current = Array.isArray(l.participant_ids)
-                ? l.participant_ids
-                : [];
+              const current = Array.isArray(l.participant_ids) ? l.participant_ids : [];
               if (current.includes(targetStudentId)) {
-                results.push({
-                  slot,
-                  status: "duplicate",
-                  message: `Déjà inscrit(e) sur ${slot.day} ${slot.hour}h.`,
-                });
+                results.push({ slot, status: "duplicate", message: `Déjà inscrit(e) sur ${slot.day} ${slot.hour}h.` });
                 joined = true;
                 break;
               }
@@ -400,11 +471,7 @@ export default function TeacherProfile() {
                 requester_id: targetStudentId,
                 message: `Demande d'ajout au groupe (${slot.day} ${slot.hour}h).`,
               });
-              results.push({
-                slot,
-                status: "joined_group",
-                message: `Ajout au groupe demandé pour ${slot.day} ${slot.hour}h.`,
-              });
+              results.push({ slot, status: "joined_group", message: `Ajout au groupe demandé pour ${slot.day} ${slot.hour}h.` });
               joined = true;
               break;
             }
