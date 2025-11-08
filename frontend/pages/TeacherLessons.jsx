@@ -466,6 +466,30 @@ function hasPendingParticipant(l) {
   return false;
 }
 
+// ——— BADGE PACK pour une leçon, éventuellement ciblé sur un participant (sid) ———
+function packLabelForLesson(l, sid = null) {
+  const read = (obj) => Number(
+    obj?.pack_hours ??
+    obj?.packHours ??
+    (obj?.pack === '10h' ? 10 : obj?.pack === '5h' ? 5 : 0) ??
+    (obj?.is_pack10 ? 10 : obj?.is_pack5 ? 5 : 0) ??
+    0
+  );
+
+  // priorité au participant si fourni
+  if (sid && l?.participantsMap?.[sid]) {
+    const v = read(l.participantsMap[sid]);
+    if (v >= 10) return 'Pack 10h';
+    if (v >= 5) return 'Pack 5h';
+  }
+
+  // fallback leçon
+  const v = read(l);
+  if (v >= 10) return 'Pack 10h';
+  if (v >= 5) return 'Pack 5h';
+  return '';
+}
+
 /* =================== PAGE =================== */
 export default function TeacherLessons() {
   const [lessons, setLessons] = useState([]);
@@ -1550,19 +1574,33 @@ export default function TeacherLessons() {
                       </p>
                     ) : null}
 
-                    <div className="text-gray-700">
+                    {/* Élèves refusés + badge pack par élève */}
+                    <div className="mt-2 text-sm text-gray-700">
                       Élève(s) refusé(s) :
-                      {rejectedNames.length ? (
-                        <span className="ml-2">
-                          {rejectedNames.map((nm, i) => (
-                            <span key={i} className="inline-block text-xs bg-red-50 text-red-700 px-2 py-0.5 rounded mr-1">
-                              {nm}
-                            </span>
-                          ))}
-                        </span>
-                      ) : (
-                        <span className="ml-2 text-sm text-gray-500">—</span>
-                      )}
+                      {(() => {
+                        const pm = l.participantsMap || {};
+                        const ids = (l.participant_ids || []).filter(sid => {
+                          const st = String(pm?.[sid]?.status || '');
+                          return ['rejected','removed','deleted'].includes(st);
+                        });
+                        if (!ids.length) return <span className="ml-2 text-gray-500">—</span>;
+                        return (
+                          <span className="ml-2 space-x-2">
+                            {ids.map((sid) => {
+                              const name = (l.participantDetails || []).find(p => p.id === sid)?.name || sid;
+                              const lab = packLabelForLesson(l, sid);
+                              return (
+                                <span key={sid} className="inline-flex items-center">
+                                  <span className="px-2 py-0.5 rounded bg-red-50 text-red-700 text-xs mr-1">{name}</span>
+                                  {lab && (
+                                    <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 text-[11px]">{lab}</span>
+                                  )}
+                                </span>
+                              );
+                            })}
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     <div className="text-gray-500 text-sm mt-1">
