@@ -336,25 +336,25 @@ function getRejectedStudents(lesson) {
   return ids.filter((sid) => isParticipantRejectedStatus(pm?.[sid]?.status));
 }
 
-// true si TOUS les élèves d’un cours groupé sont refusés/retirés/supprimés
+// true si TOUS les élèves d’un cours groupé sont rejetés/retirés/supprimés
 function isGroupFullyRejected(lesson) {
   const pm = lesson?.participantsMap || {};
   const ids = Array.isArray(lesson?.participant_ids)
     ? lesson.participant_ids
     : Object.keys(pm || {});
-  if (!ids.length) return false; // pas de participants -> pas "full rejected"
+  if (!ids.length) return false;
   return ids.every((sid) => isParticipantRejectedStatus(pm?.[sid]?.status));
 }
 
+// au moins un élève rejeté ET pas un rejet total
 function hasPartialRejection(lesson) {
-  const isGroup =
-    !!lesson?.is_group ||
-    (Array.isArray(lesson?.participant_ids) && lesson.participant_ids.length > 0) ||
-    (lesson?.participantsMap && Object.keys(lesson.participantsMap).length > 0);
-
-  if (!isGroup) return false;
-  const rej = getRejectedStudents(lesson);
-  return rej.length > 0 && !isGroupFullyRejected(lesson);
+  const pm = lesson?.participantsMap || {};
+  const ids = Array.isArray(lesson?.participant_ids)
+    ? lesson.participant_ids
+    : Object.keys(pm || {});
+  if (!ids.length) return false;
+  const anyRejected = ids.some((sid) => isParticipantRejectedStatus(pm?.[sid]?.status));
+  return anyRejected && !isGroupFullyRejected(lesson);
 }
 
 // ===== Helpers pack (détection ultra tolérante) =====
@@ -766,8 +766,19 @@ export default function TeacherLessons() {
   //  - OU (cours groupé) avec AU MOINS un élève refusé/retiré/supprimé
   const refuses = useMemo(() => {
     return lessons.filter((l) => {
-      if (l.status === 'rejected') return true;
-      return hasPartialRejection(l);
+      // individuel refusé (statut global)
+      if (!l.is_group && l.status === 'rejected') return true;
+
+      // groupe : afficher si au moins 1 élève est rejeté/retiré/supprimé
+      if (
+        l.is_group ||
+        (Array.isArray(l.participant_ids) && l.participant_ids.length > 0) ||
+        (l.participantsMap && Object.keys(l.participantsMap).length > 0)
+      ) {
+        return hasPartialRejection(l) || l.status === 'rejected';
+      }
+
+      return false;
     });
   }, [lessons]);
 
@@ -954,39 +965,43 @@ export default function TeacherLessons() {
     }
   }
 
-  // ❌ Refuser TOUT un pack : on rejette les participants de CHAQUE séance,
-  // le cours RESTE 'booked' si certains élèves d’autres séances ne sont pas rejetés,
-  // et passe 'rejected' seulement si TOUS les participants de cette séance sont rejetés.
+  // ❌ Refuser TOUT un pack : NE PAS mettre le cours en "rejected".
+  // On rejette uniquement les élèves (participantsMap), on enlève "pending_teacher"
+  // et on laisse le statut du cours tel quel (ou "booked" si tu préfères le figer).
   async function rejectWholePack(repLesson) {
-    try {
-      const targets = lessons.filter((l) => samePackKey(l, repLesson));
-      for (const l of targets) {
-        const { ids, pm } = rejectAllParticipantsLocal(l);
+    const targets = lessons.filter((l) => samePackKey(l, repLesson));
 
-        // statut global : 'rejected' uniquement si "groupe entièrement rejeté"
-        const willBeFullyRejected = ids.length > 0 && ids.every((sid) => (pm[sid]?.status === 'rejected'));
-        const nextStatus = willBeFullyRejected ? 'rejected' : 'booked';
+    for (const l of targets) {
+      const pm = { ...(l.participantsMap || {}) };
+      const ids = Array.isArray(l.participant_ids) && l.participant_ids.length
+        ? Array.from(new Set(l.participant_ids))
+        : Object.keys(pm);
 
-        await updateDoc(doc(db, 'lessons', l.id), {
-          participantsMap: pm,
-          participant_ids: ids,
-          status: nextStatus,
-          pending_teacher: false,
-        });
-      }
-      // MAJ UI
-      setLessons((prev) => prev.map((l) => {
-        if (!samePackKey(l, repLesson)) return l;
-        const { ids, pm } = rejectAllParticipantsLocal(l);
-        const fully = ids.length > 0 && ids.every((sid) => (pm[sid]?.status === 'rejected'));
-        return { ...l, participantsMap: pm, participant_ids: ids, status: (fully ? 'rejected' : 'booked'), pending_teacher: false };
-      }));
-      // Retire la ligne pack de la section "Demandes"
-      setPendingPacks((prev) => prev.filter((p) => !samePackKey(p.lesson, repLesson)));
-    } catch (e) {
-      console.error(e);
-      alert("Impossible de refuser tout le pack.");
+      ids.forEach((sid) => {
+        pm[sid] = { ...(pm[sid] || {}), status: 'rejected' };
+      });
+
+      await updateDoc(doc(db, 'lessons', l.id), {
+        participantsMap: pm,
+        participant_ids: ids,
+        pending_teacher: false,
+        // ⛔ pas de status:'rejected' ici
+      });
     }
+
+    setLessons(prev => prev.map((l) => {
+      if (!samePackKey(l, repLesson)) return l;
+      const pm = { ...(l.participantsMap || {}) };
+      const ids = Array.isArray(l.participant_ids) && l.participant_ids.length
+        ? Array.from(new Set(l.participant_ids))
+        : Object.keys(pm);
+      ids.forEach((sid) => {
+        pm[sid] = { ...(pm[sid] || {}), status: 'rejected' };
+      });
+      return { ...l, participantsMap: pm, participant_ids: ids, pending_teacher: false };
+    }));
+
+    setPendingPacks(prev => prev.filter(p => !samePackKey(p.lesson, repLesson)));
   }
 
   async function createVisioLink(lesson) {
@@ -1471,60 +1486,60 @@ export default function TeacherLessons() {
                   (Array.isArray(l.participant_ids) && l.participant_ids.length > 0) ||
                   (l.participantsMap && Object.keys(l.participantsMap).length > 0);
 
-                // élèves refusés (ids)
-                const rejectedIds = isGroup ? getRejectedStudents(l) : [];
+                if (!isGroup) {
+                  // cours individuel refusé => ta card standard
+                  return <Card key={l.id} lesson={l} showActionsForPending={false} />;
+                }
 
-                // on essaye d’afficher les noms depuis participantDetails ; sinon on retombe sur l’id
+                // groupe : on n’affiche que les élèves refusés
+                const rejectedIds = getRejectedStudents(l);
                 const rejectedNames = rejectedIds.map((sid) => {
                   const pd = (l.participantDetails || []).find((p) => p.id === sid);
                   return pd?.name || sid;
                 });
 
-                // 3.1 — Cas cours individuel refusé → on garde la card standard
-                if (!isGroup) {
-                  return <Card key={l.id} lesson={l} showActionsForPending={false} />;
-                }
-
-                // 3.2 — Cas groupe “rejet partiel” → afficher les élèves refusés + mention
-                if (hasPartialRejection(l)) {
-                  return (
-                    <div key={l.id} className="bg-white p-6 rounded-xl shadow border">
-                      <div className="flex gap-2 items-center mb-1">
-                        <span className="font-bold text-primary">{l.subject_id || 'Matière'}</span>
-                        <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">Refusé</span>
-                        {/* mode & pack comme ailleurs */}
-                        <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded ml-1">{modeLabel(l)}</span>
-                        {packLabel(l) ? (
-                          <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded ml-1">{packLabel(l)}</span>
-                        ) : null}
-                        <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded ml-1">Cours groupé</span>
-                      </div>
-
-                      <div className="text-gray-700">
-                        Élève(s) refusé(s) :
-                        {rejectedNames.length ? (
-                          <span className="ml-2">
-                            {rejectedNames.map((nm, i) => (
-                              <span key={i} className="inline-block text-xs bg-red-50 text-red-700 px-2 py-0.5 rounded mr-1">
-                                {nm}
-                              </span>
-                            ))}
-                          </span>
-                        ) : (
-                          <span className="ml-2 text-sm text-gray-500">—</span>
-                        )}
-                      </div>
-
-                      <div className="text-gray-500 text-sm mt-1">
-                        <When lesson={l} />
-                      </div>
-                      {/* Pas d’actions / pas de visio / pas de “Gérer le groupe” pour un rejet */}
+                return (
+                  <div key={l.id} className="bg-white p-6 rounded-xl shadow border">
+                    <div className="flex gap-2 items-center mb-1">
+                      <span className="font-bold text-primary">{l.subject_id || 'Matière'}</span>
+                      <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+                        Refusé (cours groupé)
+                      </span>
+                      {/* pastilles mode & pack */}
+                      <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded ml-1">
+                        {String(l?.mode || '').toLowerCase() === 'visio' || l?.is_visio ? 'Visio' : 'Présentiel'}
+                      </span>
+                      {(() => {
+                        const h = Number(l?.pack_hours ?? l?.packHours ?? 0);
+                        return h >= 10 ? (
+                          <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded ml-1">Pack 10h</span>
+                        ) : h >= 5 ? (
+                          <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded ml-1">Pack 5h</span>
+                        ) : null;
+                      })()}
                     </div>
-                  );
-                }
 
-                // 3.3 — Cas groupe “tous rejetés” (rejet total) → tu peux garder ta Card standard
-                return <Card key={l.id} lesson={l} showActionsForPending={false} />;
+                    <div className="text-gray-700">
+                      Élève(s) refusé(s) :
+                      {rejectedNames.length ? (
+                        <span className="ml-2">
+                          {rejectedNames.map((nm, i) => (
+                            <span key={i} className="inline-block text-xs bg-red-50 text-red-700 px-2 py-0.5 rounded mr-1">
+                              {nm}
+                            </span>
+                          ))}
+                        </span>
+                      ) : (
+                        <span className="ml-2 text-sm text-gray-500">—</span>
+                      )}
+                    </div>
+
+                    <div className="text-gray-500 text-sm mt-1">
+                      <When lesson={l} />
+                    </div>
+                    {/* Pas d’actions / pas de visio / pas de “Gérer le groupe” pour une carte refusée */}
+                  </div>
+                );
               })}
             </div>
           )}
