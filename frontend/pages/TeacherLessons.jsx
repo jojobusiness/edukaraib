@@ -357,6 +357,43 @@ function hasPartialRejection(lesson) {
   return rej.length > 0 && !isGroupFullyRejected(lesson);
 }
 
+// ===== Packs détectés via participantsMap (fallback si pas de pack_id) =====
+function getPackOwner(lesson) {
+  // Renvoie l'ID de l'élève pour lequel le pack est actif, sinon null
+  const pm = lesson?.participantsMap || {};
+  const ids = Array.isArray(lesson?.participant_ids) ? lesson.participant_ids : Object.keys(pm);
+  for (const sid of ids) {
+    const e = pm[sid] || {};
+    const hours = Number(e?.pack?.hours || (e.is_pack10 ? 10 : e.is_pack5 ? 5 : 0));
+    if (hours === 5 || hours === 10) return sid; // pack trouvé pour cet élève
+  }
+  return null;
+}
+
+function getPackHoursForOwner(lesson) {
+  const pm = lesson?.participantsMap || {};
+  const owner = getPackOwner(lesson);
+  if (!owner) return 0;
+  const e = pm[owner] || {};
+  const hours = Number(e?.pack?.hours || (e.is_pack10 ? 10 : e.is_pack5 ? 5 : 0));
+  return hours === 10 ? 10 : hours === 5 ? 5 : 0;
+}
+
+function isLessonPartOfPack(lesson) {
+  // Vrai si pack_id présent OU si un participant a pack 5/10h dans participantsMap
+  if (lesson?.pack_id) return true;
+  return getPackOwner(lesson) !== null;
+}
+
+function packKeyTeacher(lesson) {
+  // Clé d’agrégation : utilise pack_id si dispo; sinon reconstruit une clé stable par élève
+  if (lesson?.pack_id) return String(lesson.pack_id);
+  const owner = getPackOwner(lesson);
+  if (!owner) return null;
+  const hours = getPackHoursForOwner(lesson);
+  const mode = (String(lesson?.mode || '').toLowerCase() === 'visio' || lesson?.is_visio === true) ? 'visio' : 'presentiel';
+  return `AUTO:${lesson.teacher_id}|${lesson.subject_id || ''}|${mode}|${hours}|${owner}`;
+}
 
 /* =================== PAGE =================== */
 export default function TeacherLessons() {
@@ -414,7 +451,8 @@ export default function TeacherLessons() {
       const pGroupRaw = [];
       raw
         .filter((l) =>
-          !l.pack_id && (
+          // ⛔️ exclure tout ce qui est un pack (pack_id OU participantsMap avec pack 5/10h)
+          !isLessonPartOfPack(l) && (
             !!l.is_group ||
             (Array.isArray(l.participant_ids) && l.participant_ids.length > 0) ||
             (l.participantsMap && Object.keys(l.participantsMap).length > 0)
@@ -546,9 +584,7 @@ export default function TeacherLessons() {
             (b.created_at?.toDate?.() && b.created_at.toDate().getTime()) || 0;
           return bTs - aTs;
         });
-        // --- PENDING PACKS: 1 ligne par pack_id dans "Demandes"
-        const packLessons = enriched.filter(l => !!l.pack_id);
-
+        // --- PENDING PACKS: 1 ligne par pack (avec ou sans pack_id)
         // helper: est-ce que cette séance rend le pack "en attente" ?
         function isLessonPendingForPack(l) {
           const st = String(l.status || '');
@@ -568,26 +604,36 @@ export default function TeacherLessons() {
               }
             }
           }
-
           return pendingByStatus || pendingByGroup;
         }
 
+        // 1) on prend toutes les leçons qui appartiennent à un pack (pack_id OU pack via participantsMap)
+        const packLessons = enriched.filter((l) => isLessonPartOfPack(l));
+
+        // 2) on regroupe avec une clé stable (pack_id sinon AUTO:...|owner)
         const packMap = new Map();
         for (const l of packLessons) {
-          if (!isLessonPendingForPack(l)) continue;
+          if (!isLessonPendingForPack(l)) continue; // n'afficher que si le pack est "en attente"
+          const key = packKeyTeacher(l);
+          if (!key) continue;
 
-          const key = l.pack_id;
-          if (!packMap.has(key)) {
+          const existing = packMap.get(key);
+          const slotObj = { day: l.slot_day, hour: l.slot_hour, label: slotLabel(l) };
+          const pLabel = (() => {
+            const h = getPackHoursForOwner(l);
+            return h >= 10 ? 'Pack 10h' : h >= 5 ? 'Pack 5h' : (packLabel(l) || '');
+          })();
+
+          if (!existing) {
             packMap.set(key, {
               packId: key,
-              lesson: l, // représentant utilisé pour handleStatus
-              slots: [{ day: l.slot_day, hour: l.slot_hour, label: slotLabel(l) }],
+              lesson: l, // représentant utilisé par handleStatus
+              slots: slotObj.label ? [slotObj] : [],
               modeLabel: modeLabel(l),
-              packLabel: packLabel(l),
+              packLabel: pLabel,
             });
           } else {
-            const obj = packMap.get(key);
-            obj.slots.push({ day: l.slot_day, hour: l.slot_hour, label: slotLabel(l) });
+            if (slotObj.label) existing.slots.push(slotObj);
           }
         }
 
