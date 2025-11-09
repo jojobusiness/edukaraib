@@ -370,6 +370,10 @@ export default function TeacherProfile() {
       require_accept_all: true,
     } : {});
 
+    // ❗️Toujours dériver ces 2 constantes ici (avant tout usage en dessous)
+    const wantSingle = !isPack; // l’utilisateur (re)demande 1 seul créneau => pas un pack
+    const participantPack = packFieldsForParticipant(targetStudentId); // {} si wantSingle
+
     // 🧮 tarif à appliquer selon mode & packs
     const base = Number(teacher?.price_per_hour || 0);
     const visio = effectiveVisioPrice(teacher);
@@ -419,20 +423,21 @@ export default function TeacherProfile() {
               continue;
             }
 
-            // 💡 “Réactiver” l’ancien individuel rejeté pour CET élève
+            // 💡 “Réactiver” l’ancien individuel rejeté pour CET élève, sans pack si wantSingle
             await updateDoc(doc(db, 'lessons', existingIndId), {
-              status: 'pending_teacher',           // l’admin/teacher doit re-confirmer
-              // facultatif si tu veux stocker le pack sur l'individuel :
-              ...(isPack ? {
-                is_pack: true,
-                pack_hours: packHours,
-                pack_type: packHours === 5 ? 'pack5' : 'pack10',
-                pack_mode: bookMode,
-              } : {
+              status: 'pending_teacher',
+              ...(wantSingle ? {
+                // on enlève la notion de pack sur cette reprise ciblée
                 is_pack: false,
                 pack_hours: null,
                 pack_type: null,
                 pack_mode: null,
+              } : {
+                // si l’utilisateur redemande bien un pack, on le re-tague au niveau leçon (individuel)
+                is_pack: true,
+                pack_hours: packHours,
+                pack_type: packHours === 5 ? 'pack5' : 'pack10',
+                pack_mode: bookMode,
               }),
             });
             await addDoc(collection(db, 'notifications'), {
@@ -471,39 +476,6 @@ export default function TeacherProfile() {
             continue;
           }
 
-          // 3) RÉACTIVER AU LIEU DE CRÉER :
-          //    a) individuel rejeté -> repasser à booked/pending_teacher
-          if (existingInd && ["rejected", "removed", "deleted"].includes(String(existingInd.status || "").toLowerCase())) {
-            await updateDoc(doc(db, "lessons", existingIndId), {
-              status: "booked", // statut global de la leçon
-              // remettre la présence de l'élève (sécurité)
-              participant_ids: Array.from(new Set([...(existingInd.participant_ids || []), targetStudentId])),
-              [`participantsMap.${targetStudentId}`]: {
-                ...(existingInd.participantsMap?.[targetStudentId] || {}),
-                parent_id: bookingFor === "child" ? me.uid : null,
-                booked_by: me.uid,
-                is_paid: false,
-                paid_by: null,
-                paid_at: null,
-                status: "pending_teacher",
-                added_at: serverTimestamp(),
-                ...packFieldsForParticipant(targetStudentId), // ⬅️ réinjecte pack/visio éventuels
-              },
-              // ne change pas mode global d'une ancienne leçon ; le pack_mode est porté par le participant
-            });
-            await addDoc(collection(db, "notifications"), {
-              user_id: teacherId,
-              read: false,
-              created_at: serverTimestamp(),
-              type: "lesson_request",
-              lesson_id: existingIndId,
-              requester_id: targetStudentId,
-              message: `Relance de demande (individuel) ${slot.day} ${slot.hour}h.`,
-            });
-            results.push({ slot, status: "revived_individual", message: `Demande réactivée (individuel) ${slot.day} ${slot.hour}h.` });
-            continue;
-          }
-
           //    b) groupe où je suis "rejected" -> passer ce participant en pending_teacher
           if (rejectedInGroupDoc) {
             const { id: gId, data: g } = rejectedInGroupDoc;
@@ -518,7 +490,17 @@ export default function TeacherProfile() {
                 paid_at: null,
                 status: "pending_teacher",
                 added_at: serverTimestamp(),
-                ...participantPack, // ⬅️ réinjecte pack/visio éventuels
+                ...(wantSingle
+                  ? {
+                      // re-demande d’UN seul créneau → pas de pack côté participant
+                      is_pack: false,
+                      pack_hours_total: null,
+                      pack_hours_remaining: null,
+                      pack_mode: null,
+                      require_accept_all: null,
+                    }
+                  : participantPack // pack 5h/10h si l’utilisateur l’a bien choisi
+                ),
               },
             });
             await addDoc(collection(db, "notifications"), {
