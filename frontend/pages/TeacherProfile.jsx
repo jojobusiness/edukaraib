@@ -30,19 +30,25 @@ function computeBookedAndRemaining(lessonsDocs, teacherDoc, forStudentId) {
     const hour = Number(hourStr);
     const label = `${day}:${hour}`;
 
+    // Helper: statut "actif" (= occupe une place) si pas rejeté/supprimé
+    const isActive = (s) => !['rejected', 'removed', 'deleted'].includes(String(s || '').toLowerCase());
+
+    // Pour chaque leçon individuelle de ce créneau, on vérifie le statut du PROPRIÉTAIRE
     const indivBlocks = individuals.some((l) => {
-      const st = String(l.status || 'booked').toLowerCase();
+      // identifie le propriétaire (pour individuel: 1 seul élève)
+      const ownerSid =
+        l?.student_id ||
+        (Array.isArray(l?.participant_ids) && l.participant_ids.length === 1
+          ? l.participant_ids[0]
+          : null);
 
-      // ⚠️ Si c'est un cours individuel de l'élève courant,
-      // on doit regarder SON statut dans participantsMap
-      if (forStudentId && l.student_id === forStudentId) {
-        const pst = String(l.participantsMap?.[forStudentId]?.status || st).toLowerCase();
-        // On bloque seulement si l'élève n'est pas rejeté/supprimé
-        return !['rejected', 'removed', 'deleted'].includes(pst);
-      }
+      // statut “réel” du propriétaire (priorité à participantsMap, sinon fallback lesson.status)
+      const ownerSt = ownerSid
+        ? (l?.participantsMap?.[ownerSid]?.status ?? l?.status ?? 'booked')
+        : (l?.status ?? 'booked');
 
-      // Pour les autres élèves, un individuel “actif” bloque bien le créneau
-      return st !== 'rejected' && st !== 'deleted';
+      // ⬅️ on bloque UNIQUEMENT si le propriétaire est actif
+      return isActive(ownerSt);
     });
     if (indivBlocks) { blocked.push({ day, hour }); continue; }
 

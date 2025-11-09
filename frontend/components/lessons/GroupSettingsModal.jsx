@@ -79,7 +79,7 @@ async function searchStudentsByName(termRaw) {
 function countConfirmed(participant_ids = [], participantsMap = {}) {
   let acc = 0;
   for (const id of participant_ids) {
-    const st = participantsMap?.[id]?.status || 'confirmed';
+    const st = String(participantsMap?.[id]?.status || 'pending');
     if (st === 'accepted' || st === 'confirmed') acc += 1;
   }
   return acc;
@@ -245,10 +245,23 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     [participantIds, participantsMap]
   );
   // ➕ afficher +1 si cours individuel (bandeau)
-  const confirmedDisplayed = useMemo(
-    () => confirmedBase + (singleStudentId ? 1 : 0),
-    [confirmedBase, singleStudentId]
-  );
+  const confirmedDisplayed = useMemo(() => {
+    let base = confirmedBase;
+
+    if (singleStudentId) {
+      const alreadyInList = (participantIds || []).includes(singleStudentId);
+      // statut du "propriétaire" (si absent du map on le traite comme confirmé pour l'individuel pur)
+      const ownerSt = String(participantsMap?.[singleStudentId]?.status || 'confirmed');
+
+      // n'ajouter +1 que si l'élève individuel n'est PAS dans participant_ids
+      // et seulement s'il est réellement confirmé/accepté
+      if (!alreadyInList && (ownerSt === 'accepted' || ownerSt === 'confirmed')) {
+        base += 1;
+      }
+    }
+    return base;
+  }, [confirmedBase, singleStudentId, participantIds, participantsMap]);
+
   const freeDisplayed = useMemo(
     () => Math.max((Number(capacity) || 0) - confirmedDisplayed, 0),
     [capacity, confirmedDisplayed]

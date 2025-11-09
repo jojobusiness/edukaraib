@@ -448,6 +448,38 @@ function isGroupLessonStrict(l) {
   return l?.is_group === true || ids.length >= 2;
 }
 
+// Génère un lien de visio et l’enregistre sur la leçon
+async function createVisioLink(lesson) {
+  try {
+    // petite fonction token
+    const token = (len = 32) =>
+      Array.from(crypto.getRandomValues(new Uint8Array(len)))
+        .map(b => b.toString(16).padStart(2, '0')).join('');
+
+    // fenêtre d’ouverture/expiration (on réutilise computeVisioWindow)
+    const { opensAt, expiresAt } = computeVisioWindow(lesson);
+
+    const payload = {
+      joinUrl: `${window.location.origin}/visio/${lesson.id}?k=${token(16)}`,
+      created_at: new Date().toISOString(),
+      opens_at: opensAt?.toISOString?.() || null,
+      expires_at: expiresAt?.toISOString?.() || null,
+      revoked: false,
+    };
+
+    // En BD
+    await updateDoc(doc(db, 'lessons', lesson.id), { visio: payload });
+
+    // MAJ instantanée de l’UI
+    setLessons(prev =>
+      prev.map(l => (l.id === lesson.id ? { ...l, visio: payload } : l))
+    );
+  } catch (e) {
+    console.error('createVisioLink error', e);
+    alert("Impossible de créer le lien visio.");
+  }
+}
+
 /* =================== PAGE =================== */
 export default function TeacherLessons() {
   const [lessons, setLessons] = useState([]);
