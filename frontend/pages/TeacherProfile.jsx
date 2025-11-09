@@ -575,109 +575,76 @@ export default function TeacherProfile() {
             if (joined) continue;
           }
 
-          // Récap déjà présent plus haut :
+          // 4) Si pas de réactivation possible : création correcte (groupe / individuel)
           const groupEnabled = !!teacher?.group_enabled;
-          const defaultCap =
-            typeof teacher?.group_capacity === 'number' && teacher.group_capacity > 1
-              ? Math.floor(teacher.group_capacity)
-              : 1;
+          const teacherCap = Number(teacher?.group_capacity || 1);
+          const defaultCap = teacherCap > 1 ? teacherCap : 1;
 
-          // ⬇️ 2.a — CAS: un cours individuel ACTIF existe (pour un autre élève)
-          // et le prof autorise les groupes ⇒ on convertit cet individuel en groupe
-          if (existingInd && groupEnabled && defaultCap > 1) {
-            const ownerSid =
-              existingInd?.student_id ||
-              (Array.isArray(existingInd?.participant_ids) && existingInd.participant_ids.length === 1
-                ? existingInd.participant_ids[0]
-                : null);
+          // ✅ VÉRIFICATION double : si le prof autorise les groupes ET que la demande ne vient pas d’un “individuel forcé”
+          const allowGroup = groupEnabled && defaultCap > 1;
 
-            // statut du "propriétaire" pour confirmer qu'il est actif
-            const ownerSt = ownerSid
-              ? (existingInd?.participantsMap?.[ownerSid]?.status ?? existingInd?.status ?? 'booked')
-              : (existingInd?.status ?? 'booked');
-            const ownerActive = !['rejected','removed','deleted'].includes(String(ownerSt).toLowerCase());
+          // Si un mode “groupé” ou “individuel” existe côté UI (par exemple, un switch ou pack sélectionné),
+          // ajoute ici la vraie condition utilisateur.
+          // Pour l’instant, on se base sur la capacité du prof :
+          const userAskedGroup = allowGroup; // tu peux plus tard le remplacer par un vrai choix
 
-            if (ownerActive) {
-              await updateDoc(doc(db, 'lessons', existingIndId), {
-                is_group: true,
-                capacity: defaultCap,
-                // on conserve le propriétaire; on ajoute simplement le nouvel élève
-                participant_ids: arrayUnion(targetStudentId),
-                [`participantsMap.${targetStudentId}`]: {
-                  ...(existingInd.participantsMap?.[targetStudentId] || {}),
-                  parent_id: bookingFor === 'child' ? me.uid : null,
-                  booked_by: me.uid,
-                  is_paid: false,
-                  paid_by: null,
-                  paid_at: null,
-                  status: 'pending_teacher',
-                  added_at: serverTimestamp(),
-                  ...packFieldsForParticipant(targetStudentId), // visio/pack AU NIVEAU DU PARTICIPANT
-                },
-                // Laisse existingInd.mode tel quel : le mode (visio/présentiel) est porté par le participant pour les packs.
-                status: 'booked', // statut global OK
-              });
+          const createAsGroup = userAskedGroup && allowGroup;
 
-              await addDoc(collection(db, 'notifications'), {
-                user_id: teacherId,
-                read: false,
-                created_at: serverTimestamp(),
-                type: 'lesson_request',
-                lesson_id: existingIndId,
-                requester_id: targetStudentId,
-                message: `Conversion en groupe + ajout de participant (${slot.day} ${slot.hour}h).`,
-              });
+          // Ces deux variables existent déjà chez toi; sinon adapte:
+          // - isPack: booléen (pack sélectionné ?)
+          // - packHoursSelected: 5 ou 10 (si disponible)
+          const participantPack = packFieldsForParticipant(isPack, packHoursSelected);
 
-              results.push({ slot, status: 'converted_to_group', message: `Individuel converti en groupe, demande envoyée.` });
-              continue; // important : on ne tombe pas plus bas
-            }
-          } else {
-            const newDoc = await addDoc(collection(db, "lessons"), {
-              teacher_id: teacherId,
-              student_id: targetStudentId,
-              parent_id: bookingFor === "child" ? me.uid : null,
-              booked_by: me.uid,
-              booked_for: bookingFor,
-              status: "booked",
-              created_at: serverTimestamp(),
-              subject_id: Array.isArray(teacher?.subjects)
-                ? teacher.subjects.join(", ")
-                : teacher?.subjects || "",
-              price_per_hour: hourly || 0,
-              slot_day: slot.day,
-              slot_hour: slot.hour,
-              is_group: false,
-              capacity: 1,
-              participant_ids: [targetStudentId],
-              participantsMap: {
-                [targetStudentId]: {
-                  parent_id: bookingFor === "child" ? me.uid : null,
-                  booked_by: me.uid,
-                  is_paid: false,
-                  paid_by: null,
-                  paid_at: null,
-                  status: "pending_teacher",
-                  added_at: serverTimestamp(),
-                  ...packFieldsForParticipant(targetStudentId),
-                },
+          const newLessonRef = await addDoc(collection(db, 'lessons'), {
+            teacher_id: teacherId,
+            status: 'booked',
+            created_at: serverTimestamp(),
+
+            subject_id: Array.isArray(teacher?.subjects)
+              ? teacher.subjects.join(', ')
+              : (teacher?.subjects || ''),
+
+            price_per_hour: hourly || 0,
+            slot_day: slot.day,
+            slot_hour: slot.hour,
+
+            // --- ici on fixe le mode ---
+            is_group: createAsGroup,
+            capacity: createAsGroup ? defaultCap : 1,
+
+            participant_ids: [targetStudentId],
+            participantsMap: {
+              [targetStudentId]: {
+                parent_id: bookingFor === 'child' ? me.uid : null,
+                booked_by: me.uid,
+                is_paid: false,
+                paid_by: null,
+                paid_at: null,
+                status: 'pending_teacher',
+                added_at: serverTimestamp(),
+                ...packFieldsForParticipant(targetStudentId), // garde les infos pack
               },
-              mode: bookMode,
-            });
-            await addDoc(collection(db, "notifications"), {
-              user_id: teacherId,
-              read: false,
-              created_at: serverTimestamp(),
-              type: "lesson_request",
-              lesson_id: newDoc.id,
-              requester_id: targetStudentId,
-              message: `Demande de cours individuel (${slot.day} ${slot.hour}h).`,
-            });
-            results.push({
-              slot,
-              status: "created_individual",
-              message: `Demande de cours individuel pour ${slot.day} ${slot.hour}h.`,
-            });
-          }
+            },
+            mode: bookMode,
+          });
+
+          // Optionnel: notif prof (garde ta version si tu en as déjà une)
+          await addDoc(collection(db, 'notifications'), {
+            user_id: teacherId,
+            read: false,
+            created_at: serverTimestamp(),
+            type: 'lesson_request',
+            lesson_id: newLessonRef.id,
+            requester_id: targetStudentId,
+            message: `Demande de cours ${createAsGroup ? 'groupé' : 'individuel'} (${slot.day} ${slot.hour}h).`,
+          });
+
+          // Pour ton feedback UI local
+          results.push({
+            slot,
+            status: createAsGroup ? 'created_group' : 'created_individual',
+            message: `Demande de cours ${createAsGroup ? 'groupé' : 'individuel'} pour ${slot.day} ${slot.hour}h.`,
+          });
         } catch (e) {
           console.error("Booking error (single)", e);
           results.push({
