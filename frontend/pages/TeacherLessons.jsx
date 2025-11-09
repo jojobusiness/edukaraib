@@ -1633,10 +1633,7 @@ export default function TeacherLessons() {
           ) : (
             <div className="grid grid-cols-1 gap-5">
               {refuses.map((l) => {
-                const isGroup =
-                  !!l.is_group ||
-                  (Array.isArray(l.participant_ids) && l.participant_ids.length > 0) ||
-                  (l.participantsMap && Object.keys(l.participantsMap).length > 0);
+                const isGroup = isGroupLessonStrict(l);
 
                 if (!isGroup) {
                   // cours individuel refusé => ta card standard
@@ -1656,7 +1653,7 @@ export default function TeacherLessons() {
                     <div className="flex gap-2 items-center mb-1">
                       <span className="font-bold text-primary">{l.subject_id || 'Matière'}</span>
                       <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
-                        Refusé {isGroupLessonStrict(l) ? '(cours groupé)' : '(cours individuel)'}
+                        Refusé {isGroup ? '(cours groupé)' : '(cours individuel)'}
                       </span>
                       {/* Pastilles mode & pack */}
                       <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded ml-1">
