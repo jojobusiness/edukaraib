@@ -53,17 +53,7 @@ function computeBookedAndRemaining(lessonsDocs, teacherDoc, forStudentId) {
     if (indivBlocks) { blocked.push({ day, hour }); continue; }
 
     if (groups.length > 0) {
-      const childAlreadyIn = !!forStudentId && groups.some((g) => {
-        const ids = Array.isArray(g.participant_ids) ? g.participant_ids : [];
-        if (!ids.includes(forStudentId)) return false;
-        const st = String(g.participantsMap?.[forStudentId]?.status || 'pending');
-        return !['removed', 'deleted', 'rejected'].includes(st);
-      });
-      if (childAlreadyIn) { blocked.push({ day, hour }); continue; }
-
-      // 👉 Au lieu de SUM toutes les places restantes des groupes,
-      //    on prend le MAX parmi les groupes disponibles pour CE créneau,
-      //    et on compte TOUS les participants "actifs" (pending/accepted/confirmed).
+      // 1) Calculer la capacité restante globale pour l’affichage (toujours)
       let slotRemaining = 0;
       let hasAnyAvailableGroup = false;
 
@@ -75,26 +65,43 @@ function computeBookedAndRemaining(lessonsDocs, teacherDoc, forStudentId) {
         const ids = Array.isArray(g.participant_ids) ? g.participant_ids : [];
         const pm  = g.participantsMap || {};
 
-        // Compter comme "occupé" tout statut NON rejeté/supprimé (donc pending inclus)
+        // participants “actifs” = pas rejected/removed/deleted (=> pending inclus)
         let occupied = 0;
-        ids.forEach((sid) => {
+        const uniq = new Set(ids); // garde-fou anti-doublons
+        uniq.forEach((sid) => {
           const st = String(pm?.[sid]?.status || 'pending').toLowerCase();
-          const isOut = (st === 'rejected' || st === 'removed' || st === 'deleted');
-          if (!isOut) occupied += 1;
+          if (!['rejected','removed','deleted'].includes(st)) occupied += 1;
         });
 
         const remains = Math.max(0, cap - occupied);
         if (remains > 0) {
           hasAnyAvailableGroup = true;
-          slotRemaining = Math.max(slotRemaining, remains); // 👈 MAX, pas SOMME
+          slotRemaining = Math.max(slotRemaining, remains); // on garde le MAX
+        }
+      });
+
+      // 2) Écrire la capacité restante SI dispo
+      if (hasAnyAvailableGroup) {
+        remainingMap[label] = slotRemaining;
       }
+
+      // 3) Puis décider si le créneau est “bloqué” pour l’enfant sélectionné
+      const childAlreadyIn = !!forStudentId && groups.some((g) => {
+        const ids = Array.isArray(g.participant_ids) ? g.participant_ids : [];
+        if (!ids.includes(forStudentId)) return false;
+        const st = String(g.participantsMap?.[forStudentId]?.status || 'pending').toLowerCase();
+        return !['removed','deleted','rejected'].includes(st); // pending/accepted/confirmed bloquent
       });
 
       if (!hasAnyAvailableGroup) {
+        // pas de place nulle part
         blocked.push({ day, hour });
-      } else {
-        remainingMap[label] = slotRemaining;
+      } else if (childAlreadyIn) {
+        // l’enfant a déjà une place “active” → on bloque POUR LUI,
+        // mais on a quand même mis remainingMap[label] pour l’affichage global
+        blocked.push({ day, hour });
       }
+
       continue;
     }
   }
