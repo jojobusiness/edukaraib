@@ -598,13 +598,21 @@ export default function TeacherLessons() {
               requesterName = await resolvePersonName(requesterId, nameCacheRef.current);
             }
 
-            // fallback : si pas de student_id mais un seul participant, utiliser son nom
-            if (!studentName && Array.isArray(l.participant_ids) && l.participant_ids.length === 1) {
-              const onlyId = l.participant_ids[0];
+            // fallback : si pas de student_id mais un seul participant (via map OU participant_ids), utiliser son nom
+            if (!studentName) {
               const pm = l.participantsMap || {};
-              const parentId = pm?.[onlyId]?.parent_id || pm?.[onlyId]?.booked_by || null;
-              studentName = participantDetails[0]?.name
-                || await resolvePersonName(onlyId, nameCacheRef.current, { parentId });
+              const idsFromMap = Object.keys(pm);
+              const soleId =
+                (Array.isArray(l.participant_ids) && l.participant_ids.length === 1 && l.participant_ids[0]) ||
+                (idsFromMap.length === 1 && idsFromMap[0]) ||
+                null;
+
+              if (soleId) {
+                const parentId = pm?.[soleId]?.parent_id || pm?.[soleId]?.booked_by || null;
+                studentName =
+                  participantDetails[0]?.name ||
+                  (await resolvePersonName(soleId, nameCacheRef.current, { parentId }));
+              }
             }
 
             return { ...l, studentName, participantDetails, requesterName };
@@ -1676,10 +1684,15 @@ export default function TeacherLessons() {
                       Élève(s) refusé(s) :
                       {(() => {
                         const pm = l.participantsMap || {};
-                        const ids = (l.participant_ids || []).filter(sid => {
-                          const st = String(pm?.[sid]?.status || '');
-                          return ['rejected','removed','deleted'].includes(st);
+                        const idsSource = (Array.isArray(l.participant_ids) && l.participant_ids.length)
+                          ? l.participant_ids
+                          : Object.keys(pm);
+
+                        const ids = idsSource.filter((sid) => {
+                          const st = String(pm?.[sid]?.status || '').toLowerCase();
+                          return st === 'rejected' || st === 'removed' || st === 'deleted';
                         });
+
                         if (!ids.length) return <span className="ml-2 text-gray-500">—</span>;
                         return (
                           <span className="ml-2 space-x-2">

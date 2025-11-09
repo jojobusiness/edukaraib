@@ -30,25 +30,39 @@ function computeBookedAndRemaining(lessonsDocs, teacherDoc, forStudentId) {
     const hour = Number(hourStr);
     const label = `${day}:${hour}`;
 
-    // Helper: statut "actif" (= occupe une place) si pas rejeté/supprimé
-    const isActive = (s) => !['rejected', 'removed', 'deleted'].includes(String(s || '').toLowerCase());
+      // Helper: statut "actif" (= occupe une place) si pas rejeté/supprimé
+    const isActive = (s) => !['rejected','removed','deleted'].includes(String(s || '').toLowerCase());
 
-    // Pour chaque leçon individuelle de ce créneau, on vérifie le statut du PROPRIÉTAIRE
+    // ⬇️ AVANT on bloquait dès qu’un individuel actif existait.
+    // ⬇️ MAINTENANT: si le prof autorise les groupes (capacité > 1),
+    //    on considère que l’individuel peut être "étendu" en groupe ⇒ pas de blocage pour les autres.
     const indivBlocks = individuals.some((l) => {
-      // identifie le propriétaire (pour individuel: 1 seul élève)
       const ownerSid =
         l?.student_id ||
         (Array.isArray(l?.participant_ids) && l.participant_ids.length === 1
           ? l.participant_ids[0]
           : null);
-
-      // statut “réel” du propriétaire (priorité à participantsMap, sinon fallback lesson.status)
       const ownerSt = ownerSid
         ? (l?.participantsMap?.[ownerSid]?.status ?? l?.status ?? 'booked')
         : (l?.status ?? 'booked');
 
-      // ⬅️ on bloque UNIQUEMENT si le propriétaire est actif
-      return isActive(ownerSt);
+      const ownerActive = isActive(ownerSt);
+      if (!ownerActive) return false;
+
+      // Si le prof permet les groupes (capacité par défaut > 1), on NE bloque PAS ce créneau :
+      // on le traitera comme "rejoignable" en convertissant l’individuel en groupe.
+      if (teacherGroupEnabled && teacherDefaultCap > 1) {
+        // On peut même publier une "capacité restante théorique" = capacité par défaut - 1
+        const capLeft = Math.max(0, teacherDefaultCap - 1);
+        if (capLeft > 0) {
+          const label = `${day}:${hour}`;
+          remainingMap[label] = Math.max(remainingMap[label] || 0, capLeft);
+        }
+        return false; // => pas de blocage
+      }
+
+      // Sinon (pas de groupes possibles), ça bloque.
+      return true;
     });
     if (indivBlocks) { blocked.push({ day, hour }); continue; }
 
@@ -539,60 +553,62 @@ export default function TeacherProfile() {
             if (joined) continue;
           }
 
-          // Créer individuel ou groupe par défaut
+          // Récap déjà présent plus haut :
           const groupEnabled = !!teacher?.group_enabled;
           const defaultCap =
-            typeof teacher?.group_capacity === "number" &&
-            teacher.group_capacity > 1
+            typeof teacher?.group_capacity === 'number' && teacher.group_capacity > 1
               ? Math.floor(teacher.group_capacity)
               : 1;
 
-          if (groupEnabled && defaultCap > 1) {
-            const newDoc = await addDoc(collection(db, "lessons"), {
-              teacher_id: teacherId,
-              student_id: null,
-              parent_id: bookingFor === "child" ? me.uid : null,
-              booked_by: me.uid,
-              booked_for: bookingFor,
-              status: "booked",
-              created_at: serverTimestamp(),
-              subject_id: Array.isArray(teacher?.subjects)
-                ? teacher.subjects.join(", ")
-                : teacher?.subjects || "",
-              price_per_hour: hourly || 0,
-              slot_day: slot.day,
-              slot_hour: slot.hour,
-              is_group: true,
-              capacity: defaultCap,
-              participant_ids: [targetStudentId],
-              participantsMap: {
-                [targetStudentId]: {
-                  parent_id: bookingFor === "child" ? me.uid : null,
+          // ⬇️ 2.a — CAS: un cours individuel ACTIF existe (pour un autre élève)
+          // et le prof autorise les groupes ⇒ on convertit cet individuel en groupe
+          if (existingInd && groupEnabled && defaultCap > 1) {
+            const ownerSid =
+              existingInd?.student_id ||
+              (Array.isArray(existingInd?.participant_ids) && existingInd.participant_ids.length === 1
+                ? existingInd.participant_ids[0]
+                : null);
+
+            // statut du "propriétaire" pour confirmer qu'il est actif
+            const ownerSt = ownerSid
+              ? (existingInd?.participantsMap?.[ownerSid]?.status ?? existingInd?.status ?? 'booked')
+              : (existingInd?.status ?? 'booked');
+            const ownerActive = !['rejected','removed','deleted'].includes(String(ownerSt).toLowerCase());
+
+            if (ownerActive) {
+              await updateDoc(doc(db, 'lessons', existingIndId), {
+                is_group: true,
+                capacity: defaultCap,
+                // on conserve le propriétaire; on ajoute simplement le nouvel élève
+                participant_ids: arrayUnion(targetStudentId),
+                [`participantsMap.${targetStudentId}`]: {
+                  ...(existingInd.participantsMap?.[targetStudentId] || {}),
+                  parent_id: bookingFor === 'child' ? me.uid : null,
                   booked_by: me.uid,
                   is_paid: false,
                   paid_by: null,
                   paid_at: null,
-                  status: "pending_teacher",
+                  status: 'pending_teacher',
                   added_at: serverTimestamp(),
-                  ...packFieldsForParticipant(targetStudentId),
+                  ...packFieldsForParticipant(targetStudentId), // visio/pack AU NIVEAU DU PARTICIPANT
                 },
-              },
-              mode: bookMode,
-            });
-            await addDoc(collection(db, "notifications"), {
-              user_id: teacherId,
-              read: false,
-              created_at: serverTimestamp(),
-              type: "lesson_request",
-              lesson_id: newDoc.id,
-              requester_id: targetStudentId,
-              message: `Demande de créer un groupe (${slot.day} ${slot.hour}h).`,
-            });
-            results.push({
-              slot,
-              status: "created_group",
-              message: `Demande de création de groupe pour ${slot.day} ${slot.hour}h.`,
-            });
+                // Laisse existingInd.mode tel quel : le mode (visio/présentiel) est porté par le participant pour les packs.
+                status: 'booked', // statut global OK
+              });
+
+              await addDoc(collection(db, 'notifications'), {
+                user_id: teacherId,
+                read: false,
+                created_at: serverTimestamp(),
+                type: 'lesson_request',
+                lesson_id: existingIndId,
+                requester_id: targetStudentId,
+                message: `Conversion en groupe + ajout de participant (${slot.day} ${slot.hour}h).`,
+              });
+
+              results.push({ slot, status: 'converted_to_group', message: `Individuel converti en groupe, demande envoyée.` });
+              continue; // important : on ne tombe pas plus bas
+            }
           } else {
             const newDoc = await addDoc(collection(db, "lessons"), {
               teacher_id: teacherId,
