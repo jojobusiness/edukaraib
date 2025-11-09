@@ -1008,16 +1008,46 @@ export default function TeacherLessons() {
     }
   }
 
-  // ✅ Accepter TOUT un pack : on confirme les participants de CHAQUE séance du pack,
-  // on met status='confirmed' + pending_teacher=false (comme une demande de groupe classique)
+  // ✅ Accepter TOUT un pack : ne touche qu’aux séances encore en attente
   async function acceptWholePack(repLesson) {
+    // helper: statut participant “actif en attente”
+    const isPendingParticipant = (st) => {
+      const s = String(st || '').toLowerCase();
+      return !['accepted','confirmed','rejected','removed','deleted'].includes(s);
+    };
+
+    // ne cible que les séances du même pack ET réellement encore en attente
+    const targets = lessons.filter((l) => {
+      if (!samePackKey(l, repLesson)) return false;
+      // en attente par statut global ?
+      const pendingByStatus = PENDING_SET.has(String(l.status || '')) || l.pending_teacher === true;
+
+      // en attente côté groupe (au moins un participant pas encore accepté/confirmé/ni rejeté)
+      const pm  = l.participantsMap || {};
+      const ids = (Array.isArray(l.participant_ids) && l.participant_ids.length)
+        ? l.participant_ids
+        : Object.keys(pm);
+      const pendingByGroup = ids.some((sid) => isPendingParticipant(pm?.[sid]?.status));
+
+      return pendingByStatus || pendingByGroup;
+    });
+
     try {
-      // cible toutes les séances du même pack (avec l’état local, c’est plus rapide et suffisant)
-      const targets = lessons.filter((l) => samePackKey(l, repLesson));
-      // MAJ Firestore
       for (const l of targets) {
         if (l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)) {
-          const { ids, pm } = confirmAllParticipantsLocal(l);
+          // confirme uniquement les participants encore “pending”
+          const pm  = { ...(l.participantsMap || {}) };
+          const ids = (Array.isArray(l.participant_ids) && l.participant_ids.length)
+            ? Array.from(new Set(l.participant_ids))
+            : Object.keys(pm);
+
+          ids.forEach((sid) => {
+            const st = String(pm?.[sid]?.status || '');
+            if (!['accepted','confirmed','rejected','removed','deleted'].includes(st)) {
+              pm[sid] = { ...(pm[sid] || {}), status: 'confirmed' };
+            }
+          });
+
           await updateDoc(doc(db, 'lessons', l.id), {
             participantsMap: pm,
             participant_ids: ids,
@@ -1025,22 +1055,50 @@ export default function TeacherLessons() {
             pending_teacher: false,
           });
         } else {
-          await updateDoc(doc(db, 'lessons', l.id), {
-            status: 'confirmed',
-            pending_teacher: false,
-          });
+          // individuel : seulement si encore pending
+          if (PENDING_SET.has(String(l.status || '')) || l.pending_teacher === true) {
+            await updateDoc(doc(db, 'lessons', l.id), {
+              status: 'confirmed',
+              pending_teacher: false,
+            });
+          }
         }
       }
-      // MAJ UI
+
+      // MAJ UI locale
       setLessons((prev) => prev.map((l) => {
         if (!samePackKey(l, repLesson)) return l;
-        if (l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)) {
-          const { ids, pm } = confirmAllParticipantsLocal(l);
+
+        const pm  = { ...(l.participantsMap || {}) };
+        const ids = (Array.isArray(l.participant_ids) && l.participant_ids.length)
+          ? l.participant_ids
+          : Object.keys(pm);
+
+        const isGroup = l.is_group || ids.length > 0;
+
+        if (isGroup) {
+          let changed = false;
+          ids.forEach((sid) => {
+            const st = String(pm?.[sid]?.status || '');
+            if (!['accepted','confirmed','rejected','removed','deleted'].includes(st)) {
+              pm[sid] = { ...(pm[sid] || {}), status: 'confirmed' };
+              changed = true;
+            }
+          });
+          if (!changed && l.status !== 'confirmed') {
+            // rien à confirmer côté participants – on conserve le statut existant
+            return l;
+          }
           return { ...l, participantsMap: pm, participant_ids: ids, status: 'confirmed', pending_teacher: false };
         }
-        return { ...l, status: 'confirmed', pending_teacher: false };
+
+        // individuel
+        if (PENDING_SET.has(String(l.status || '')) || l.pending_teacher === true) {
+          return { ...l, status: 'confirmed', pending_teacher: false };
+        }
+        return l;
       }));
-      // Retire la ligne pack de la section "Demandes"
+
       setPendingPacks((prev) => prev.filter((p) => !samePackKey(p.lesson, repLesson)));
     } catch (e) {
       console.error(e);
@@ -1048,64 +1106,69 @@ export default function TeacherLessons() {
     }
   }
 
-  // ❌ Refuser TOUT un pack : NE PAS mettre le cours en "rejected".
-  // On rejette uniquement les élèves (participantsMap), on enlève "pending_teacher"
-  // et on laisse le statut du cours tel quel (ou "booked" si tu préfères le figer).
+  // ❌ Refuser TOUT un pack : ne marque PAS le cours en “rejected”,
+  // refuse uniquement les participants encore en attente, et enlève pending_teacher.
   async function rejectWholePack(repLesson) {
+    const isFinal = (st) => ['accepted','confirmed','rejected','removed','deleted'].includes(String(st || '').toLowerCase());
+
     const targets = lessons.filter((l) => samePackKey(l, repLesson));
 
-    for (const l of targets) {
-      if (l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)) {
-        const pm = { ...(l.participantsMap || {}) };
-        const ids = Array.isArray(l.participant_ids) && l.participant_ids.length
-          ? Array.from(new Set(l.participant_ids))
-          : Object.keys(pm);
-
-        ids.forEach((sid) => {
-          pm[sid] = { ...(pm[sid] || {}), status: 'rejected' };
-        });
-
-        await updateDoc(doc(db, 'lessons', l.id), {
-          participantsMap: pm,
-          participant_ids: ids,
-          pending_teacher: false, // ⛔ pas de status:'rejected' global
-        });
-      } else {
-        // individuel : on laisse le statut global tel quel (booked/pending_teacher),
-        // on enlève juste la pendance prof pour sortir du bloc "Demandes"
-        await updateDoc(doc(db, 'lessons', l.id), {
-          pending_teacher: false,
-          // pas de status:'rejected' ici pour ne pas marquer tout le cours comme refusé
-        });
-      }
-    }
-
-    setLessons(prev => prev.map((l) => {
-      if (!samePackKey(l, repLesson)) return l;
-      if (l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)) {
-        const pm = { ...(l.participantsMap || {}) };
-        const ids = Array.isArray(l.participant_ids) && l.participant_ids.length
-          ? Array.from(new Set(l.participant_ids))
-          : Object.keys(pm);
-        ids.forEach((sid) => {
-          pm[sid] = { ...(pm[sid] || {}), status: 'rejected' };
-        });
-        return { ...l, participantsMap: pm, participant_ids: ids, pending_teacher: false };
-      }
-      return { ...l, pending_teacher: false };
-    }));
-
-    setPendingPacks(prev => prev.filter(p => !samePackKey(p.lesson, repLesson)));
-  }
-
-  async function createVisioLink(lesson) {
-    if (!isVisio(lesson)) { alert("Ce cours n'est pas en visio."); return; }
-    if (hasVisioLink(lesson)) { alert("Le lien visio existe déjà."); return; }
     try {
-      const payload = makeJitsiVisio(lesson);
-      await updateDoc(doc(db, 'lessons', lesson.id), { visio: payload });
-      setLessons(prev => prev.map(x => x.id === lesson.id ? { ...x, visio: { ...payload, created_at: new Date() } } : x));
-    } catch (e) { console.error(e); alert("Impossible de créer le lien visio."); }
+      for (const l of targets) {
+        const pm  = { ...(l.participantsMap || {}) };
+        const ids = (Array.isArray(l.participant_ids) && l.participant_ids.length)
+          ? Array.from(new Set(l.participant_ids))
+          : Object.keys(pm);
+
+        if (l.is_group || ids.length > 0) {
+          // refuse uniquement ceux qui ne sont pas déjà dans un état final
+          ids.forEach((sid) => {
+            const st = pm?.[sid]?.status;
+            if (!isFinal(st)) {
+              pm[sid] = { ...(pm[sid] || {}), status: 'rejected' };
+            }
+          });
+
+          await updateDoc(doc(db, 'lessons', l.id), {
+            participantsMap: pm,
+            participant_ids: ids,
+            pending_teacher: false, // NE PAS mettre status:'rejected' global
+          });
+        } else {
+          // individuel : on ne touche pas au statut global si déjà refusé/confirmé
+          const keepStatus = String(l.status || '');
+          await updateDoc(doc(db, 'lessons', l.id), {
+            pending_teacher: false,
+            ...(PENDING_SET.has(keepStatus) ? {} : {}), // rien d’autre
+          });
+        }
+      }
+
+      // MAJ UI locale
+      setLessons((prev) => prev.map((l) => {
+        if (!samePackKey(l, repLesson)) return l;
+        const pm  = { ...(l.participantsMap || {}) };
+        const ids = (Array.isArray(l.participant_ids) && l.participant_ids.length)
+          ? l.participant_ids
+          : Object.keys(pm);
+
+        if (l.is_group || ids.length > 0) {
+          ids.forEach((sid) => {
+            const st = pm?.[sid]?.status;
+            if (!['accepted','confirmed','rejected','removed','deleted'].includes(String(st || '').toLowerCase())) {
+              pm[sid] = { ...(pm[sid] || {}), status: 'rejected' };
+            }
+          });
+          return { ...l, participantsMap: pm, participant_ids: ids, pending_teacher: false };
+        }
+        return { ...l, pending_teacher: false };
+      }));
+
+      setPendingPacks((prev) => prev.filter((p) => !samePackKey(p.lesson, repLesson)));
+    } catch (e) {
+      console.error(e);
+      alert("Impossible de refuser tout le pack.");
+    }
   }
 
   // actions groupe (par élève)
