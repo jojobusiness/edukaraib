@@ -31,7 +31,17 @@ function computeBookedAndRemaining(lessonsDocs, teacherDoc, forStudentId) {
     const label = `${day}:${hour}`;
 
     const indivBlocks = individuals.some((l) => {
-      const st = String(l.status || 'booked');
+      const st = String(l.status || 'booked').toLowerCase();
+
+      // ⚠️ Si c'est un cours individuel de l'élève courant,
+      // on doit regarder SON statut dans participantsMap
+      if (forStudentId && l.student_id === forStudentId) {
+        const pst = String(l.participantsMap?.[forStudentId]?.status || st).toLowerCase();
+        // On bloque seulement si l'élève n'est pas rejeté/supprimé
+        return !['rejected', 'removed', 'deleted'].includes(pst);
+      }
+
+      // Pour les autres élèves, un individuel “actif” bloque bien le créneau
       return st !== 'rejected' && st !== 'deleted';
     });
     if (indivBlocks) { blocked.push({ day, hour }); continue; }
@@ -335,12 +345,50 @@ export default function TeacherProfile() {
           // 1) INDIVIDUEL : s'il existe un cours non rejeté -> DUPLICATE
           const existingInd = dupIndSnap.docs[0]?.data();
           const existingIndId = dupIndSnap.docs[0]?.id;
+
           if (existingInd) {
-            const st = String(existingInd.status || "booked").toLowerCase();
-            if (!["rejected", "removed", "deleted"].includes(st)) {
-              results.push({ slot, status: "duplicate", message: `Déjà inscrit(e) sur ${slot.day} ${slot.hour}h.` });
+            // 🔎 Regarder d'abord le statut du PARTICIPANT visé
+            const partSt = String(
+              existingInd?.participantsMap?.[targetStudentId]?.status ||
+              existingInd?.status || ''
+            ).toLowerCase();
+
+            // S'il est encore actif (pas rejeté/supprimé) ⇒ c'est bien un doublon
+            if (!['rejected', 'removed', 'deleted'].includes(partSt)) {
+              results.push({ slot, status: 'duplicate', message: `Déjà inscrit(e) sur ${slot.day} ${slot.hour}h.` });
               continue;
             }
+
+            // 💡 “Réactiver” l’ancien individuel rejeté pour CET élève
+            await updateDoc(doc(db, 'lessons', existingIndId), {
+              status: 'booked', // statut global
+              participant_ids: Array.from(new Set([...(existingInd.participant_ids || []), targetStudentId])),
+              [`participantsMap.${targetStudentId}`]: {
+                ...(existingInd.participantsMap?.[targetStudentId] || {}),
+                parent_id: bookingFor === 'child' ? me.uid : null,
+                booked_by: me.uid,
+                is_paid: false,
+                paid_by: null,
+                paid_at: null,
+                status: 'pending_teacher',
+                added_at: serverTimestamp(),
+                ...packFieldsForParticipant(targetStudentId), // ⚙️ réinjecte pack/visio si besoin
+              },
+              // NB: on ne touche pas à mode/visio global de la leçon ; c'est porté par le participant
+            });
+
+            await addDoc(collection(db, 'notifications'), {
+              user_id: teacherId,
+              read: false,
+              created_at: serverTimestamp(),
+              type: 'lesson_request',
+              lesson_id: existingIndId,
+              requester_id: targetStudentId,
+              message: `Relance de demande (individuel) ${slot.day} ${slot.hour}h.`,
+            });
+
+            results.push({ slot, status: 'revived_individual', message: `Demande réactivée (individuel) ${slot.day} ${slot.hour}h.` });
+            continue;
           }
 
           // 2) GROUPE : s'il existe un groupe où je suis déjà "actif" -> DUPLICATE

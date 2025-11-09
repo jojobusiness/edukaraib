@@ -12,8 +12,6 @@ import {
   addDoc,
   serverTimestamp,
   getDocs,
-  arrayRemove,
-  deleteField,
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -303,22 +301,6 @@ function computeVisioWindow(lesson) {
   return { opensAt, expiresAt };
 }
 
-function makeJitsiVisio(lesson) {
-  const base = lesson.pack_id ? lesson.pack_id : lesson.id;
-  const slug = `EduKaraib-${base}-${Math.random().toString(36).slice(2,8)}`;
-  const { opensAt, expiresAt } = computeVisioWindow(lesson);
-  return {
-    provider: "jitsi",
-    roomId: slug,
-    joinUrl: `https://meet.jit.si/${slug}`,
-    opens_at: opensAt.toISOString(),
-    expires_at: expiresAt.toISOString(),
-    created_by: auth.currentUser?.uid || null,
-    created_at: serverTimestamp(),
-    revoked: false, // we can flip this later if you click "Renew"
-  };
-}
-
 // ——— Helpers "rejet" pour les cours groupés ———
 
 // Un élève est-il marqué comme refusé/retiré/supprimé ?
@@ -334,16 +316,6 @@ function getRejectedStudents(lesson) {
     ? lesson.participant_ids
     : Object.keys(pm || {});
   return ids.filter((sid) => isParticipantRejectedStatus(pm?.[sid]?.status));
-}
-
-// true si TOUS les élèves d’un cours groupé sont rejetés/retirés/supprimés
-function isGroupFullyRejected(lesson) {
-  const pm = lesson?.participantsMap || {};
-  const ids = Array.isArray(lesson?.participant_ids)
-    ? lesson.participant_ids
-    : Object.keys(pm || {});
-  if (!ids.length) return false;
-  return ids.every((sid) => isParticipantRejectedStatus(pm?.[sid]?.status));
 }
 
 // ===== Helpers pack (détection ultra tolérante) =====
@@ -410,48 +382,6 @@ function samePackKey(a, b) {
   return ka && kb && ka === kb;
 }
 
-/** Retourne le nom lisible de la personne qui a fait la demande (parent ou élève) */
-function requesterName(lesson, { userMap, parentMap, studentMap } = {}) {
-  // on essaye dans l'ordre le plus courant
-  const uid =
-    lesson?.booked_by ||
-    lesson?.requested_by ||
-    lesson?.created_by ||
-    lesson?.parent_id ||
-    null;
-
-  // 1) si on a une map complète des users
-  if (userMap && uid && userMap.get(uid)) {
-    const u = userMap.get(uid);
-    return u.displayName || u.name || u.fullName || u.email || "Parent";
-  }
-
-  // 2) sinon on essaie parentMap / studentMap si tu les as déjà
-  if (parentMap && uid && parentMap.get(uid)) {
-    const p = parentMap.get(uid);
-    return p.name || p.fullName || p.email || "Parent";
-  }
-  if (studentMap && uid && studentMap.get(uid)) {
-    const s = studentMap.get(uid);
-    return s.name || s.fullName || s.email || "Élève";
-  }
-
-  // 3) dernier recours: libellé générique
-  return "Parent";
-}
-
-// ✅ confirme tous les participants d’une leçon groupée
-function confirmAllParticipantsLocal(lesson) {
-  const ids = Array.isArray(lesson.participant_ids) && lesson.participant_ids.length
-    ? Array.from(new Set(lesson.participant_ids))
-    : Object.keys(lesson.participantsMap || {});
-  const pm = { ...(lesson.participantsMap || {}) };
-  ids.forEach((sid) => {
-    pm[sid] = { ...(pm[sid] || {}), status: 'confirmed' };
-  });
-  return { ids, pm };
-}
-
 // helpers au même endroit que tes autres helpers
 const REJECTED_SET = new Set(['rejected','removed','deleted']);
 
@@ -490,16 +420,32 @@ function packLabelForLesson(l, sid = null) {
   return '';
 }
 
-// === Détection stricte d'un cours groupé ===
-// vrai seulement si is_group === true OU s'il y a AU MOINS 2 participants
-function countParticipants(l) {
+// --- helpers INDIVIDUEL: status basé sur le participant propriétaire ---
+function getOwnerStudentId(l) {
+  if (l?.student_id) return l.student_id;
+  const ids = Array.isArray(l?.participant_ids) ? l.participant_ids : Object.keys(l?.participantsMap || {});
+  return ids.length === 1 ? ids[0] : null;
+}
+
+function individualStatus(l) {
+  // Priorité au statut du participant propriétaire pour les cours non-groupes
+  if (l?.is_group) return String(l?.status || '');
+  const sid = getOwnerStudentId(l);
+  if (!sid) return String(l?.status || '');
+
+  const pst = String(l?.participantsMap?.[sid]?.status || '').toLowerCase();
+  if (['rejected', 'removed', 'deleted'].includes(pst)) return 'rejected';
+  if (['accepted', 'confirmed'].includes(pst)) return 'confirmed';
+  if (PENDING_SET.has(pst)) return 'booked';
+  return String(l?.status || '');
+}
+
+function isGroupLessonStrict(l) {
+  // vrai seulement si c’est explicitement groupe OU ≥2 participants
   const ids = Array.isArray(l?.participant_ids) && l.participant_ids.length
     ? l.participant_ids
     : Object.keys(l?.participantsMap || {});
-  return ids.length || 0;
-}
-function isGroupLessonStrict(l) {
-  return l?.is_group === true || countParticipants(l) >= 2;
+  return l?.is_group === true || ids.length >= 2;
 }
 
 /* =================== PAGE =================== */
@@ -816,20 +762,19 @@ export default function TeacherLessons() {
     for (const l of lessons) {
       if (l.status === 'completed') continue;
 
-      let isConfirmed = false;
+      let ok = false;
       if (isGroupLessonStrict(l)) {
         const pm = l.participantsMap || {};
         const ids = Array.isArray(l.participant_ids) ? l.participant_ids : Object.keys(pm);
-        isConfirmed = ids.some((sid) => {
-          const st = pm?.[sid]?.status;
-          return st === 'accepted' || st === 'confirmed';
-        }) || l.status === 'confirmed';
+        ok = ids.some(sid => ['accepted','confirmed'].includes(String(pm?.[sid]?.status || '')))
+            || l.status === 'confirmed';
       } else {
-        isConfirmed = l.status === 'confirmed';
+        ok = individualStatus(l) === 'confirmed';
       }
 
-      if (isConfirmed) {
-        if (!seen.has(l.id)) { seen.add(l.id); out.push(l); }
+      if (ok && !seen.has(l.id)) {
+        seen.add(l.id);
+        out.push(l);
       }
     }
     return out;
@@ -837,20 +782,17 @@ export default function TeacherLessons() {
 
   // 🔴 Refusés : individuel(status global) OU groupe (au moins 1 participant rejeté) OU status global 'rejected'
   const refuses = useMemo(() => {
-  return lessons.filter((l) => {
-    if (!isGroupLessonStrict(l) && l.status === 'rejected') return true;
-
-      // Groupe : un seul élève rejeté suffit, ou statut global rejeté
+    return lessons.filter((l) => {
+      if (!isGroupLessonStrict(l)) {
+        // Individuel: basé sur le participant propriétaire
+        return individualStatus(l) === 'rejected' || l.status === 'rejected';
+      }
+      // Groupe: au moins un élève rejeté, ou statut global rejeté
       const pm = l.participantsMap || {};
       const ids = Array.isArray(l.participant_ids) && l.participant_ids.length
         ? l.participant_ids
         : Object.keys(pm);
-
-      const anyRejected = ids.some((sid) => {
-        const st = String(pm?.[sid]?.status || '').toLowerCase();
-        return st === 'rejected' || st === 'removed' || st === 'deleted';
-      });
-
+      const anyRejected = ids.some((sid) => ['rejected','removed','deleted'].includes(String(pm?.[sid]?.status || '').toLowerCase()));
       return anyRejected || l.status === 'rejected';
     });
   }, [lessons]);
@@ -1293,12 +1235,14 @@ export default function TeacherLessons() {
 
     const showList = openParticipantsFor === lesson.id;
 
-    // ✅ Si la leçon est terminée, la pastille doit être "Terminé", même si des participants étaient confirmés
-    const displayedStatus = lesson.status === 'completed'
-      ? 'completed'
-      : (Array.isArray(lesson.participantDetails) && lesson.participantDetails.some(p => p.status === 'accepted' || p.status === 'confirmed'))
-        ? 'confirmed'
-        : lesson.status;
+    // ✅ Pastille à afficher
+    const displayedStatus = isGroup
+      ? (
+          (Array.isArray(lesson.participantDetails) && lesson.participantDetails.some(p => p.status === 'accepted' || p.status === 'confirmed'))
+            ? 'confirmed'
+            : lesson.status
+        )
+      : individualStatus(lesson); // ⬅️ PRISE EN COMPTE DU participant propriétaire pour un individuel
 
     // ⬇️ Pastille paiement pour les cours individuels
     const indivPaidPill = !isGroup ? (
