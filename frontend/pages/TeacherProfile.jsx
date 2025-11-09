@@ -30,41 +30,63 @@ function computeBookedAndRemaining(lessonsDocs, teacherDoc, forStudentId) {
     const hour = Number(hourStr);
     const label = `${day}:${hour}`;
 
-      // Helper: statut "actif" (= occupe une place) si pas rejeté/supprimé
-    const isActive = (s) => !['rejected','removed','deleted'].includes(String(s || '').toLowerCase());
+    // Helper: statut "actif" (= occupe une place) si pas rejeté/supprimé
+    const isActive = (s) =>
+      !['rejected','removed','deleted'].includes(String(s || '').toLowerCase());
 
-    // ⬇️ AVANT on bloquait dès qu’un individuel actif existait.
-    // ⬇️ MAINTENANT: si le prof autorise les groupes (capacité > 1),
-    //    on considère que l’individuel peut être "étendu" en groupe ⇒ pas de blocage pour les autres.
-    const indivBlocks = individuals.some((l) => {
+    // --- NOUVEAU: regarder si l'enfant courant est déjà "actif" sur un individuel de ce créneau
+    let childActiveOnIndividual = false;
+    let anyActiveIndividual = false;
+
+    for (const l of individuals) {
       const ownerSid =
         l?.student_id ||
         (Array.isArray(l?.participant_ids) && l.participant_ids.length === 1
           ? l.participant_ids[0]
           : null);
-      const ownerSt = ownerSid
+
+      // statut de l'élève propriétaire
+      const st = ownerSid
         ? (l?.participantsMap?.[ownerSid]?.status ?? l?.status ?? 'booked')
         : (l?.status ?? 'booked');
 
-      const ownerActive = isActive(ownerSt);
-      if (!ownerActive) return false;
+      if (isActive(st)) {
+        anyActiveIndividual = true;
+        // si l'individuel "actif" appartient à l'enfant sélectionné, bloquer POUR LUI
+        if (forStudentId && ownerSid === forStudentId) {
+          childActiveOnIndividual = true;
+        }
+      }
+    }
 
-      // Si le prof permet les groupes (capacité par défaut > 1), on NE bloque PAS ce créneau :
-      // on le traitera comme "rejoignable" en convertissant l’individuel en groupe.
+    // 👉 Cas 1: l'enfant courant est déjà pris en individuel (pending/accepted/confirmed)
+    // => on BLOQUE pour l'enfant (badge "pris" dans l'UI)
+    if (childActiveOnIndividual) {
+      blocked.push({ day, hour });
+      // on continue pour publier quand même les places restantes si groupe activé (voir plus bas)
+    }
+
+    // 👉 Cas 2: aucun individuel actif pour l'enfant, mais au moins un individuel actif existe
+    // - si le prof autorise les groupes (capacité > 1), on NE bloque PAS globalement,
+    //   on publie la capacité restante théorique = cap défaut - 1
+    // - sinon, on bloque le créneau (comportement historique)
+    const teacherGroupEnabled = !!teacherDoc?.group_enabled;
+    const teacherDefaultCap =
+      typeof teacherDoc?.group_capacity === 'number' && teacherDoc.group_capacity > 1
+        ? Math.floor(teacherDoc.group_capacity)
+        : 1;
+
+    if (anyActiveIndividual && !childActiveOnIndividual) {
       if (teacherGroupEnabled && teacherDefaultCap > 1) {
-        // On peut même publier une "capacité restante théorique" = capacité par défaut - 1
         const capLeft = Math.max(0, teacherDefaultCap - 1);
         if (capLeft > 0) {
-          const label = `${day}:${hour}`;
           remainingMap[label] = Math.max(remainingMap[label] || 0, capLeft);
         }
-        return false; // => pas de blocage
+        // pas de blocked ici → les autres peuvent rejoindre
+      } else {
+        blocked.push({ day, hour });
       }
-
-      // Sinon (pas de groupes possibles), ça bloque.
-      return true;
-    });
-    if (indivBlocks) { blocked.push({ day, hour }); continue; }
+    }
 
     if (groups.length > 0) {
       // 1) Calculer la capacité restante globale pour l’affichage (toujours)
