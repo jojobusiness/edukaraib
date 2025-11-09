@@ -601,7 +601,7 @@ export default function TeacherProfile() {
           // Ces deux variables existent déjà chez toi; sinon adapte:
           // - isPack: booléen (pack sélectionné ?)
           // - packHoursSelected: 5 ou 10 (si disponible)
-          const participantPack = packFieldsForParticipant(isPack, packHoursSelected);
+          const participantPack = packFieldsForParticipant(isPack, packHours);
 
           const newLessonRef = await addDoc(collection(db, 'lessons'), {
             teacher_id: teacherId,
