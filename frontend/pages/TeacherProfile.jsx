@@ -161,6 +161,17 @@ function getReviewerId(r = {}) {
   return r.reviewer_id || r.author_id || r.user_id || r.student_id || r.created_by || null;
 }
 
+// — pack au niveau PARTICIPANT —
+// packHours: 5 ou 10 (sinon null/undefined => pas de pack)
+function packFieldsForParticipant(isPack, packHours) {
+  if (!isPack || !(packHours === 5 || packHours === 10)) return {};
+  return {
+    is_pack: true,
+    pack_hours_total: packHours,
+    pack_hours_remaining: packHours,
+  };
+}
+
 export default function TeacherProfile() {
   const { teacherId } = useParams();
   const navigate = useNavigate();
@@ -344,20 +355,20 @@ export default function TeacherProfile() {
       currentRole === "parent" && targetStudentId !== me.uid ? "child" : "self";
     const slots = Array.isArray(selected) ? selected : [selected];
 
-  // --- Définition du pack (par PARTICIPANT) ---
-  const isPack = packHours === 5 || packHours === 10;
-  const packId = isPack
-    ? `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${packHours}_${bookMode}`
-    : null;
-  // champs pack pour le participant ciblé UNIQUEMENT
-  const packFieldsForParticipant = (sid) => (isPack ? {
-    pack: true,
-    pack_id: packId,
-    pack_hours: packHours,
-    pack_type: packHours === 5 ? 'pack5' : 'pack10',
-    pack_mode: bookMode, // presentiel|visio
-    require_accept_all: true,
-  } : {});
+    // --- Définition du pack (par PARTICIPANT) ---
+    const isPack = packHours === 5 || packHours === 10;
+    const packId = isPack
+      ? `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${packHours}_${bookMode}`
+      : null;
+    // champs pack pour le participant ciblé UNIQUEMENT
+    const packFieldsForParticipant = (sid) => (isPack ? {
+      pack: true,
+      pack_id: packId,
+      pack_hours: packHours,
+      pack_type: packHours === 5 ? 'pack5' : 'pack10',
+      pack_mode: bookMode, // presentiel|visio
+      require_accept_all: true,
+    } : {});
 
     // 🧮 tarif à appliquer selon mode & packs
     const base = Number(teacher?.price_per_hour || 0);
@@ -410,22 +421,20 @@ export default function TeacherProfile() {
 
             // 💡 “Réactiver” l’ancien individuel rejeté pour CET élève
             await updateDoc(doc(db, 'lessons', existingIndId), {
-              status: 'booked', // statut global
-              participant_ids: Array.from(new Set([...(existingInd.participant_ids || []), targetStudentId])),
-              [`participantsMap.${targetStudentId}`]: {
-                ...(existingInd.participantsMap?.[targetStudentId] || {}),
-                parent_id: bookingFor === 'child' ? me.uid : null,
-                booked_by: me.uid,
-                is_paid: false,
-                paid_by: null,
-                paid_at: null,
-                status: 'pending_teacher',
-                added_at: serverTimestamp(),
-                ...packFieldsForParticipant(targetStudentId), // ⚙️ réinjecte pack/visio si besoin
-              },
-              // NB: on ne touche pas à mode/visio global de la leçon ; c'est porté par le participant
+              status: 'pending_teacher',           // l’admin/teacher doit re-confirmer
+              // facultatif si tu veux stocker le pack sur l'individuel :
+              ...(isPack ? {
+                is_pack: true,
+                pack_hours: packHours,
+                pack_type: packHours === 5 ? 'pack5' : 'pack10',
+                pack_mode: bookMode,
+              } : {
+                is_pack: false,
+                pack_hours: null,
+                pack_type: null,
+                pack_mode: null,
+              }),
             });
-
             await addDoc(collection(db, 'notifications'), {
               user_id: teacherId,
               read: false,
@@ -435,7 +444,6 @@ export default function TeacherProfile() {
               requester_id: targetStudentId,
               message: `Relance de demande (individuel) ${slot.day} ${slot.hour}h.`,
             });
-
             results.push({ slot, status: 'revived_individual', message: `Demande réactivée (individuel) ${slot.day} ${slot.hour}h.` });
             continue;
           }
@@ -510,7 +518,7 @@ export default function TeacherProfile() {
                 paid_at: null,
                 status: "pending_teacher",
                 added_at: serverTimestamp(),
-                ...packFieldsForParticipant(targetStudentId), // ⬅️ réinjecte pack/visio éventuels
+                ...participantPack, // ⬅️ réinjecte pack/visio éventuels
               },
             });
             await addDoc(collection(db, "notifications"), {
@@ -527,8 +535,8 @@ export default function TeacherProfile() {
           }
 
           // 4) Si pas de réactivation possible : logique précédente
-          // Rejoindre un groupe existant (sauf pour les packs)
-          if (!isPack) {
+          // Rejoindre un groupe existant (packs autorisés aussi)
+          {
             const qExisting = query(
               collection(db, "lessons"),
               where("teacher_id", "==", teacherId),
@@ -556,7 +564,7 @@ export default function TeacherProfile() {
                   paid_at: null,
                   status: "pending_teacher",
                   added_at: serverTimestamp(),
-                  ...packFieldsForParticipant(targetStudentId),
+                  ...participantPack, // ✅ pack au niveau participant OK
                 },
               });
               await addDoc(collection(db, "notifications"), {
@@ -622,7 +630,7 @@ export default function TeacherProfile() {
                 paid_at: null,
                 status: 'pending_teacher',
                 added_at: serverTimestamp(),
-                ...packFieldsForParticipant(targetStudentId), // garde les infos pack
+                ...participantPack, // garde les infos pack
               },
             },
             mode: bookMode,
