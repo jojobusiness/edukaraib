@@ -12,6 +12,7 @@ import {
 import TeacherAvailabilityEditor from '../components/TeacherAvailabilityEditor';
 import PaymentStatusCard from '../components/stripe/PaymentStatusCard';
 import StripeConnectButtons from '../components/stripe/StripeConnectButtons';
+import { auth, db, storage } from '../lib/firebase';
 
 /* ====== Contrôles & listes (alignés avec Register) ====== */
 // Communes officielles de Guyane (22)
