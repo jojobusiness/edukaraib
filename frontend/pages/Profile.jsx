@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import { doc, getDoc, updateDoc, collection, getDocs, where, query, deleteField } from 'firebase/firestore';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import {
   onAuthStateChanged,
