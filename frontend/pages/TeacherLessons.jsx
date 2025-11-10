@@ -528,11 +528,18 @@ export default function TeacherLessons() {
         const raw = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
         // ----- Construire pendingIndiv (tous statuts “pending”)
+        // Demandes individuelles réelles : basé sur le statut du participant propriétaire
         const pIndivRaw = raw.filter((l) => {
-          const statusStr = String(l.status || '').toLowerCase();
-          if (['rejected', 'removed', 'deleted'].includes(statusStr)) return false;
-          const isPending = PENDING_SET.has(statusStr);
-          return !l.is_group && !isLessonPartOfPack(l) && isPending;
+          if (l.is_group) return false;                 // on ne veut pas les groupes ici
+          if (isLessonPartOfPack(l)) return false;      // ni les packs (gérés ailleurs)
+
+          const indiv = individualStatus(l);            // 'booked' | 'confirmed' | 'rejected' | ...
+
+          // on exclut tout ce qui n'est plus en attente
+          if (indiv === 'rejected' || indiv === 'confirmed' || indiv === 'completed') return false;
+
+          // on ne garde que les vrais “pending”
+          return PENDING_SET.has(indiv);
         });
 
         // ----- Construire pendingGroup par élève (tout statut != accepted/confirmed) — exclut PACKS
@@ -1505,9 +1512,11 @@ export default function TeacherLessons() {
             <>
               {demandesIndividuelles.length > 0 && (
                 <div className="grid grid-cols-1 gap-5 mb-6">
-                  {demandesIndividuelles.map((l) => (
+                {demandesIndividuelles
+                  .filter((l) => individualStatus(l) !== 'rejected')
+                  .map((l) => (
                     <Card key={l.id} lesson={l} showActionsForPending />
-                  ))}
+                ))}
                 </div>
               )}
               {/* PACKS — demandes groupées */}
