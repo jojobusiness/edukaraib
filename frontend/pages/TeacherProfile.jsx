@@ -344,6 +344,29 @@ export default function TeacherProfile() {
     const bookingFor =
       currentRole === "parent" && targetStudentId !== me.uid ? "child" : "self";
     const slots = Array.isArray(selected) ? selected : [selected];
+    // --- helpers pack (au NIVEAU PARTICIPANT) ---
+    const clearPackForParticipant = () => ({
+      is_pack: false,
+      pack_id: null,
+      pack_hours_total: null,
+      pack_hours_remaining: null,
+      pack_type: null,
+      pack_mode: null,
+      require_accept_all: null,
+    });
+
+    const putPackForParticipant = (hours, mode, forcedPackId) => {
+      if (!(hours === 5 || hours === 10)) return {};
+      return {
+        is_pack: true,
+        pack_id: forcedPackId || `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${hours}_${mode}`,
+        pack_hours_total: hours,
+        pack_hours_remaining: hours,
+        pack_type: hours === 5 ? 'pack5' : 'pack10',
+        pack_mode: mode,                 // 'presentiel' | 'visio'
+        require_accept_all: true,
+      };
+    };
 
     // --- Définition du pack (par PARTICIPANT) ---
     const isPack = packHours === 5 || packHours === 10;
@@ -359,31 +382,6 @@ export default function TeacherProfile() {
       pack_mode: bookMode, // presentiel|visio
       require_accept_all: true,
     } : {});
-
-    // — tout enlever (reprise d'UN créneau) —
-    const clearPackForParticipant = () => ({
-      is_pack: false,
-      pack_id: null,
-      pack_hours_total: null,
-      pack_hours_remaining: null,
-      pack_type: null,
-      pack_mode: null,
-      require_accept_all: null,
-    });
-
-    // — poser/écraser un pack 5h/10h pour CE participant —
-    const putPackForParticipant = (hours, mode, packId) => {
-      if (!(hours === 5 || hours === 10)) return {};
-      return {
-        is_pack: true,
-        pack_id: packId || `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${hours}_${mode}`,
-        pack_hours_total: hours,
-        pack_hours_remaining: hours,
-        pack_type: hours === 5 ? 'pack5' : 'pack10',
-        pack_mode: mode,               // 'presentiel' | 'visio'
-        require_accept_all: true,
-      };
-    };
 
     // ❗️Toujours dériver ces 2 constantes ici (avant tout usage en dessous)
     const wantSingle = !isPack; // l’utilisateur (re)demande 1 seul créneau => pas un pack
@@ -440,30 +438,29 @@ export default function TeacherProfile() {
 
             // 💡 “Réactiver” l’ancien individuel rejeté pour CET élève, sans pack si wantSingle
             await updateDoc(doc(db, 'lessons', existingIndId), {
-              // statut global
               status: 'booked',
               student_id: targetStudentId,
 
-              // ⚠️ ancienne empreinte "pack" au NIVEAU LEÇON (par ancien schéma) -> neutralisée
+              // neutralise toute trace pack portée autrefois au niveau "lesson"
               is_pack: false,
               pack_hours: null,
               pack_type: null,
               pack_mode: null,
 
-              // sécurité : présence dans participant_ids
               participant_ids: Array.from(new Set([...(existingInd.participant_ids || []), targetStudentId])),
 
-              // ⚙️ et SURTOUT on remet à zéro les champs pack du PARTICIPANT
               [`participantsMap.${targetStudentId}`]: {
                 ...(existingInd.participantsMap?.[targetStudentId] || {}),
-                parent_id: bookingFor === 'child' ? me.uid : null,
+                parent_id: (bookingFor === 'child' ? me.uid : null),
                 booked_by: me.uid,
                 is_paid: false,
                 paid_by: null,
                 paid_at: null,
                 status: 'pending_teacher',
                 added_at: serverTimestamp(),
-                ...clearPackForParticipant(),       // <<< pack complètement retiré pour cette reprise unitaire
+
+                // ✅ reprise unitaire -> enlève complètement le pack pour ce participant
+                ...clearPackForParticipant(),
               },
             });
             await addDoc(collection(db, 'notifications'), {
@@ -505,22 +502,24 @@ export default function TeacherProfile() {
           //    b) groupe où je suis "rejected" -> passer ce participant en pending_teacher
           if (rejectedInGroupDoc) {
             const { id: gId, data: g } = rejectedInGroupDoc;
-            const wantSingle = !(packHours === 5 || packHours === 10);
-
-            await updateDoc(doc(db, "lessons", gId), {
+            const wantSingle = !isPack; // si l'utilisateur relance 1 créneau, pas un pack
+            await updateDoc(doc(db, 'lessons', gId), {
               participant_ids: Array.from(new Set([...(g.participant_ids || []), targetStudentId])),
               [`participantsMap.${targetStudentId}`]: {
                 ...(g.participantsMap?.[targetStudentId] || {}),
-                parent_id: bookingFor === "child" ? me.uid : null,
+                parent_id: (bookingFor === 'child' ? me.uid : null),
                 booked_by: me.uid,
                 is_paid: false,
                 paid_by: null,
                 paid_at: null,
-                status: "pending_teacher",
+                status: 'pending_teacher',
                 added_at: serverTimestamp(),
+
+                // ✅ unitaire => on retire tout le pack
                 ...(wantSingle
-                  ? clearPackForParticipant()           // <<< reprise unitaire -> on enlève totalement le pack
-                  : putPackForParticipant(packHours, bookMode) // reprise en NOUVEAU pack -> on écrase
+                  ? clearPackForParticipant()
+                  // ✅ relance d’un NOUVEAU pack => on écrase avec un nouvel id
+                  : putPackForParticipant(packHours, bookMode)
                 ),
               },
             });
@@ -620,17 +619,17 @@ export default function TeacherProfile() {
             participant_ids: [targetStudentId],
             participantsMap: {
               [targetStudentId]: {
-                parent_id: bookingFor === 'child' ? me.uid : null,
+                parent_id: (bookingFor === 'child' ? me.uid : null),
                 booked_by: me.uid,
                 is_paid: false,
                 paid_by: null,
                 paid_at: null,
                 status: 'pending_teacher',
                 added_at: serverTimestamp(),
-                ...(packHours === 5 || packHours === 10
-                  ? putPackForParticipant(packHours, bookMode)  // <<< NOUVEAU pack propre
-                  : clearPackForParticipant()                    // <<< aucune trace pack
-                ),
+
+                // ✅ si pack demandé -> on pose un pack neuf, sinon on purge tout pack
+                ...(isPack ? putPackForParticipant(packHours, bookMode)
+                          : clearPackForParticipant()),
               },
             },
             mode: bookMode,
@@ -693,12 +692,12 @@ export default function TeacherProfile() {
       if (grouped.error.length)
         parts.push(`Erreurs sur : ${grouped.error.join(", ")}.`);
 
-      // 🔧 si on vient de “reprendre” un refus en simple, on coupe l’affichage pack dans l’UI
-      if (packHours > 1 && results.some(r => r.status === 'revived_individual' || r.status === 'revived_group')) {
-        setPackHours(1);
+      // Si on vient de "réactiver" un refus en unitaire => coupe l’état UI du pack
+      if (isPack && results.some(r => r.status === 'revived_individual' || r.status === 'revived_group')) {
+        setPackHours(1);  // plus d'étiquette Pack dans la confirmation
       }
       setShowBooking(false);
-      
+
       const onlyOk = results.filter(r => r.status !== 'error');
       const hasOk  = onlyOk.length > 0;
 
