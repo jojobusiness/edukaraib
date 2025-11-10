@@ -214,7 +214,9 @@ export default function TeacherProfile() {
     const qLessons = query(collection(db, 'lessons'), where('teacher_id', '==', teacherId));
     const unsubLessons = onSnapshot(qLessons, (snap) => {
       const { blocked, remainingMap } = computeBookedAndRemaining(
-        snap.docs, teacher, selectedStudentId || auth.currentUser?.uid || null
+        snap.docs,
+        teacher,
+        selectedStudentId || auth.currentUser?.uid || null // ← enfant choisi en priorité
       );
       const fill = { ...remainingMap };
       const defCap =
@@ -298,9 +300,22 @@ export default function TeacherProfile() {
         const kidsSnap = await getDocs(kidsQ);
         const kids = kidsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
         if (!cancelled) setChildren(kids);
-      } catch { if (!cancelled) setChildren([]); }
 
-      if (!cancelled) setSelectedStudentId((prev) => prev || me.uid);
+        // ➕ Sélection par défaut PLUS INTELLIGENTE pour les parents :
+        if (!cancelled) {
+          setSelectedStudentId((prev) => {
+            // Si on est parent et qu’on a au moins un enfant, on pointe le 1er enfant
+            if ((role || null) === 'parent' && kids.length > 0) return kids[0].id;
+            // Sinon on reste sur l’utilisateur courant
+            return prev || me.uid;
+          });
+        }
+      } catch {
+        if (!cancelled) {
+         // En cas d’erreur de lecture des enfants, repli : soi-même
+         setSelectedStudentId((prev) => prev || me.uid);
+        } 
+      }
     })();
     return () => { cancelled = true; };
   }, []);
