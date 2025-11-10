@@ -105,26 +105,27 @@ const entryForMe = (l, uid) => l?.participantsMap?.[uid] || null;
 
 const isPackForMe = (l, uid) => {
   const e = entryForMe(l, uid);
-  if (!e) return false;
-  return !!(e.pack?.enabled) || e.is_pack5 === true || e.is_pack10 === true ||
-    String(e.pack?.hours) === '5' || String(e.pack?.hours) === '10';
+  return !!e && (
+    e.is_pack5 === true || e.is_pack10 === true ||
+    String(e.pack_hours) === '5' || String(e.pack_hours) === '10' ||
+    (e.pack?.enabled === true)
+  );
 };
 
 const packHoursForMe = (l, uid) => {
   const e = entryForMe(l, uid);
   if (!e) return 1;
-  if (e.is_pack5 === true || String(e.pack?.hours) === '5') return 5;
-  if (e.is_pack10 === true || String(e.pack?.hours) === '10') return 10;
+  if (e.is_pack10 === true || String(e.pack_hours) === '10' || String(e.pack?.hours) === '10') return 10;
+  if (e.is_pack5 === true  || String(e.pack_hours) === '5'  || String(e.pack?.hours) === '5')  return 5;
   return 1;
 };
 
 const packKeyForMe = (l, uid) => {
   if (!isPackForMe(l, uid)) return `lesson:${l.id}:${uid}`;
   const hours = packHoursForMe(l, uid);
-  const mode = (String(l.mode) === 'visio' || l.is_visio === true) ? 'visio' : 'presentiel';
-  return String(
-    l.pack_id || l.pack_group_id || `AUTO:${l.teacher_id}|${l.subject_id || ''}|${mode}|${hours}|${uid}`
-  );
+  const mode  = (String(l.mode) === 'visio' || l.is_visio) ? 'visio' : 'presentiel';
+  const e     = entryForMe(l, uid);
+  return String(e.pack_id || l.pack_id || `AUTO:${l.teacher_id}|${mode}|${hours}|${uid}`);
 };
 
 const detectSourceForMe = (l, uid) => {
@@ -234,11 +235,11 @@ export default function StudentPayments() {
         // --- Regroupement pack ---
         const groupMap = new Map();
         for (const l of enriched) {
-          const key = packKeyForMe(l, user.uid);
-          const isPackLesson = isPackForMe(l, user.uid);
+          const key    = packKeyForMe(l, user.uid);
+          const isPack = isPackForMe(l, user.uid);
           if (!groupMap.has(key)) {
-            groupMap.set(key, { ...l, __groupCount: isPackLesson ? 1 : 0 });
-          } else if (isPackLesson) {
+            groupMap.set(key, { ...l, __groupCount: isPack ? 1 : 0 });
+          } else if (isPack) {
             const rep = groupMap.get(key);
             rep.__groupCount += 1;
             groupMap.set(key, rep);
@@ -247,11 +248,11 @@ export default function StudentPayments() {
         const groupedRows = Array.from(groupMap.values());
 
         // Éligible pour moi (mêmes règles que tu avais)
-        const eligibleForMe = groupedRows.filter((l) => isEligibleForMePayment(l, user.uid));
+        const eligibleForMe = groupedRows.filter(l => isEligibleForMePayment(l, user.uid));
 
         // Payé / non payé pour moi (en respectant participantsMap / is_paid)
-        const unpaid = eligibleForMe.filter((l) => !isPaidForStudent(l, user.uid));
-        const paidOnes = groupedRows.filter((l) => isPaidForStudent(l, user.uid));
+        const unpaid = eligibleForMe.filter(l => !isPaidForStudent(l, user.uid));
+        const paidOnes = groupedRows.filter(l => isPaidForStudent(l, user.uid));
 
         const keyTime = (l) =>
           (l.start_datetime?.toDate?.() && l.start_datetime.toDate().getTime()) ||
@@ -313,7 +314,6 @@ export default function StudentPayments() {
         body: JSON.stringify({
           lessonId: lesson.id,
           forStudent: uid,
-          // 👉 indispensable pour pack en un seul bloc
           packKey: isPackForMe(lesson, uid) ? packKeyForMe(lesson, uid) : null,
         }),
       });
