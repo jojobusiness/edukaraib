@@ -237,7 +237,7 @@ export default function StudentPayments() {
           const key = packKeyForMe(l, user.uid);
           const isPackLesson = isPackForMe(l, user.uid);
           if (!groupMap.has(key)) {
-            groupMap.set(key, { ...l, __groupCount: 1 });
+            groupMap.set(key, { ...l, __groupCount: isPackLesson ? 1 : 0 });
           } else if (isPackLesson) {
             const rep = groupMap.get(key);
             rep.__groupCount += 1;
@@ -288,15 +288,16 @@ export default function StudentPayments() {
   }, []);
 
   const totals = useMemo(() => {
-    const sum = (arr) => arr.reduce((acc, l) => acc + getDisplayAmount(l), 0);
+    const sum = (arr) => arr.reduce((acc, l) => acc + getDisplayAmountForMe(l, uid), 0);
     return { due: sum(toPay), paid: sum(paid) };
-  }, [toPay, paid]);
+  }, [toPay, paid, uid]);
 
   const handlePay = async (lesson) => {
     try {
       if (!uid) return;
       setPayingId(lesson.id);
 
+      // petit diagnostic (facultatif)
       const diag = await fetchWithAuth('/api/pay/diag', {
         method: 'POST',
         body: JSON.stringify({ lessonId: lesson.id, forStudent: uid }),
@@ -310,11 +311,13 @@ export default function StudentPayments() {
       const data = await fetchWithAuth('/api/pay/create-checkout-session', {
         method: 'POST',
         body: JSON.stringify({
-          lessonId: row.lesson.id,
-          forStudent: myUid,
-          packKey: isPackForMe(row.lesson, myUid) ? packKeyForMe(row.lesson, myUid) : null,
+          lessonId: lesson.id,
+          forStudent: uid,
+          // 👉 indispensable pour pack en un seul bloc
+          packKey: isPackForMe(lesson, uid) ? packKeyForMe(lesson, uid) : null,
         }),
       });
+
       if (!data?.url) throw new Error('Lien de paiement introuvable.');
       window.location.href = data.url;
     } catch (e) {

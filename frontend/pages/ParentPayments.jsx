@@ -313,12 +313,17 @@ export default function ParentPayments() {
 
         // --- Regroupement pack : 1 bloc pack par enfant ---
         const groupMap = new Map();
-        for (const l of rows) {
-          const key = packKeyForChild(l, childId);
-          const pack = isPackForChild(l, childId);
+        /**
+         * rows: [{ lesson, forStudent, teacherName, childName }]
+         * On regroupe PAR élève/parent en utilisant un packKey calculé sur participantsMap.
+         */
+        for (const r of rows) {
+          const key = packKeyForChild(r.lesson, r.forStudent);
+          const isPack = isPackForChild(r.lesson, r.forStudent);
+
           if (!groupMap.has(key)) {
-            groupMap.set(key, { ...l, __groupCount: 1 });
-          } else if (pack) {
+            groupMap.set(key, { ...r, __groupCount: isPack ? 1 : 0 });
+          } else if (isPack) {
             const rep = groupMap.get(key);
             rep.__groupCount += 1;
             groupMap.set(key, rep);
@@ -402,6 +407,7 @@ export default function ParentPayments() {
         body: JSON.stringify({
           lessonId: row.lesson.id,
           forStudent: row.forStudent,
+          // 👉 très important pour afficher UN SEUL BLOC PACK côté paiement
           packKey: isPackForChild(row.lesson, row.forStudent)
             ? packKeyForChild(row.lesson, row.forStudent)
             : null,
