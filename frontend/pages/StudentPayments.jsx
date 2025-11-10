@@ -310,10 +310,9 @@ export default function StudentPayments() {
       const data = await fetchWithAuth('/api/pay/create-checkout-session', {
         method: 'POST',
         body: JSON.stringify({
-          lessonId: lesson.id,
-          forStudent: uid,
-          // >> NOUVEAU : si c’est un pack, on passe la clé de regroupement
-          packKey: isPackForMe(lesson, uid) ? packKeyForMe(lesson, uid) : null,
+          lessonId: row.lesson.id,
+          forStudent: myUid,
+          packKey: isPackForMe(row.lesson, myUid) ? packKeyForMe(row.lesson, myUid) : null,
         }),
       });
       if (!data?.url) throw new Error('Lien de paiement introuvable.');

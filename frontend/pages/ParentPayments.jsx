@@ -150,43 +150,39 @@ const getDisplayAmountFor = (l, sid) => {
   return (base || 0) + fee;
 };
 
-// --- Helpers par enfant (lecture dans participantsMap) ---
-const entryForChild = (l, childId) => l?.participantsMap?.[childId] || null;
+// == Helpers pack/étiquettes par ENFANT ==
+const entryForChild = (l, sid) => l?.participantsMap?.[sid] || null;
 
-const isPackForChild = (l, childId) => {
-  const e = entryForChild(l, childId);
+const isPackForChild = (l, sid) => {
+  const e = entryForChild(l, sid);
   if (!e) return false;
   return !!(e.pack?.enabled) || e.is_pack5 === true || e.is_pack10 === true ||
     String(e.pack?.hours) === '5' || String(e.pack?.hours) === '10';
 };
 
-const packHoursForChild = (l, childId) => {
-  const e = entryForChild(l, childId);
+const packHoursForChild = (l, sid) => {
+  const e = entryForChild(l, sid);
   if (!e) return 1;
   if (e.is_pack5 === true || String(e.pack?.hours) === '5') return 5;
   if (e.is_pack10 === true || String(e.pack?.hours) === '10') return 10;
   return 1;
 };
 
-// “clé de regroupement pack” PAR ENFANT (sert à fusionner 5/10 lignes en 1 bloc)
-const packKeyForChild = (l, childId) => {
-  if (!isPackForChild(l, childId)) return `lesson:${l.id}:${childId}`;
-  const hours = packHoursForChild(l, childId);
+const packKeyForChild = (l, sid) => {
+  if (!isPackForChild(l, sid)) return `lesson:${l.id}:${sid}`;
+  const hours = packHoursForChild(l, sid);
   const mode = (String(l.mode) === 'visio' || l.is_visio === true) ? 'visio' : 'presentiel';
-  // utilise pack_id/pack_group_id s’ils existent, sinon on calcule une clé stable
   return String(
-    l.pack_id || l.pack_group_id || `AUTO:${l.teacher_id}|${l.subject_id || ''}|${mode}|${hours}|${childId}`
+    l.pack_id || l.pack_group_id || `AUTO:${l.teacher_id}|${l.subject_id || ''}|${mode}|${hours}|${sid}`
   );
 };
 
-// payé / éligible PAR ENFANT
-const isPaidForChild = (l, childId) =>
-  !!(l?.participantsMap?.[childId]?.is_paid) ||
-  (String(l.student_id) === String(childId) && l.is_paid === true);
-
-const isEligibleForChildPayment = (l, childId) => {
-  const st = l?.participantsMap?.[childId]?.status;
-  return st === 'accepted' || st === 'confirmed';
+const isEligibleForChildPayment = (lesson, sid) => {
+  if (lesson?.is_group) {
+    const st = lesson?.participantsMap?.[sid]?.status;
+    return st === 'accepted' || st === 'confirmed';
+  }
+  return ['confirmed','completed','scheduled'].includes(lesson?.status);
 };
 
 // affichage montant PAR ENFANT (applique -10% pack + frais plateforme)
@@ -312,22 +308,27 @@ export default function ParentPayments() {
           }
         }
 
-        // --- Regroupement pack : 1 ligne pack au lieu de N heures ---
-        const groupMap = new Map();
-        /** rows = [{ lesson, forStudent, teacherName, childName }] */
-        for (const r of rows) {
-          const key = packKeyForChild(r.lesson, r.forStudent);
-          const isPackLesson = isPackForChild(r.lesson, r.forStudent);
+        // rows = Array.from(combined.values()) déjà construit + enrichi (teacherName, etc.)
+        const childId = selectedChildId || currentChildId; // la variable que tu utilises déjà pour l’enfant courant
 
+        // --- Regroupement pack : 1 bloc pack par enfant ---
+        const groupMap = new Map();
+        for (const l of rows) {
+          const key = packKeyForChild(l, childId);
+          const pack = isPackForChild(l, childId);
           if (!groupMap.has(key)) {
-            groupMap.set(key, { ...r, __groupCount: 1 });
-          } else if (isPackLesson) {
+            groupMap.set(key, { ...l, __groupCount: 1 });
+          } else if (pack) {
             const rep = groupMap.get(key);
             rep.__groupCount += 1;
             groupMap.set(key, rep);
           }
         }
         const groupedRows = Array.from(groupMap.values());
+
+        //const eligible = groupedRows.filter((l) => isEligibleForChildPayment(l, childId));
+        //const toPayRows = eligible.filter((l) => !isPaidForChild(l, childId));
+        //const paidRows  = groupedRows.filter((l) => isPaidForChild(l, childId));
 
         const paidEligible = groupedRows.filter((r) =>
           isPaidForStudent(r.lesson, r.forStudent)
@@ -384,6 +385,7 @@ export default function ParentPayments() {
     try {
       setPayingKey(key);
 
+      // petit diag (facultatif mais utile)
       const diag = await fetchWithAuth('/api/pay/diag', {
         method: 'POST',
         body: JSON.stringify({ lessonId: row.lesson.id, forStudent: row.forStudent }),
@@ -394,17 +396,18 @@ export default function ParentPayments() {
         return;
       }
 
+      // 👉 ENVOI CORRECT DU packKey pour regrouper le paiement
       const data = await fetchWithAuth('/api/pay/create-checkout-session', {
         method: 'POST',
         body: JSON.stringify({
           lessonId: row.lesson.id,
           forStudent: row.forStudent,
-          // 👉 regroupe 5/10 séances en **un seul paiement**
           packKey: isPackForChild(row.lesson, row.forStudent)
             ? packKeyForChild(row.lesson, row.forStudent)
             : null,
         }),
       });
+
       if (!data?.url) throw new Error('Lien de paiement introuvable.');
       window.location.href = data.url;
     } catch (e) {
