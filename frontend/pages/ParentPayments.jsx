@@ -28,7 +28,6 @@ const fmtDateTime = (start_datetime, slot_day, slot_hour) => {
   if (slot_day && (slot_hour || slot_hour === 0)) return `${slot_day} • ${String(slot_hour).padStart(2, '0')}:00`;
   return '—';
 };
-const toNumber = (v) => { const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v); return Number.isFinite(n) ? n : 0; };
 const getBaseAmount = (l) => {
   // Packs : si pas de total stocké, on reconstitue (tarif × heures × 0,9)
   const isPackLesson = (() => {
@@ -60,16 +59,6 @@ const isPaidForStudent = (lesson, studentId) => {
   }
   if (lesson.student_id === studentId && lesson.is_paid === true) return true;
   return false;
-};
-
-// éligible au paiement pour l’enfant/parent concerné
-const isEligibleForChildPayment = (lesson, childId) => {
-  if (!childId || !lesson) return false;
-  if (lesson.is_group) {
-    const st = lesson?.participantsMap?.[childId]?.status;
-    return st === 'accepted' || st === 'confirmed';
-  }
-  return (['confirmed','completed','scheduled'].includes(lesson.status)) && String(lesson.student_id) === String(childId);
 };
 
 // --- NOUVEAU : le prof doit avoir validé (pas "pending_teacher"/"booked"/"pending") ---
@@ -158,6 +147,68 @@ const getDisplayAmountFor = (l, sid) => {
     base = toNumber(l.total_amount) || toNumber(l.total_price) || toNumber(l.amount) || baseRate;
   }
   const fee = hours * 10; // +10€/h affichage
+  return (base || 0) + fee;
+};
+
+// --- Helpers par enfant (lecture dans participantsMap) ---
+const entryForChild = (l, childId) => l?.participantsMap?.[childId] || null;
+
+const isPackForChild = (l, childId) => {
+  const e = entryForChild(l, childId);
+  if (!e) return false;
+  return !!(e.pack?.enabled) || e.is_pack5 === true || e.is_pack10 === true ||
+    String(e.pack?.hours) === '5' || String(e.pack?.hours) === '10';
+};
+
+const packHoursForChild = (l, childId) => {
+  const e = entryForChild(l, childId);
+  if (!e) return 1;
+  if (e.is_pack5 === true || String(e.pack?.hours) === '5') return 5;
+  if (e.is_pack10 === true || String(e.pack?.hours) === '10') return 10;
+  return 1;
+};
+
+// “clé de regroupement pack” PAR ENFANT (sert à fusionner 5/10 lignes en 1 bloc)
+const packKeyForChild = (l, childId) => {
+  if (!isPackForChild(l, childId)) return `lesson:${l.id}:${childId}`;
+  const hours = packHoursForChild(l, childId);
+  const mode = (String(l.mode) === 'visio' || l.is_visio === true) ? 'visio' : 'presentiel';
+  // utilise pack_id/pack_group_id s’ils existent, sinon on calcule une clé stable
+  return String(
+    l.pack_id || l.pack_group_id || `AUTO:${l.teacher_id}|${l.subject_id || ''}|${mode}|${hours}|${childId}`
+  );
+};
+
+// payé / éligible PAR ENFANT
+const isPaidForChild = (l, childId) =>
+  !!(l?.participantsMap?.[childId]?.is_paid) ||
+  (String(l.student_id) === String(childId) && l.is_paid === true);
+
+const isEligibleForChildPayment = (l, childId) => {
+  const st = l?.participantsMap?.[childId]?.status;
+  return st === 'accepted' || st === 'confirmed';
+};
+
+// affichage montant PAR ENFANT (applique -10% pack + frais plateforme)
+const toNumber = (v) => {
+  const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+const getDisplayAmountForChild = (l, childId) => {
+  const isVisio = String(l.mode) === 'visio' || l.is_visio === true;
+  const baseRate = isVisio && l.visio_enabled && l.visio_same_rate === false
+    ? toNumber(l.visio_price_per_hour)
+    : toNumber(l.price_per_hour);
+
+  const hours = packHoursForChild(l, childId) > 1
+    ? packHoursForChild(l, childId)
+    : (Number(l.duration_hours) > 0 ? Math.floor(Number(l.duration_hours)) : 1);
+
+  const isPack = isPackForChild(l, childId);
+  const base = isPack ? Number((baseRate * hours * 0.9).toFixed(2))
+                      : (toNumber(l.total_amount) || toNumber(l.total_price) || toNumber(l.amount) || baseRate);
+
+  const fee = hours * 10; // 10€ / h
   return (base || 0) + fee;
 };
 
@@ -345,9 +396,11 @@ export default function ParentPayments() {
       const data = await fetchWithAuth('/api/pay/create-checkout-session', {
         method: 'POST',
         body: JSON.stringify({
-          lessonId: row.lesson.id,
-          forStudent: row.forStudent,
-          packKey: isPackFor(row.lesson, row.forStudent) ? packKeyFor(row.lesson, row.forStudent) : null,
+          lessonId: lesson.id,
+          forStudent: childId,                                   // 👈 enfant ciblé
+          packKey: isPackForChild(lesson, childId)               // 👇 regroupe 5/10 leçons
+            ? packKeyForChild(lesson, childId)
+            : null,
         }),
       });
       if (!data?.url) throw new Error('Lien de paiement introuvable.');

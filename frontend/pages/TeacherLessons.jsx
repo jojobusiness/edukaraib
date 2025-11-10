@@ -868,10 +868,28 @@ export default function TeacherLessons() {
   async function handleStatus(lesson, status) {
     try {
       const ref = doc(db, 'lessons', lesson.id);
-      await updateDoc(ref, { status, ...(status === 'completed' ? { completed_at: serverTimestamp() } : {}) });
 
-      // Si c'est un pack : propager le même statut à toutes les séances du pack
-      // Si c'est un pack : propager le même statut à toutes les séances du pack
+      // --- NEW: if INDIVIDUAL, also update the owner student's participant status
+      const isGroup = isGroupLessonStrict(lesson);
+      const ownerSid = !isGroup ? getOwnerStudentId(lesson) : null;
+
+      // Build the base update for the lesson
+      const baseUpdate = {
+        status,
+        ...(status === 'completed' ? { completed_at: serverTimestamp() } : {}),
+      };
+
+      // If it's an individual and we know who the owner student is, mirror the status in participantsMap
+      if (ownerSid) {
+        baseUpdate[`participantsMap.${ownerSid}.status`] =
+          status === 'confirmed' ? 'confirmed' :
+          status === 'rejected'  ? 'rejected'  :
+          status; // (completed stays completed on the lesson; participant can remain confirmed)
+      }
+
+      await updateDoc(ref, baseUpdate);
+
+      // —— PACK propagation (unchanged)
       try {
         if (lesson.pack_id && (status === 'confirmed' || status === 'rejected' || status === 'completed')) {
           const qPack = query(
@@ -890,24 +908,19 @@ export default function TeacherLessons() {
             if (data.is_group || Array.isArray(data.participant_ids)) {
               const pm = { ...(data.participantsMap || {}) };
               for (const sid of data.participant_ids || []) {
-                pm[sid] = { ...(pm[sid] || {}), status: 'accepted' };
+                pm[sid] = { ...(pm[sid] || {}), status: status === 'rejected' ? 'rejected' : 'accepted' };
               }
               newData.participantsMap = pm;
               newData.participant_ids = Object.keys(pm);
             }
-
             if (status === 'completed') {
               newData.completed_at = serverTimestamp();
             }
-
             await updateDoc(refDoc, newData);
           }
-          // ✅ Met à jour le state local (affichage) tout de suite
+
           setLessons(prev => prev.map(l => {
-            if (!lesson.pack_id) {
-              // Cours simple
-              return l.id === lesson.id ? { ...l, status } : l;
-            }
+            if (!lesson.pack_id) return l.id === lesson.id ? { ...l, status } : l;
             if (l.pack_id !== lesson.pack_id) return l;
 
             const isGrp = l.is_group || Array.isArray(l.participant_ids);
@@ -919,7 +932,7 @@ export default function TeacherLessons() {
                 : Object.keys(l.participantsMap || {});
               const pm = { ...(l.participantsMap || {}) };
               ids.forEach(sid => {
-                pm[sid] = { ...(pm[sid] || {}), status: 'accepted' };
+                pm[sid] = { ...(pm[sid] || {}), status: status === 'rejected' ? 'rejected' : 'accepted' };
               });
               next.participantsMap = pm;
               next.participant_ids = ids;
@@ -1000,7 +1013,7 @@ export default function TeacherLessons() {
     }
   }
 
-  // ✅ Accepter TOUT un pack : ne touche qu’aux séances encore en attente
+  // ✅ Accepter TOUT un pack
   async function acceptWholePack(repLesson) {
     // helper: statut participant “actif en attente”
     const isPendingParticipant = (st) => {
@@ -1025,6 +1038,8 @@ export default function TeacherLessons() {
     });
 
     try {
+      const notified = new Set();
+
       for (const l of targets) {
         if (l.is_group || (Array.isArray(l.participant_ids) && l.participant_ids.length > 0)) {
           // confirme uniquement les participants encore “pending”
@@ -1038,6 +1053,7 @@ export default function TeacherLessons() {
             if (!['accepted','confirmed','rejected','removed','deleted'].includes(st)) {
               pm[sid] = { ...(pm[sid] || {}), status: 'confirmed' };
             }
+            notified.add(sid);
           });
 
           await updateDoc(doc(db, 'lessons', l.id), {
@@ -1053,6 +1069,7 @@ export default function TeacherLessons() {
               status: 'confirmed',
               pending_teacher: false,
             });
+            if (l.student_id) notified.add(l.student_id);
           }
         }
       }
@@ -1077,10 +1094,7 @@ export default function TeacherLessons() {
               changed = true;
             }
           });
-          if (!changed && l.status !== 'confirmed') {
-            // rien à confirmer côté participants – on conserve le statut existant
-            return l;
-          }
+          if (!changed && l.status !== 'confirmed') return l;
           return { ...l, participantsMap: pm, participant_ids: ids, status: 'confirmed', pending_teacher: false };
         }
 
@@ -1092,20 +1106,33 @@ export default function TeacherLessons() {
       }));
 
       setPendingPacks((prev) => prev.filter((p) => !samePackKey(p.lesson, repLesson)));
+
+      // 📧 Emails (élèves + parents)
+      await sendEmailsToUsers(
+        Array.from(notified),
+        {
+          title: "Pack accepté",
+          message: "Votre demande de pack a été acceptée. Rendez-vous sur votre espace pour les détails.",
+          ctaUrl: `${window.location.origin}/smart-dashboard`,
+          ctaText: "Voir mes cours",
+        },
+        repLesson
+      );
     } catch (e) {
       console.error(e);
       alert("Impossible d'accepter tout le pack.");
     }
   }
 
-  // ❌ Refuser TOUT un pack : ne marque PAS le cours en “rejected”,
-  // refuse uniquement les participants encore en attente, et enlève pending_teacher.
+  // ❌ Refuser TOUT un pack (ne change pas le status global du cours)
   async function rejectWholePack(repLesson) {
     const isFinal = (st) => ['accepted','confirmed','rejected','removed','deleted'].includes(String(st || '').toLowerCase());
 
     const targets = lessons.filter((l) => samePackKey(l, repLesson));
 
     try {
+      const rejectedSet = new Set();
+
       for (const l of targets) {
         const pm  = { ...(l.participantsMap || {}) };
         const ids = (Array.isArray(l.participant_ids) && l.participant_ids.length)
@@ -1118,6 +1145,7 @@ export default function TeacherLessons() {
             const st = pm?.[sid]?.status;
             if (!isFinal(st)) {
               pm[sid] = { ...(pm[sid] || {}), status: 'rejected' };
+              rejectedSet.add(sid);
             }
           });
 
@@ -1157,6 +1185,18 @@ export default function TeacherLessons() {
       }));
 
       setPendingPacks((prev) => prev.filter((p) => !samePackKey(p.lesson, repLesson)));
+
+      // 📧 Emails
+      await sendEmailsToUsers(
+        Array.from(rejectedSet),
+        {
+          title: "Pack refusé",
+          message: "Votre demande de pack a été refusée. Vous pouvez refaire une demande pour d’autres horaires.",
+          ctaUrl: `${window.location.origin}/smart-dashboard`,
+          ctaText: "Choisir d’autres horaires",
+        },
+        repLesson
+      );
     } catch (e) {
       console.error(e);
       alert("Impossible de refuser tout le pack.");
@@ -1169,6 +1209,7 @@ export default function TeacherLessons() {
       // 1) valider l'élève dans le groupe
       await updateDoc(doc(db, 'lessons', lessonId), {
         [`participantsMap.${studentId}.status`]: 'confirmed',
+        status: 'confirmed', // assure la sortie des "Demandes"
       });
 
       // 2) MAJ immédiate de l'affichage
@@ -1192,6 +1233,17 @@ export default function TeacherLessons() {
       // enlever la ligne de Demandes (UI)
       setPendingGroup(prev => prev.filter(g => !(g.lessonId === lessonId && g.studentId === studentId)));
 
+      // 📧 Emails (élève + parent)
+      await sendEmailsToUsers(
+        [studentId],
+        {
+          title: "Cours confirmé (groupe)",
+          message: "Votre demande d’intégrer le cours groupé a été acceptée.",
+          ctaUrl: `${window.location.origin}/smart-dashboard`,
+          ctaText: "Voir le cours",
+        }
+      );
+
       try { await createPaymentDueNotificationsForLesson(lessonId, { onlyForStudentId: studentId }); } catch {}
     } catch (e) {
       console.error(e);
@@ -1214,6 +1266,17 @@ export default function TeacherLessons() {
         // on conserve participant_ids tel quel pour que les filtres trouvent la ligne
         return { ...l, participantsMap: pm };
       }));
+
+      // 📧 Emails (élève + parent)
+      await sendEmailsToUsers(
+        [studentId],
+        {
+          title: "Cours refusé (groupe)",
+          message: "Votre demande d’intégrer le cours groupé a été refusée.",
+          ctaUrl: `${window.location.origin}/smart-dashboard`,
+          ctaText: "Voir mes demandes",
+        }
+      );
     } catch (e) {
       console.error(e);
       alert("Impossible de refuser l'élève.");
@@ -1243,6 +1306,21 @@ export default function TeacherLessons() {
             try {
               await updateDoc(doc(db, 'lessons', l.id), { status: 'rejected' });
             } catch {}
+            try {
+              const recipients = new Set();
+              if (l.student_id) recipients.add(l.student_id);
+              (l.participant_ids || []).forEach((sid) => recipients.add(sid));
+              await sendEmailsToUsers(
+                Array.from(recipients),
+                {
+                  title: "Cours refusé automatiquement",
+                  message: "Votre demande a expiré (non confirmée à temps). Vous pouvez refaire une demande.",
+                  ctaUrl: `${window.location.origin}/smart-dashboard`,
+                  ctaText: "Refaire une demande",
+                },
+                l
+              );
+            } catch {}
             return;
           }
         }
@@ -1252,6 +1330,21 @@ export default function TeacherLessons() {
           if (now >= startMs && !isIndividualPaid(l)) {
             try {
               await updateDoc(doc(db, 'lessons', l.id), { status: 'rejected' });
+            } catch {}
+            try {
+              const recipients = new Set();
+              if (l.student_id) recipients.add(l.student_id);
+              (l.participant_ids || []).forEach((sid) => recipients.add(sid));
+              await sendEmailsToUsers(
+                Array.from(recipients),
+                {
+                  title: "Cours refusé automatiquement",
+                  message: "Votre demande a expiré (non confirmée à temps). Vous pouvez refaire une demande.",
+                  ctaUrl: `${window.location.origin}/smart-dashboard`,
+                  ctaText: "Refaire une demande",
+                },
+                l
+              );
             } catch {}
           }
         }
@@ -1645,12 +1738,7 @@ export default function TeacherLessons() {
           ) : (
             <div className="grid grid-cols-1 gap-5">
               {refuses.map((l) => {
-                // ➜ Détection plus tolérante du “groupé”
-                const isGroup =
-                  l?.is_group === true ||
-                  (Array.isArray(l?.participant_ids) && l.participant_ids.length > 0) ||
-                  Object.keys(l?.participantsMap || {}).length > 0 ||
-                  Number(l?.capacity || 0) > 1;
+                const isGroup = isGroupLessonStrict(l); // ⬅️ utilise le même helper partout
 
                 if (!isGroup) {
                   // Individuel refusé → carte standard
