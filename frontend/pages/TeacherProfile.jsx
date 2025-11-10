@@ -289,10 +289,15 @@ export default function TeacherProfile() {
       const me = auth.currentUser;
       if (!me) return;
 
+      // <<< AJOUT : variable partagée pour retenir le rôle lu >>>
+      let computedRole = null;
+
       try {
         const meSnap = await getDoc(doc(db, 'users', me.uid));
         const role = meSnap.exists() ? meSnap.data()?.role : null;
         if (!cancelled) setCurrentRole(role || null);
+        computedRole = meSnap.exists() ? meSnap.data()?.role : null;
+        if (!cancelled) setCurrentRole(computedRole || null);
       } catch { if (!cancelled) setCurrentRole(null); }
 
       try {
@@ -304,9 +309,8 @@ export default function TeacherProfile() {
         // ➕ Sélection par défaut PLUS INTELLIGENTE pour les parents :
         if (!cancelled) {
           setSelectedStudentId((prev) => {
-            // Si on est parent et qu’on a au moins un enfant, on pointe le 1er enfant
-            if ((role || null) === 'parent' && kids.length > 0) return kids[0].id;
-            // Sinon on reste sur l’utilisateur courant
+            // <<< on utilise computedRole, PAS "role" >>>
+            if ((computedRole || null) === 'parent' && kids.length > 0) return kids[0].id;
             return prev || me.uid;
           });
         }
