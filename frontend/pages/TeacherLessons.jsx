@@ -1633,81 +1633,97 @@ export default function TeacherLessons() {
           ) : (
             <div className="grid grid-cols-1 gap-5">
               {refuses.map((l) => {
-                const isGroup = isGroupLessonStrict(l);
+                // ➜ Détection plus tolérante du “groupé”
+                const isGroup =
+                  l?.is_group === true ||
+                  (Array.isArray(l?.participant_ids) && l.participant_ids.length > 0) ||
+                  Object.keys(l?.participantsMap || {}).length > 0 ||
+                  Number(l?.capacity || 0) > 1;
 
                 if (!isGroup) {
-                  // cours individuel refusé => ta card standard
+                  // Individuel refusé → carte standard
                   return <Card key={l.id} lesson={l} showActionsForPending={false} />;
                 }
 
-                // groupe : on n’affiche que les élèves refusés
-                // ... à la place du rendu groupe existant :
-                const rejectedIds = getRejectedStudents(l);
-                const rejectedNames = rejectedIds.map((sid) => {
-                  const pd = (l.participantDetails || []).find((p) => p.id === sid);
-                  return pd?.name || sid;
+                // ---- Groupe refusé : montrer les élèves refusés + badges ----
+                const pm = l?.participantsMap || {};
+                const idsSource = (Array.isArray(l?.participant_ids) && l.participant_ids.length)
+                  ? l.participant_ids
+                  : Object.keys(pm);
+
+                // 1) élève(s) explicitement refusé(s)
+                let rejectedIds = idsSource.filter((sid) => {
+                  const st = String(pm?.[sid]?.status || '').toLowerCase();
+                  return st === 'rejected' || st === 'removed' || st === 'deleted';
                 });
+
+                // 2) fallback : si statut global "rejected", afficher tous les participants
+                if (rejectedIds.length === 0 && String(l?.status || '').toLowerCase() === 'rejected') {
+                  rejectedIds = [...idsSource];
+                }
+
+                // 3) dernier fallback : afficher au moins le demandeur (utile packs enfants par parent)
+                if (rejectedIds.length === 0) {
+                  const sole =
+                    (Array.isArray(l?.participant_ids) && l.participant_ids.length === 1 && l.participant_ids[0]) ||
+                    (Object.keys(pm).length === 1 && Object.keys(pm)[0]) ||
+                    null;
+                  if (sole) rejectedIds = [sole];
+                }
+
+                const rejectedBadges = rejectedIds.length
+                  ? rejectedIds.map((sid) => {
+                      const name = (l.participantDetails || []).find((p) => p.id === sid)?.name || sid;
+                      // badge “Pack 5h / Pack 10h” pris au niveau participant si présent
+                      const hours =
+                        Number(pm?.[sid]?.pack_hours ?? pm?.[sid]?.packHours ?? 0) ||
+                        (pm?.[sid]?.is_pack10 ? 10 : pm?.[sid]?.is_pack5 ? 5 : 0) ||
+                        (pm?.[sid]?.pack === '10h' ? 10 : pm?.[sid]?.pack === '5h' ? 5 : 0);
+                      const packBadge = hours >= 10 ? 'Pack 10h' : hours >= 5 ? 'Pack 5h' : '';
+
+                      return (
+                        <span key={sid} className="inline-flex items-center mr-2 mb-1">
+                          <span className="px-2 py-0.5 rounded bg-red-50 text-red-700 text-xs mr-1">{name}</span>
+                          {packBadge && (
+                            <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 text-[11px]">{packBadge}</span>
+                          )}
+                        </span>
+                      );
+                    })
+                  : <span className="ml-2 text-gray-500">—</span>;
+
+                // petit helper d’étiquette pack (au niveau leçon) si besoin en plus
+                const hoursLesson =
+                  Number(l?.pack_hours ?? l?.packHours ?? 0) >= 10 ? 'Pack 10h'
+                    : Number(l?.pack_hours ?? l?.packHours ?? 0) >= 5 ? 'Pack 5h'
+                    : '';
 
                 return (
                   <div key={l.id} className="bg-white p-6 rounded-xl shadow border">
                     <div className="flex gap-2 items-center mb-1">
                       <span className="font-bold text-primary">{l.subject_id || 'Matière'}</span>
+                      {/* 👉 libellé demandé : “Refusé (cours groupé)” */}
                       <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
-                        Refusé {isGroup ? '(cours groupé)' : '(cours individuel)'}
+                        Refusé (cours groupé)
                       </span>
-                      {/* Pastilles mode & pack */}
+                      {/* Mode + Pack */}
                       <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded ml-1">
-                        {String(l?.mode || '').toLowerCase() === 'visio' || l?.is_visio ? 'Visio' : 'Présentiel'}
+                        {(String(l?.mode || '').toLowerCase() === 'visio' || l?.is_visio) ? 'Visio' : 'Présentiel'}
                       </span>
-                      {(() => {
-                        const h = Number(l?.pack_hours ?? l?.packHours ?? 0);
-                        return h >= 10 ? (
-                          <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded ml-1">Pack 10h</span>
-                        ) : h >= 5 ? (
-                          <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded ml-1">Pack 5h</span>
-                        ) : null;
-                      })()}
+                      {hoursLesson && (
+                        <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded ml-1">{hoursLesson}</span>
+                      )}
                     </div>
 
-                    {/* ✅ Afficher qui a fait la demande (utile pour les packs) */}
+                    {/* Demandeur (parent) si connu */}
                     {l.requesterName ? (
                       <p className="text-sm text-gray-600 mt-1">
                         Demande faite par <span className="font-medium">{l.requesterName}</span>
                       </p>
                     ) : null}
 
-                    {/* Élèves refusés + badge pack par élève */}
                     <div className="mt-2 text-sm text-gray-700">
-                      Élève(s) refusé(s) :
-                      {(() => {
-                        const pm = l.participantsMap || {};
-                        const idsSource = (Array.isArray(l.participant_ids) && l.participant_ids.length)
-                          ? l.participant_ids
-                          : Object.keys(pm);
-
-                        const ids = idsSource.filter((sid) => {
-                          const st = String(pm?.[sid]?.status || '').toLowerCase();
-                          return st === 'rejected' || st === 'removed' || st === 'deleted';
-                        });
-
-                        if (!ids.length) return <span className="ml-2 text-gray-500">—</span>;
-                        return (
-                          <span className="ml-2 space-x-2">
-                            {ids.map((sid) => {
-                              const name = (l.participantDetails || []).find(p => p.id === sid)?.name || sid;
-                              const lab = packLabelForLesson(l, sid);
-                              return (
-                                <span key={sid} className="inline-flex items-center">
-                                  <span className="px-2 py-0.5 rounded bg-red-50 text-red-700 text-xs mr-1">{name}</span>
-                                  {lab && (
-                                    <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-700 text-[11px]">{lab}</span>
-                                  )}
-                                </span>
-                              );
-                            })}
-                          </span>
-                        );
-                      })()}
+                      Élève(s) refusé(s) : <span className="ml-2">{rejectedBadges}</span>
                     </div>
 
                     <div className="text-gray-500 text-sm mt-1">
