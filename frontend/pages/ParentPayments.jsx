@@ -338,7 +338,7 @@ export default function ParentPayments() {
          * On regroupe PAR élève/parent en utilisant un packKey calculé sur participantsMap.
          */
         for (const r of rows) {
-          const key    = packKeyForChild(r.lesson, r.forStudent); // <- via participantsMap
+          const key = packKeyForChild(r.lesson, r.forStudent);
           const isPack = isPackForChild(r.lesson, r.forStudent);
           if (!groupMap.has(key)) {
             groupMap.set(key, { ...r, __groupCount: isPack ? 1 : 0 });
@@ -403,7 +403,7 @@ export default function ParentPayments() {
     try {
       setPayingKey(key);
 
-      // petit diag (facultatif mais utile)
+      // petit diag (facultatif)
       const diag = await fetchWithAuth('/api/pay/diag', {
         method: 'POST',
         body: JSON.stringify({ lessonId: row.lesson.id, forStudent: row.forStudent }),
@@ -414,7 +414,6 @@ export default function ParentPayments() {
         return;
       }
 
-      // 👉 ENVOI CORRECT DU packKey pour regrouper le paiement
       const data = await fetchWithAuth('/api/pay/create-checkout-session', {
         method: 'POST',
         body: JSON.stringify({

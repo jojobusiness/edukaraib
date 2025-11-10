@@ -187,7 +187,11 @@ export default async function handler(req, res) {
       const candidateKey = String(
         pm?.pack_id || L.pack_id || `AUTO:${L.teacher_id}|${mode}|${hours}|${participantId}`
       );
-      return String(candidateKey) === String(packKey || candidateKey);
+      return packKey
+        ? String(candidateKey) === String(packKey)
+        : String(candidateKey) === String(
+            pm?.pack_id || L.pack_id || `AUTO:${L.teacher_id}|${mode}|${hours}|${participantId}`
+          );
     });
 
     // éligibles & non payées pour CE participant
