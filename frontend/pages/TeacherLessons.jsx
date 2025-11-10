@@ -529,9 +529,9 @@ export default function TeacherLessons() {
 
         // ----- Construire pendingIndiv (tous statuts “pending”)
         const pIndivRaw = raw.filter((l) => {
-          const isPending = PENDING_SET.has(String(l.status || ''));
-          if (statusStr === 'rejected' || statusStr === 'removed' || statusStr === 'deleted') return false;
-          // we only keep true individual lessons that are NOT part of a pack
+          const statusStr = String(l.status || '').toLowerCase();
+          if (['rejected', 'removed', 'deleted'].includes(statusStr)) return false;
+          const isPending = PENDING_SET.has(statusStr);
           return !l.is_group && !isLessonPartOfPack(l) && isPending;
         });
 
