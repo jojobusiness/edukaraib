@@ -426,19 +426,12 @@ export default function TeacherProfile() {
             // 💡 “Réactiver” l’ancien individuel rejeté pour CET élève, sans pack si wantSingle
             await updateDoc(doc(db, 'lessons', existingIndId), {
               status: 'pending_teacher',
-              ...(wantSingle ? {
-                // on enlève la notion de pack sur cette reprise ciblée
-                is_pack: false,
-                pack_hours: null,
-                pack_type: null,
-                pack_mode: null,
-              } : {
-                // si l’utilisateur redemande bien un pack, on le re-tague au niveau leçon (individuel)
-                is_pack: true,
-                pack_hours: packHours,
-                pack_type: packHours === 5 ? 'pack5' : 'pack10',
-                pack_mode: bookMode,
-              }),
+              student_id: targetStudentId,          // 🔧 IMPORTANT pour bien classer par enfant
+              // 🔧 on enlève toujours le pack ici (reprise d’un seul créneau)
+              is_pack: false,
+              pack_hours: null,
+              pack_type: null,
+              pack_mode: null,
             });
             await addDoc(collection(db, 'notifications'), {
               user_id: teacherId,
@@ -601,6 +594,7 @@ export default function TeacherProfile() {
             // --- ici on fixe le mode ---
             is_group: createAsGroup,
             capacity: createAsGroup ? defaultCap : 1,
+            student_id: createAsGroup ? null : targetStudentId,   // 🔧 clé pour classer par enfant en individuel
 
             participant_ids: [targetStudentId],
             participantsMap: {
@@ -675,6 +669,10 @@ export default function TeacherProfile() {
       if (grouped.error.length)
         parts.push(`Erreurs sur : ${grouped.error.join(", ")}.`);
 
+      // 🔧 si on vient de “reprendre” un refus en simple, on coupe l’affichage pack dans l’UI
+      if (packHours > 1 && results.some(r => r.status === 'revived_individual' || r.status === 'revived_group')) {
+        setPackHours(1);
+      }
       setShowBooking(false);
       setConfirmationMsg(
         parts.length ? parts.join(" ") : "Demandes envoyées."
