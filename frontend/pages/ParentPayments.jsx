@@ -316,8 +316,8 @@ export default function ParentPayments() {
         const groupMap = new Map();
         /** rows = [{ lesson, forStudent, teacherName, childName }] */
         for (const r of rows) {
-          const key = packKeyFor(r.lesson, r.forStudent);
-          const isPackLesson = isPackFor(r.lesson, r.forStudent);
+          const key = packKeyForChild(r.lesson, r.forStudent);
+          const isPackLesson = isPackForChild(r.lesson, r.forStudent);
 
           if (!groupMap.has(key)) {
             groupMap.set(key, { ...r, __groupCount: 1 });
@@ -374,7 +374,8 @@ export default function ParentPayments() {
   }, []);
 
   const totals = useMemo(() => {
-    const sum = (arr) => arr.reduce((acc, r) => acc + getDisplayAmount(r.lesson), 0);
+    const sum = (arr) =>
+      arr.reduce((acc, r) => acc + getDisplayAmountForChild(r.lesson, r.forStudent), 0);
     return { due: sum(toPay), paid: sum(paid) };
   }, [toPay, paid]);
 
@@ -396,10 +397,11 @@ export default function ParentPayments() {
       const data = await fetchWithAuth('/api/pay/create-checkout-session', {
         method: 'POST',
         body: JSON.stringify({
-          lessonId: lesson.id,
-          forStudent: childId,                                   // 👈 enfant ciblé
-          packKey: isPackForChild(lesson, childId)               // 👇 regroupe 5/10 leçons
-            ? packKeyForChild(lesson, childId)
+          lessonId: row.lesson.id,
+          forStudent: row.forStudent,
+          // 👉 regroupe 5/10 séances en **un seul paiement**
+          packKey: isPackForChild(row.lesson, row.forStudent)
+            ? packKeyForChild(row.lesson, row.forStudent)
             : null,
         }),
       });
@@ -491,7 +493,9 @@ export default function ParentPayments() {
                       <div className="font-bold text-primary">
                         {r.lesson.subject_id || 'Matière'}{' '}
                         <span className="text-gray-600 text-xs ml-2">
-                          {getDisplayAmountFor(r.lesson, r.forStudent) ? `${getDisplayAmountFor(r.lesson, r.forStudent).toFixed(2)} €` : ''}
+                          {getDisplayAmountForChild(r.lesson, r.forStudent)
+                            ? `${getDisplayAmountForChild(r.lesson, r.forStudent).toFixed(2)} €`
+                            : ''}
                         </span>
                       </div>
                       <div className="text-xs text-gray-500">Professeur : {r.teacherName || r.lesson.teacher_id}</div>
