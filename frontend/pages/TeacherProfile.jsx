@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import {
   doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc,
-  serverTimestamp, arrayUnion, onSnapshot,
+  serverTimestamp, arrayUnion, onSnapshot, deleteField,
 } from 'firebase/firestore';
 import BookingModal from '../components/BookingModal';
 
@@ -345,26 +345,28 @@ export default function TeacherProfile() {
       currentRole === "parent" && targetStudentId !== me.uid ? "child" : "self";
     const slots = Array.isArray(selected) ? selected : [selected];
     // --- helpers pack (au NIVEAU PARTICIPANT) ---
-    const clearPackForParticipant = () => ({
-      is_pack: false,
-      pack_id: null,
-      pack_hours_total: null,
-      pack_hours_remaining: null,
-      pack_type: null,
-      pack_mode: null,
-      require_accept_all: null,
+    const wipePackParticipant = (sid) => ({
+      [`participantsMap.${sid}.pack`]: deleteField(),
+      [`participantsMap.${sid}.is_pack`]: deleteField(),
+      [`participantsMap.${sid}.pack_id`]: deleteField(),
+      [`participantsMap.${sid}.pack_type`]: deleteField(),
+      [`participantsMap.${sid}.pack_mode`]: deleteField(),
+      [`participantsMap.${sid}.pack_hours`]: deleteField(),
+      [`participantsMap.${sid}.pack_hours_total`]: deleteField(),
+      [`participantsMap.${sid}.pack_hours_remaining`]: deleteField(),
+      [`participantsMap.${sid}.require_accept_all`]: deleteField(),
     });
 
-    const putPackForParticipant = (hours, mode, forcedPackId) => {
+    // Poser un pack propre pour un participant
+    const putPackParticipant = (sid, hours, mode, forcedPackId) => {
       if (!(hours === 5 || hours === 10)) return {};
       return {
-        is_pack: true,
-        pack_id: forcedPackId || `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${hours}_${mode}`,
-        pack_hours_total: hours,
-        pack_hours_remaining: hours,
-        pack_type: hours === 5 ? 'pack5' : 'pack10',
-        pack_mode: mode,                 // 'presentiel' | 'visio'
-        require_accept_all: true,
+        [`participantsMap.${sid}.pack`]: true,
+        [`participantsMap.${sid}.pack_id`]: forcedPackId || `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${hours}_${mode}`,
+        [`participantsMap.${sid}.pack_type`]: (hours === 5 ? 'pack5' : 'pack10'),
+        [`participantsMap.${sid}.pack_mode`]: mode,       // 'presentiel' | 'visio'
+        [`participantsMap.${sid}.pack_hours`]: hours,     // (pour compat avec ton front actuel)
+        [`participantsMap.${sid}.require_accept_all`]: true,
       };
     };
 
@@ -441,27 +443,26 @@ export default function TeacherProfile() {
               status: 'booked',
               student_id: targetStudentId,
 
-              // neutralise toute trace pack portée autrefois au niveau "lesson"
-              is_pack: false,
-              pack_hours: null,
-              pack_type: null,
-              pack_mode: null,
+              // sécurité : enlever tout vieux champ pack posé par le passé AU NIVEAU LEÇON
+              is_pack: deleteField(),
+              pack_hours: deleteField(),
+              pack_type: deleteField(),
+              pack_mode: deleteField(),
+              pack_hours_total: deleteField(),
+              pack_hours_remaining: deleteField(),
 
               participant_ids: Array.from(new Set([...(existingInd.participant_ids || []), targetStudentId])),
 
-              [`participantsMap.${targetStudentId}`]: {
-                ...(existingInd.participantsMap?.[targetStudentId] || {}),
-                parent_id: (bookingFor === 'child' ? me.uid : null),
-                booked_by: me.uid,
-                is_paid: false,
-                paid_by: null,
-                paid_at: null,
-                status: 'pending_teacher',
-                added_at: serverTimestamp(),
+              // on repart sur une demande “unitaire” => on efface tout Pack du participant
+              ...wipePackParticipant(targetStudentId),
 
-                // ✅ reprise unitaire -> enlève complètement le pack pour ce participant
-                ...clearPackForParticipant(),
-              },
+              [`participantsMap.${targetStudentId}.parent_id`]: (bookingFor === 'child' ? me.uid : null),
+              [`participantsMap.${targetStudentId}.booked_by`]: me.uid,
+              [`participantsMap.${targetStudentId}.is_paid`]: false,
+              [`participantsMap.${targetStudentId}.paid_by`]: null,
+              [`participantsMap.${targetStudentId}.paid_at`]: null,
+              [`participantsMap.${targetStudentId}.status`]: 'pending_teacher',
+              [`participantsMap.${targetStudentId}.added_at`]: serverTimestamp(),
             });
             await addDoc(collection(db, 'notifications'), {
               user_id: teacherId,
@@ -502,26 +503,25 @@ export default function TeacherProfile() {
           //    b) groupe où je suis "rejected" -> passer ce participant en pending_teacher
           if (rejectedInGroupDoc) {
             const { id: gId, data: g } = rejectedInGroupDoc;
-            const wantSingle = !isPack; // si l'utilisateur relance 1 créneau, pas un pack
-            await updateDoc(doc(db, 'lessons', gId), {
-              participant_ids: Array.from(new Set([...(g.participant_ids || []), targetStudentId])),
-              [`participantsMap.${targetStudentId}`]: {
-                ...(g.participantsMap?.[targetStudentId] || {}),
-                parent_id: (bookingFor === 'child' ? me.uid : null),
-                booked_by: me.uid,
-                is_paid: false,
-                paid_by: null,
-                paid_at: null,
-                status: 'pending_teacher',
-                added_at: serverTimestamp(),
+            const wantSingle = !(packHours === 5 || packHours === 10);
 
-                // ✅ unitaire => on retire tout le pack
-                ...(wantSingle
-                  ? clearPackForParticipant()
-                  // ✅ relance d’un NOUVEAU pack => on écrase avec un nouvel id
-                  : putPackForParticipant(packHours, bookMode)
-                ),
-              },
+            const basePayload = {
+              participant_ids: Array.from(new Set([...(g.participant_ids || []), targetStudentId])),
+              [`participantsMap.${targetStudentId}.parent_id`]: (bookingFor === 'child' ? me.uid : null),
+              [`participantsMap.${targetStudentId}.booked_by`]: me.uid,
+              [`participantsMap.${targetStudentId}.is_paid`]: false,
+              [`participantsMap.${targetStudentId}.paid_by`]: null,
+              [`participantsMap.${targetStudentId}.paid_at`]: null,
+              [`participantsMap.${targetStudentId}.status`]: 'pending_teacher',
+              [`participantsMap.${targetStudentId}.added_at`]: serverTimestamp(),
+            };
+
+            await updateDoc(doc(db, 'lessons', gId), {
+              ...basePayload,
+              ...(wantSingle
+                ? wipePackParticipant(targetStudentId)               // unitaire => on enlève tout Pack
+                : putPackParticipant(targetStudentId, packHours, bookMode) // nouveau pack => on écrase proprement
+              ),
             });
             await addDoc(collection(db, "notifications"), {
               user_id: teacherId,
@@ -556,18 +556,22 @@ export default function TeacherProfile() {
                 joined = true;
                 break;
               }
-              await updateDoc(doc(db, "lessons", d.id), {
+              await updateDoc(doc(db, 'lessons', d.id), {
                 participant_ids: arrayUnion(targetStudentId),
-                [`participantsMap.${targetStudentId}`]: {
-                  parent_id: bookingFor === "child" ? me.uid : null,
-                  booked_by: me.uid,
-                  is_paid: false,
-                  paid_by: null,
-                  paid_at: null,
-                  status: "pending_teacher",
-                  added_at: serverTimestamp(),
-                  ...participantPack, // ✅ pack au niveau participant OK
-                },
+
+                // infos communes
+                [`participantsMap.${targetStudentId}.parent_id`]: (bookingFor === 'child' ? me.uid : null),
+                [`participantsMap.${targetStudentId}.booked_by`]: me.uid,
+                [`participantsMap.${targetStudentId}.is_paid`]: false,
+                [`participantsMap.${targetStudentId}.paid_by`]: null,
+                [`participantsMap.${targetStudentId}.paid_at`]: null,
+                [`participantsMap.${targetStudentId}.status`]: 'pending_teacher',
+                [`participantsMap.${targetStudentId}.added_at`]: serverTimestamp(),
+
+                // pack : soit on met un pack propre, soit on nettoie tout
+                ...((packHours === 5 || packHours === 10)
+                    ? putPackParticipant(targetStudentId, packHours, bookMode)
+                    : wipePackParticipant(targetStudentId)),
               });
               await addDoc(collection(db, "notifications"), {
                 user_id: teacherId,
@@ -596,14 +600,9 @@ export default function TeacherProfile() {
           // Si un mode “groupé” ou “individuel” existe côté UI (par exemple, un switch ou pack sélectionné),
           // ajoute ici la vraie condition utilisateur.
           // Pour l’instant, on se base sur la capacité du prof :
-          const userAskedGroup = allowGroup; // tu peux plus tard le remplacer par un vrai choix
 
-          const createAsGroup = userAskedGroup && allowGroup;
-
-          // Ces deux variables existent déjà chez toi; sinon adapte:
-          // - isPack: booléen (pack sélectionné ?)
-          // - packHoursSelected: 5 ou 10 (si disponible)
-          const participantPack = packFieldsForParticipant(isPack, packHours);
+          const isPack = (packHours === 5 || packHours === 10);
+          const createAsGroup = allowGroup; // ta logique déjà en place
 
           const newLessonRef = await addDoc(collection(db, 'lessons'), {
             teacher_id: teacherId,
@@ -613,9 +612,11 @@ export default function TeacherProfile() {
             price_per_hour: hourly || 0,
             slot_day: slot.day,
             slot_hour: slot.hour,
+
             is_group: createAsGroup,
             capacity: createAsGroup ? defaultCap : 1,
             student_id: createAsGroup ? null : targetStudentId,
+
             participant_ids: [targetStudentId],
             participantsMap: {
               [targetStudentId]: {
@@ -626,13 +627,17 @@ export default function TeacherProfile() {
                 paid_at: null,
                 status: 'pending_teacher',
                 added_at: serverTimestamp(),
-
-                // ✅ si pack demandé -> on pose un pack neuf, sinon on purge tout pack
-                ...(isPack ? putPackForParticipant(packHours, bookMode)
-                          : clearPackForParticipant()),
               },
             },
+
             mode: bookMode,
+          });
+
+          // Pose/Nettoie le pack APRES création (pour ne pas polluer la leçon)
+          await updateDoc(newLessonRef, {
+            ...(isPack
+              ? putPackParticipant(targetStudentId, packHours, bookMode)
+              : wipePackParticipant(targetStudentId)),
           });
 
           // Optionnel: notif prof (garde ta version si tu en as déjà une)
