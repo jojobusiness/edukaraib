@@ -530,6 +530,7 @@ export default function TeacherLessons() {
         // ----- Construire pendingIndiv (tous statuts “pending”)
         const pIndivRaw = raw.filter((l) => {
           const isPending = PENDING_SET.has(String(l.status || ''));
+          if (statusStr === 'rejected' || statusStr === 'removed' || statusStr === 'deleted') return false;
           // we only keep true individual lessons that are NOT part of a pack
           return !l.is_group && !isLessonPartOfPack(l) && isPending;
         });
@@ -539,6 +540,8 @@ export default function TeacherLessons() {
         raw
           .filter((l) => !isLessonPartOfPack(l) && isGroupLessonStrict(l))
           .forEach((l) =>  {
+            // ⛔ Ignore tout cours dont le statut global est déjà rejeté
+            if (String(l.status || '').toLowerCase() === 'rejected') return;
             const ids = Array.isArray(l.participant_ids)
               ? Array.from(new Set(l.participant_ids))
               : Object.keys(l.participantsMap || {});
