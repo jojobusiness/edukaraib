@@ -161,16 +161,6 @@ function getReviewerId(r = {}) {
   return r.reviewer_id || r.author_id || r.user_id || r.student_id || r.created_by || null;
 }
 
-// — pack au niveau PARTICIPANT —
-// packHours: 5 ou 10 (sinon null/undefined => pas de pack)
-function packFieldsForParticipant(isPack, packHours) {
-  if (!isPack || !(packHours === 5 || packHours === 10)) return {};
-  return {
-    is_pack: true,
-    pack_hours_total: packHours,
-    pack_hours_remaining: packHours,
-  };
-}
 
 export default function TeacherProfile() {
   const { teacherId } = useParams();
@@ -370,6 +360,31 @@ export default function TeacherProfile() {
       require_accept_all: true,
     } : {});
 
+    // — tout enlever (reprise d'UN créneau) —
+    const clearPackForParticipant = () => ({
+      is_pack: false,
+      pack_id: null,
+      pack_hours_total: null,
+      pack_hours_remaining: null,
+      pack_type: null,
+      pack_mode: null,
+      require_accept_all: null,
+    });
+
+    // — poser/écraser un pack 5h/10h pour CE participant —
+    const putPackForParticipant = (hours, mode, packId) => {
+      if (!(hours === 5 || hours === 10)) return {};
+      return {
+        is_pack: true,
+        pack_id: packId || `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${hours}_${mode}`,
+        pack_hours_total: hours,
+        pack_hours_remaining: hours,
+        pack_type: hours === 5 ? 'pack5' : 'pack10',
+        pack_mode: mode,               // 'presentiel' | 'visio'
+        require_accept_all: true,
+      };
+    };
+
     // ❗️Toujours dériver ces 2 constantes ici (avant tout usage en dessous)
     const wantSingle = !isPack; // l’utilisateur (re)demande 1 seul créneau => pas un pack
     const participantPack = packFieldsForParticipant(targetStudentId); // {} si wantSingle
@@ -425,13 +440,31 @@ export default function TeacherProfile() {
 
             // 💡 “Réactiver” l’ancien individuel rejeté pour CET élève, sans pack si wantSingle
             await updateDoc(doc(db, 'lessons', existingIndId), {
-              status: 'pending_teacher',
-              student_id: targetStudentId,          // 🔧 IMPORTANT pour bien classer par enfant
-              // 🔧 on enlève toujours le pack ici (reprise d’un seul créneau)
+              // statut global
+              status: 'booked',
+              student_id: targetStudentId,
+
+              // ⚠️ ancienne empreinte "pack" au NIVEAU LEÇON (par ancien schéma) -> neutralisée
               is_pack: false,
               pack_hours: null,
               pack_type: null,
               pack_mode: null,
+
+              // sécurité : présence dans participant_ids
+              participant_ids: Array.from(new Set([...(existingInd.participant_ids || []), targetStudentId])),
+
+              // ⚙️ et SURTOUT on remet à zéro les champs pack du PARTICIPANT
+              [`participantsMap.${targetStudentId}`]: {
+                ...(existingInd.participantsMap?.[targetStudentId] || {}),
+                parent_id: bookingFor === 'child' ? me.uid : null,
+                booked_by: me.uid,
+                is_paid: false,
+                paid_by: null,
+                paid_at: null,
+                status: 'pending_teacher',
+                added_at: serverTimestamp(),
+                ...clearPackForParticipant(),       // <<< pack complètement retiré pour cette reprise unitaire
+              },
             });
             await addDoc(collection(db, 'notifications'), {
               user_id: teacherId,
@@ -472,6 +505,8 @@ export default function TeacherProfile() {
           //    b) groupe où je suis "rejected" -> passer ce participant en pending_teacher
           if (rejectedInGroupDoc) {
             const { id: gId, data: g } = rejectedInGroupDoc;
+            const wantSingle = !(packHours === 5 || packHours === 10);
+
             await updateDoc(doc(db, "lessons", gId), {
               participant_ids: Array.from(new Set([...(g.participant_ids || []), targetStudentId])),
               [`participantsMap.${targetStudentId}`]: {
@@ -484,15 +519,8 @@ export default function TeacherProfile() {
                 status: "pending_teacher",
                 added_at: serverTimestamp(),
                 ...(wantSingle
-                  ? {
-                      // re-demande d’UN seul créneau → pas de pack côté participant
-                      is_pack: false,
-                      pack_hours_total: null,
-                      pack_hours_remaining: null,
-                      pack_mode: null,
-                      require_accept_all: null,
-                    }
-                  : participantPack // pack 5h/10h si l’utilisateur l’a bien choisi
+                  ? clearPackForParticipant()           // <<< reprise unitaire -> on enlève totalement le pack
+                  : putPackForParticipant(packHours, bookMode) // reprise en NOUVEAU pack -> on écrase
                 ),
               },
             });
@@ -582,20 +610,13 @@ export default function TeacherProfile() {
             teacher_id: teacherId,
             status: 'booked',
             created_at: serverTimestamp(),
-
-            subject_id: Array.isArray(teacher?.subjects)
-              ? teacher.subjects.join(', ')
-              : (teacher?.subjects || ''),
-
+            subject_id: Array.isArray(teacher?.subjects) ? teacher.subjects.join(', ') : (teacher?.subjects || ''),
             price_per_hour: hourly || 0,
             slot_day: slot.day,
             slot_hour: slot.hour,
-
-            // --- ici on fixe le mode ---
             is_group: createAsGroup,
             capacity: createAsGroup ? defaultCap : 1,
-            student_id: createAsGroup ? null : targetStudentId,   // 🔧 clé pour classer par enfant en individuel
-
+            student_id: createAsGroup ? null : targetStudentId,
             participant_ids: [targetStudentId],
             participantsMap: {
               [targetStudentId]: {
@@ -606,7 +627,10 @@ export default function TeacherProfile() {
                 paid_at: null,
                 status: 'pending_teacher',
                 added_at: serverTimestamp(),
-                ...participantPack, // garde les infos pack
+                ...(packHours === 5 || packHours === 10
+                  ? putPackForParticipant(packHours, bookMode)  // <<< NOUVEAU pack propre
+                  : clearPackForParticipant()                    // <<< aucune trace pack
+                ),
               },
             },
             mode: bookMode,
@@ -674,8 +698,14 @@ export default function TeacherProfile() {
         setPackHours(1);
       }
       setShowBooking(false);
+      
+      const onlyOk = results.filter(r => r.status !== 'error');
+      const hasOk  = onlyOk.length > 0;
+
       setConfirmationMsg(
-        parts.length ? parts.join(" ") : "Demandes envoyées."
+        hasOk
+          ? parts.join(' ')
+          : "Erreur lors de la réservation. Réessayez plus tard."
       );
     } catch (e) {
       console.error("Booking error (batch)", e);
