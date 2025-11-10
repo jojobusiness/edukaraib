@@ -19,11 +19,6 @@ function computeBookedAndRemaining(lessonsDocs, teacherDoc, forStudentId) {
   });
   const blocked = [];
   const remainingMap = {};
-  const teacherGroupEnabled = !!teacherDoc?.group_enabled;
-  const teacherDefaultCap =
-    typeof teacherDoc?.group_capacity === 'number' && teacherDoc.group_capacity > 1
-      ? Math.floor(teacherDoc.group_capacity)
-      : 1;
 
   for (const [key, { individuals, groups }] of bySlot.entries()) {
     const [day, hourStr] = key.split('|');
@@ -161,6 +156,16 @@ function getReviewerId(r = {}) {
   return r.reviewer_id || r.author_id || r.user_id || r.student_id || r.created_by || null;
 }
 
+// Un participant "actif" = pas 'rejected' / 'removed' / 'deleted'
+const isActiveStatus = (s) => !['rejected','removed','deleted'].includes(String(s||'').toLowerCase());
+
+function activeParticipantsCount(lesson = {}) {
+  const ids = Array.isArray(lesson.participant_ids) ? lesson.participant_ids : [];
+  const pm  = lesson.participantsMap || {};
+  let n = 0;
+  ids.forEach((sid) => { if (isActiveStatus(pm?.[sid]?.status || lesson.status)) n++; });
+  return n;
+}
 
 export default function TeacherProfile() {
   const { teacherId } = useParams();
@@ -185,6 +190,44 @@ export default function TeacherProfile() {
   const [bookMode, setBookMode] = useState('presentiel'); // 'presentiel' | 'visio'
   const [packHours, setPackHours] = useState(1);          // 1 | 5 | 10
   
+  async function safelyApplyGroupSettings({ teacherId, wantGroup, capacity }) {
+    // wantGroup: boolean (true = activer groupé, false = individuel)
+    // capacity:  nombre (>=1)
+    const cap = Math.max(1, Number(capacity || 1));
+
+    const qLessons = query(collection(db, 'lessons'), where('teacher_id', '==', teacherId));
+    const snap = await getDocs(qLessons);
+
+    const updates = [];
+    for (const d of snap.docs) {
+      const l = d.data();
+
+      // 🔒 Ne JAMAIS modifier les leçons qui ont déjà des participants "actifs"
+      if (activeParticipantsCount(l) > 0) continue;
+
+      // Leçon "vide" => on peut ajuster son "format"
+      const ref = doc(db, 'lessons', d.id);
+      const patch = {
+        is_group: !!wantGroup,
+        capacity: wantGroup ? cap : 1,
+        // On ne touche PAS au status s'il y a des participants (déjà exclu ci-dessus)
+        // Ici la leçon est vide: status peut rester tel quel (booked, draft, etc.)
+      };
+
+      // Hygiène: enlever d’éventuels résidus pack “globaux” au niveau leçon
+      patch.is_pack = deleteField();
+      patch.pack_type = deleteField();
+      patch.pack_mode = deleteField();
+      patch.pack_hours = deleteField();
+      patch.pack_hours_total = deleteField();
+      patch.pack_hours_remaining = deleteField();
+
+      updates.push(updateDoc(ref, patch));
+    }
+
+    if (updates.length) await Promise.allSettled(updates);
+  }
+
   // Charger prof
   useEffect(() => {
     const unsubTeacher = onSnapshot(doc(db, 'users', teacherId), (snap) => {
@@ -620,7 +663,6 @@ export default function TeacherProfile() {
           // ajoute ici la vraie condition utilisateur.
           // Pour l’instant, on se base sur la capacité du prof :
 
-          const isPack = (packHours === 5 || packHours === 10);
           const createAsGroup = allowGroup; // ta logique déjà en place
 
           const newLessonRef = await addDoc(collection(db, 'lessons'), {
@@ -653,7 +695,7 @@ export default function TeacherProfile() {
           });
 
           // Pose/Nettoie le pack APRES création (pour ne pas polluer la leçon)
-          await updateDoc(newLessonRef, {
+          await updateDoc(doc(db, 'lessons', newLessonRef.id), {
             ...(isPack
               ? putPackParticipant(targetStudentId, packHours, bookMode)
               : wipePackParticipant(targetStudentId)),

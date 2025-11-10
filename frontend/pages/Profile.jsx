@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
-import { auth, db, storage } from '../lib/firebase';
+import { doc, getDoc, updateDoc, collection, getDocs, where, query, deleteField } from 'firebase/firestore';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import {
@@ -184,6 +184,50 @@ export default function Profile() {
     }));
   };
 
+  // Helper : compter les participants actifs
+  const isActiveStatus = (s) => !['rejected','removed','deleted'].includes(String(s||'').toLowerCase());
+
+  function activeParticipantsCount(lesson = {}) {
+    const ids = Array.isArray(lesson.participant_ids) ? lesson.participant_ids : [];
+    const pm  = lesson.participantsMap || {};
+    let n = 0;
+    ids.forEach((sid) => { if (isActiveStatus(pm?.[sid]?.status || lesson.status)) n++; });
+    return n;
+  }
+
+  // Met à jour en toute sécurité les cours (ne touche pas ceux avec des participants)
+  async function safelyApplyGroupSettings(teacherId, wantGroup, capacity) {
+    try {
+      const cap = Math.max(1, Number(capacity || 1));
+      const qLessons = query(collection(db, 'lessons'), where('teacher_id', '==', teacherId));
+      const snap = await getDocs(qLessons);
+
+      const updates = [];
+      for (const d of snap.docs) {
+        const l = d.data();
+
+        // 🛑 ne pas modifier les cours avec participants actifs
+        if (activeParticipantsCount(l) > 0) continue;
+
+        const ref = doc(db, 'lessons', d.id);
+        const patch = {
+          is_group: !!wantGroup,
+          capacity: wantGroup ? cap : 1,
+          is_pack: deleteField(),
+          pack_hours: deleteField(),
+          pack_type: deleteField(),
+          pack_mode: deleteField(),
+        };
+        updates.push(updateDoc(ref, patch));
+      }
+
+      if (updates.length) await Promise.allSettled(updates);
+      console.log('Cours vides mis à jour :', updates.length);
+    } catch (err) {
+      console.error('Erreur mise à jour leçons', err);
+    }
+  }
+
   const handleSave = async (e) => {
     e.preventDefault();
     if (!profile.uid) return;
@@ -348,6 +392,9 @@ export default function Profile() {
       delete toSave.uid;
 
       await updateDoc(ref, toSave);
+      if (profile.role === 'teacher') {
+        await safelyApplyGroupSettings(profile.uid, !!profile.group_enabled, profile.group_capacity);
+      }
       setProfile((p) => ({ ...p, avatarUrl, fullName }));
       alert('Profil mis à jour !');
     } catch (err) {
