@@ -45,6 +45,44 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
   // Récup métadonnées robustes
   const md = metadata || {};
   const lessonId = md.lesson_id || md.lessonId;
+
+  // ✅ Support des packs : plusieurs leçons dans metadata.lesson_ids
+  const lessonIds = (md.lesson_ids || '')
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  if (lessonIds.length > 1) {
+    console.log(`Webhook: paiement pack détecté (${lessonIds.length} leçons)`);
+
+    for (const id of lessonIds) {
+      const ref = adminDb.collection('lessons').doc(String(id));
+      const snap = await ref.get();
+      if (!snap.exists) continue;
+
+      if (forStudent) {
+        // met à jour le participant du pack
+        await ref.set({
+          participantsMap: {
+            [String(forStudent)]: {
+              ...(snap.data()?.participantsMap?.[String(forStudent)] || {}),
+              is_paid: true,
+              paid_at: new Date(),
+              paid_by: payerUid || null,
+            },
+          },
+        }, { merge: true });
+      } else {
+        // fallback si pas de participant précis
+        await ref.set({
+          is_paid: true,
+          paid_at: new Date(),
+          paid_by: payerUid || null,
+        }, { merge: true });
+      }
+    }
+  }
+
   const forStudent = md.for_student || md.student_id || md.studentId;
   const teacherUid = md.teacher_uid || md.teacher_id || '';
   const teacherAmountCents = Number(md.teacher_amount_cents || 0);
