@@ -20,6 +20,7 @@ export default function PayCancel() {
   const [paying, setPaying] = useState(false);
   const [err, setErr] = useState('');
 
+  // Rôle pour l'UX de navigation
   useEffect(() => {
     const run = async () => {
       try {
@@ -32,24 +33,23 @@ export default function PayCancel() {
     run();
   }, []);
 
+  // Reprendre le paiement:
+  // 1) /api/pay/diag (vérifie accès, confirmé, non-payé, etc.)
+  // 2) /api/pay/create-checkout-session
   const resumePayment = async () => {
     setErr('');
     setPaying(true);
     try {
-      // 1) Diagnostic : vérifie accès, confirmation, non-payé, etc.
-      const diag = await fetchWithAuth('/api/pay/diag', {
+      await fetchWithAuth('/api/pay/diag', {
         method: 'POST',
         body: JSON.stringify({ lessonId, forStudent: forStudent || undefined }),
       });
-      if (!diag.ok) {
-        throw new Error(diag.error || 'Diagnostic paiement refusé.');
-      }
 
-      // 2) Créer une nouvelle session Checkout
       const data = await fetchWithAuth('/api/pay/create-checkout-session', {
         method: 'POST',
         body: JSON.stringify({ lessonId, forStudent: forStudent || undefined }),
       });
+
       if (!data?.url) throw new Error('Lien de paiement introuvable.');
       window.location.href = data.url;
     } catch (e) {
