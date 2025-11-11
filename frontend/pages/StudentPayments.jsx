@@ -124,8 +124,7 @@ const packKeyForMe = (l, uid) => {
   if (!isPackForMe(l, uid)) return `lesson:${l.id}:${uid}`;
   const hours = packHoursForMe(l, uid);
   const mode  = (String(l.mode) === 'visio' || l.is_visio) ? 'visio' : 'presentiel';
-  const e     = entryForMe(l, uid);
-  return String(e.pack_id || l.pack_id || `AUTO:${l.teacher_id}|${mode}|${hours}|${uid}`);
+  return `STABLE:${l.teacher_id}|${uid}|${mode}|${hours}`;
 };
 
 const detectSourceForMe = (l, uid) => {
@@ -156,6 +155,15 @@ const getDisplayAmountForMe = (l, uid) => {
   const fee = hours * 10;
   return (base || 0) + fee;
 };
+
+function packKeyFrom(lesson, studentId) {
+  const pm = lesson?.participantsMap?.[studentId];
+  if (pm?.pack_id) return pm.pack_id;
+
+  const hours = Number(pm?.pack_hours || lesson?.pack_hours || 1);
+  const mode  = (String(lesson?.mode) === 'visio' || lesson?.is_visio) ? 'visio' : 'presentiel';
+  return `AUTO:${lesson?.teacher_id}|${mode}|${hours}|${studentId}`;
+}
 
 export default function StudentPayments() {
   const [toPay, setToPay] = useState([]);
@@ -232,13 +240,25 @@ export default function StudentPayments() {
           teacherName: await teacherNameOf(l.teacher_id),
         })));
 
-        // --- Regroupement pack ---
+        // Map créneaux pour moi (uid)
+        const slotsByKey = new Map();
+        for (const l of enriched) {
+          const key = packKeyForMe(l, user.uid);
+          if (!slotsByKey.has(key)) slotsByKey.set(key, []);
+          const label =
+            (l.start_datetime?.toDate?.() && l.start_datetime.toDate().toLocaleString('fr-FR')) ||
+            (typeof l.start_datetime?.seconds === 'number' && new Date(l.start_datetime.seconds * 1000).toLocaleString('fr-FR')) ||
+            (l.slot_day ? `${l.slot_day} • ${String(l.slot_hour).padStart(2, '0')}:00` : '—');
+          slotsByKey.get(key).push(label);
+        }
+
+        // --- regroupement pack ---
         const groupMap = new Map();
         for (const l of enriched) {
-          const key    = packKeyForMe(l, user.uid);
+          const key = packKeyForMe(l, user.uid);
           const isPack = isPackForMe(l, user.uid);
           if (!groupMap.has(key)) {
-            groupMap.set(key, { ...l, __groupCount: isPack ? 1 : 0 });
+            groupMap.set(key, { ...l, __groupCount: isPack ? 1 : 0, __slots: slotsByKey.get(key) || [] });
           } else if (isPack) {
             const rep = groupMap.get(key);
             rep.__groupCount += 1;
@@ -404,6 +424,11 @@ export default function StudentPayments() {
                     <div className="text-xs text-gray-500">Professeur : {l.teacherName || l.teacher_id}</div>
                     <div className="text-xs text-gray-500">Type : {detectSourceForMe(l, uid)}</div>
                     <div className="text-xs text-gray-500">📅 {fmtDateTime(l.start_datetime, l.slot_day, l.slot_hour)}</div>
+                    {isPackForMe(l, uid) && l.__slots?.length > 0 && (
+                      <div className="text-xs text-gray-600 mt-1">
+                        Horaires du pack : {l.__slots.join(' • ')}
+                      </div>
+                    )}
                   </div>
 
                   <button

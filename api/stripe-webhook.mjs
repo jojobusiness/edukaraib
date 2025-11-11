@@ -44,7 +44,12 @@ export default async function handler(req, res) {
 async function markPaymentHeldAndUpdateLesson(refs, metadata) {
   // Récup métadonnées robustes
   const md = metadata || {};
-  const lessonId = md.lesson_id || md.lessonId;
+  const lessonId  = md.lesson_id || md.lessonId;
+
+  // ⚠️ DÉFINIR AVANT TOUT USAGE
+  const forStudent = md.for_student || md.student_id || md.studentId || null;
+  const payerUid   = md.payer_uid || md.payerUid || null;
+  const teacherUid = md.teacher_uid || md.teacher_id || null;
 
   // ✅ Support des packs : plusieurs leçons dans metadata.lesson_ids
   const lessonIds = (md.lesson_ids || '')
@@ -56,12 +61,11 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
     console.log(`Webhook: paiement pack détecté (${lessonIds.length} leçons)`);
 
     for (const id of lessonIds) {
-      const ref = adminDb.collection('lessons').doc(String(id));
+      const ref  = adminDb.collection('lessons').doc(String(id));
       const snap = await ref.get();
       if (!snap.exists) continue;
 
       if (forStudent) {
-        // met à jour le participant du pack
         await ref.set({
           participantsMap: {
             [String(forStudent)]: {
@@ -73,7 +77,6 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
           },
         }, { merge: true });
       } else {
-        // fallback si pas de participant précis
         await ref.set({
           is_paid: true,
           paid_at: new Date(),
@@ -83,12 +86,9 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
     }
   }
 
-  const forStudent = md.for_student || md.student_id || md.studentId;
-  const teacherUid = md.teacher_uid || md.teacher_id || '';
   const teacherAmountCents = Number(md.teacher_amount_cents || 0);
   const siteFeeCents = Number(md.site_fee_cents || 0);
   const isGroup = String(md.is_group || '') === 'true';
-  const payerUid = md.payer_uid || '';
 
   if (!lessonId) return; // rien à faire sans leçon
 

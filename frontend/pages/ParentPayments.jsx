@@ -134,9 +134,7 @@ const packKeyForChild = (l, sid) => {
   if (!isPackForChild(l, sid)) return `lesson:${l.id}:${sid}`;
   const hours = packHoursForChild(l, sid);
   const mode  = (String(l.mode) === 'visio' || l.is_visio) ? 'visio' : 'presentiel';
-  // on préfère la vraie id si dispo, sinon on fabrique une clé stable par prof+élève+mode+heures
-  const e = entryForChild(l, sid);
-  return String(e.pack_id || l.pack_id || `AUTO:${l.teacher_id}|${mode}|${hours}|${sid}`);
+  return `STABLE:${l.teacher_id}|${sid}|${mode}|${hours}`;
 };
 
 const isEligibleForChildPayment = (lesson, sid) => {
@@ -180,6 +178,7 @@ const pmFor = (lesson, uid) => {
   }
   return pm?.[uid] || null;
 };
+
 const isPackFor = (lesson, uid) => {
   const p = pmFor(lesson, uid);
   return !!(p && p.pack && (p.pack_hours === 5 || p.pack_hours === 10));
@@ -229,6 +228,15 @@ const uidStr = (v)=> (v==null? "" : String(v));
 
 function isGroup(lesson){
   return Array.isArray(lesson?.participant_ids) && lesson.participant_ids.length>0;
+}
+
+function packKeyFrom(lesson, studentId) {
+  const pm = lesson?.participantsMap?.[studentId];
+  if (pm?.pack_id) return pm.pack_id;
+
+  const hours = Number(pm?.pack_hours || lesson?.pack_hours || 1);
+  const mode  = (String(lesson?.mode) === 'visio' || lesson?.is_visio) ? 'visio' : 'presentiel';
+  return `AUTO:${lesson?.teacher_id}|${mode}|${hours}|${studentId}`;
 }
 
 export default function ParentPayments() {
@@ -310,6 +318,14 @@ export default function ParentPayments() {
         const lessons = Array.from(combined.values());
         const rows = [];
 
+        const slotsByKey = new Map();
+        for (const r of rows) {
+          const key = packKeyForChild(r.lesson, r.forStudent);
+          if (!slotsByKey.has(key)) slotsByKey.set(key, []);
+          const label = fmtDateTime(r.lesson.start_datetime, r.lesson.slot_day, r.lesson.slot_hour);
+          slotsByKey.get(key).push(label);
+        }
+
         for (const l of lessons) {
           // IDs (enfants + parent) présents dans cette leçon
           const presentIds = new Set();
@@ -341,7 +357,7 @@ export default function ParentPayments() {
           const key = packKeyForChild(r.lesson, r.forStudent);
           const isPack = isPackForChild(r.lesson, r.forStudent);
           if (!groupMap.has(key)) {
-            groupMap.set(key, { ...r, __groupCount: isPack ? 1 : 0 });
+            groupMap.set(key, { ...r, __groupCount: isPack ? 1 : 0, __slots: slotsByKey.get(key) || [] });
           } else if (isPack) {
             const rep = groupMap.get(key);
             rep.__groupCount += 1;
@@ -523,6 +539,14 @@ export default function ParentPayments() {
                         {r.forStudent === auth.currentUser?.uid ? 'Parent' : 'Enfant'} : {r.childName || r.forStudent}
                       </div>
                       <div className="text-xs text-gray-500">Type : {detectSourceFor(r.lesson, r.forStudent)}</div>
+                      
+                      {/* si pack, on liste tous les créneaux */}
+                      {isPackForChild(r.lesson, r.forStudent) && r.__slots?.length > 0 && (
+                        <div className="text-xs text-gray-600 mt-1">
+                          Horaires du pack : {r.__slots.join(' • ')}
+                        </div>
+                      )}
+                      
                       <div className="text-xs text-gray-500">📅 {fmtDateTime(r.lesson.start_datetime, r.lesson.slot_day, r.lesson.slot_hour)}</div>
                     </div>
 
