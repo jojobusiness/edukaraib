@@ -39,29 +39,26 @@ const isPaidForStudent = (lesson, studentId) => {
   return false;
 };
 
-// --- NOUVEAU : le prof doit avoir validé (pas "pending_teacher"/"booked"/"pending") ---
+// --- le prof doit avoir validé (pas "pending_teacher"/"booked"/"pending")
 const notPendingTeacher = (row) => {
   const l = row?.lesson;
   const sid = row?.forStudent;
   if (!l) return false;
 
-  // Cours en groupe : on regarde le statut de l'élève dans participantsMap
   if (l.is_group) {
     const st = l?.participantsMap?.[sid]?.status || '';
-    // on considère payables uniquement si plus "en attente prof"
     return !['pending_teacher', 'requested', 'pending', 'booked'].includes(String(st));
   }
 
-  // Cours individuel : on regarde le statut global de la leçon
   const st = String(l.status || '');
   return !['pending_teacher', 'requested', 'pending', 'booked'].includes(st);
 };
 
-// --- NOUVEAU : helpers d'étiquette ---
+// --- Helpers d'étiquette ---
 const lessonMode = (l) => (String(l.mode) === 'visio' || l.is_visio === true ? 'visio' : 'presentiel');
 const labelMode = (l) => (lessonMode(l) === 'visio' ? 'Visio' : 'Présentiel');
 const detectSource = (l) => {
-  const modeLabel = labelMode(l); // Visio | Présentiel
+  const modeLabel = labelMode(l);
   const packType = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
   if (packType === 'pack5' || String(l.pack_hours) === '5' || l.is_pack5 === true) return `Pack 5h · ${modeLabel}`;
   if (packType === 'pack10' || String(l.pack_hours) === '10' || l.is_pack10 === true) return `Pack 10h · ${modeLabel}`;
@@ -74,14 +71,19 @@ const entryFor = (l, sid) => l?.participantsMap?.[sid] || null;
 const packHoursFor = (l, sid) => {
   const e = entryFor(l, sid);
   if (!e) return 1;
-  if (e.is_pack5 === true || String(e.pack?.hours) === '5') return 5;
   if (e.is_pack10 === true || String(e.pack?.hours) === '10') return 10;
+  if (e.is_pack5 === true  || String(e.pack?.hours) === '5')  return 5;
+  if (String(e.pack_hours) === '10') return 10;
+  if (String(e.pack_hours) === '5')  return 5;
   return 1;
 };
 
 const detectSourceFor = (l, sid) => {
-  if (isPackFor(l, sid)) return packHoursFor(l, sid) === 10 ? 'Pack 10h · ' + (String(l.mode)==='visio'||l.is_visio?'Visio':'Présentiel')
-                                                          : 'Pack 5h · ' + (String(l.mode)==='visio'||l.is_visio?'Visio':'Présentiel');
+  if (isPackForChild(l, sid)) {
+    return packHoursFor(l, sid) === 10
+      ? 'Pack 10h · ' + (String(l.mode)==='visio'||l.is_visio?'Visio':'Présentiel')
+      : 'Pack 5h · '   + (String(l.mode)==='visio'||l.is_visio?'Visio':'Présentiel');
+  }
   return (String(l.mode) === 'visio' || l.is_visio === true) ? 'Visio' : 'Présentiel';
 };
 
@@ -148,7 +150,6 @@ const pmFor = (lesson, uid) => {
   const pm = lesson?.participantsMap || {};
   if (Array.isArray(lesson?.participant_ids)) return pm?.[uid] || null;        // groupe
   if (lesson?.student_id && String(lesson.student_id) === String(uid)) {
-    // individuel : on tolère le stockage global
     return pm?.[uid] || { is_paid: !!lesson.is_paid, status: lesson.status };
   }
   return pm?.[uid] || null;
@@ -160,11 +161,10 @@ const isPackFor = (lesson, uid) => {
 };
 
 export default function ParentPayments() {
-  const [toPay, setToPay] = useState([]);   // [{ lesson, forStudent, teacherName, childName }]
+  const [toPay, setToPay] = useState([]);   // [{ lesson, forStudent, teacherName, childName, __slots? }]
   const [paid, setPaid] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // clés d’action par ligne
   const [payingKey, setPayingKey] = useState(null);
   const [refundingKey, setRefundingKey] = useState(null);
 
@@ -220,7 +220,7 @@ export default function ParentPayments() {
       const kidsSnap = await getDocs(query(collection(db, 'students'), where('parent_id', '==', user.uid)));
       const kids = kidsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-      // IDs suivis = enfants + le parent lui-même (✅ pour voir ses propres paiements)
+      // IDs suivis = enfants + le parent lui-même
       const childIds = Array.from(
         new Set(
           [user.uid, ...kids.flatMap(k => [k.id, k.user_id, k.uid])]
@@ -229,7 +229,7 @@ export default function ParentPayments() {
         )
       );
 
-      // 2) Abonnements live → legacy student_id IN (par lot) + groupes array-contains (par id suivi)
+      // 2) Abonnements live
       const chunks = []; for (let i = 0; i < childIds.length; i += 10) chunks.push(childIds.slice(i, i + 10));
       let combined = new Map();
       const parentUid = user.uid;
@@ -238,16 +238,8 @@ export default function ParentPayments() {
         const lessons = Array.from(combined.values());
         const rows = [];
 
-        const slotsByKey = new Map();
-        for (const r of rows) {
-          const key = packKeyForChild(r.lesson, r.forStudent);
-          if (!slotsByKey.has(key)) slotsByKey.set(key, []);
-          const label = fmtDateTime(r.lesson.start_datetime, r.lesson.slot_day, r.lesson.slot_hour);
-          slotsByKey.get(key).push(label);
-        }
-
+        // -- Construire d'abord rows --
         for (const l of lessons) {
-          // IDs (enfants + parent) présents dans cette leçon
           const presentIds = new Set();
           if (l.student_id && childIds.includes(String(l.student_id))) presentIds.add(String(l.student_id));
           if (Array.isArray(l.participant_ids)) {
@@ -256,23 +248,33 @@ export default function ParentPayments() {
               if (childIds.includes(sid)) presentIds.add(sid);
             });
           }
-          // Une ligne PAR id présent
           for (const sid of presentIds) {
             const [teacherName, childNameResolved] = await Promise.all([
               teacherNameOf(l.teacher_id),
-              // Affichage “Moi (parent)” pour le parent
               sid === parentUid ? Promise.resolve('Moi (parent)') : childNameOf(sid),
             ]);
             rows.push({ lesson: l, forStudent: sid, teacherName, childName: childNameResolved });
           }
         }
 
+        // -- Ensuite, construire la map des créneaux PAR pack/enfant --
+        const slotsByKey = new Map();
+        for (const r of rows) {
+          const key = packKeyForChild(r.lesson, r.forStudent);
+          if (!slotsByKey.has(key)) slotsByKey.set(key, []);
+          const label = fmtDateTime(r.lesson.start_datetime, r.lesson.slot_day, r.lesson.slot_hour);
+          if (label && label !== '—') {
+            slotsByKey.get(key).push(label);
+          }
+        }
+        // (optionnel) dédoublonner + tri
+        for (const [k, arr] of slotsByKey) {
+          const uniq = Array.from(new Set(arr));
+          slotsByKey.set(k, uniq);
+        }
+
         // --- Regroupement pack : 1 bloc pack par enfant ---
         const groupMap = new Map();
-        /**
-         * rows: [{ lesson, forStudent, teacherName, childName }]
-         * On regroupe PAR élève/parent en utilisant un packKey calculé sur participantsMap.
-         */
         for (const r of rows) {
           const key = packKeyForChild(r.lesson, r.forStudent);
           const isPack = isPackForChild(r.lesson, r.forStudent);
@@ -312,7 +314,7 @@ export default function ParentPayments() {
         }, (e) => { console.error(e); setLoading(false); });
         unsubscribers.push(unsub);
       }
-      // Groupes: array-contains par id suivi (enfants + parent)
+      // Groupes: array-contains
       childIds.forEach((cid) => {
         const qGroup = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', cid));
         const unsub = onSnapshot(qGroup, (snap) => {
@@ -339,7 +341,6 @@ export default function ParentPayments() {
     try {
       setPayingKey(key);
 
-      // petit diag (facultatif)
       const diag = await fetchWithAuth('/api/pay/diag', {
         method: 'POST',
         body: JSON.stringify({ lessonId: row.lesson.id, forStudent: row.forStudent }),
@@ -371,18 +372,15 @@ export default function ParentPayments() {
     }
   };
 
-  // --- Résolution du paymentId (payments) pour rembourser ---
+  // --- Remboursement ---
   const resolvePaymentId = async (lessonId, forStudent) => {
     try {
-      // On récupère le plus récent paiement non remboursé pour cet élève/parent et cette leçon
       let qBase = query(
         collection(db, 'payments'),
         where('lesson_id', '==', String(lessonId)),
         where('for_student', '==', String(forStudent)),
         where('status', 'in', ['held', 'released'])
       );
-      // si les règles ne permettent pas 'in', on peut faire 2 requêtes (held puis released)
-
       qBase = query(qBase, orderBy('created_at', 'desc'), limit(1));
       const snap = await getDocs(qBase);
       if (!snap.empty) return snap.docs[0].id;
@@ -459,6 +457,7 @@ export default function ParentPayments() {
                         {r.forStudent === auth.currentUser?.uid ? 'Parent' : 'Enfant'} : {r.childName || r.forStudent}
                       </div>
                       <div className="text-xs text-gray-500">Type : {detectSourceFor(r.lesson, r.forStudent)}</div>
+
                       {isPackForChild(r.lesson, r.forStudent) ? (
                         r.__slots?.length > 0 && (
                           <div className="text-xs text-gray-600 mt-1">
@@ -518,7 +517,6 @@ export default function ParentPayments() {
                       <span className="text-green-600 text-xs font-semibold md:ml-auto">Payé</span>
                     </div>
 
-                    {/* Bouton remboursement */}
                     <div className="flex justify-end">
                       <button
                         className="text-sm px-3 py-1.5 rounded border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-60"
