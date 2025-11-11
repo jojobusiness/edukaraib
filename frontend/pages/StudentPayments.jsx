@@ -63,12 +63,6 @@ const getBaseAmount = (l) => {
   );
 };
 
-const getDisplayAmount = (l) => {
-  const base = getBaseAmount(l) || 0;
-  const fee = billedHours(l) * 10;
-  return base + fee;
-};
-
 // payé pour un élève (legacy ou groupe)
 const isPaidForStudent = (lesson, studentId) => {
   if (!lesson) return false;
@@ -155,15 +149,6 @@ const getDisplayAmountForMe = (l, uid) => {
   const fee = hours * 10;
   return (base || 0) + fee;
 };
-
-function packKeyFrom(lesson, studentId) {
-  const pm = lesson?.participantsMap?.[studentId];
-  if (pm?.pack_id) return pm.pack_id;
-
-  const hours = Number(pm?.pack_hours || lesson?.pack_hours || 1);
-  const mode  = (String(lesson?.mode) === 'visio' || lesson?.is_visio) ? 'visio' : 'presentiel';
-  return `AUTO:${lesson?.teacher_id}|${mode}|${hours}|${studentId}`;
-}
 
 export default function StudentPayments() {
   const [toPay, setToPay] = useState([]);
@@ -423,10 +408,15 @@ export default function StudentPayments() {
                     </div>
                     <div className="text-xs text-gray-500">Professeur : {l.teacherName || l.teacher_id}</div>
                     <div className="text-xs text-gray-500">Type : {detectSourceForMe(l, uid)}</div>
-                    <div className="text-xs text-gray-500">📅 {fmtDateTime(l.start_datetime, l.slot_day, l.slot_hour)}</div>
-                    {isPackForMe(l, uid) && l.__slots?.length > 0 && (
-                      <div className="text-xs text-gray-600 mt-1">
-                        Horaires du pack : {l.__slots.join(' • ')}
+                    {isPackForMe(l, uid) ? (
+                      l.__slots?.length > 0 && (
+                        <div className="text-xs text-gray-600 mt-1">
+                          Horaires du pack : {l.__slots.join(' • ')}
+                        </div>
+                      )
+                    ) : (
+                      <div className="text-xs text-gray-500">
+                        📅 {fmtDateTime(l.start_datetime, l.slot_day, l.slot_hour)}
                       </div>
                     )}
                   </div>

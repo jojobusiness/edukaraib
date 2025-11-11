@@ -28,23 +28,6 @@ const fmtDateTime = (start_datetime, slot_day, slot_hour) => {
   if (slot_day && (slot_hour || slot_hour === 0)) return `${slot_day} • ${String(slot_hour).padStart(2, '0')}:00`;
   return '—';
 };
-const getBaseAmount = (l) => {
-  // Packs : si pas de total stocké, on reconstitue (tarif × heures × 0,9)
-  const isPackLesson = (() => {
-    const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
-    return pt === 'pack5' || pt === 'pack10' || String(l.pack_hours) === '5' || String(l.pack_hours) === '10' || l.is_pack5 === true || l.is_pack10 === true;
-  })();
-  if (isPackLesson) {
-    const hours = billedHours(l);
-    const isVisio = String(l.mode) === 'visio' || l.is_visio === true;
-    const baseRate = isVisio && l.visio_enabled && l.visio_same_rate === false
-      ? toNumber(l.visio_price_per_hour)
-      : toNumber(l.price_per_hour);
-    const packCalc = Number.isFinite(baseRate) ? Number((baseRate * hours * 0.9).toFixed(2)) : 0;
-    return toNumber(l.total_amount) || toNumber(l.total_price) || packCalc;
-  }
-  return toNumber(l.total_amount) || toNumber(l.total_price) || toNumber(l.amount_paid) || toNumber(l.amount) || toNumber(l.price_per_hour);
-};
 
 const isPaidForStudent = (lesson, studentId) => {
   if (!lesson) return false;
@@ -100,14 +83,6 @@ const detectSourceFor = (l, sid) => {
   if (isPackFor(l, sid)) return packHoursFor(l, sid) === 10 ? 'Pack 10h · ' + (String(l.mode)==='visio'||l.is_visio?'Visio':'Présentiel')
                                                           : 'Pack 5h · ' + (String(l.mode)==='visio'||l.is_visio?'Visio':'Présentiel');
   return (String(l.mode) === 'visio' || l.is_visio === true) ? 'Visio' : 'Présentiel';
-};
-
-const billedHoursFor = (l, sid) => {
-  // si pack, 5 ou 10h; sinon retombe sur la durée (par défaut 1h)
-  const ph = packHoursFor(l, sid);
-  if (ph > 1) return ph;
-  const h = Number(l.duration_hours);
-  return Number.isFinite(h) && h > 0 ? Math.floor(h) : 1;
 };
 
 // == Helpers pack/étiquettes par ENFANT ==
@@ -183,61 +158,6 @@ const isPackFor = (lesson, uid) => {
   const p = pmFor(lesson, uid);
   return !!(p && p.pack && (p.pack_hours === 5 || p.pack_hours === 10));
 };
-
-const packKeyFor = (lesson, uid) => {
-  const p = pmFor(lesson, uid) || {};
-  return [
-    lesson.teacher_id,
-    uid,                                      // pack par enfant
-    p.pack_id || 'noid',                      // si null, on reste stable sur un “noid”
-    p.pack_hours || 0,
-    p.pack_mode || lesson.mode || 'presentiel'
-  ].join('|');
-};
-
-// Affichage du montant pack: total = (prix_horaire * heures * 0.9) + (10€ * heures).
-const packAmount = (lesson, uid) => {
-  const p = pmFor(lesson, uid) || {};
-  const hours = Number(p.pack_hours || 0);
-  const hourly = Number(lesson?.price_per_hour || 0);
-  const teacherCents = Math.round(hourly * hours * 0.9 * 100);
-  const siteCents = 1000 * hours;
-  return {
-    totalCents: teacherCents + siteCents,
-    teacherCents,
-    siteCents,
-    label: `Pack ${hours}h`
-  };
-};
-// Statut payé/éligible (par participant)
-const isPaidFor = (lesson, uid) => {
-  const p = pmFor(lesson, uid);
-  return Array.isArray(lesson?.participant_ids) ? !!p?.is_paid : !!lesson?.is_paid;
-};
-const canPayFor = (lesson, uid) => {
-  // Groupe: participant 'accepted' ou 'confirmed'. Individuel: leçon 'confirmed'.
-  const p = pmFor(lesson, uid);
-  if (Array.isArray(lesson?.participant_ids)) {
-    const st = String(p?.status || '').toLowerCase();
-    return st === 'accepted' || st === 'confirmed';
-  }
-  return String(lesson?.status || '').toLowerCase() === 'confirmed';
-};
-
-const uidStr = (v)=> (v==null? "" : String(v));
-
-function isGroup(lesson){
-  return Array.isArray(lesson?.participant_ids) && lesson.participant_ids.length>0;
-}
-
-function packKeyFrom(lesson, studentId) {
-  const pm = lesson?.participantsMap?.[studentId];
-  if (pm?.pack_id) return pm.pack_id;
-
-  const hours = Number(pm?.pack_hours || lesson?.pack_hours || 1);
-  const mode  = (String(lesson?.mode) === 'visio' || lesson?.is_visio) ? 'visio' : 'presentiel';
-  return `AUTO:${lesson?.teacher_id}|${mode}|${hours}|${studentId}`;
-}
 
 export default function ParentPayments() {
   const [toPay, setToPay] = useState([]);   // [{ lesson, forStudent, teacherName, childName }]
@@ -539,15 +459,17 @@ export default function ParentPayments() {
                         {r.forStudent === auth.currentUser?.uid ? 'Parent' : 'Enfant'} : {r.childName || r.forStudent}
                       </div>
                       <div className="text-xs text-gray-500">Type : {detectSourceFor(r.lesson, r.forStudent)}</div>
-                      
-                      {/* si pack, on liste tous les créneaux */}
-                      {isPackForChild(r.lesson, r.forStudent) && r.__slots?.length > 0 && (
-                        <div className="text-xs text-gray-600 mt-1">
-                          Horaires du pack : {r.__slots.join(' • ')}
+                      {isPackForChild(r.lesson, r.forStudent) ? (
+                        r.__slots?.length > 0 && (
+                          <div className="text-xs text-gray-600 mt-1">
+                            Horaires du pack : {r.__slots.join(' • ')}
+                          </div>
+                        )
+                      ) : (
+                        <div className="text-xs text-gray-500">
+                          📅 {fmtDateTime(r.lesson.start_datetime, r.lesson.slot_day, r.lesson.slot_hour)}
                         </div>
                       )}
-                      
-                      <div className="text-xs text-gray-500">📅 {fmtDateTime(r.lesson.start_datetime, r.lesson.slot_day, r.lesson.slot_hour)}</div>
                     </div>
 
                     <button
