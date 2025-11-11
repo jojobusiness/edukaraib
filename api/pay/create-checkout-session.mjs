@@ -81,14 +81,6 @@ function isAlreadyPaid(lesson, participantId) {
   if (String(lesson.student_id) === String(participantId)) return !!lesson.is_paid;
   return !!pm?.[participantId]?.is_paid;
 }
-function packHoursOf(lesson) {
-  if (String(lesson.pack_hours) === '5' || lesson.is_pack5 === true) return 5;
-  if (String(lesson.pack_hours) === '10' || lesson.is_pack10 === true) return 10;
-  const pt = String(lesson.pack_type || lesson.booking_kind || lesson.type || '').toLowerCase();
-  if (pt === 'pack5') return 5;
-  if (pt === 'pack10') return 10;
-  return 0;
-}
 function participantPackInfo(lesson, participantId) {
   const p = lesson?.participantsMap?.[participantId] || {};
   const packHours =
@@ -247,25 +239,34 @@ export default async function handler(req, res) {
     pack_hours: String(packMode ? billedHours : '')
   };
 
-  const session = await stripe.checkout.sessions.create({
-    mode: 'payment',
-    payment_method_types: ['card'],
-    line_items: [
-      {
-        price_data: {
-          currency: 'eur',
-          product_data: { name: packMode ? `${productName} — ${billedHours}h` : productName, description: productDesc },
-          unit_amount: totalCents,
+  let session;
+  try {
+    session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'eur',
+            product_data: {
+              name: packMode ? `${productName} — ${billedHours}h` : productName,
+              description: productDesc
+            },
+            unit_amount: totalCents,
+          },
+          quantity: 1,
         },
-        quantity: 1,
-      },
-    ],
-    currency: 'eur',
-    metadata,
-    payment_intent_data: { metadata },
-    success_url: `${origin}/pay/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${origin}/pay/cancel`,
-  });
+      ],
+      // ⬇️ pas de `currency` ici
+      metadata,
+      payment_intent_data: { metadata },
+      success_url: `${origin}/pay/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/pay/cancel`,
+    });
+  } catch (e) {
+    console.error('stripe.sessions.create error:', e?.message || e);
+    return res.status(400).json({ error: 'STRIPE_CREATE_SESSION_FAILED', detail: String(e?.message || e) });
+  }
 
   // trace “pending”
   await adminDb.collection('payments').doc(session.id).set({
@@ -280,7 +281,7 @@ export default async function handler(req, res) {
     net_to_teacher_eur: teacherAmountCents / 100,
     status: 'pending',
     created_at: new Date(),
-    billed_hours,
+    billed_hours : String(billedHours),
     is_pack: !!packMode,
   }, { merge: true });
 
