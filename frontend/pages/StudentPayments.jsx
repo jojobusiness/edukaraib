@@ -250,7 +250,11 @@ export default function StudentPayments() {
             groupMap.set(key, rep);
           }
         }
-        const groupedRows = Array.from(groupMap.values());
+        const groupedRows = Array.from(groupMap.values()).map(item => ({
+          ...item,
+          // montant EXACT utilisé pour l'affichage et les totaux
+          __amount: getDisplayAmountForMe(item, user.uid),
+        }));
 
         // Éligible pour moi (mêmes règles que tu avais)
         const eligibleForMe = groupedRows.filter(l => isEligibleForMePayment(l, user.uid));
@@ -294,7 +298,11 @@ export default function StudentPayments() {
   }, []);
 
   const totals = useMemo(() => {
-    const sum = (arr) => arr.reduce((acc, l) => acc + getDisplayAmountForMe(l, uid), 0);
+    const sum = (arr) =>
+      arr.reduce(
+        (acc, l) => acc + (typeof l.__amount === 'number' ? l.__amount : getDisplayAmountForMe(l, uid)),
+        0
+      );
     return { due: sum(toPay), paid: sum(paid) };
   }, [toPay, paid, uid]);
 
@@ -403,7 +411,7 @@ export default function StudentPayments() {
                     <div className="font-bold text-primary">
                       {l.subject_id || 'Matière'}{' '}
                       <span className="text-gray-600 text-xs ml-2">
-                        {getDisplayAmountForMe(l, uid) ? `${getDisplayAmountForMe(l, uid).toFixed(2)} €` : ''}
+                        {typeof l.__amount === 'number' ? `${l.__amount.toFixed(2)} €` : ''}
                       </span>
                     </div>
                     <div className="text-xs text-gray-500">Professeur : {l.teacherName || l.teacher_id}</div>
