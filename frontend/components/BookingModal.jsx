@@ -3,6 +3,40 @@ import React, { useMemo, useState } from 'react';
 // Jours + heures affichées
 const DEFAULT_DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
+// ---- utils "mois/semaines" repris de TeacherAvailabilityEditor ----
+const startOfWeekMon = (d) => {
+  const x = new Date(d);
+  const day = (x.getDay() + 6) % 7; // 0=Mon..6=Sun
+  x.setDate(x.getDate() - day);
+  x.setHours(0, 0, 0, 0);
+  return x;
+};
+const startOfMonth = (d) => { const x = new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x; };
+const addMonths    = (d, n) => { const x = new Date(d); x.setMonth(x.getMonth() + n); return x; };
+const isoWeek = (date) => {
+  const tmp = new Date(date.getTime());
+  tmp.setHours(0,0,0,0);
+  tmp.setDate(tmp.getDate() + 3 - ((tmp.getDay() + 6) % 7));
+  const week1 = new Date(tmp.getFullYear(), 0, 4);
+  return 1 + Math.round(((tmp - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
+};
+const buildMonthMatrix = (cursor) => {
+  const first = startOfMonth(cursor);
+  const gridStart = startOfWeekMon(first);
+  const weeks = [];
+  for (let w = 0; w < 6; w++) {
+    const row = [];
+    for (let d = 0; d < 7; d++) {
+      const cell = new Date(gridStart); cell.setDate(gridStart.getDate() + w * 7 + d);
+      row.push(cell);
+    }
+    weeks.push(row);
+  }
+  return weeks;
+};
+// map 'Lun'..'Dim' -> index 0..6
+const DAY_INDEX = { 'Lun':0, 'Mar':1, 'Mer':2, 'Jeu':3, 'Ven':4, 'Sam':5, 'Dim':6 };
+
 export default function BookingModal({
   availability = {},
   bookedSlots = [],
@@ -21,6 +55,34 @@ export default function BookingModal({
 }) {
   const [selected, setSelected] = useState([]);
 
+  // ------- NOUVEAU : navigation mois + semaine active -------
+  const [monthCursor, setMonthCursor] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d; });
+  const [weekAnchor, setWeekAnchor] = useState(() => startOfWeekMon(new Date()));
+  const activeWeekDays = useMemo(() => {
+    const out = [];
+    const start = startOfWeekMon(weekAnchor);
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start); d.setDate(start.getDate() + i);
+      out.push(d);
+    }
+    return out;
+  }, [weekAnchor]);
+
+  // Verrous temporels (+1h)
+  const now = new Date();
+  const nowHour = now.getHours();
+  const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
+  const isSlotLockedByDate = (dayDate, hour) => {
+    const d = new Date(dayDate); d.setHours(0,0,0,0);
+    if (d.getTime() < todayMidnight.getTime()) return true;
+    if (d.getTime() === todayMidnight.getTime()) {
+      if (nowHour >= 23) return true;
+      return hour <= nowHour; // autorise à partir de now+1h
+    }
+    return false;
+  };
+
+  // booked/remaining (inchangés)
   const bookedMap = useMemo(() => {
     const m = new Map();
     bookedSlots.forEach(({ day, hour }) => { m.set(`${day}:${hour}`, true); });
@@ -44,9 +106,17 @@ export default function BookingModal({
     return typeof val === 'number' ? val : null;
   };
 
+  // Date réelle d’un label de jour (Lun..Dim) de la semaine active
+  const dateForLabel = (label) => {
+    const idx = DAY_INDEX[label] ?? 0;
+    return activeWeekDays[idx];
+  };
+
   const toggleSelect = (day, hour) => {
     if (!canBook) return;
+    const dayDate = dateForLabel(day);
     if (!isAvailable(day, hour) || isBooked(day, hour)) return;
+    if (isSlotLockedByDate(dayDate, hour)) return;
 
     if (multiSelect) {
       setSelected(prev => {
@@ -71,7 +141,7 @@ export default function BookingModal({
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-40 bg-black/30">
-      <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-3xl w-full relative border border-gray-100">
+      <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-4xl w-full relative border border-gray-100">
         <button
           className="absolute right-3 top-3 text-gray-500 hover:text-gray-700"
           onClick={onClose}
@@ -96,8 +166,8 @@ export default function BookingModal({
           </div>
         )}
 
-        {/* Légende (façon vignette claire) */}
-        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-700 mb-4 p-2 rounded-xl bg-gray-50 border border-gray-200">
+        {/* Légende */}
+        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-700 mb-3 p-2 rounded-xl bg-gray-50 border border-gray-200">
           <span className="inline-flex items-center gap-1">
             <span className="inline-block w-3 h-3 rounded bg-green-500" /> Libre
           </span>
@@ -110,6 +180,9 @@ export default function BookingModal({
           <span className="inline-flex items-center gap-1">
             <span className="inline-block w-3 h-3 rounded bg-gray-200 border" /> Indisponible
           </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="inline-block w-3 h-3 rounded bg-gray-300 border" /> Verrouillé (passé / &lt;= +1h)
+          </span>
           {showRemainingLegend && (
             <span className="inline-flex items-center gap-1 ml-auto">
               <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] text-[10px] rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 px-1">
@@ -120,7 +193,65 @@ export default function BookingModal({
           )}
         </div>
 
-        {/* Grille des créneaux */}
+        {/* ======= NOUVEAU : mini-calendrier mensuel + sélection de la semaine ======= */}
+        <div className="mb-3 bg-white rounded-xl border shadow-sm p-3">
+          <div className="flex items-center justify-between mb-2">
+            <button
+              type="button"
+              onClick={() => setMonthCursor((d) => addMonths(d, -1))}
+              className="px-2 py-1 text-sm rounded border hover:bg-gray-50"
+            >‹</button>
+
+            <div className="font-semibold">
+              {monthCursor.toLocaleString('fr-FR', { month: 'long', year: 'numeric' })}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setMonthCursor((d) => addMonths(d, 1))}
+              className="px-2 py-1 text-sm rounded border hover:bg-gray-50"
+            >›</button>
+          </div>
+
+          <div className="grid grid-cols-8 gap-1 text-[11px]">
+            <div className="text-gray-500 px-1"></div>
+            {['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].map(h=>(
+              <div key={h} className="text-center text-gray-500">{h}</div>
+            ))}
+
+            {buildMonthMatrix(monthCursor).map((week, i)=>(
+              <React.Fragment key={i}>
+                <div className="text-center text-gray-500 font-mono px-1">S{isoWeek(week[0])}</div>
+                {week.map((day,j)=>{
+                  const isPast = (() => {
+                    const a = new Date(day); a.setHours(0,0,0,0);
+                    return a.getTime() < todayMidnight.getTime();
+                  })();
+                  const isActiveWeek = startOfWeekMon(day).getTime() === startOfWeekMon(weekAnchor).getTime();
+                  return (
+                    <button
+                      key={j}
+                      type="button"
+                      disabled={isPast}
+                      onClick={()=> setWeekAnchor(startOfWeekMon(day))}
+                      className={[
+                        "py-1 rounded border text-center",
+                        isPast ? "text-gray-300 bg-gray-50 cursor-not-allowed"
+                               : (isActiveWeek ? "bg-primary/10 border-primary/30 text-primary"
+                                               : "bg-white hover:bg-gray-50")
+                      ].join(' ')}
+                      title={isPast ? "Jour passé" : "Éditer cette semaine"}
+                    >
+                      {day.getDate()}
+                    </button>
+                  );
+                })}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+
+        {/* Grille des créneaux (SEMAINE ACTIVE) */}
         <div className="overflow-x-auto">
           <table className="table-auto border text-xs mb-3">
             <thead>
@@ -132,66 +263,77 @@ export default function BookingModal({
               </tr>
             </thead>
             <tbody>
-              {orderDays.map((day) => (
-                <tr key={day}>
-                  <td className="font-bold px-2 py-2 text-slate-900">{day}</td>
-                  {hours.map((h) => {
-                    const booked = isBooked(day, h);
-                    const dispo = isAvailable(day, h);
-                    const sel = isSelected(day, h);
-                    const remaining = remainingFor(day, h);
+              {orderDays.map((dayLabel, idx) => {
+                const dayDate = activeWeekDays[idx]; // date réelle
+                return (
+                  <tr key={dayLabel}>
+                    <td className="font-bold px-2 py-2 text-slate-900">
+                      {dayLabel}
+                      <span className="ml-1 text-[10px] text-gray-400">
+                        ({dayDate.getDate()}/{String(dayDate.getMonth()+1).padStart(2,'0')})
+                      </span>
+                    </td>
+                    {hours.map((h) => {
+                      const booked = isBooked(dayLabel, h);
+                      const dispo = isAvailable(dayLabel, h);
+                      const locked = isSlotLockedByDate(dayDate, h);
+                      const sel = !locked && isSelected(dayLabel, h);
+                      const remaining = remainingFor(dayLabel, h);
 
-                    let classes = 'relative w-9 h-9 rounded-lg shadow flex items-center justify-center select-none transition ';
-                    if (!canBook) {
-                      classes += 'bg-gray-100 text-gray-300 cursor-not-allowed';
-                    } else if (booked) {
-                      classes += 'bg-red-500 text-white cursor-not-allowed';
-                    } else if (sel) {
-                      classes += 'bg-secondary text-white';
-                    } else if (dispo) {
-                      classes += 'bg-green-500 text-white hover:opacity-90';
-                    } else {
-                      classes += 'bg-gray-100 text-gray-400 cursor-not-allowed';
-                    }
+                      let classes = 'relative w-9 h-9 rounded-lg shadow flex items-center justify-center select-none transition ';
+                      if (!canBook) {
+                        classes += 'bg-gray-100 text-gray-300 cursor-not-allowed';
+                      } else if (booked) {
+                        classes += 'bg-red-500 text-white cursor-not-allowed';
+                      } else if (locked) {
+                        classes += 'bg-gray-300 text-white cursor-not-allowed'; // 🔒
+                      } else if (sel) {
+                        classes += 'bg-secondary text-white';
+                      } else if (dispo) {
+                        classes += 'bg-green-500 text-white hover:opacity-90';
+                      } else {
+                        classes += 'bg-gray-100 text-gray-400 cursor-not-allowed';
+                      }
 
-                    const baseTitle = booked
-                      ? 'Créneau déjà réservé'
-                      : dispo
-                      ? (sel ? 'Sélectionné' : 'Disponible')
-                      : 'Indisponible';
-                    const title = !canBook ? 'Réservation désactivée pour les professeurs' : baseTitle;
+                      const baseTitle = booked
+                        ? 'Créneau déjà réservé'
+                        : locked
+                        ? 'Verrouillé (passé ou avant +1h)'
+                        : dispo
+                        ? (sel ? 'Sélectionné' : 'Disponible')
+                        : 'Indisponible';
+                      const title = !canBook ? 'Réservation désactivée pour les professeurs' : baseTitle;
 
-                    const disabledByPack =
-                      canBook && dispo && !booked && requiredCount && !sel && selected.length >= requiredCount;
+                      const disabledByPack =
+                        canBook && dispo && !booked && !locked && !sel && requiredCount && selected.length >= requiredCount;
 
-                    return (
-                      <td key={h} className="px-1 py-1">
-                        <button
-                          type="button"
-                          disabled={!canBook || !dispo || booked || disabledByPack}
-                          onClick={() => toggleSelect(day, h)}
-                          className={classes + (disabledByPack ? ' opacity-60' : '')}
-                          title={title}
-                          aria-label={
-                            remaining !== null ? `${title}. Places restantes : ${remaining}` : title
-                          }
-                        >
-                          {booked ? '❌' : sel ? '✔' : ''}
+                      return (
+                        <td key={h} className="px-1 py-1">
+                          <button
+                            type="button"
+                            disabled={!canBook || !dispo || booked || locked || disabledByPack}
+                            onClick={() => toggleSelect(dayLabel, h)}
+                            className={classes + (disabledByPack ? ' opacity-60' : '')}
+                            title={title}
+                            aria-label={remaining !== null ? `${title}. Places restantes : ${remaining}` : title}
+                          >
+                            {booked ? '❌' : sel ? '✔' : ''}
 
-                          {remaining !== null && !booked && canBook && (
-                            <span
-                              className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] leading-[18px] text-center pointer-events-none"
-                              title={`Places restantes : ${remaining}`}
-                            >
-                              {remaining}
-                            </span>
-                          )}
-                        </button>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+                            {remaining !== null && !booked && !locked && canBook && (
+                              <span
+                                className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] leading-[18px] text-center pointer-events-none"
+                                title={`Places restantes : ${remaining}`}
+                              >
+                                {remaining}
+                              </span>
+                            )}
+                          </button>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -212,6 +354,10 @@ export default function BookingModal({
                 ? `Réserver ${selected.length} créneau${selected.length > 1 ? 'x' : ''}`
                 : 'Réserver ce créneau')}
         </button>
+
+        <p className="mt-2 text-[11px] text-gray-500">
+          Les créneaux **d’aujourd’hui** ne sont disponibles qu’à partir de <b>{nowHour >= 23 ? 'demain 00h' : `${String(nowHour + 1).padStart(2,'0')}:00`}</b>. Les jours passés sont verrouillés.
+        </p>
       </div>
     </div>
   );
