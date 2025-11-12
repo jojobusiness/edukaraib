@@ -54,16 +54,18 @@ export default function BookingModal({
   requiredCount = null, // null | 5 | 10
 }) {
   const [selected, setSelected] = useState([]);
+
+  // Fermer avec Esc
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // ------- NOUVEAU : navigation mois + semaine active -------
-  
+  // ------- Navigation mois + semaine active -------
   const [monthCursor, setMonthCursor] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d; });
-  const [weekAnchor, setWeekAnchor] = useState(() => startOfWeekMon(new Date()));
+  const [weekAnchor, setWeekAnchor]   = useState(() => startOfWeekMon(new Date()));
+
   const activeWeekDays = useMemo(() => {
     const out = [];
     const start = startOfWeekMon(weekAnchor);
@@ -74,33 +76,7 @@ export default function BookingModal({
     return out;
   }, [weekAnchor]);
 
-  // 🧠 Quand on change de semaine, on ne garde que les créneaux encore valides
-  React.useEffect(() => {
-    setSelected((prev) => {
-      if (!Array.isArray(prev) || prev.length === 0) return prev;
-      return prev.filter(({ day, hour }) => {
-        // 1) dispo côté prof pour ce jour/heure ?
-        const stillAvailable = Array.isArray(availability[day]) && availability[day].includes(hour);
-        if (!stillAvailable) return false;
-
-        // 2) non verrouillé par la date (passé / aujourd’hui <= now+1h) pour la NOUVELLE semaine
-        const dayDate = dateForLabel(day); // semaine active actuelle
-        if (isSlotLockedByDate(dayDate, hour)) return false;
-
-        // 3) pas déjà réservé sur la NOUVELLE semaine
-        if (isBooked(day, hour)) return false;
-
-        // 4) places restantes (si tu fournis remainingBySlot par semaine/jour:heure)
-        const rem = remainingFor(day, hour);
-        if (rem !== null && rem <= 0) return false;
-
-        return true;
-      });
-    });
-    // on re-filtre aussi si le planning change, ou si les réservations/places changent
-  }, [weekAnchor, availability, remainingBySlot, bookedSlots]);
-
-  // Verrous temporels (+1h)
+  // -------- Verrous temporels (+1h) --------
   const now = new Date();
   const nowHour = now.getHours();
   const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
@@ -114,41 +90,7 @@ export default function BookingModal({
     return false;
   };
 
-  // booked/remaining (inchangés)
- const bookedMap = useMemo(() => {
-   const m = new Map();
-   (bookedSlots || []).forEach(({ day, hour, week }) => {
-     if (!day || typeof hour !== 'number') return;
-     const wk = week || activeWeekKey;
-     m.set(`${day}:${hour}:${wk}`, true);
-     // fallback (compat anciens jeux de données)
-     m.set(`${day}:${hour}`, true);
-   });
-   return m;
- }, [bookedSlots, activeWeekKey]);
-
-  const hours = useMemo(() => {
-    const all = Object.values(availability || {}).flat().filter((h) => Number.isInteger(h));
-    if (all.length === 0) return Array.from({ length: 12 }, (_, i) => i + 8); // 8 → 19h
-    const min = Math.max(0, Math.min(...all));
-    const max = Math.min(23, Math.max(...all));
-    return Array.from({ length: (max - min + 1) }, (_, i) => min + i);
-  }, [availability]);
-
-  const isBooked = (day, hour) =>
-    bookedMap.get(`${day}:${hour}:${activeWeekKey}`) === true ||
-    bookedMap.get(`${day}:${hour}`) === true;
-
-  const isAvailable = (day, hour) => Array.isArray(availability[day]) && availability[day].includes(hour);
-  const isSelected = (day, hour) => selected.some(s => s.day === day && s.hour === hour);
-  
-  const remainingFor = (day, hour) => {
-    // On tente d’abord la clé “par semaine”, sinon on tombe sur la clé simple
-    const wkKey = `${day}:${hour}:${activeWeekKey}`;
-    const key   = `${day}:${hour}`;
-    const val = (remainingBySlot?.[wkKey] ?? remainingBySlot?.[key]);
-    return typeof val === 'number' ? val : null;
-  };
+  // -------- Helpers dépendants de la semaine active (⚠ ordre important) --------
 
   // Date réelle d’un label de jour (Lun..Dim) de la semaine active
   const dateForLabel = (label) => {
@@ -162,6 +104,65 @@ export default function BookingModal({
     return d.toISOString().slice(0,10);
   }, [weekAnchor]);
 
+  // bookedMap sensible à la semaine (avec fallback jour:heure)
+  const bookedMap = useMemo(() => {
+    const m = new Map();
+    (bookedSlots || []).forEach(({ day, hour, week }) => {
+      if (!day || typeof hour !== 'number') return;
+      const wk = week || activeWeekKey;
+      m.set(`${day}:${hour}:${wk}`, true);
+      // fallback (compat anciens jeux de données)
+      m.set(`${day}:${hour}`, true);
+    });
+    return m;
+  }, [bookedSlots, activeWeekKey]);
+
+  // places restantes (prend d’abord la clé "par semaine", sinon jour:heure)
+  const remainingFor = (day, hour) => {
+    const wkKey = `${day}:${hour}:${activeWeekKey}`;
+    const key   = `${day}:${hour}`;
+    const val = (remainingBySlot?.[wkKey] ?? remainingBySlot?.[key]);
+    return typeof val === 'number' ? val : null;
+  };
+
+  const isBooked = (day, hour) =>
+    bookedMap.get(`${day}:${hour}:${activeWeekKey}`) === true ||
+    bookedMap.get(`${day}:${hour}`) === true;
+
+  const isAvailable = (day, hour) => Array.isArray(availability[day]) && availability[day].includes(hour);
+  const isSelected  = (day, hour) => selected.some(s => s.day === day && s.hour === hour);
+
+  // 🧠 Quand on change de semaine (ou que le planning change), ne garder que les créneaux encore valides
+  React.useEffect(() => {
+    setSelected((prev) => {
+      if (!Array.isArray(prev) || prev.length === 0) return prev;
+      return prev.filter(({ day, hour }) => {
+        const stillAvailable = Array.isArray(availability[day]) && availability[day].includes(hour);
+        if (!stillAvailable) return false;
+
+        const dayDate = dateForLabel(day); // semaine active actuelle
+        if (isSlotLockedByDate(dayDate, hour)) return false;
+
+        if (isBooked(day, hour)) return false;
+
+        const rem = remainingFor(day, hour);
+        if (rem !== null && rem <= 0) return false;
+
+        return true;
+      });
+    });
+  }, [weekAnchor, availability, remainingBySlot, bookedSlots]); // filtrage intelligent
+
+  // Heures à afficher
+  const hours = useMemo(() => {
+    const all = Object.values(availability || {}).flat().filter((h) => Number.isInteger(h));
+    if (all.length === 0) return Array.from({ length: 12 }, (_, i) => i + 8); // 8 → 19h
+    const min = Math.max(0, Math.min(...all));
+    const max = Math.min(23, Math.max(...all));
+    return Array.from({ length: (max - min + 1) }, (_, i) => min + i);
+  }, [availability]);
+
+  // -------- Actions UI --------
   const toggleSelect = (day, hour) => {
     if (!canBook) return;
     const dayDate = dateForLabel(day);
@@ -189,15 +190,16 @@ export default function BookingModal({
 
   const need = requiredCount ? (requiredCount - selected.length) : null;
 
- return (
-   <div
-     className="fixed inset-0 flex items-center justify-center z-40 bg-black/30"
-     onClick={onClose}
-   >
-     <div
-       className="bg-white p-6 rounded-2xl shadow-2xl max-w-3xl w-full relative border border-gray-100 max-h-[90vh] overflow-y-auto"
-       onClick={(e) => e.stopPropagation()}
-     >
+  // -------- RENDER --------
+  return (
+    <div
+      className="fixed inset-0 flex items-center justify-center z-40 bg-black/30"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white p-6 rounded-2xl shadow-2xl max-w-3xl w-full relative border border-gray-100 max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
           className="absolute right-3 top-3 text-gray-500 hover:text-gray-700"
           onClick={onClose}
@@ -206,7 +208,7 @@ export default function BookingModal({
           ✕
         </button>
 
-        <h3 className="text-xl md:text-2xl font-extrabold text-slate-900 mb-1">
+        <h3 className="text-xl md:text-2xl font-semibold text-slate-900 mb-1">
           {multiSelect ? 'Choisissez un ou plusieurs créneaux' : 'Choisissez un créneau'}
         </h3>
 
@@ -249,7 +251,7 @@ export default function BookingModal({
           )}
         </div>
 
-        {/* ======= NOUVEAU : mini-calendrier mensuel + sélection de la semaine ======= */}
+        {/* Mini-calendrier mensuel + sélection de la semaine */}
         <div className="mb-3 bg-white rounded-xl border shadow-sm p-3">
           <div className="flex items-center justify-between mb-2">
             <button
@@ -323,7 +325,7 @@ export default function BookingModal({
                 const dayDate = activeWeekDays[idx]; // date réelle
                 return (
                   <tr key={dayLabel}>
-                    <td className="font-bold px-2 py-2 text-slate-900">
+                    <td className="font-semibold px-2 py-2 text-slate-900">
                       {dayLabel}
                       <span className="ml-1 text-[10px] text-gray-400">
                         ({dayDate.getDate()}/{String(dayDate.getMonth()+1).padStart(2,'0')})
@@ -412,7 +414,7 @@ export default function BookingModal({
         </button>
 
         <p className="mt-2 text-[11px] text-gray-500">
-          Les créneaux **d’aujourd’hui** ne sont disponibles qu’à partir de <b>{nowHour >= 23 ? 'demain 00h' : `${String(nowHour + 1).padStart(2,'0')}:00`}</b>. Les jours passés sont verrouillés.
+          Les créneaux d’aujourd’hui ne sont disponibles qu’à partir de <b>{nowHour >= 23 ? 'demain 00h' : `${String(nowHour + 1).padStart(2,'0')}:00`}</b>. Les jours passés sont verrouillés.
         </p>
       </div>
     </div>
