@@ -448,38 +448,6 @@ function isGroupLessonStrict(l) {
   return l?.is_group === true || ids.length >= 2;
 }
 
-// Génère un lien de visio et l’enregistre sur la leçon
-async function createVisioLink(lesson) {
-  try {
-    // petite fonction token
-    const token = (len = 32) =>
-      Array.from(crypto.getRandomValues(new Uint8Array(len)))
-        .map(b => b.toString(16).padStart(2, '0')).join('');
-
-    // fenêtre d’ouverture/expiration (on réutilise computeVisioWindow)
-    const { opensAt, expiresAt } = computeVisioWindow(lesson);
-
-    const payload = {
-      joinUrl: `${window.location.origin}/visio/${lesson.id}?k=${token(16)}`,
-      created_at: new Date().toISOString(),
-      opens_at: opensAt?.toISOString?.() || null,
-      expires_at: expiresAt?.toISOString?.() || null,
-      revoked: false,
-    };
-
-    // En BD
-    await updateDoc(doc(db, 'lessons', lesson.id), { visio: payload });
-
-    // MAJ instantanée de l’UI
-    setLessons(prev =>
-      prev.map(l => (l.id === lesson.id ? { ...l, visio: payload } : l))
-    );
-  } catch (e) {
-    console.error('createVisioLink error', e);
-    alert("Impossible de créer le lien visio.");
-  }
-}
-
 const isInvitationStatus = (st) => String(st || '').toLowerCase().startsWith('invited_');
 
 /* =================== PAGE =================== */
@@ -1363,6 +1331,53 @@ export default function TeacherLessons() {
     const id = setInterval(tick, 60 * 1000); // chaque minute
     return () => clearInterval(id);
   }, [lessons]);
+
+  async function createVisioLink(lesson) {
+    try {
+      // token aléatoire côté navigateur
+      const token = (len = 32) =>
+        Array.from(crypto.getRandomValues(new Uint8Array(len)))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+
+      // fenêtre d’ouverture/expiration
+      const { opensAt, expiresAt } = computeVisioWindow(lesson);
+
+      const payload = {
+        joinUrl: `${window.location.origin}/visio/${lesson.id}?k=${token(16)}`,
+        created_at: new Date().toISOString(),
+        opens_at: opensAt?.toISOString?.() || null,
+        expires_at: expiresAt?.toISOString?.() || null,
+        revoked: false,
+        provider: 'jitsi',
+        room: `jk_${lesson.id}_${token(8)}` // nom de salle long & introuvable
+      };
+
+      // En BD
+      await updateDoc(doc(db, 'lessons', lesson.id), { visio: payload });
+
+      // MAJ instantanée de l’UI (👉 ici "setLessons" existe car on est dans le composant)
+      setLessons(prev => prev.map(l => (l.id === lesson.id ? { ...l, visio: payload } : l)));
+    } catch (e) {
+      console.error('createVisioLink error', e);
+      alert("Impossible de créer le lien visio.");
+    }
+  }
+
+  function computeVisioWindow(lesson) {
+  // start_datetime Firestore -> JS Date
+  let start = null;
+  const sd = lesson?.start_datetime;
+  if (sd?.toDate) start = sd.toDate();
+  else if (typeof sd?.seconds === 'number') start = new Date(sd.seconds * 1000);
+
+  // par défaut: lien ouvert 10 minutes avant, expiré 2h après le début
+  if (!start) return { opensAt: null, expiresAt: null };
+
+  const opensAt = new Date(start.getTime() - 10 * 60 * 1000); // T-10min
+  const expiresAt = new Date(start.getTime() + 2 * 60 * 60 * 1000); // T+2h
+  return { opensAt, expiresAt };
+}
 
   const Card = ({ lesson, showActionsForPending }) => {
   const isGroup = isGroupLessonStrict(lesson);
