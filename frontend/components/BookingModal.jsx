@@ -233,10 +233,16 @@ const remainingFor = (day, hour) => {
         const exists = prev.some(s => s.day === day && s.hour === hour);
         if (exists) return prev.filter(s => !(s.day === day && s.hour === hour));
         if (requiredCount && prev.length >= requiredCount) return prev; // limite pack
-        return [...prev, { day, hour }];
+        const date = dayDateKey(day);            // "YYYY-MM-DD" de la semaine affichée
+        const week = activeWeekKey;              // lundi ISO de la semaine affichée
+        const startAt = new Date(date + 'T00:00:00'); startAt.setHours(hour,0,0,0);
+        return [...prev, { day, hour, date, week, startAt }];
       });
     } else {
-      setSelected([{ day, hour }]);
+      const date = dayDateKey(day);
+      const week = activeWeekKey;
+      const startAt = new Date(date + 'T00:00:00'); startAt.setHours(hour,0,0,0);
+      setSelected([{ day, hour, date, week, startAt }]);
     }
   };
 

@@ -491,6 +491,7 @@ export default function TeacherProfile() {
             where("teacher_id", "==", teacherId),
             where("slot_day", "==", slot.day),
             where("slot_hour", "==", slot.hour),
+            where("date", "==", slot.date),          // 🔸 différence de semaine
             where("is_group", "==", false),
             where("student_id", "==", targetStudentId)
           );
@@ -499,6 +500,7 @@ export default function TeacherProfile() {
             where("teacher_id", "==", teacherId),
             where("slot_day", "==", slot.day),
             where("slot_hour", "==", slot.hour),
+            where("date", "==", slot.date),          // 🔸 différence de semaine
             where("is_group", "==", true),
             where("participant_ids", "array-contains", targetStudentId)
           );
@@ -526,7 +528,9 @@ export default function TeacherProfile() {
             await updateDoc(doc(db, 'lessons', existingIndId), {
               status: 'booked',
               student_id: targetStudentId,
-
+              date: slot.date,
+              week: slot.week,
+              startAt: new Date(slot.startAt),
               // sécurité : enlever tout vieux champ pack posé par le passé AU NIVEAU LEÇON
               is_pack: deleteField(),
               pack_hours: deleteField(),
@@ -628,6 +632,7 @@ export default function TeacherProfile() {
               where("teacher_id", "==", teacherId),
               where("slot_day", "==", slot.day),
               where("slot_hour", "==", slot.hour),
+              where("date", "==", slot.date),
               where("is_group", "==", true)
             );
             const existSnap = await getDocs(qExisting);
@@ -695,7 +700,9 @@ export default function TeacherProfile() {
             price_per_hour: hourly || 0,
             slot_day: slot.day,
             slot_hour: slot.hour,
-
+            date: slot.date,              // "YYYY-MM-DD"
+            week: slot.week,              // lundi "YYYY-MM-DD"
+            startAt: slot.startAt,        // Date (sera sérialisée côté client) ou Timestamp côté backend
             is_group: createAsGroup,
             capacity: createAsGroup ? defaultCap : 1,
             student_id: createAsGroup ? null : targetStudentId,
