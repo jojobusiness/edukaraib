@@ -92,6 +92,12 @@ export default function BookingModal({
 
   // -------- Helpers dépendants de la semaine active (⚠ ordre important) --------
 
+  // Date réelle (objet Date) d’un label 'Lun'..'Dim' pour la semaine active
+  const dateForLabel = (label) => {
+    const idx = DAY_INDEX[label] ?? 0;
+    return activeWeekDays[idx];
+  };
+
   // YYYY-MM-DD du jour (dans la semaine active) pour un label 'Lun'..'Dim'
   const dayDateKey = (label) => {
     const d = dateForLabel(label);
