@@ -77,6 +77,7 @@ const weekKeyOf = (d) => mondayOf(d).toISOString().slice(0,10);
 
 export default function StudentCalendar() {
   const [lessons, setLessons] = useState([]);
+  const [nextAny, setNextAny] = useState(null);
   const [teacherMap, setTeacherMap] = useState(new Map());
   const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map());
   const [openGroupId, setOpenGroupId] = useState(null);
@@ -154,6 +155,19 @@ export default function StudentCalendar() {
         .filter(Boolean)
         .filter(l => l.startAt >= weekStart && l.startAt < weekEnd);
       setLessons(weekScoped);
+
+      // Fallback global pour "Prochain cours"
+      const now = new Date();
+      const nextGlobal = data
+        .filter(l => l.status !== 'completed')
+        .map(l => {
+          const when = nextOccurrenceFromNow(l.slot_day, l.slot_hour);
+          return when ? { ...l, startAtGlobal: when } : null;
+        })
+        .filter(Boolean)
+        .filter(l => l.startAtGlobal > now)
+        .sort((a, b) => a.startAtGlobal - b.startAtGlobal)[0] || null;
+      setNextAny(nextGlobal);
 
       // Profils profs pour affichage
       const teacherUids = Array.from(new Set(data.map(l => l.teacher_id).filter(Boolean)));
@@ -234,13 +248,14 @@ export default function StudentCalendar() {
             <span className="text-3xl mb-2">📅</span>
             <span className="text-xl font-bold text-primary">Prochain cours</span>
             <span className="text-gray-700 mt-1">
-              {nextCourse
+              { (nextCourse || nextAny)
                 ? (() => {
-                    const prof = teacherMap.get(nextCourse.teacher_id) || {};
-                    const when = `${nextCourse.slot_day} ${String(nextCourse.slot_hour).padStart(2,'0')}h`;
-                    return `${nextCourse.subject_id || 'Cours'} · ${when} · avec ${prof.name || nextCourse.teacher_id}`;
+                    const nc = nextCourse || nextAny;
+                    const prof = teacherMap.get(nc.teacher_id) || {};
+                    const when = `${nc.slot_day} ${String(nc.slot_hour).padStart(2,'0')}h`;
+                    return `${nc.subject_id || 'Cours'} · ${when} · avec ${prof.name || nc.teacher_id}`;
                   })()
-                : 'Aucun cours confirmé à venir'}
+                : 'Aucun cours confirmé à venir' }
             </span>
           </div>
         </div>

@@ -79,8 +79,33 @@ const mondayOf = (d) => {
 };
 const weekKeyOf = (d) => mondayOf(d).toISOString().slice(0,10);
 
+// Projette (slot_day, slot_hour) vers la prochaine date >= maintenant
+const nextOccurrenceFromNow = (slot_day, slot_hour) => {
+  if (!FR_DAY_CODES.includes(slot_day)) return null;
+  const now = new Date();
+  now.setSeconds(0,0);
+  const targetHour = Number(slot_hour) || 0;
+
+  const todayIdx = (now.getDay() + 6) % 7; // 0=Lun..6=Dim
+  const slotIdx  = FR_DAY_CODES.indexOf(slot_day);
+
+  let add = slotIdx - todayIdx;
+  if (add < 0) add += 7;
+
+  const d = new Date(now);
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate() + add);
+  d.setHours(targetHour, 0, 0, 0);
+
+  // si c'est aujourd'hui et déjà passé → +7 jours
+  if (add === 0 && d <= now) d.setDate(d.getDate()+7);
+
+  return d;
+};
+
 export default function ParentCalendar() {
   const [lessons, setLessons] = useState([]);
+  const [nextAny, setNextAny] = useState(null); // prochain cours même si pas dans cette semaine
   const [studentMap, setStudentMap] = useState(new Map());
   const [teacherMap, setTeacherMap] = useState(new Map());
   const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map());
@@ -170,6 +195,19 @@ export default function ParentCalendar() {
         .filter(l => l.startAt >= weekStart && l.startAt < weekEnd);
       setLessons(weekScoped);
 
+      // Fallback global pour "Prochain cours" (au-delà de la semaine)
+      const now = new Date();
+      const nextGlobal = eligible
+        .filter(l => l.status !== 'completed')
+        .map(l => {
+          const when = nextOccurrenceFromNow(l.slot_day, l.slot_hour);
+          return when ? { ...l, startAtGlobal: when } : null;
+        })
+        .filter(Boolean)
+        .filter(l => l.startAtGlobal > now)
+        .sort((a, b) => a.startAtGlobal - b.startAtGlobal)[0] || null;
+      setNextAny(nextGlobal);
+
       // Libellés enfants / profs / groupes
       setStudentMap(new Map(kids.map(k => [k.id, k.full_name || k.fullName || k.name || 'Enfant'])));
       const teacherUids = Array.from(new Set(eligible.map(l => l.teacher_id).filter(Boolean)));
@@ -253,7 +291,7 @@ export default function ParentCalendar() {
             <span className="text-3xl mb-2">📅</span>
             <span className="text-xl font-bold text-primary">Prochain cours</span>
             <div className="text-gray-700 mt-2 flex flex-wrap gap-2 items-center">
-              {nextCourse ? (
+              {(nextCourse || nextAny) ? (
                 <>
                   <span className="text-xs text-gray-600">
                     {nextCourse.slot_day} {String(nextCourse.slot_hour).padStart(2,'0')}h
@@ -262,7 +300,7 @@ export default function ParentCalendar() {
                   <span className="text-sm font-medium">{subjectOf(nextCourse)}</span>
                   <span className="text-xs text-gray-600">— Prof : {teacherNameOf(nextCourse.teacher_id)}</span>
                   <span className="text-xs text-gray-600">•</span>
-                  {childNamesForLesson(nextCourse).map((nm, i) => (
+                  {childNamesForLesson(nextCourse || nextAny).map((nm, i) => (
                     <NameChip key={`nc:${i}`}>{nm}</NameChip>
                   ))}
                 </>

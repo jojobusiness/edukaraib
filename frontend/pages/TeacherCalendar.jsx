@@ -77,8 +77,33 @@ const mondayOf = (d) => {
 };
 const weekKeyOf = (d) => mondayOf(d).toISOString().slice(0,10);
 
+// Projette (slot_day, slot_hour) vers la prochaine date >= maintenant (au-delà de la semaine courante)
+function nextOccurrenceFromNow(slot_day, slot_hour) {
+  if (!FR_DAY_CODES.includes(slot_day)) return null;
+  const now = new Date();
+  now.setSeconds(0,0);
+  const targetHour = Number(slot_hour) || 0;
+
+  const todayIdx = (now.getDay() + 6) % 7; // 0=Lun..6=Dim
+  const slotIdx  = FR_DAY_CODES.indexOf(slot_day);
+
+  let add = slotIdx - todayIdx;
+  if (add < 0) add += 7;
+
+  const d = new Date(now);
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate() + add);
+  d.setHours(targetHour, 0, 0, 0);
+
+  // si c’est aujourd’hui et déjà passé → semaine suivante
+  if (add === 0 && d <= now) d.setDate(d.getDate()+7);
+
+  return d;
+}
+
 export default function TeacherCalendar() {
   const [lessons, setLessons] = useState([]);
+  const [nextAny, setNextAny] = useState(null);
   const [studentMap, setStudentMap] = useState(new Map());
   const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map());
   const [openGroupId, setOpenGroupId] = useState(null);
@@ -154,6 +179,19 @@ export default function TeacherCalendar() {
 
       setLessons(eligible);
 
+      // Fallback global "Prochain cours" (au‐delà de la semaine)
+      const now = new Date();
+      const nextGlobal = rawAll
+        .filter(l => l.status !== 'completed')
+        .map(l => {
+          const when = nextOccurrenceFromNow(l.slot_day, l.slot_hour);
+          return when ? { ...l, startAtGlobal: when } : null;
+        })
+        .filter(Boolean)
+        .filter(l => l.startAtGlobal > now)
+        .sort((a, b) => a.startAtGlobal - b.startAtGlobal)[0] || null;
+      setNextAny(nextGlobal);
+
       // 4) Noms
       const studentIds = Array.from(new Set(eligible.map(l => l.student_id).filter(Boolean)));
       const names = await Promise.all(studentIds.map(id => resolveStudentName(id, nameCacheRef)));
@@ -216,40 +254,73 @@ export default function TeacherCalendar() {
         {!loading && (
           <div className="bg-white p-4 rounded-xl shadow border mb-6">
             <div className="font-semibold text-primary mb-2">Prochain cours</div>
-            {nextOne ? (
+            {(nextOne || nextAny) ? (
               <div className="flex items-center gap-3">
                 {(() => {
-                  const ds = (nextOne?.is_group && Array.isArray(nextOne.participant_ids) &&
-                    nextOne.participant_ids.some(sid => {
-                      const st = nextOne.participantsMap?.[sid]?.status;
+                  const L = nextOne || nextAny; // ⬅️ on unifie
+                  const isGroupConfirmedForTeacher =
+                    L?.is_group &&
+                    Array.isArray(L.participant_ids) &&
+                    L.participant_ids.some(sid => {
+                      const st = L.participantsMap?.[sid]?.status;
                       return st === 'accepted' || st === 'confirmed';
-                    }))
-                    ? (nextOne.status === 'completed' ? 'completed' : 'confirmed')
-                    : nextOne.status;
+                    });
+
+                const ds = isGroupConfirmedForTeacher
+                  ? (L.status === 'completed' ? 'completed' : 'confirmed')
+                  : L.status;
+
                   return (
-                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[ds] || 'bg-gray-200'}`}>
-                      {ds === 'confirmed' ? 'Confirmé' : ds === 'completed' ? 'Terminé' : ds}
+                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                      {
+                        booked: 'bg-yellow-100 text-yellow-800',
+                        confirmed: 'bg-green-100 text-green-800',
+                        completed: 'bg-gray-100 text-gray-700',
+                        rejected: 'bg-red-100 text-red-700',
+                      }[ds] || 'bg-gray-200'
+                    }`}>
+                      {ds === 'booked' ? 'En attente'
+                        : ds === 'confirmed' ? 'Confirmé'
+                        : ds === 'rejected' ? 'Refusé'
+                        : ds === 'completed' ? 'Terminé'
+                        : ds}
                     </span>
                   );
                 })()}
 
-                <span className="font-bold text-secondary">{nextOne.subject_id || 'Matière'}</span>
-
-                {!nextOne.is_group && (
-                  <span className="text-sm text-gray-700">
-                    {studentMap.get(nextOne.student_id) || nextOne.student_id}
-                  </span>
-                )}
-
-                {nextOne.is_group && (
-                  <span className="ml-1 text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded" title="Cours groupé">
-                    👥 {(groupNamesByLesson.get(nextOne.id) || nextOne.participant_ids || []).length}
-                  </span>
-                )}
-
-                <span className="text-sm text-gray-500 ml-auto">
-                  {nextOne.startAt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' })} • {nextOne.startAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                {/* Matière */}
+                <span className="font-bold text-secondary">
+                  {(nextOne || nextAny).subject_id || 'Matière'}
                 </span>
+
+                {/* Élève / Groupe */}
+                {(() => {
+                  const L = nextOne || nextAny;
+                  if (!L.is_group) {
+                    return (
+                      <span className="text-sm text-gray-700">
+                        {studentMap.get(L.student_id) || L.student_id}
+                      </span>
+                    );
+                  }
+                  const count = (groupNamesByLesson.get(L.id) || L.participant_ids || []).length;
+                  return (
+                    <span className="ml-1 text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded" title="Cours groupé">
+                      👥 {count}
+                    </span>
+                  );
+                })()}
+
+                {/* Date/heure — startAt (semaine) sinon startAtGlobal (fallback) */}
+                {(() => {
+                  const L = nextOne || nextAny;
+                  const d = (L.startAt) || (L.startAtGlobal) || null;
+                  return (
+                    <span className="text-sm text-gray-500 ml-auto">
+                      {d?.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' })} • {d?.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  );
+                })()}
               </div>
             ) : (
               <div className="text-gray-500 text-sm">Aucun cours confirmé à venir cette semaine.</div>
