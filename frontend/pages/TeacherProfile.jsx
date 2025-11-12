@@ -167,6 +167,48 @@ function activeParticipantsCount(lesson = {}) {
   return n;
 }
 
+// ===== Helpers "mois/semaines" (copiés de BookingModal) =====
+const startOfWeekMon = (d) => {
+  const x = new Date(d);
+  const day = (x.getDay() + 6) % 7; // 0=Mon..6=Sun
+  x.setDate(x.getDate() - day);
+  x.setHours(0, 0, 0, 0);
+  return x;
+};
+const startOfMonth = (d) => {
+  const x = new Date(d);
+  x.setDate(1);
+  x.setHours(0, 0, 0, 0);
+  return x;
+};
+const addMonths = (d, n) => {
+  const x = new Date(d);
+  x.setMonth(x.getMonth() + n);
+  return x;
+};
+const isoWeek = (date) => {
+  const tmp = new Date(date.getTime());
+  tmp.setHours(0, 0, 0, 0);
+  tmp.setDate(tmp.getDate() + 3 - ((tmp.getDay() + 6) % 7));
+  const week1 = new Date(tmp.getFullYear(), 0, 4);
+  return 1 + Math.round(((tmp - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
+};
+const buildMonthMatrix = (cursor) => {
+  const first = startOfMonth(cursor);
+  const gridStart = startOfWeekMon(first);
+  const weeks = [];
+  for (let w = 0; w < 6; w++) {
+    const row = [];
+    for (let d = 0; d < 7; d++) {
+      const cell = new Date(gridStart);
+      cell.setDate(gridStart.getDate() + w * 7 + d);
+      row.push(cell);
+    }
+    weeks.push(row);
+  }
+  return weeks;
+};
+
 export default function TeacherProfile() {
   const { teacherId } = useParams();
   const navigate = useNavigate();
