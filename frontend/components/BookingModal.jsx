@@ -37,33 +37,6 @@ const buildMonthMatrix = (cursor) => {
 // map 'Lun'..'Dim' -> index 0..6
 const DAY_INDEX = { 'Lun':0, 'Mar':1, 'Mer':2, 'Jeu':3, 'Ven':4, 'Sam':5, 'Dim':6 };
 
-// Y a-t-il une résa (peu importe qui) ?
-const isBooked = (day, hour) => {
-  const dkey = dayDateKey(day);
-  if (dkey && bookedMap.get(`${day}:${hour}:${dkey}`)?.any) return true;
-  if (bookedMap.get(`${day}:${hour}:${activeWeekKey}`)?.any) return true;
-  return false;
-};
-
-// Combien de mes enfants ont une résa sur ce créneau de la semaine affichée ?
-const myBookedCount = (day, hour) => {
-  const dkey = dayDateKey(day);
-  const byDate = dkey ? bookedMap.get(`${day}:${hour}:${dkey}`) : null;
-  const byWeek = bookedMap.get(`${day}:${hour}:${activeWeekKey}`);
-  const set = byDate?.mine?.size ? byDate.mine : byWeek?.mine;
-  return set ? set.size : 0;
-};
-
-// Liste de noms pour l’infobulle
-const myBookedNames = (day, hour) => {
-  const dkey = dayDateKey(day);
-  const byDate = dkey ? bookedMap.get(`${day}:${hour}:${dkey}`) : null;
-  const byWeek = bookedMap.get(`${day}:${hour}:${activeWeekKey}`);
-  const set = byDate?.mine?.size ? byDate.mine : byWeek?.mine;
-  if (!set || set.size === 0) return [];
-  return Array.from(set).map(sid => idToName[sid] || sid);
-};
-
 export default function BookingModal({
   availability = {},
   bookedSlots = [],
@@ -175,30 +148,44 @@ export default function BookingModal({
     return m;
   }, [bookedSlots, myStudentIds]);
 
-  // places restantes (prend d’abord la clé "par semaine", sinon jour:heure)
-  const remainingFor = (day, hour) => {
-    const dkey = dayDateKey(day);
-    const wkKey = `${day}:${hour}:${activeWeekKey}`;
-    // 1) exact par date si dispo
-    if (dkey && typeof remainingBySlot?.[`${day}:${hour}:${dkey}`] === 'number') {
-      return remainingBySlot[`${day}:${hour}:${dkey}`];
-    }
-    // 2) sinon, valeur à la semaine
-    if (typeof remainingBySlot?.[wkKey] === 'number') {
-      return remainingBySlot[wkKey];
-    }
-    // 3) ❌ pas de fallback global
-    return null;
-  };
+// places restantes (date > semaine, pas de fallback global)
+const remainingFor = (day, hour) => {
+  const dkey = dayDateKey(day);
+  const wkKey = `${day}:${hour}:${activeWeekKey}`;
+  if (dkey && typeof remainingBySlot?.[`${day}:${hour}:${dkey}`] === 'number') {
+    return remainingBySlot[`${day}:${hour}:${dkey}`];
+  }
+  if (typeof remainingBySlot?.[wkKey] === 'number') {
+    return remainingBySlot[wkKey];
+  }
+  return null;
+};
 
+  // ✅ Y a-t-il une résa ? (utilise la structure {any, mine})
   const isBooked = (day, hour) => {
     const dkey = dayDateKey(day);
-    // 1) exact par date (préféré)
-    if (dkey && bookedMap.get(`${day}:${hour}:${dkey}`) === true) return true;
-    // 2) sinon, clé par semaine (si jamais les données sont indexées à la semaine)
-    if (bookedMap.get(`${day}:${hour}:${activeWeekKey}`) === true) return true;
-    // 3) ❌ pas de fallback global
+    if (dkey && bookedMap.get(`${day}:${hour}:${dkey}`)?.any) return true;
+    if (bookedMap.get(`${day}:${hour}:${activeWeekKey}`)?.any) return true;
     return false;
+  };
+
+  // ✅ Combien de MES enfants ont une résa sur ce créneau ?
+  const myBookedCount = (day, hour) => {
+    const dkey = dayDateKey(day);
+    const byDate = dkey ? bookedMap.get(`${day}:${hour}:${dkey}`) : null;
+    const byWeek = bookedMap.get(`${day}:${hour}:${activeWeekKey}`);
+    const set = byDate?.mine?.size ? byDate.mine : byWeek?.mine;
+    return set ? set.size : 0;
+  };
+
+  // ✅ Noms des enfants pour le tooltip
+  const myBookedNames = (day, hour) => {
+    const dkey = dayDateKey(day);
+    const byDate = dkey ? bookedMap.get(`${day}:${hour}:${dkey}`) : null;
+    const byWeek = bookedMap.get(`${day}:${hour}:${activeWeekKey}`);
+    const set = byDate?.mine?.size ? byDate.mine : byWeek?.mine;
+    if (!set || set.size === 0) return [];
+    return Array.from(set).map(sid => idToName[sid] || sid);
   };
 
   const isAvailable = (day, hour) => Array.isArray(availability[day]) && availability[day].includes(hour);
@@ -455,7 +442,7 @@ export default function BookingModal({
                                 {remaining}
                               </span>
                             )}                  
-                                    
+
                             {myBookedCount(dayLabel, h) > 0 && (
                               <span
                                 className="absolute -bottom-1 -left-1 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[10px] leading-[18px] text-center"
