@@ -11,30 +11,7 @@ import {
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
 
-// --- Helpers ---
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-
-function getThisWeekDays() {
-  const now = new Date();
-  const jsDay = now.getDay(); // 0=Dim..6=Sam
-  const offsetToMonday = ((jsDay + 6) % 7);
-
-  const monday = new Date(now);
-  monday.setHours(0, 0, 0, 0);
-  monday.setDate(now.getDate() - offsetToMonday);
-
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    const code = FR_DAY_CODES[i];
-    const label = d.toLocaleDateString('fr-FR', {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'short',
-    });
-    return { code, label, date: d };
-  });
-}
 
 function dateWithHour(baseDate, hour) {
   const h = Number(hour) || 0;
@@ -42,13 +19,10 @@ function dateWithHour(baseDate, hour) {
   d.setHours(h, 0, 0, 0);
   return d;
 }
-
 function formatHour(h) {
   const n = Number(h) || 0;
   return `${String(n).padStart(2, '0')}:00`;
 }
-
-// ---------- Résolution profil élève (users OU students) ----------
 async function fetchUserProfile(uid) {
   if (!uid) return null;
   try {
@@ -73,18 +47,15 @@ async function fetchStudentDoc(id) {
   } catch {}
   return null;
 }
-/** users d'abord (élève autonome), puis students (enfant rattaché). */
 async function resolveStudentName(id, cacheRef) {
   if (!id) return '';
   if (cacheRef.current.has(id)) return cacheRef.current.get(id);
-  // users
   const u = await fetchUserProfile(id);
   if (u) {
     const nm = u.fullName || u.name || u.displayName || id;
     cacheRef.current.set(id, nm);
     return nm;
   }
-  // students
   const s = await fetchStudentDoc(id);
   if (s) {
     const nm = s.full_name || s.name || id;
@@ -95,44 +66,80 @@ async function resolveStudentName(id, cacheRef) {
   return id;
 }
 
+// Semaine
+const mondayOf = (d) => {
+  const x = new Date(d);
+  const js = x.getDay(); // 0=Dim..6=Sam
+  const off = (js + 6) % 7; // 0=Lun..6=Dim
+  x.setHours(0,0,0,0);
+  x.setDate(x.getDate() - off);
+  return x;
+};
+const weekKeyOf = (d) => mondayOf(d).toISOString().slice(0,10);
+
 export default function TeacherCalendar() {
   const [lessons, setLessons] = useState([]);
-  const [studentMap, setStudentMap] = useState(new Map()); // student_id -> name
-  const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map()); // lessonId -> [names]
+  const [studentMap, setStudentMap] = useState(new Map());
+  const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map());
   const [openGroupId, setOpenGroupId] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const week = getThisWeekDays();
-  const weekByCode = useMemo(() => Object.fromEntries(week.map(w => [w.code, w.date])), [week]);
+  // Semaine auto
+  const [weekKey, setWeekKey] = useState(weekKeyOf(new Date()));
+  useEffect(() => {
+    const id = setInterval(() => {
+      const k = weekKeyOf(new Date());
+      setWeekKey(prev => (prev === k ? prev : k));
+    }, 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const weekStart = useMemo(() => mondayOf(new Date(weekKey)), [weekKey]);
+  const weekEnd   = useMemo(() => { const d = new Date(weekStart); d.setDate(d.getDate()+7); return d; }, [weekStart]);
+  const week = useMemo(() => {
+    const out = [];
+    for (let i=0;i<7;i++) {
+      const d = new Date(weekStart); d.setDate(d.getDate()+i);
+      const label = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
+      out.push({ code: FR_DAY_CODES[i], label, date: d });
+    }
+    return out;
+  }, [weekStart]);
+  const weekByCode = useMemo(() => {
+    const map = {};
+    for (let i=0;i<7;i++) {
+      const d = new Date(weekStart); d.setDate(d.getDate()+i);
+      map[FR_DAY_CODES[i]] = d;
+    }
+    return map;
+  }, [weekStart]);
+
   const nameCacheRef = useRef(new Map());
+  const teacherUid = auth.currentUser?.uid || null;
 
   useEffect(() => {
     const fetchLessons = async () => {
-      if (!auth.currentUser) return;
+      if (!teacherUid) return;
       setLoading(true);
 
       // 1) cours du prof
-      const qLessons = query(
-        collection(db, 'lessons'),
-        where('teacher_id', '==', auth.currentUser.uid)
-      );
+      const qLessons = query(collection(db, 'lessons'), where('teacher_id', '==', teacherUid));
       const snap = await getDocs(qLessons);
       const rawAll = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      // 2) enrichir (semaine courante)
-      const enrichedAll = rawAll
+      // 2) enrichir + scoper sur semaine
+      const scoped = rawAll
         .map(l => {
           const base = weekByCode[l.slot_day];
           if (!base) return null;
           const startAt = dateWithHour(base, l.slot_hour);
           return { ...l, startAt };
         })
-        .filter(Boolean);
+        .filter(Boolean)
+        .filter(l => l.startAt >= weekStart && l.startAt < weekEnd);
 
-      // ✅ Filtrage éligible :
-      // - Individuel: confirmed ou completed
-      // - Groupe: inclure si AU MOINS un participant est accepted|confirmed (completed toujours inclus)
-      const eligible = enrichedAll.filter((l) => {
+      // 3) Éligibilité
+      const eligible = scoped.filter((l) => {
         if (l.status === 'completed') return true;
         if (l.is_group) {
           const ids = Array.isArray(l.participant_ids) ? l.participant_ids : [];
@@ -147,12 +154,11 @@ export default function TeacherCalendar() {
 
       setLessons(eligible);
 
-      // 3) Précharger noms de l'élève principal (pour affichage simple)
+      // 4) Noms
       const studentIds = Array.from(new Set(eligible.map(l => l.student_id).filter(Boolean)));
       const names = await Promise.all(studentIds.map(id => resolveStudentName(id, nameCacheRef)));
       setStudentMap(new Map(studentIds.map((id, i) => [id, names[i]]) ));
 
-      // 4) Noms des participants pour cours groupés
       const idSet = new Set();
       eligible.forEach(l => {
         if (l.is_group) {
@@ -181,24 +187,17 @@ export default function TeacherCalendar() {
     };
 
     fetchLessons();
-  }, []); // eslint-disable-line
+  }, [teacherUid, weekKey]); // refetch à chaque nouvelle semaine
 
-  // Données dérivées
   const now = new Date();
-
-  // 👉 Prochain cours : on exclut juste les "completed" et on prend le plus proche (groupé ou individuel)
   const upcoming = lessons
     .filter(l => l.status !== 'completed' && l.startAt >= now)
     .sort((a, b) => a.startAt - b.startAt);
-
   const nextOne = upcoming[0] || null;
 
-  // Groupage hebdo par code
   const lessonsByDay = useMemo(() => {
     const m = Object.fromEntries(week.map(w => [w.code, []]));
-    lessons.forEach(l => {
-      if (m[l.slot_day]) m[l.slot_day].push(l);
-    });
+    lessons.forEach(l => { if (m[l.slot_day]) m[l.slot_day].push(l); });
     return m;
   }, [week, lessons]);
 
@@ -214,7 +213,6 @@ export default function TeacherCalendar() {
       <div className="max-w-2xl mx-auto">
         <h2 className="text-2xl font-bold text-primary mb-6">🗓️ Mon agenda de la semaine</h2>
 
-        {/* ---- Bandeau Prochain cours ---- */}
         {!loading && (
           <div className="bg-white p-4 rounded-xl shadow border mb-6">
             <div className="font-semibold text-primary mb-2">Prochain cours</div>
@@ -237,26 +235,20 @@ export default function TeacherCalendar() {
 
                 <span className="font-bold text-secondary">{nextOne.subject_id || 'Matière'}</span>
 
-                {/* NOM élève pour individuel / libellé groupé */}
-                <span className="text-sm text-gray-700">
-                  {studentMap.get(nextOne.student_id) || nextOne.student_id || (nextOne.is_group ? 'Cours groupé' : '')}
-                </span>
+                {!nextOne.is_group && (
+                  <span className="text-sm text-gray-700">
+                    {studentMap.get(nextOne.student_id) || nextOne.student_id}
+                  </span>
+                )}
 
-                {/* 👥 Icône + nombre de participants pour le prochain cours groupé (juste l’icône, pas de liste) */}
                 {nextOne.is_group && (
-                  <span
-                    className="ml-1 text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded"
-                    title="Cours groupé"
-                  >
-                    {/* on réutilise le même comptage que la vue hebdo */}
+                  <span className="ml-1 text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded" title="Cours groupé">
                     👥 {(groupNamesByLesson.get(nextOne.id) || nextOne.participant_ids || []).length}
                   </span>
                 )}
 
                 <span className="text-sm text-gray-500 ml-auto">
-                  {FR_DAY_CODES.includes(nextOne.slot_day) ? nextOne.startAt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' }) : ''}
-                  {' • '}
-                  {nextOne.startAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                  {nextOne.startAt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' })} • {nextOne.startAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
             ) : (
@@ -265,17 +257,13 @@ export default function TeacherCalendar() {
           </div>
         )}
 
-        {/* ---- Vue hebdo (confirmés & groupés acceptés, + terminés) ---- */}
         {loading ? (
-          <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">
-            Chargement…
-          </div>
+          <div className="bg-white p-6 rounded-xl shadow text-gray-500 text-center">Chargement…</div>
         ) : (
           <div className="bg-white p-6 rounded-xl shadow border">
             {week.map(({ code, label }) => (
               <div key={code} className="mb-5">
                 <div className="font-bold text-secondary text-sm mb-2 uppercase">{label}</div>
-
                 {lessonsByDay[code].length === 0 ? (
                   <div className="text-gray-400 text-xs">Aucun cours</div>
                 ) : (
@@ -310,14 +298,12 @@ export default function TeacherCalendar() {
 
                             <span className="font-bold text-primary">{l.subject_id || 'Matière'}</span>
 
-                            {/* Élève principal (si cours individuel) */}
                             {!isGroup && (
                               <span className="text-xs text-gray-600">
                                 {studentMap.get(l.student_id) || l.student_id}
                               </span>
                             )}
 
-                            {/* Badge groupe + mini-fenêtre des élèves */}
                             {isGroup && (
                               <>
                                 <button

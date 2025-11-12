@@ -12,37 +12,7 @@ import {
 import DashboardLayout from '../components/DashboardLayout';
 
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-const codeIndex = (c) => Math.max(0, FR_DAY_CODES.indexOf(c));
 
-function getThisWeekDays() {
-  const now = new Date();
-  const jsDay = now.getDay();
-  const offsetToMonday = ((jsDay + 6) % 7);
-  const monday = new Date(now);
-  monday.setHours(0, 0, 0, 0);
-  monday.setDate(now.getDate() - offsetToMonday);
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    const code = FR_DAY_CODES[i];
-    const label = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
-    return { code, label, date: d };
-  });
-}
-function nextOccurrence(slot_day, slot_hour, now = new Date()) {
-  if (!FR_DAY_CODES.includes(slot_day)) return null;
-  const jsDay = now.getDay();
-  const offsetToMonday = ((jsDay + 6) % 7);
-  const monday = new Date(now);
-  monday.setHours(0, 0, 0, 0);
-  monday.setDate(now.getDate() - offsetToMonday);
-  const idx = codeIndex(slot_day);
-  const start = new Date(monday);
-  start.setDate(monday.getDate() + idx);
-  start.setHours(Number(slot_hour) || 0, 0, 0, 0);
-  if (start <= now) start.setDate(start.getDate() + 7);
-  return start;
-}
 function formatHourFromSlot(h) {
   const n = Number(h) || 0;
   return `${String(n).padStart(2, '0')}:00`;
@@ -98,6 +68,17 @@ function NameChip({ children }) {
   );
 }
 
+// Helpers semaine
+const mondayOf = (d) => {
+  const x = new Date(d);
+  const js = x.getDay(); // 0=Dim..6=Sam
+  const off = (js + 6) % 7; // 0=Lun..6=Dim
+  x.setHours(0,0,0,0);
+  x.setDate(x.getDate() - off);
+  return x;
+};
+const weekKeyOf = (d) => mondayOf(d).toISOString().slice(0,10);
+
 export default function ParentCalendar() {
   const [lessons, setLessons] = useState([]);
   const [studentMap, setStudentMap] = useState(new Map());
@@ -108,10 +89,46 @@ export default function ParentCalendar() {
   const [kidIds, setKidIds] = useState([]);
   const nameCacheRef = useRef(new Map());
 
+  // Semaine courante pilotée par weekKey (lundi ISO)
+  const [weekKey, setWeekKey] = useState(weekKeyOf(new Date()));
+  useEffect(() => {
+    const id = setInterval(() => {
+      const k = weekKeyOf(new Date());
+      setWeekKey(prev => (prev === k ? prev : k));
+    }, 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Dates de la semaine à partir de weekKey
+  const weekStart = useMemo(() => mondayOf(new Date(weekKey)), [weekKey]);
+  const weekEnd   = useMemo(() => { const d = new Date(weekStart); d.setDate(d.getDate()+7); return d; }, [weekStart]);
+  const week = useMemo(() => {
+    const out = [];
+    for (let i=0;i<7;i++) {
+      const d = new Date(weekStart); d.setDate(d.getDate()+i);
+      const code = FR_DAY_CODES[i];
+      const label = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
+      out.push({ code, label, date: d });
+    }
+    return out;
+  }, [weekStart]);
+  const weekByCode = useMemo(() => Object.fromEntries(week.map(w => [w.code, w.date])), [week]);
+
+  // Projeter un cours sur la semaine courante
+  const withStartAt = (l) => {
+    const base = weekByCode[l.slot_day];
+    if (!base) return null;
+    const d = new Date(base);
+    d.setHours(Number(l.slot_hour) || 0, 0, 0, 0);
+    return { ...l, startAt: d };
+  };
+
   useEffect(() => {
     const run = async () => {
       if (!auth.currentUser) return;
       setLoading(true);
+
+      // Enfants du parent
       const kidsSnap = await getDocs(query(collection(db, 'students'), where('parent_id', '==', auth.currentUser.uid)));
       const kids = kidsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       const kidIdsLocal = kids.map(k => k.id);
@@ -122,7 +139,7 @@ export default function ParentCalendar() {
         setOpenGroupId(null); setLoading(false); return;
       }
 
-      // Récup toutes les leçons liées aux enfants (élève principal OU participant)
+      // cours: élève principal OU participant
       const map = new Map();
       for (const c of chunk(kidIdsLocal, 10)) {
         const qLessons = query(collection(db, 'lessons'), where('student_id', 'in', c));
@@ -132,12 +149,9 @@ export default function ParentCalendar() {
         const qPart = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', kid));
         (await getDocs(qPart)).docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
       }
-
       const allLessons = Array.from(map.values());
 
-      // ✅ Filtrage éligible :
-      // - Individuel: confirmed ou completed (et l'enfant est bien l'élève)
-      // - Groupe: inclure si AU MOINS un de mes enfants est accepted|confirmed (completed toujours inclus)
+      // Éligibilité
       const kidSet = new Set(kidIdsLocal);
       const eligible = allLessons.filter((l) => {
         if (l.status === 'completed') return true;
@@ -149,8 +163,14 @@ export default function ParentCalendar() {
         return l.status === 'confirmed' && kidSet.has(l.student_id);
       });
 
-      setLessons(eligible);
+      // Scope semaine
+      const weekScoped = eligible
+        .map(withStartAt)
+        .filter(Boolean)
+        .filter(l => l.startAt >= weekStart && l.startAt < weekEnd);
+      setLessons(weekScoped);
 
+      // Libellés enfants / profs / groupes
       setStudentMap(new Map(kids.map(k => [k.id, k.full_name || k.fullName || k.name || 'Enfant'])));
       const teacherUids = Array.from(new Set(eligible.map(l => l.teacher_id).filter(Boolean)));
       const profiles = await Promise.all(teacherUids.map(uid => fetchUserProfile(uid)));
@@ -161,7 +181,6 @@ export default function ParentCalendar() {
         ])
       ));
 
-      // Noms des participants pour les cours groupés
       const idSet = new Set();
       eligible.forEach(l => {
         if (!l.is_group) return;
@@ -187,13 +206,11 @@ export default function ParentCalendar() {
       setLoading(false);
     };
     run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [weekKey]); // ← refetch à chaque nouvelle semaine
 
-  const week = getThisWeekDays();
   const lessonsByDay = useMemo(() => {
     const m = Object.fromEntries(week.map(w => [w.code, []]));
-    lessons.forEach(l => { const code = typeof l.slot_day === 'string' ? l.slot_day : ''; if (m[code]) m[code].push(l); });
+    lessons.forEach(l => { if (m[l.slot_day]) m[l.slot_day].push(l); });
     return m;
   }, [week, lessons]);
 
@@ -206,12 +223,10 @@ export default function ParentCalendar() {
     return list.map(id => studentMap.get(id) || id);
   };
 
-  // 👉 Prochain cours : on exclut juste les "completed" et on prend le plus proche (groupé ou individuel)
   const nextCourse = useMemo(() => {
     const now = new Date();
     const future = lessons
-      .filter(l => l.status !== 'completed' && FR_DAY_CODES.includes(l.slot_day))
-      .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
+      .filter(l => l.status !== 'completed')
       .filter(l => l.startAt && l.startAt > now)
       .sort((a, b) => a.startAt - b.startAt);
     return future[0] || null;
@@ -232,7 +247,7 @@ export default function ParentCalendar() {
       <div className="max-w-3xl mx-auto">
         <h2 className="text-2xl font-bold text-primary mb-6">🗓️ Planning hebdo des enfants</h2>
 
-        {/* Prochain cours — + Matière & Prof */}
+        {/* Prochain cours */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           <div className="bg-white rounded-xl shadow p-6 border-l-4 border-primary flex flex-col items-start md:col-span-3">
             <span className="text-3xl mb-2">📅</span>
@@ -290,21 +305,17 @@ export default function ParentCalendar() {
                                 </span>
                               );
                             })()}
-                            {/* Matière — Prof */}
                             <span className="text-sm font-medium">{subjectOf(l)}</span>
                             <span className="text-xs text-gray-500">— Prof : {teacherNameOf(l.teacher_id)}</span>
 
-                            {/* Enfants concernés */}
                             <div className="flex flex-wrap gap-2 ml-2">
                               {kidsNames.length ? kidsNames.map((nm, i) => <NameChip key={`kid:${l.id}:${i}`}>{nm}</NameChip>) : (
                                 <span className="text-xs text-gray-500">—</span>
                               )}
                             </div>
 
-                            {/* Heure à droite */}
                             <span className="text-xs text-gray-500 ml-auto">{formatHourFromSlot(l.slot_hour)}</span>
 
-                            {/* Participants groupe (optionnel) */}
                             {isGroup && (
                               <button
                                 className="ml-2 text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100"

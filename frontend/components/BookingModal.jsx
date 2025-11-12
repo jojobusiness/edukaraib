@@ -92,10 +92,10 @@ export default function BookingModal({
 
   // -------- Helpers dépendants de la semaine active (⚠ ordre important) --------
 
-  // Date réelle d’un label de jour (Lun..Dim) de la semaine active
-  const dateForLabel = (label) => {
-    const idx = DAY_INDEX[label] ?? 0;
-    return activeWeekDays[idx];
+  // YYYY-MM-DD du jour (dans la semaine active) pour un label 'Lun'..'Dim'
+  const dayDateKey = (label) => {
+    const d = dateForLabel(label);
+    return d ? d.toISOString().slice(0,10) : null;
   };
 
   // ISO du lundi de la semaine active (ex: "2025-11-10")
@@ -107,27 +107,52 @@ export default function BookingModal({
   // bookedMap sensible à la semaine (avec fallback jour:heure)
   const bookedMap = useMemo(() => {
     const m = new Map();
-    (bookedSlots || []).forEach(({ day, hour, week }) => {
+    (bookedSlots || []).forEach((it) => {
+      const { day, hour } = it || {};
       if (!day || typeof hour !== 'number') return;
-      const wk = week || activeWeekKey;
-      m.set(`${day}:${hour}:${wk}`, true);
-      // fallback (compat anciens jeux de données)
-      m.set(`${day}:${hour}`, true);
+      // 1) clé la plus précise : date exacte si fournie
+      if (it.date) {
+        m.set(`${day}:${hour}:${String(it.date).slice(0,10)}`, true);
+      }
+      // 2) si 'startAt' existe, on en déduit la date du jour
+      if (it.startAt) {
+        const d = new Date(it.startAt);
+        if (!isNaN(d)) m.set(`${day}:${hour}:${d.toISOString().slice(0,10)}`, true);
+      }
+      // 3) fallback “semaine” si fourni
+      if (it.week) {
+        m.set(`${day}:${hour}:${it.week}`, true);
+      }
+      // ❌ pas de fallback global `${day}:${hour}` pour éviter de “bloquer toutes les semaines”
     });
     return m;
-  }, [bookedSlots, activeWeekKey]);
+  }, [bookedSlots]);
 
   // places restantes (prend d’abord la clé "par semaine", sinon jour:heure)
   const remainingFor = (day, hour) => {
+    const dkey = dayDateKey(day);
     const wkKey = `${day}:${hour}:${activeWeekKey}`;
-    const key   = `${day}:${hour}`;
-    const val = (remainingBySlot?.[wkKey] ?? remainingBySlot?.[key]);
-    return typeof val === 'number' ? val : null;
+    // 1) exact par date si dispo
+    if (dkey && typeof remainingBySlot?.[`${day}:${hour}:${dkey}`] === 'number') {
+      return remainingBySlot[`${day}:${hour}:${dkey}`];
+    }
+    // 2) sinon, valeur à la semaine
+    if (typeof remainingBySlot?.[wkKey] === 'number') {
+      return remainingBySlot[wkKey];
+    }
+    // 3) ❌ pas de fallback global
+    return null;
   };
 
-  const isBooked = (day, hour) =>
-    bookedMap.get(`${day}:${hour}:${activeWeekKey}`) === true ||
-    bookedMap.get(`${day}:${hour}`) === true;
+  const isBooked = (day, hour) => {
+    const dkey = dayDateKey(day);
+    // 1) exact par date (préféré)
+    if (dkey && bookedMap.get(`${day}:${hour}:${dkey}`) === true) return true;
+    // 2) sinon, clé par semaine (si jamais les données sont indexées à la semaine)
+    if (bookedMap.get(`${day}:${hour}:${activeWeekKey}`) === true) return true;
+    // 3) ❌ pas de fallback global
+    return false;
+  };
 
   const isAvailable = (day, hour) => Array.isArray(availability[day]) && availability[day].includes(hour);
   const isSelected  = (day, hour) => selected.some(s => s.day === day && s.hour === hour);

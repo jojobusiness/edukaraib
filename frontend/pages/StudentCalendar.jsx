@@ -13,53 +13,11 @@ import DashboardLayout from '../components/DashboardLayout';
 
 // --- Helpers ---
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-const codeIndex = (c) => Math.max(0, FR_DAY_CODES.indexOf(c));
-
-function getThisWeekDays() {
-  const now = new Date();
-  const jsDay = now.getDay(); // 0..6
-  const offsetToMonday = ((jsDay + 6) % 7);
-
-  const monday = new Date(now);
-  monday.setHours(0,0,0,0);
-  monday.setDate(now.getDate() - offsetToMonday);
-
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    const code = FR_DAY_CODES[i];
-    const label = d.toLocaleDateString('fr-FR', {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'short'
-    });
-    return { code, label, date: d };
-  });
-}
-
-function nextOccurrence(slot_day, slot_hour, now = new Date()) {
-  if (!FR_DAY_CODES.includes(slot_day)) return null;
-  const jsDay = now.getDay();
-  const offsetToMonday = ((jsDay + 6) % 7);
-
-  const monday = new Date(now);
-  monday.setHours(0, 0, 0, 0);
-  monday.setDate(now.getDate() - offsetToMonday);
-
-  const idx = codeIndex(slot_day);
-  const start = new Date(monday);
-  start.setDate(monday.getDate() + idx);
-  start.setHours(Number(slot_hour) || 0, 0, 0, 0);
-  if (start <= now) start.setDate(start.getDate() + 7);
-  return start;
-}
 
 function formatHourFromSlot(slot_hour) {
   const h = Number(slot_hour) || 0;
   return `${String(h).padStart(2,'0')}:00`;
 }
-
-// Résolution profil prof
 async function fetchUserProfile(uid) {
   if (!uid) return null;
   try {
@@ -76,8 +34,6 @@ async function fetchUserProfile(uid) {
   } catch {}
   return null;
 }
-
-// Résolution noms participants (users -> students) avec cache
 async function fetchStudentDoc(id) {
   if (!id) return null;
   try {
@@ -108,41 +64,81 @@ async function resolvePersonName(id, cacheRef) {
   return id;
 }
 
+// Semaine
+const mondayOf = (d) => {
+  const x = new Date(d);
+  const js = x.getDay(); // 0=Dim..6=Sam
+  const off = (js + 6) % 7;
+  x.setHours(0,0,0,0);
+  x.setDate(x.getDate() - off);
+  return x;
+};
+const weekKeyOf = (d) => mondayOf(d).toISOString().slice(0,10);
+
 export default function StudentCalendar() {
   const [lessons, setLessons] = useState([]);
   const [teacherMap, setTeacherMap] = useState(new Map());
   const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map());
   const [openGroupId, setOpenGroupId] = useState(null);
   const [loading, setLoading] = useState(true);
-
   const nameCacheRef = useRef(new Map());
+
+  // weekKey auto (se met à jour quand on change de semaine)
+  const [weekKey, setWeekKey] = useState(weekKeyOf(new Date()));
+  useEffect(() => {
+    const id = setInterval(() => {
+      const k = weekKeyOf(new Date());
+      setWeekKey(prev => (prev === k ? prev : k));
+    }, 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Semaine courante
+  const weekStart = useMemo(() => mondayOf(new Date(weekKey)), [weekKey]);
+  const weekEnd   = useMemo(() => { const d = new Date(weekStart); d.setDate(d.getDate()+7); return d; }, [weekStart]);
+  const week = useMemo(() => {
+    const labels = FR_DAY_CODES;
+    const out = [];
+    for (let i=0;i<7;i++) {
+      const d = new Date(weekStart); d.setDate(d.getDate()+i);
+      const label = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
+      out.push({ code: labels[i], label, date: d });
+    }
+    return out;
+  }, [weekStart]);
+  const weekByCode = useMemo(() => Object.fromEntries(week.map(w => [w.code, w.date])), [week]);
+
+  // Projeter un cours sur la semaine courante
+  const withStartAt = (l) => {
+    const base = weekByCode[l.slot_day];
+    if (!base) return null;
+    const d = new Date(base);
+    d.setHours(Number(l.slot_hour) || 0, 0, 0, 0);
+    return { ...l, startAt: d };
+  };
 
   useEffect(() => {
     const fetchLessons = async () => {
       if (!auth.currentUser) return;
       setLoading(true);
 
-      // 1) Charger les cours de l'élève connecté
       const uid = auth.currentUser.uid;
 
-      // a) où il est l’élève « principal »
+      // a) élève principal
       const qA = query(collection(db, 'lessons'), where('student_id', '==', uid));
       const snapA = await getDocs(qA);
 
-      // b) où il est dans participant_ids
+      // b) participant_ids
       const qB = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', uid));
       const snapB = await getDocs(qB);
 
-      // Fusion + dédupe
       const map = new Map();
       snapA.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
       snapB.docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
 
       const all = Array.from(map.values());
 
-      // ✅ Filtrage éligible :
-      // - Individuel: confirmed ou completed
-      // - Groupe: inclure si JE suis accepted|confirmed (completed toujours inclus)
+      // Éligibles
       const data = all.filter((l) => {
         if (l.status === 'completed') return true;
         if (l.is_group) {
@@ -152,9 +148,14 @@ export default function StudentCalendar() {
         return l.status === 'confirmed';
       });
 
-      setLessons(data);
+      // Scope semaine
+      const weekScoped = data
+        .map(withStartAt)
+        .filter(Boolean)
+        .filter(l => l.startAt >= weekStart && l.startAt < weekEnd);
+      setLessons(weekScoped);
 
-      // 2) Profils profs (sur l’ensemble affiché)
+      // Profils profs pour affichage
       const teacherUids = Array.from(new Set(data.map(l => l.teacher_id).filter(Boolean)));
       const profiles = await Promise.all(teacherUids.map(uid => fetchUserProfile(uid)));
       const tmap = new Map(
@@ -170,7 +171,7 @@ export default function StudentCalendar() {
       );
       setTeacherMap(tmap);
 
-      // 3) Noms des participants pour cours groupés
+      // Noms des participants pour cours groupés
       const idSet = new Set();
       data.forEach(l => {
         if (l.is_group) {
@@ -199,26 +200,18 @@ export default function StudentCalendar() {
     };
 
     fetchLessons();
-  }, []);
+  }, [weekKey]);
 
-  // Grouper par jour
-  const week = getThisWeekDays();
   const lessonsByDay = useMemo(() => {
     const m = Object.fromEntries(week.map(w => [w.code, []]));
-    lessons.forEach(l => {
-      const code = typeof l.slot_day === 'string' ? l.slot_day : '';
-      if (m[code]) m[code].push(l);
-    });
+    lessons.forEach(l => { if (m[l.slot_day]) m[l.slot_day].push(l); });
     return m;
   }, [week, lessons]);
 
-  // 👉 Prochain cours : on exclut juste les "completed" et on prend le plus proche (groupé ou individuel)
   const nextCourse = useMemo(() => {
     const now = new Date();
     const future = lessons
-      .filter(l => l.status !== 'completed' && FR_DAY_CODES.includes(l.slot_day))
-      .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
-      .filter(l => l.startAt && l.startAt > now)
+      .filter(l => l.status !== 'completed' && l.startAt && l.startAt > now)
       .sort((a, b) => a.startAt - b.startAt);
     return future[0] || null;
   }, [lessons]);
@@ -281,17 +274,18 @@ export default function StudentCalendar() {
                             key={l.id}
                             className="relative flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg border"
                           >
-                          {(() => {
-                            const me = auth.currentUser?.uid;
-                            const ds = (l?.is_group && (l?.participantsMap?.[me]?.status === 'accepted' || l?.participantsMap?.[me]?.status === 'confirmed'))
-                              ? (l.status === 'completed' ? 'completed' : 'confirmed')
-                              : l.status;
-                            return (
-                              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[ds] || 'bg-gray-200'}`}>
-                                {ds === 'confirmed' ? 'Confirmé' : ds === 'completed' ? 'Terminé' : ds}
-                              </span>
-                            );
-                          })()}
+                            {(() => {
+                              const me = auth.currentUser?.uid;
+                              const ds = (l?.is_group && (l?.participantsMap?.[me]?.status === 'accepted' || l?.participantsMap?.[me]?.status === 'confirmed'))
+                                ? (l.status === 'completed' ? 'completed' : 'confirmed')
+                                : l.status;
+                              return (
+                                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[ds] || 'bg-gray-200'}`}>
+                                  {ds === 'confirmed' ? 'Confirmé' : ds === 'completed' ? 'Terminé' : ds}
+                                </span>
+                              );
+                            })()}
+
                             <span className="font-bold text-primary">
                               {l.subject_id || 'Matière'}
                             </span>
@@ -321,7 +315,6 @@ export default function StudentCalendar() {
                               {formatHourFromSlot(l.slot_hour)}
                             </span>
 
-                            {/* Mini-fenêtre participants */}
                             {isGroup && open && (
                               <div className="absolute top-full mt-2 left-3 z-10 bg-white border rounded-lg shadow p-3 w-64">
                                 <div className="text-xs font-semibold mb-1">Élèves du groupe</div>
