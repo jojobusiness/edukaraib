@@ -167,6 +167,16 @@ function activeParticipantsCount(lesson = {}) {
   return n;
 }
 
+const mondayOf = (d) => {
+  const x = new Date(d);
+  const js = x.getDay();           // 0=Dim..6=Sam
+  const off = (js + 6) % 7;        // 0=Lun..6=Dim
+  x.setHours(0,0,0,0);
+  x.setDate(x.getDate() - off);
+  return x;
+};
+const weekKeyOf = (d) => mondayOf(d).toISOString().slice(0,10); // "YYYY-MM-DD" du lundi
+
 export default function TeacherProfile() {
   const { teacherId } = useParams();
   const navigate = useNavigate();
@@ -261,6 +271,8 @@ export default function TeacherProfile() {
         teacher,
         selectedStudentId || auth.currentUser?.uid || null // ← enfant choisi en priorité
       );
+      // Semaine courante (lundi ISO)
+      const currentWeekKey = weekKeyOf(new Date());
       const fill = { ...remainingMap };
       const defCap =
         teacher?.group_enabled && Number(teacher?.group_capacity) > 1
@@ -278,8 +290,18 @@ export default function TeacherProfile() {
         });
       });
 
-      setBookedSlots(blocked);
-      setRemainingBySlot(fill);
+      // 👉 1) Marquer les slots “pris” avec la semaine courante
+      const blockedWithWeek = blocked.map(b => ({ ...b, week: currentWeekKey }));
+      setBookedSlots(blockedWithWeek);
+
+      // 👉 2) Dupliquer les capacités avec une clé "jour:heure:semaine"
+      const fillWithWeek = Object.fromEntries(
+        Object.entries(fill).flatMap(([k, v]) => ([
+          [k, v],                              // compat (jour:heure)
+          [`${k}:${currentWeekKey}`, v],       // précis (jour:heure:semaine)
+        ]))
+      );
+      setRemainingBySlot(fillWithWeek);
     });
 
     return () => unsubLessons();
@@ -1070,6 +1092,10 @@ export default function TeacherProfile() {
           orderDays={DAYS_ORDER}
           multiSelect={true}
           requiredCount={packHours > 1 ? packHours : null}
+          canBook={canBook}
+          // Optionnel si tu veux la pastille “mes enfants” dans la grille :
+          myStudentIds={children.map(c => c.id)}
+          idToName={Object.fromEntries(children.map(c => [c.id, c.full_name || c.fullName || c.name || 'Enfant']))}
         />
       )}
     </div>

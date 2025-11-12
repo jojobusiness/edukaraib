@@ -198,7 +198,7 @@ export default function ParentCalendar() {
       // Fallback global pour "Prochain cours" (au-delà de la semaine)
       const now = new Date();
       const nextGlobal = eligible
-        .filter(l => l.status !== 'completed')
+        .filter(l => l.status === 'confirmed')
         .map(l => {
           const when = nextOccurrenceFromNow(l.slot_day, l.slot_hour);
           return when ? { ...l, startAtGlobal: when } : null;
@@ -264,7 +264,7 @@ export default function ParentCalendar() {
   const nextCourse = useMemo(() => {
     const now = new Date();
     const future = lessons
-      .filter(l => l.status !== 'completed')
+      .filter(l => l.status === 'confirmed')
       .filter(l => l.startAt && l.startAt > now)
       .sort((a, b) => a.startAt - b.startAt);
     return future[0] || null;
@@ -292,19 +292,24 @@ export default function ParentCalendar() {
             <span className="text-xl font-bold text-primary">Prochain cours</span>
             <div className="text-gray-700 mt-2 flex flex-wrap gap-2 items-center">
               {(nextCourse || nextAny) ? (
-                <>
-                  <span className="text-xs text-gray-600">
-                    {nextCourse.slot_day} {String(nextCourse.slot_hour).padStart(2,'0')}h
-                  </span>
-                  <span className="text-xs text-gray-600">•</span>
-                  <span className="text-sm font-medium">{subjectOf(nextCourse)}</span>
-                  <span className="text-xs text-gray-600">— Prof : {teacherNameOf(nextCourse.teacher_id)}</span>
-                  <span className="text-xs text-gray-600">•</span>
-                  {childNamesForLesson(nextCourse || nextAny).map((nm, i) => (
-                    <NameChip key={`nc:${i}`}>{nm}</NameChip>
-                  ))}
-                </>
-              ) : (
+                (() => {
+                  const L = nextCourse || nextAny;
+                  return (
+                    <>
+                      <span className="text-xs text-gray-600">
+                        {L.slot_day} {String(L.slot_hour).padStart(2,'0')}h
+                      </span>
+                      <span className="text-xs text-gray-600">•</span>
+                      <span className="text-sm font-medium">{subjectOf(L)}</span>
+                      <span className="text-xs text-gray-600">— Prof : {teacherNameOf(L.teacher_id)}</span>
+                      <span className="text-xs text-gray-600">•</span>
+                      {childNamesForLesson(L).map((nm, i) => (
+                        <NameChip key={`nc:${i}`}>{nm}</NameChip>
+                      ))}
+                    </>
+                  );
+                })()
+                ) : (
                 <span className="text-gray-700">Aucun cours confirmé à venir</span>
               )}
             </div>

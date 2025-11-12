@@ -182,7 +182,7 @@ export default function TeacherCalendar() {
       // Fallback global "Prochain cours" (au‐delà de la semaine)
       const now = new Date();
       const nextGlobal = rawAll
-        .filter(l => l.status !== 'completed')
+        .filter(l => l.status === 'confirmed')
         .map(l => {
           const when = nextOccurrenceFromNow(l.slot_day, l.slot_hour);
           return when ? { ...l, startAtGlobal: when } : null;
@@ -229,7 +229,7 @@ export default function TeacherCalendar() {
 
   const now = new Date();
   const upcoming = lessons
-    .filter(l => l.status !== 'completed' && l.startAt >= now)
+    .filter(l => l.status === 'confirmed' && l.startAt >= now)
     .sort((a, b) => a.startAt - b.startAt);
   const nextOne = upcoming[0] || null;
 

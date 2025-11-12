@@ -75,6 +75,33 @@ const mondayOf = (d) => {
 };
 const weekKeyOf = (d) => mondayOf(d).toISOString().slice(0,10);
 
+// Calcule la prochaine date réelle (au-delà de la semaine en cours)
+// Ex : (Mar, 10) renverra le mardi à 10h de cette semaine ou de la prochaine
+function nextOccurrenceFromNow(slot_day, slot_hour) {
+  if (!FR_DAY_CODES.includes(slot_day)) return null;
+
+  const now = new Date();
+  now.setSeconds(0, 0);
+  const targetHour = Number(slot_hour) || 0;
+
+  // 0 = Lundi ... 6 = Dimanche
+  const todayIdx = (now.getDay() + 6) % 7;
+  const slotIdx = FR_DAY_CODES.indexOf(slot_day);
+
+  let addDays = slotIdx - todayIdx;
+  if (addDays < 0) addDays += 7; // jour suivant la semaine si passé
+
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + addDays);
+  d.setHours(targetHour, 0, 0, 0);
+
+  // Si le cours d'aujourd'hui est déjà passé → semaine prochaine
+  if (addDays === 0 && d <= now) d.setDate(d.getDate() + 7);
+
+  return d;
+}
+
 export default function StudentCalendar() {
   const [lessons, setLessons] = useState([]);
   const [nextAny, setNextAny] = useState(null);
@@ -159,7 +186,7 @@ export default function StudentCalendar() {
       // Fallback global pour "Prochain cours"
       const now = new Date();
       const nextGlobal = data
-        .filter(l => l.status !== 'completed')
+        .filter(l => l.status === 'confirmed')
         .map(l => {
           const when = nextOccurrenceFromNow(l.slot_day, l.slot_hour);
           return when ? { ...l, startAtGlobal: when } : null;
@@ -225,7 +252,7 @@ export default function StudentCalendar() {
   const nextCourse = useMemo(() => {
     const now = new Date();
     const future = lessons
-      .filter(l => l.status !== 'completed' && l.startAt && l.startAt > now)
+      .filter(l => l.status === 'confirmed' && l.startAt && l.startAt > now)
       .sort((a, b) => a.startAt - b.startAt);
     return future[0] || null;
   }, [lessons]);
