@@ -54,8 +54,14 @@ export default function BookingModal({
   requiredCount = null, // null | 5 | 10
 }) {
   const [selected, setSelected] = useState([]);
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   // ------- NOUVEAU : navigation mois + semaine active -------
+  
   const [monthCursor, setMonthCursor] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d; });
   const [weekAnchor, setWeekAnchor] = useState(() => startOfWeekMon(new Date()));
   const activeWeekDays = useMemo(() => {
@@ -67,6 +73,32 @@ export default function BookingModal({
     }
     return out;
   }, [weekAnchor]);
+
+  // 🧠 Quand on change de semaine, on ne garde que les créneaux encore valides
+  React.useEffect(() => {
+    setSelected((prev) => {
+      if (!Array.isArray(prev) || prev.length === 0) return prev;
+      return prev.filter(({ day, hour }) => {
+        // 1) dispo côté prof pour ce jour/heure ?
+        const stillAvailable = Array.isArray(availability[day]) && availability[day].includes(hour);
+        if (!stillAvailable) return false;
+
+        // 2) non verrouillé par la date (passé / aujourd’hui <= now+1h) pour la NOUVELLE semaine
+        const dayDate = dateForLabel(day); // semaine active actuelle
+        if (isSlotLockedByDate(dayDate, hour)) return false;
+
+        // 3) pas déjà réservé sur la NOUVELLE semaine
+        if (isBooked(day, hour)) return false;
+
+        // 4) places restantes (si tu fournis remainingBySlot par semaine/jour:heure)
+        const rem = remainingFor(day, hour);
+        if (rem !== null && rem <= 0) return false;
+
+        return true;
+      });
+    });
+    // on re-filtre aussi si le planning change, ou si les réservations/places changent
+  }, [weekAnchor, availability, remainingBySlot, bookedSlots]);
 
   // Verrous temporels (+1h)
   const now = new Date();
@@ -83,11 +115,17 @@ export default function BookingModal({
   };
 
   // booked/remaining (inchangés)
-  const bookedMap = useMemo(() => {
-    const m = new Map();
-    bookedSlots.forEach(({ day, hour }) => { m.set(`${day}:${hour}`, true); });
-    return m;
-  }, [bookedSlots]);
+ const bookedMap = useMemo(() => {
+   const m = new Map();
+   (bookedSlots || []).forEach(({ day, hour, week }) => {
+     if (!day || typeof hour !== 'number') return;
+     const wk = week || activeWeekKey;
+     m.set(`${day}:${hour}:${wk}`, true);
+     // fallback (compat anciens jeux de données)
+     m.set(`${day}:${hour}`, true);
+   });
+   return m;
+ }, [bookedSlots, activeWeekKey]);
 
   const hours = useMemo(() => {
     const all = Object.values(availability || {}).flat().filter((h) => Number.isInteger(h));
@@ -97,12 +135,18 @@ export default function BookingModal({
     return Array.from({ length: (max - min + 1) }, (_, i) => min + i);
   }, [availability]);
 
-  const isBooked = (day, hour) => bookedMap.get(`${day}:${hour}`) === true;
+  const isBooked = (day, hour) =>
+    bookedMap.get(`${day}:${hour}:${activeWeekKey}`) === true ||
+    bookedMap.get(`${day}:${hour}`) === true;
+
   const isAvailable = (day, hour) => Array.isArray(availability[day]) && availability[day].includes(hour);
   const isSelected = (day, hour) => selected.some(s => s.day === day && s.hour === hour);
+  
   const remainingFor = (day, hour) => {
-    const key = `${day}:${hour}`;
-    const val = remainingBySlot?.[key];
+    // On tente d’abord la clé “par semaine”, sinon on tombe sur la clé simple
+    const wkKey = `${day}:${hour}:${activeWeekKey}`;
+    const key   = `${day}:${hour}`;
+    const val = (remainingBySlot?.[wkKey] ?? remainingBySlot?.[key]);
     return typeof val === 'number' ? val : null;
   };
 
@@ -111,6 +155,12 @@ export default function BookingModal({
     const idx = DAY_INDEX[label] ?? 0;
     return activeWeekDays[idx];
   };
+
+  // ISO du lundi de la semaine active (ex: "2025-11-10")
+  const activeWeekKey = React.useMemo(() => {
+    const d = startOfWeekMon(weekAnchor);
+    return d.toISOString().slice(0,10);
+  }, [weekAnchor]);
 
   const toggleSelect = (day, hour) => {
     if (!canBook) return;
@@ -139,9 +189,15 @@ export default function BookingModal({
 
   const need = requiredCount ? (requiredCount - selected.length) : null;
 
-  return (
-    <div className="fixed inset-0 flex items-center justify-center z-40 bg-black/30">
-      <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-4xl w-full relative border border-gray-100">
+ return (
+   <div
+     className="fixed inset-0 flex items-center justify-center z-40 bg-black/30"
+     onClick={onClose}
+   >
+     <div
+       className="bg-white p-6 rounded-2xl shadow-2xl max-w-3xl w-full relative border border-gray-100 max-h-[90vh] overflow-y-auto"
+       onClick={(e) => e.stopPropagation()}
+     >
         <button
           className="absolute right-3 top-3 text-gray-500 hover:text-gray-700"
           onClick={onClose}
