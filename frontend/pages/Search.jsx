@@ -8,7 +8,7 @@ export default function Search() {
   const [search, setSearch] = useState('');
   const navigate = useNavigate();
 
-  // ── Filtres (inchangés côté logique) ───────────────────────────────
+  // ── Filtres ─────────────────────────────────────────
   const [level, setLevel] = useState('');       // Primaire/Collège/Lycée/Supérieur/Adulte
   const [city, setCity] = useState('');         // Cayenne, etc.
   const [priceMin, setPriceMin] = useState(''); // numérique
@@ -18,11 +18,8 @@ export default function Search() {
 
   // Bouton Retour : dashboard si connecté, sinon accueil
   const handleBack = () => {
-    if (auth.currentUser) {
-      navigate('/smart-dashboard');
-    } else {
-      navigate('/');
-    }
+    if (auth.currentUser) navigate('/smart-dashboard');
+    else navigate('/');
   };
 
   useEffect(() => {
@@ -66,38 +63,17 @@ export default function Search() {
     return tCity.includes(c.toLowerCase());
   };
 
-  // Options de ville (données existantes)
-  const cityOptions = useMemo(() => {
-    const set = new Set();
-    for (const t of teachers) {
-      const c = (t.city || t.location || '').trim();
-      if (c) set.add(c);
-    }
-    return Array.from(set).sort();
-  }, [teachers]);
-
-  // Filtrage
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+  // 1) Filtrage de base (toujours actif, même sans recherche texte)
+  const baseFiltered = useMemo(() => {
     const min = priceMin ? Number(priceMin) : null;
     const max = priceMax ? Number(priceMax) : null;
 
-    let list = teachers.filter((teacher) => {
-      // texte libre
-      const name  = (teacher.fullName || '').toLowerCase();
-      const subs  = getSubjectsText(teacher.subjects).toLowerCase();
-      const tCity = (teacher.city || teacher.location || '').toLowerCase();
-      const bio   = (teacher.bio || '').toLowerCase();
-      const matchText = q ? (name.includes(q) || subs.includes(q) || tCity.includes(q) || bio.includes(q)) : false;
+    let list = teachers.filter((t) => {
+      if (!hasLevel(t, level)) return false;
+      if (!matchesCity(t, city)) return false;
+      if (!matchesMode(t, mode)) return false;
 
-      if (q && !matchText) return false;
-
-      // filtres
-      if (!hasLevel(teacher, level)) return false;
-      if (!matchesCity(teacher, city)) return false;
-      if (!matchesMode(teacher, mode)) return false;
-
-      const p = parsePrice(teacher.price_per_hour || teacher.price);
+      const p = parsePrice(t.price_per_hour || t.price);
       if (min != null && (p == null || p < min)) return false;
       if (max != null && (p == null || p > max)) return false;
 
@@ -106,30 +82,43 @@ export default function Search() {
 
     // tri
     if (sortBy) {
+      const priceOf = (x) => parsePrice(x.price_per_hour || x.price);
       if (sortBy === 'priceAsc') {
-        list = list.slice().sort((a, b) => (parsePrice(a.price_per_hour || a.price) ?? 1e9) - (parsePrice(b.price_per_hour || b.price) ?? 1e9));
+        list = list.slice().sort((a, b) => (priceOf(a) ?? 1e9) - (priceOf(b) ?? 1e9));
       } else if (sortBy === 'priceDesc') {
-        list = list.slice().sort((a, b) => (parsePrice(b.price_per_hour || b.price) ?? -1e9) - (parsePrice(a.price_per_hour || a.price) ?? -1e9));
+        list = list.slice().sort((a, b) => (priceOf(b) ?? -1e9) - (priceOf(a) ?? -1e9));
       } else if (sortBy === 'ratingDesc') {
         const ra = t => Number(t.avgRating ?? t.rating ?? 0);
         list = list.slice().sort((a, b) => ra(b) - ra(a));
       }
     }
 
-    return q ? list : []; // si pas de recherche, on n'affiche pas encore la section "Résultats"
-  }, [teachers, search, level, city, mode, priceMin, priceMax, sortBy]);
+    return list;
+  }, [teachers, level, city, mode, priceMin, priceMax, sortBy]);
 
-  // Liste par défaut si aucune recherche : on montre tous les profs
-  const displayedTeachers =
-    filtered.length > 0
-      ? teachers.filter(t => !filtered.find(f => f.id === t.id))
-      : teachers;
+  // 2) Si recherche texte, on découpe baseFiltered en "Résultats" vs "Autres"
+  const q = search.trim().toLowerCase();
+  const results = useMemo(() => {
+    if (!q) return [];
+    return baseFiltered.filter((t) => {
+      const name  = (t.fullName || '').toLowerCase();
+      const subs  = getSubjectsText(t.subjects).toLowerCase();
+      const tCity = (t.city || t.location || '').toLowerCase();
+      const bio   = (t.bio || '').toLowerCase();
+      return name.includes(q) || subs.includes(q) || tCity.includes(q) || bio.includes(q);
+    });
+  }, [baseFiltered, q]);
 
-  // Compteurs
-  const resultsCount = filtered.length || displayedTeachers.length;
-  const subjectLabel = search?.trim() ? search.trim() : 'Professeurs particuliers';
+  const others = useMemo(() => {
+    if (!q) return baseFiltered;                 // ⬅️ sans recherche : on affiche la liste filtrée complète
+    const ids = new Set(results.map(r => r.id)); // ⬅️ avec recherche : “Autres” = filtrés – résultats
+    return baseFiltered.filter(t => !ids.has(t.id));
+  }, [baseFiltered, results, q]);
 
-  // Raccourcis de mode (pills)
+  // Compteurs / libellés
+  const resultsCount = (q ? results.length : others.length);
+  const subjectLabel = q ? search.trim() : 'Professeurs particuliers';
+
   const toggleMode = (target) => setMode(prev => (prev === target ? '' : target));
 
   return (
@@ -190,7 +179,7 @@ export default function Search() {
 
       {/* Grille : sidebar filtres + résultats */}
       <div className="max-w-6xl mx-auto px-4 py-6 grid grid-cols-1 md:grid-cols-12 gap-6">
-        {/* Sidebar filtres (style Superprof) */}
+        {/* Sidebar filtres */}
         <aside className="md:col-span-4 lg:col-span-3">
           <div className="md:sticky md:top-20 space-y-4">
             <section className="bg-white rounded-2xl border shadow-sm p-4">
@@ -241,7 +230,7 @@ export default function Search() {
                 onChange={(e) => setCity(e.target.value)}
               >
                 <option value="">{'Toute la France'}</option>
-                {cityOptions.map((c) => (
+                {Array.from(new Set(teachers.map(t => (t.city || t.location || '').trim()).filter(Boolean))).sort().map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
@@ -290,15 +279,15 @@ export default function Search() {
         {/* Résultats */}
         <main className="md:col-span-8 lg:col-span-9">
           {/* Si recherche saisie : montrer “Résultats” d’abord */}
-          {search.trim() && (
+          {q && (
             <section className="mb-6">
-              {filtered.length === 0 ? (
+              {results.length === 0 ? (
                 <div className="bg-white border rounded-2xl p-8 text-center text-gray-500">
                   Aucun professeur trouvé pour cette recherche.
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {filtered.map((teacher) => (
+                  {results.map((teacher) => (
                     <TeacherCard key={teacher.id} teacher={teacher} navigate={navigate} />
                   ))}
                 </div>
@@ -306,16 +295,16 @@ export default function Search() {
             </section>
           )}
 
-          {/* Liste générale (comme sur Superprof : “autres résultats”) */}
+          {/* Liste générale */}
           <section>
             <h2 className="text-lg font-semibold text-gray-900 mb-3">Autres professeurs</h2>
-            {displayedTeachers.length === 0 ? (
+            {others.length === 0 ? (
               <div className="bg-white border rounded-2xl p-8 text-center text-gray-500">
                 Aucun professeur disponible.
               </div>
             ) : (
               <div className="space-y-4">
-                {displayedTeachers.map((teacher) => (
+                {others.map((teacher) => (
                   <TeacherCard key={teacher.id} teacher={teacher} navigate={navigate} />
                 ))}
               </div>
@@ -327,7 +316,7 @@ export default function Search() {
   );
 }
 
-// ───────────────────────── Carte professeur (style Superprof) ─────────────────────────
+// ───────────────────────── Carte professeur ─────────────────────────
 function TeacherCard({ teacher, navigate }) {
   // prix final = prix prof + 10 €
   const finalHourlyPrice = (() => {
