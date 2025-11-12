@@ -8,12 +8,13 @@ export default function Search() {
   const [search, setSearch] = useState('');
   const navigate = useNavigate();
 
-  // ── Filtres ajoutés ─────────────────────────────────────────
-  const [level, setLevel] = useState('');              // Primaire/Collège/Lycée/Supérieur/Adulte
-  const [city, setCity] = useState('');                // Cayenne, etc.
-  const [priceMin, setPriceMin] = useState('');        // numérique texte
+  // ── Filtres (inchangés côté logique) ───────────────────────────────
+  const [level, setLevel] = useState('');       // Primaire/Collège/Lycée/Supérieur/Adulte
+  const [city, setCity] = useState('');         // Cayenne, etc.
+  const [priceMin, setPriceMin] = useState(''); // numérique
   const [priceMax, setPriceMax] = useState('');
-  const [sortBy, setSortBy] = useState('');            // '', 'priceAsc','priceDesc','ratingDesc'
+  const [sortBy, setSortBy] = useState('');     // '', 'priceAsc','priceDesc','ratingDesc'
+  const [mode, setMode]   = useState('');       // '', 'visio', 'presentiel'
 
   // Bouton Retour : dashboard si connecté, sinon accueil
   const handleBack = () => {
@@ -26,7 +27,6 @@ export default function Search() {
 
   useEffect(() => {
     const fetchTeachers = async () => {
-      // On ne prend que les users avec role teacher
       const qy = query(collection(db, 'users'), where('role', '==', 'teacher'));
       const querySnapshot = await getDocs(qy);
       const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -35,7 +35,7 @@ export default function Search() {
     fetchTeachers();
   }, []);
 
-  // Helpers parsing
+  // Helpers
   const parsePrice = (raw) => {
     const n = typeof raw === 'string' ? Number(raw.replace(',', '.')) : Number(raw);
     return Number.isFinite(n) ? n : null;
@@ -54,7 +54,7 @@ export default function Search() {
   };
   const matchesMode = (teacher, m) => {
     if (!m) return true;
-    const online = !!(teacher.mode_online ?? teacher.online ?? teacher.visio);
+    const online   = !!(teacher.mode_online ?? teacher.online ?? teacher.visio);
     const inperson = !!(teacher.mode_inperson ?? teacher.presentiel ?? teacher.in_person);
     if (m === 'visio') return online === true;
     if (m === 'presentiel') return inperson === true;
@@ -66,7 +66,7 @@ export default function Search() {
     return tCity.includes(c.toLowerCase());
   };
 
-  // Cities disponibles (à partir des données)
+  // Options de ville (données existantes)
   const cityOptions = useMemo(() => {
     const set = new Set();
     for (const t of teachers) {
@@ -76,7 +76,7 @@ export default function Search() {
     return Array.from(set).sort();
   }, [teachers]);
 
-  // Filtrage local (nom, matière, ville, bio) + filtres avancés
+  // Filtrage
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const min = priceMin ? Number(priceMin) : null;
@@ -88,15 +88,14 @@ export default function Search() {
       const subs  = getSubjectsText(teacher.subjects).toLowerCase();
       const tCity = (teacher.city || teacher.location || '').toLowerCase();
       const bio   = (teacher.bio || '').toLowerCase();
-      const matchText = q
-        ? (name.includes(q) || subs.includes(q) || tCity.includes(q) || bio.includes(q))
-        : false; // si pas de recherche, on renvoie [] (même logique que code d'origine)
+      const matchText = q ? (name.includes(q) || subs.includes(q) || tCity.includes(q) || bio.includes(q)) : false;
 
       if (q && !matchText) return false;
 
       // filtres
       if (!hasLevel(teacher, level)) return false;
       if (!matchesCity(teacher, city)) return false;
+      if (!matchesMode(teacher, mode)) return false;
 
       const p = parsePrice(teacher.price_per_hour || teacher.price);
       if (min != null && (p == null || p < min)) return false;
@@ -117,144 +116,237 @@ export default function Search() {
       }
     }
 
-    return q ? list : []; // si pas de recherche, garder le comportement initial (section Résultats vide)
-  }, [teachers, search, level, city, priceMin, priceMax, sortBy]);
+    return q ? list : []; // si pas de recherche, on n'affiche pas encore la section "Résultats"
+  }, [teachers, search, level, city, mode, priceMin, priceMax, sortBy]);
 
-  // Exclut les profs déjà dans les résultats filtrés pour la liste du bas
+  // Liste par défaut si aucune recherche : on montre tous les profs
   const displayedTeachers =
     filtered.length > 0
       ? teachers.filter(t => !filtered.find(f => f.id === t.id))
       : teachers;
 
+  // Compteurs
+  const resultsCount = filtered.length || displayedTeachers.length;
+  const subjectLabel = search?.trim() ? search.trim() : 'Professeurs particuliers';
+
+  // Raccourcis de mode (pills)
+  const toggleMode = (target) => setMode(prev => (prev === target ? '' : target));
+
   return (
-    <div className="min-h-screen flex flex-col items-center bg-gradient-to-br from-white via-gray-100 to-secondary/20 px-4 py-10">
-      {/* Bouton Retour */}
-      <div className="w-full max-w-2xl mb-4">
-        <button
-          onClick={handleBack}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 bg-white shadow-sm hover:bg-gray-50 transition text-sm font-medium"
-        >
-          <span aria-hidden>←</span> Retour
-        </button>
-      </div>
-
-      <div className="w-full max-w-2xl bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
-        <h2 className="text-2xl font-bold text-primary mb-6 text-center">Rechercher un professeur</h2>
-
-        {/* Barre de recherche */}
-        <input
-          type="text"
-          placeholder="Nom, matière, ville, bio..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full border border-gray-300 rounded-lg px-4 py-2 mb-4 focus:ring-2 focus:ring-primary outline-none transition"
-        />
-
-        {/* Filtres avancés */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-8">
-          <select
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-            value={level}
-            onChange={(e) => setLevel(e.target.value)}
+    <div className="min-h-screen bg-[#f7f7f7]">
+      {/* Top bar */}
+      <div className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+          <button
+            onClick={handleBack}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-sm"
           >
-            <option value="">Niveau</option>
-            <option value="Primaire">Primaire</option>
-            <option value="Collège">Collège</option>
-            <option value="Lycée">Lycée</option>
-            <option value="Supérieur">Supérieur</option>
-            <option value="Adulte">Adulte</option>
-          </select>
+            <span aria-hidden>←</span> Retour
+          </button>
 
-          <select
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-            value={city}
-            onChange={(e) => setCity(e.target.value)}
-          >
-            <option value="">Ville</option>
-            {cityOptions.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-
-          <input
-            type="number"
-            min="0"
-            inputMode="numeric"
-            placeholder="Prix min €/h"
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-            value={priceMin}
-            onChange={(e) => setPriceMin(e.target.value)}
-          />
-          <input
-            type="number"
-            min="0"
-            inputMode="numeric"
-            placeholder="Prix max €/h"
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-            value={priceMax}
-            onChange={(e) => setPriceMax(e.target.value)}
-          />
-          <select
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-          >
-            <option value="">Tri</option>
-            <option value="ratingDesc">Meilleure note</option>
-            <option value="priceAsc">Prix croissant</option>
-            <option value="priceDesc">Prix décroissant</option>
-          </select>
-        </div>
-
-        {/* Résultats de recherche */}
-        {search.trim() && (
-          <div className="mb-10">
-            <h3 className="text-lg font-semibold text-secondary mb-2">Résultats</h3>
-            <div className="grid grid-cols-1 gap-6">
-              {filtered.length === 0 ? (
-                <p className="text-center text-gray-400">Aucun professeur trouvé pour cette recherche.</p>
-              ) : (
-                filtered.map((teacher) => (
-                  <TeacherCard key={teacher.id} teacher={teacher} navigate={navigate} />
-                ))
-              )}
+          <div className="flex-1 max-w-3xl">
+            <div className="flex rounded-xl border border-gray-300 overflow-hidden bg-white">
+              <input
+                type="text"
+                placeholder="Ex : Guitare, Maths, Anglais…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full px-4 py-2 outline-none"
+              />
+              <button
+                className="px-4 py-2 text-sm font-semibold bg-primary text-white hover:bg-primary/90"
+                onClick={() => {}}
+                aria-label="Rechercher"
+              >
+                Rechercher
+              </button>
             </div>
           </div>
-        )}
 
-        {/* Tous les profs */}
-        <div>
-          <h3 className="text-lg font-semibold text-primary mb-2">Tous les professeurs</h3>
-          <div className="grid grid-cols-1 gap-6">
-            {displayedTeachers.length === 0 ? (
-              <p className="text-center text-gray-400">Aucun professeur disponible.</p>
-            ) : (
-              displayedTeachers.map((teacher) => (
-                <TeacherCard key={teacher.id} teacher={teacher} navigate={navigate} />
-              ))
-            )}
+          <div className="hidden md:flex items-center gap-2">
+            <button
+              onClick={() => toggleMode('visio')}
+              className={`px-3 py-1.5 rounded-full text-sm border ${mode==='visio' ? 'bg-primary text-white border-primary' : 'bg-white hover:bg-gray-50 border-gray-200'}`}
+            >
+              Visio
+            </button>
+            <button
+              onClick={() => toggleMode('presentiel')}
+              className={`px-3 py-1.5 rounded-full text-sm border ${mode==='presentiel' ? 'bg-primary text-white border-primary' : 'bg-white hover:bg-gray-50 border-gray-200'}`}
+            >
+              Présentiel
+            </button>
           </div>
         </div>
+      </div>
+
+      {/* Header titre/compteur */}
+      <div className="max-w-6xl mx-auto px-4 pt-6">
+        <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900">
+          {subjectLabel} en {city || 'France'}
+        </h1>
+        <p className="text-gray-600 mt-1">{resultsCount} prof(s) disponible(s)</p>
+      </div>
+
+      {/* Grille : sidebar filtres + résultats */}
+      <div className="max-w-6xl mx-auto px-4 py-6 grid grid-cols-1 md:grid-cols-12 gap-6">
+        {/* Sidebar filtres (style Superprof) */}
+        <aside className="md:col-span-4 lg:col-span-3">
+          <div className="md:sticky md:top-20 space-y-4">
+            <section className="bg-white rounded-2xl border shadow-sm p-4">
+              <h3 className="font-semibold mb-3">Mode</h3>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setMode('')}
+                  className={`px-3 py-1.5 rounded-full text-sm border ${mode==='' ? 'bg-gray-900 text-white border-gray-900' : 'bg-white hover:bg-gray-50 border-gray-200'}`}
+                >
+                  Tous
+                </button>
+                <button
+                  onClick={() => toggleMode('visio')}
+                  className={`px-3 py-1.5 rounded-full text-sm border ${mode==='visio' ? 'bg-primary text-white border-primary' : 'bg-white hover:bg-gray-50 border-gray-200'}`}
+                >
+                  Visio
+                </button>
+                <button
+                  onClick={() => toggleMode('presentiel')}
+                  className={`px-3 py-1.5 rounded-full text-sm border ${mode==='presentiel' ? 'bg-primary text-white border-primary' : 'bg-white hover:bg-gray-50 border-gray-200'}`}
+                >
+                  Présentiel
+                </button>
+              </div>
+            </section>
+
+            <section className="bg-white rounded-2xl border shadow-sm p-4">
+              <h3 className="font-semibold mb-3">Niveau</h3>
+              <select
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                value={level}
+                onChange={(e) => setLevel(e.target.value)}
+              >
+                <option value="">Tous niveaux</option>
+                <option value="Primaire">Primaire</option>
+                <option value="Collège">Collège</option>
+                <option value="Lycée">Lycée</option>
+                <option value="Supérieur">Supérieur</option>
+                <option value="Adulte">Adulte</option>
+              </select>
+            </section>
+
+            <section className="bg-white rounded-2xl border shadow-sm p-4">
+              <h3 className="font-semibold mb-3">Ville</h3>
+              <select
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+              >
+                <option value="">{'Toute la France'}</option>
+                {cityOptions.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </section>
+
+            <section className="bg-white rounded-2xl border shadow-sm p-4">
+              <h3 className="font-semibold mb-3">Tarif horaire</h3>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  inputMode="numeric"
+                  placeholder="Min €"
+                  className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  value={priceMin}
+                  onChange={(e) => setPriceMin(e.target.value)}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  inputMode="numeric"
+                  placeholder="Max €"
+                  className="w-1/2 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  value={priceMax}
+                  onChange={(e) => setPriceMax(e.target.value)}
+                />
+              </div>
+            </section>
+
+            <section className="bg-white rounded-2xl border shadow-sm p-4">
+              <h3 className="font-semibold mb-3">Trier par</h3>
+              <select
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+              >
+                <option value="">Pertinence</option>
+                <option value="ratingDesc">Meilleure note</option>
+                <option value="priceAsc">Prix croissant</option>
+                <option value="priceDesc">Prix décroissant</option>
+              </select>
+            </section>
+          </div>
+        </aside>
+
+        {/* Résultats */}
+        <main className="md:col-span-8 lg:col-span-9">
+          {/* Si recherche saisie : montrer “Résultats” d’abord */}
+          {search.trim() && (
+            <section className="mb-6">
+              {filtered.length === 0 ? (
+                <div className="bg-white border rounded-2xl p-8 text-center text-gray-500">
+                  Aucun professeur trouvé pour cette recherche.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {filtered.map((teacher) => (
+                    <TeacherCard key={teacher.id} teacher={teacher} navigate={navigate} />
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Liste générale (comme sur Superprof : “autres résultats”) */}
+          <section>
+            <h2 className="text-lg font-semibold text-gray-900 mb-3">Autres professeurs</h2>
+            {displayedTeachers.length === 0 ? (
+              <div className="bg-white border rounded-2xl p-8 text-center text-gray-500">
+                Aucun professeur disponible.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {displayedTeachers.map((teacher) => (
+                  <TeacherCard key={teacher.id} teacher={teacher} navigate={navigate} />
+                ))}
+              </div>
+            )}
+          </section>
+        </main>
       </div>
     </div>
   );
 }
 
-// Carte stylée pour un prof
+// ───────────────────────── Carte professeur (style Superprof) ─────────────────────────
 function TeacherCard({ teacher, navigate }) {
-  // helper: prix final = prix prof + 10 €
+  // prix final = prix prof + 10 €
   const finalHourlyPrice = (() => {
     const raw = teacher?.price_per_hour || teacher?.price;
     const n = typeof raw === 'string' ? Number(raw.replace(',', '.')) : Number(raw);
     if (!Number.isFinite(n) || n < 0) return null;
-    return n + 10; // +10 € de frais de site, toujours
+    return n + 10;
   })();
 
   const subjectsText = Array.isArray(teacher.subjects)
     ? teacher.subjects.join(', ')
     : (teacher.subjects || 'Matière non précisée');
 
-  // Fonction pour contacter le prof (comme dans l'admin : /chat/<uid>)
+  const isVisio = !!(teacher.mode_online ?? teacher.online ?? teacher.visio);
+  const isPres  = !!(teacher.mode_inperson ?? teacher.presentiel ?? teacher.in_person);
+
+  const rating = Number(teacher.avgRating ?? teacher.rating ?? 0);
+  const reviewsCount = Number(teacher.reviewsCount ?? teacher.totalReviews ?? 0);
+
   const handleContact = async () => {
     if (!auth.currentUser) {
       navigate('/login');
@@ -269,43 +361,71 @@ function TeacherCard({ teacher, navigate }) {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-md border p-5 flex flex-col md:flex-row items-center gap-4">
-      <img
-        src={teacher.avatarUrl || "/avatar-default.png"}
-        alt={teacher.fullName || "Prof"}
-        className="w-20 h-20 rounded-full object-cover border-2 border-primary"
-      />
-      <div className="flex-1 min-w-0">
-        <h3 className="font-bold text-lg text-primary">{teacher.fullName || 'Professeur'}</h3>
-        <div className="text-gray-700 mb-1">{subjectsText}</div>
-        <div className="text-xs text-gray-500 mb-1">{teacher.city || teacher.location || 'Guyane'}</div>
-        <div className="text-sm text-gray-600 mb-2 line-clamp-2">{teacher.bio}</div>
-
-        {finalHourlyPrice == null ? (
-          <span className="inline-block text-yellow-700 font-semibold">
-            Prix non précisé
-          </span>
-        ) : (
-          <div className="flex flex-col">
-            <span className="inline-block text-yellow-700 font-semibold">
-              {finalHourlyPrice.toFixed(2)} € /h
-            </span>
-          </div>
-        )}
+    <div className="bg-white rounded-2xl border shadow-sm p-4 md:p-5 flex gap-4">
+      <div className="shrink-0">
+        <img
+          src={teacher.avatarUrl || "/avatar-default.png"}
+          alt={teacher.fullName || "Prof"}
+          className="w-24 h-24 md:w-28 md:h-28 rounded-2xl object-cover border"
+        />
       </div>
-      <div className="flex flex-col gap-2">
-        <Link
-          to={`/profils/${teacher.id}`}
-          className="bg-primary text-white px-4 py-2 rounded-lg font-semibold shadow hover:bg-primary-dark transition text-center"
-        >
-          Voir profil
-        </Link>
-        <button
-          className="bg-secondary text-white px-4 py-2 rounded-lg font-semibold shadow hover:bg-yellow-500 transition"
-          onClick={handleContact}
-        >
-          Contacter
-        </button>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="font-extrabold text-lg md:text-xl text-gray-900">{teacher.fullName || 'Professeur'}</h3>
+          {rating > 0 && (
+            <span className="inline-flex items-center gap-1 text-sm text-amber-600 font-semibold">
+              ★ {rating.toFixed(1)} <span className="text-gray-400 font-normal">({reviewsCount})</span>
+            </span>
+          )}
+        </div>
+
+        <div className="text-gray-700 mt-1">{subjectsText}</div>
+        <div className="mt-1 text-xs text-gray-500">
+          {(teacher.city || teacher.location || 'Guyane')}
+        </div>
+
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {isVisio && <span className="px-2 py-1 rounded-full text-xs border border-gray-300 bg-gray-50">Visio</span>}
+          {isPres  && <span className="px-2 py-1 rounded-full text-xs border border-gray-300 bg-gray-50">Présentiel</span>}
+          {Array.isArray(teacher.levels) && teacher.levels.slice(0,3).map((lv) => (
+            <span key={lv} className="px-2 py-1 rounded-full text-xs bg-primary/10 text-primary border border-primary/20">
+              {lv}
+            </span>
+          ))}
+        </div>
+
+        <p className="mt-2 text-sm text-gray-600 line-clamp-2">{teacher.bio}</p>
+      </div>
+
+      <div className="shrink-0 flex flex-col items-end justify-between">
+        <div className="text-right">
+          {finalHourlyPrice == null ? (
+            <span className="inline-block text-sm text-amber-700 font-semibold">Prix non précisé</span>
+          ) : (
+            <>
+              <div className="text-2xl font-extrabold text-gray-900">
+                {finalHourlyPrice.toFixed(0)}<span className="text-base font-semibold"> €</span>
+              </div>
+              <div className="text-xs text-gray-500">/ heure</div>
+            </>
+          )}
+        </div>
+
+        <div className="mt-3 flex flex-col gap-2">
+          <Link
+            to={`/profils/${teacher.id}`}
+            className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-black text-center"
+          >
+            Voir profil
+          </Link>
+          <button
+            className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold hover:bg-primary/90"
+            onClick={handleContact}
+          >
+            Contacter
+          </button>
+        </div>
       </div>
     </div>
   );
