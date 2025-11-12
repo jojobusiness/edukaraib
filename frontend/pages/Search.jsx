@@ -122,7 +122,7 @@ export default function Search() {
   const toggleMode = (target) => setMode(prev => (prev === target ? '' : target));
 
   return (
-    <div className="min-h-screen bg-[#f7f7f7]">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-blue-50">
       {/* Top bar */}
       <div className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
@@ -171,7 +171,7 @@ export default function Search() {
 
       {/* Header titre/compteur */}
       <div className="max-w-6xl mx-auto px-4 pt-6">
-        <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900">
+        <h1 className="text-2xl md:text-3xl font-semibold bg-gradient-to-r from-indigo-600 to-pink-500 text-transparent bg-clip-text">
           {subjectLabel} en {city || 'France'}
         </h1>
         <p className="text-gray-600 mt-1">{resultsCount} prof(s) disponible(s)</p>
@@ -182,31 +182,43 @@ export default function Search() {
         {/* Sidebar filtres */}
         <aside className="md:col-span-4 lg:col-span-3">
           <div className="md:sticky md:top-20 space-y-4">
-            <section className="bg-white rounded-2xl border shadow-sm p-4">
+            <section className="bg-gradient-to-br from-white to-indigo-50 rounded-2xl border border-indigo-100 shadow-md p-4 hover:shadow-lg transition">
               <h3 className="font-semibold mb-3">Mode</h3>
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => setMode('')}
-                  className={`px-3 py-1.5 rounded-full text-sm border ${mode==='' ? 'bg-gray-900 text-white border-gray-900' : 'bg-white hover:bg-gray-50 border-gray-200'}`}
+                   className={`px-3 py-1.5 rounded-full text-sm border transition ${
+                      mode===''
+                        ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white border-indigo-400 shadow-sm'
+                        : 'bg-white hover:bg-indigo-50 border-gray-200 text-gray-700'
+                    }`}
                 >
                   Tous
                 </button>
                 <button
                   onClick={() => toggleMode('visio')}
-                  className={`px-3 py-1.5 rounded-full text-sm border ${mode==='visio' ? 'bg-primary text-white border-primary' : 'bg-white hover:bg-gray-50 border-gray-200'}`}
+                   className={`px-3 py-1.5 rounded-full text-sm border transition ${
+                      mode==='visio'
+                        ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white border-indigo-400 shadow-sm'
+                        : 'bg-white hover:bg-indigo-50 border-gray-200 text-gray-700'
+                    }`}
                 >
                   Visio
                 </button>
                 <button
                   onClick={() => toggleMode('presentiel')}
-                  className={`px-3 py-1.5 rounded-full text-sm border ${mode==='presentiel' ? 'bg-primary text-white border-primary' : 'bg-white hover:bg-gray-50 border-gray-200'}`}
+                  className={`px-3 py-1.5 rounded-full text-sm border transition ${
+                      mode==='présentiel'
+                        ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white border-indigo-400 shadow-sm'
+                        : 'bg-white hover:bg-indigo-50 border-gray-200 text-gray-700'
+                    }`}
                 >
                   Présentiel
                 </button>
               </div>
             </section>
 
-            <section className="bg-white rounded-2xl border shadow-sm p-4">
+            <section className="bg-gradient-to-br from-white to-indigo-50 rounded-2xl border border-indigo-100 shadow-md p-4 hover:shadow-lg transition">
               <h3 className="font-semibold mb-3">Niveau</h3>
               <select
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
@@ -222,7 +234,7 @@ export default function Search() {
               </select>
             </section>
 
-            <section className="bg-white rounded-2xl border shadow-sm p-4">
+            <section className="bg-gradient-to-br from-white to-indigo-50 rounded-2xl border border-indigo-100 shadow-md p-4 hover:shadow-lg transition">
               <h3 className="font-semibold mb-3">Ville</h3>
               <select
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
@@ -236,7 +248,7 @@ export default function Search() {
               </select>
             </section>
 
-            <section className="bg-white rounded-2xl border shadow-sm p-4">
+            <section className="bg-gradient-to-br from-white to-indigo-50 rounded-2xl border border-indigo-100 shadow-md p-4 hover:shadow-lg transition">
               <h3 className="font-semibold mb-3">Tarif horaire</h3>
               <div className="flex items-center gap-2">
                 <input
@@ -260,7 +272,7 @@ export default function Search() {
               </div>
             </section>
 
-            <section className="bg-white rounded-2xl border shadow-sm p-4">
+            <section className="bg-gradient-to-br from-white to-indigo-50 rounded-2xl border border-indigo-100 shadow-md p-4 hover:shadow-lg transition">
               <h3 className="font-semibold mb-3">Trier par</h3>
               <select
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
@@ -350,7 +362,7 @@ function TeacherCard({ teacher, navigate }) {
   };
 
   return (
-    <div className="bg-white rounded-2xl border shadow-sm p-4 md:p-5 flex gap-4">
+    <div className="bg-gradient-to-br from-white to-indigo-50 rounded-2xl border border-indigo-100 shadow-md p-4 md:p-5 flex gap-4 hover:shadow-lg transition-all duration-200 hover:-translate-y-[2px]">
       <div className="shrink-0">
         <img
           src={teacher.avatarUrl || "/avatar-default.png"}
@@ -361,7 +373,7 @@ function TeacherCard({ teacher, navigate }) {
 
       <div className="flex-1 min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-extrabold text-lg md:text-xl text-gray-900">{teacher.fullName || 'Professeur'}</h3>
+          <h3 className="font-semibold text-lg md:text-xl bg-gradient-to-r from-indigo-600 to-pink-500 text-transparent bg-clip-text">{teacher.fullName || 'Professeur'}</h3>
           {rating > 0 && (
             <span className="inline-flex items-center gap-1 text-sm text-amber-600 font-semibold">
               ★ {rating.toFixed(1)} <span className="text-gray-400 font-normal">({reviewsCount})</span>
@@ -393,8 +405,8 @@ function TeacherCard({ teacher, navigate }) {
             <span className="inline-block text-sm text-amber-700 font-semibold">Prix non précisé</span>
           ) : (
             <>
-              <div className="text-2xl font-extrabold text-gray-900">
-                {finalHourlyPrice.toFixed(0)}<span className="text-base font-semibold"> €</span>
+              <div className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-pink-500 text-transparent bg-clip-text">
+                {finalHourlyPrice.toFixed(0)}<span className="text-base text-gray-700 font-medium"> €</span>
               </div>
               <div className="text-xs text-gray-500">/ heure</div>
             </>
