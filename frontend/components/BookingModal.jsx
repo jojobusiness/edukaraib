@@ -37,6 +37,33 @@ const buildMonthMatrix = (cursor) => {
 // map 'Lun'..'Dim' -> index 0..6
 const DAY_INDEX = { 'Lun':0, 'Mar':1, 'Mer':2, 'Jeu':3, 'Ven':4, 'Sam':5, 'Dim':6 };
 
+// Y a-t-il une résa (peu importe qui) ?
+const isBooked = (day, hour) => {
+  const dkey = dayDateKey(day);
+  if (dkey && bookedMap.get(`${day}:${hour}:${dkey}`)?.any) return true;
+  if (bookedMap.get(`${day}:${hour}:${activeWeekKey}`)?.any) return true;
+  return false;
+};
+
+// Combien de mes enfants ont une résa sur ce créneau de la semaine affichée ?
+const myBookedCount = (day, hour) => {
+  const dkey = dayDateKey(day);
+  const byDate = dkey ? bookedMap.get(`${day}:${hour}:${dkey}`) : null;
+  const byWeek = bookedMap.get(`${day}:${hour}:${activeWeekKey}`);
+  const set = byDate?.mine?.size ? byDate.mine : byWeek?.mine;
+  return set ? set.size : 0;
+};
+
+// Liste de noms pour l’infobulle
+const myBookedNames = (day, hour) => {
+  const dkey = dayDateKey(day);
+  const byDate = dkey ? bookedMap.get(`${day}:${hour}:${dkey}`) : null;
+  const byWeek = bookedMap.get(`${day}:${hour}:${activeWeekKey}`);
+  const set = byDate?.mine?.size ? byDate.mine : byWeek?.mine;
+  if (!set || set.size === 0) return [];
+  return Array.from(set).map(sid => idToName[sid] || sid);
+};
+
 export default function BookingModal({
   availability = {},
   bookedSlots = [],
@@ -52,6 +79,8 @@ export default function BookingModal({
 
   // ➕ impose un nombre exact de créneaux (ex: pack 5h / 10h)
   requiredCount = null, // null | 5 | 10
+  myStudentIds = [],     // ⬅️ IDs des enfants du parent (optionnel)
+  idToName = {},         // ⬅️ { [id]: "Nom complet" } pour l’infobulle (optionnel)
 }) {
   const [selected, setSelected] = useState([]);
 
@@ -112,27 +141,39 @@ export default function BookingModal({
 
   // bookedMap sensible à la semaine (avec fallback jour:heure)
   const bookedMap = useMemo(() => {
+    // Map key -> { any: boolean, mine: Set<studentId> }
     const m = new Map();
+    const add = (key, studentIds = []) => {
+      if (!key) return;
+      const prev = m.get(key) || { any: false, mine: new Set() };
+      prev.any = true;
+      // Marque mes enfants spécifiquement
+      if (Array.isArray(myStudentIds) && myStudentIds.length && Array.isArray(studentIds)) {
+        studentIds.forEach(sid => { if (myStudentIds.includes(sid)) prev.mine.add(sid); });
+      }
+      m.set(key, prev);
+    };
     (bookedSlots || []).forEach((it) => {
       const { day, hour } = it || {};
       if (!day || typeof hour !== 'number') return;
-      // 1) clé la plus précise : date exacte si fournie
-      if (it.date) {
-        m.set(`${day}:${hour}:${String(it.date).slice(0,10)}`, true);
-      }
-      // 2) si 'startAt' existe, on en déduit la date du jour
+      // On récupère tous les IDs possiblement concernés par la résa
+      const groupIds = Array.isArray(it.participant_ids) ? it.participant_ids : [];
+      const studentsForThis = [
+        ...(it.student_id ? [it.student_id] : []),
+        ...groupIds,
+      ];
+      // 1) clé par date exacte si fournie
+      if (it.date) add(`${day}:${hour}:${String(it.date).slice(0,10)}`, studentsForThis);
+      // 2) clé par date dérivée de startAt si présent
       if (it.startAt) {
         const d = new Date(it.startAt);
-        if (!isNaN(d)) m.set(`${day}:${hour}:${d.toISOString().slice(0,10)}`, true);
+        if (!isNaN(d)) add(`${day}:${hour}:${d.toISOString().slice(0,10)}`, studentsForThis);
       }
-      // 3) fallback “semaine” si fourni
-      if (it.week) {
-        m.set(`${day}:${hour}:${it.week}`, true);
-      }
-      // ❌ pas de fallback global `${day}:${hour}` pour éviter de “bloquer toutes les semaines”
+      // 3) clé par semaine si fournie
+      if (it.week) add(`${day}:${hour}:${it.week}`, studentsForThis);
     });
     return m;
-  }, [bookedSlots]);
+  }, [bookedSlots, myStudentIds]);
 
   // places restantes (prend d’abord la clé "par semaine", sinon jour:heure)
   const remainingFor = (day, hour) => {
@@ -408,12 +449,19 @@ export default function BookingModal({
                           >
                             {booked ? '❌' : sel ? '✔' : ''}
 
+                            {/* 🔵 remets CE bloc */}
                             {remaining !== null && !booked && !locked && canBook && (
-                              <span
-                                className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] leading-[18px] text-center pointer-events-none"
-                                title={`Places restantes : ${remaining}`}
-                              >
+                              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] leading-[18px] text-center pointer-events-none" title={`Places restantes : ${remaining}`}>
                                 {remaining}
+                              </span>
+                            )}                  
+                                    
+                            {myBookedCount(dayLabel, h) > 0 && (
+                              <span
+                                className="absolute -bottom-1 -left-1 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[10px] leading-[18px] text-center"
+                                title={`Réservé pour : ${myBookedNames(dayLabel, h).join(', ')}`}
+                              >
+                                {myBookedCount(dayLabel, h)}
                               </span>
                             )}
                           </button>
