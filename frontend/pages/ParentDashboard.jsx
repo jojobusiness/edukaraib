@@ -53,6 +53,34 @@ function formatDT(ts) {
   } catch { return ''; }
 }
 
+// Un cours appartient à un pack pour cet enfant ?
+function isPackForKid(lesson, kidId) {
+  const pm = lesson?.participantsMap || {};
+  const entry = pm?.[kidId] || {};
+  // signaux possibles
+  return !!(
+    lesson?.pack === true ||
+    lesson?.pack_id ||
+    Number(lesson?.pack_hours) >= 5 ||
+    Number(entry?.pack_hours) >= 5 ||
+    entry?.is_pack5 === true ||
+    entry?.is_pack10 === true ||
+    (entry?.pack && (entry.pack === '5h' || entry.pack === '10h'))
+  );
+}
+
+// Clé stable d'un pack pour un enfant (pack_id prioritaire)
+function packKeyForKid(lesson, kidId) {
+  if (lesson?.pack_id) return `${lesson.pack_id}:${kidId}`;
+  const mode = (String(lesson?.mode || '').toLowerCase() === 'visio' || lesson?.is_visio) ? 'visio' : 'presentiel';
+  const hours =
+    Number(lesson?.pack_hours) ||
+    Number(lesson?.packHours) ||
+    Number(lesson?.participantsMap?.[kidId]?.pack_hours) ||
+    Number(lesson?.participantsMap?.[kidId]?.packHours) || 0;
+  return `AUTO:${lesson.teacher_id}|${lesson.subject_id || ''}|${kidId}|${mode}|${hours || 'H'}`;
+}
+
 export default function ParentDashboard() {
   const [children, setChildren] = useState([]);
   const [courses, setCourses] = useState([]);
@@ -148,32 +176,57 @@ export default function ParentDashboard() {
         .filter(l => l.startAt);
       setCourses(enriched);
 
-      // Compteur "à régler"
+      // Compteur "à régler" — agrégé par PACK (1 pack = 1 règlement)
+      const countedPacks = new Set();
+
       const unpaidCount = lessons.reduce((acc, l) => {
         if (l.status === 'pending_teacher') return acc;
 
+        // --- Groupe : compter par ENFANT, mais pack => 1 seul
         if (l.is_group) {
           const pm = l.participantsMap || {};
           const ids = Array.isArray(l.participant_ids) ? l.participant_ids : [];
-          let addForThisLesson = 0;
+          let add = 0;
 
           ids.forEach((cid) => {
             if (!kidIds.includes(cid)) return;
+
             const st = pm?.[cid]?.status;
             const kidIsConfirmed = st === 'accepted' || st === 'confirmed';
             if (!kidIsConfirmed) return;
+
             const paid = !!pm?.[cid]?.is_paid || !!pm?.[cid]?.paid_at;
-            if (!paid) addForThisLesson += 1;
+            if (paid) return;
+
+            if (isPackForKid(l, cid)) {
+              const key = packKeyForKid(l, cid);
+              if (!countedPacks.has(key)) {
+                countedPacks.add(key);
+                add += 1;               // ⬅️ compte 1 fois le pack
+              }
+            } else {
+              add += 1;                 // ⬅️ cours unitaire
+            }
           });
 
-          return acc + addForThisLesson;
+          return acc + add;
         }
 
-        // Individuel
+        // --- Individuel : même logique
         if (kidIds.includes(l.student_id)) {
           const isEligible = (l.status === 'confirmed' || l.status === 'completed');
           const paid = !!l.is_paid || !!l.paid_at;
-          return acc + (isEligible && !paid ? 1 : 0);
+          if (!(isEligible && !paid)) return acc;
+
+          const kidId = l.student_id;
+
+          if (isPackForKid(l, kidId)) {
+            const key = packKeyForKid(l, kidId);
+            if (countedPacks.has(key)) return acc; // déjà compté
+            countedPacks.add(key);
+            return acc + 1;
+          }
+          return acc + 1;
         }
 
         return acc;

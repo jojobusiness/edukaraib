@@ -480,6 +480,8 @@ async function createVisioLink(lesson) {
   }
 }
 
+const isInvitationStatus = (st) => String(st || '').toLowerCase().startsWith('invited_');
+
 /* =================== PAGE =================== */
 export default function TeacherLessons() {
   const [lessons, setLessons] = useState([]);
@@ -556,7 +558,10 @@ export default function TeacherLessons() {
             ids.forEach((sid) => {
               const st = String(pm?.[sid]?.status || '');
               // On considère "pending" tout ce qui n’est PAS accepté/confirmé/rejeté/removed/deleted
-              if (!['accepted', 'confirmed', 'rejected', 'removed', 'deleted'].includes(st)) {
+              if (
+                !['accepted', 'confirmed', 'rejected', 'removed', 'deleted'].includes(st) &&
+                !isInvitationStatus(st) // ⬅️ on masque les invitations
+              ) {
                 pGroupRaw.push({
                   lessonId: l.id,
                   lesson: l,
