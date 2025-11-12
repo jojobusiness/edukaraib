@@ -249,7 +249,18 @@ function getJoinState(l) {
     return 'open';
   }
 
-  // 2) fallback si pas de bornes stockées: -15min / +1h autour du créneau
+  // 2) fallback A : s'il y a une date absolue (start_datetime), on s’y fie
+  const startMsAbs = getStartMs(l);
+  if (startMsAbs) {
+    const now = Date.now();
+    const windowStart = startMsAbs - 15 * 60 * 1000; // 15 min avant
+    const windowEnd   = startMsAbs + 60 * 60 * 1000; // +1h après
+    if (now < windowStart) return 'before';
+    if (now > windowEnd)   return 'expired';
+    return 'open';
+  }
+
+  // 2) fallback B : pas de date absolue → on estime via slot_day/slot_hour
   const start = nextOccurrence(l.slot_day, l.slot_hour, new Date());
   if (!start) return 'open'; // si pas de slot exploitable, on n'empêche pas
   const startMs = start.getTime();
@@ -674,7 +685,7 @@ export default function MyCourses() {
                 <a
                   href={disabled ? undefined : c.visio.joinUrl}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className={`px-4 py-2 rounded shadow font-semibold text-white ${
                     disabled ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'
                   }`}
