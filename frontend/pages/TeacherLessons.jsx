@@ -19,6 +19,9 @@ import DocumentsModal from '../components/lessons/DocumentsModal';
 import GroupSettingsModal from '../components/lessons/GroupSettingsModal';
 import { createPaymentDueNotificationsForLesson } from '../lib/paymentNotifications';
 
+const JAAS_TENANT = 'vpaas-magic-cookie-651cb7a83ef74ca1981d7fdeee7f91ca';
+const JAAS_ROOM_PREFIX = `${JAAS_TENANT}/`;
+
 /* ---------- UI helpers ---------- */
 const statusColors = {
   booked: 'bg-yellow-100 text-yellow-800',
@@ -1343,14 +1346,16 @@ export default function TeacherLessons() {
       // fenêtre d’ouverture/expiration
       const { opensAt, expiresAt } = computeVisioWindow(lesson);
 
+      const roomSuffix = `jk_${lesson.id}_${token(8)}`; // partie aléatoire
       const payload = {
         joinUrl: `${window.location.origin}/visio/${lesson.id}?k=${token(16)}`,
         created_at: new Date().toISOString(),
         opens_at: opensAt?.toISOString?.() || null,
         expires_at: expiresAt?.toISOString?.() || null,
         revoked: false,
-        provider: 'jitsi',
-        room: `jk_${lesson.id}_${token(8)}` // nom de salle long & introuvable
+        provider: 'jaas', // pour info
+        // Salle complète côté JAAS: "vpaas-magic-cookie-.../jk_<lessonId>_<random>"
+        room: `${JAAS_ROOM_PREFIX}${roomSuffix}`,
       };
 
       // En BD

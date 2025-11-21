@@ -3,6 +3,10 @@ import { useParams, useLocation } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
+const JAAS_TENANT = 'vpaas-magic-cookie-651cb7a83ef74ca1981d7fdeee7f91ca';
+const JAAS_DOMAIN = '8x8.vc';
+const JAAS_ROOM_PREFIX = `${JAAS_TENANT}/`;
+
 function useQuery() {
   const { search } = useLocation();
   return new URLSearchParams(search);
@@ -12,7 +16,8 @@ const loadJitsiApi = () =>
   new Promise((resolve, reject) => {
     if (window.JitsiMeetExternalAPI) return resolve(window.JitsiMeetExternalAPI);
     const s = document.createElement('script');
-    s.src = 'https://meet.jit.si/external_api.js';
+    // JAAS: script hébergé chez 8x8 avec ton tenant
+    s.src = `https://${JAAS_DOMAIN}/${JAAS_TENANT}/external_api.js`;
     s.async = true;
     s.onload = () => resolve(window.JitsiMeetExternalAPI);
     s.onerror = reject;
@@ -73,7 +78,10 @@ export default function VisioRoom() {
   // 2) Montage de l'iframe Jitsi si autorisé
   const roomName = useMemo(() => {
     const r = state.lesson?.visio?.room;
-    return typeof r === 'string' && r.length > 10 ? r : `jk_${lessonId}`;
+    // On stocke déjà le chemin complet côté prof: "vpaas-magic-cookie-.../jk_xxx"
+    if (typeof r === 'string' && r.length > 0) return r;
+    // fallback ultra simple au cas où
+    return `${JAAS_ROOM_PREFIX}jk_${lessonId}`;
   }, [state.lesson, lessonId]);
 
   useEffect(() => {
@@ -90,7 +98,7 @@ export default function VisioRoom() {
         const displayName = u?.displayName || 'Utilisateur';
 
         // Options IFrame (voir doc Jitsi external_api)
-        const domain = 'meet.jit.si';
+        const domain = JAAS_DOMAIN;
         const options = {
           roomName,
           parentNode: containerRef.current,
