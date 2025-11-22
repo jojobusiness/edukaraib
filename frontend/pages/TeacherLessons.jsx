@@ -243,16 +243,59 @@ const PENDING_SET = new Set([
 ]);
 
 /* ---------- payment helpers (individuel) ---------- */
-const isIndividualPaid = (l) => l && !l.is_group && (l.is_paid === true);
+const isIndividualPaid = (l) => {
+  if (!l || l.is_group) return false;
+
+  // Cas simple : champ is_paid sur la leçon
+  if (l.is_paid === true) return true;
+
+  // Cas où le paiement est stocké dans participantsMap
+  const pm = l.participantsMap || {};
+  for (const sid of Object.keys(pm)) {
+    if (pm[sid]?.is_paid === true) return true;
+  }
+
+  return false;
+};
 
 /* ---------- time helpers ---------- */
 const getStartMs = (lesson) => {
   const ts = lesson?.start_datetime;
+  // 1) Si on a un vrai timestamp Firestore, on l'utilise
   if (ts?.toDate) {
     try { return ts.toDate().getTime(); } catch { return null; }
   }
   if (typeof ts?.seconds === 'number') return ts.seconds * 1000;
-  return null; // si seulement slot_day/slot_hour (pas de date) → pas d’auto-règle
+
+  // 2) Fallback pour les anciens cours : on reconstruit à partir de slot_day + slot_hour
+  const day = lesson?.slot_day;
+  const hour = lesson?.slot_hour;
+  if (!day || hour == null) return null;
+
+  try {
+    const now = new Date();
+    const d = new Date(now);
+
+    // map des jours en français abrégés : "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"
+    const key = String(day).toLowerCase().slice(0, 3); // "lun", "mar", etc.
+    const map = { lun: 1, mar: 2, mer: 3, jeu: 4, ven: 5, sam: 6, dim: 0 };
+    const target = map[key];
+
+    if (typeof target !== 'number') return null;
+
+    const cur = d.getDay(); // 0 = dimanche ... 6 = samedi
+    let diff = target - cur;
+
+    // On considère le créneau de la semaine COURANTE :
+    //  - si le jour est déjà passé, diff < 0 → on recule de quelques jours
+    //  - si c'est aujourd'hui, on garde aujourd'hui et on met l'heure demandée
+    d.setDate(d.getDate() + diff);
+    d.setHours(Number(hour) || 0, 0, 0, 0);
+
+    return d.getTime();
+  } catch {
+    return null;
+  }
 };
 
 /* ---------- affichage mode / pack ---------- */
