@@ -31,7 +31,13 @@ const statusColors = {
 };
 
 const fmtTime = (ms) =>
-  new Date(ms).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
+  new Date(ms).toLocaleString('fr-FR', {
+    weekday: 'short',   // lun., mar., ...
+    day: '2-digit',     // 22
+    month: '2-digit',   // 11
+    hour: '2-digit',    // 17
+    minute: '2-digit',  // 00
+  });
 
 const fmtFromSlot = (slot_day, slot_hour) =>
   `${slot_day || ''} ${slot_hour != null ? `• ${String(slot_hour).padStart(2, '0')}:00` : ''}`.trim();
@@ -40,13 +46,71 @@ const slotLabel = (l) => fmtFromSlot(l.slot_day, l.slot_hour);
 
 function When({ lesson }) {
   const ts = lesson?.start_datetime;
+
+  // 1) Cas Firestore: on a un vrai timestamp → date + heure complètes
   if (ts?.toDate) {
     try {
-      return <span>📅 {ts.toDate().toLocaleString('fr-FR')}</span>;
+      const d = ts.toDate();
+      return (
+        <span>
+          📅{' '}
+          {d.toLocaleString('fr-FR', {
+            weekday: 'short',
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </span>
+      );
     } catch {}
   }
-  if (typeof ts?.seconds === 'number') return <span>📅 {fmtTime(ts.seconds * 1000)}</span>;
-  if (lesson.slot_day || lesson.slot_hour != null) return <span>📅 {fmtFromSlot(lesson.slot_day, lesson.slot_hour)}</span>;
+
+  // 2) Cas Timestamp "seconds"
+  if (typeof ts?.seconds === 'number') {
+    return <span>📅 {fmtTime(ts.seconds * 1000)}</span>;
+  }
+
+  // 3) Fallback : on reconstruit une date à partir de slot_day + slot_hour (semaine courante)
+  const day = lesson?.slot_day;
+  const hour = lesson?.slot_hour;
+
+  if (day || hour != null) {
+    try {
+      const now = new Date();
+      const d = new Date(now);
+
+      const key = String(day || '').toLowerCase().slice(0, 3); // "lun", "mar", "mer"...
+      const map = { lun: 1, mar: 2, mer: 3, jeu: 4, ven: 5, sam: 6, dim: 0 };
+      const target = map[key];
+
+      if (typeof target === 'number') {
+        const cur = d.getDay(); // 0 = dim ... 6 = sam
+        let diff = target - cur;
+        d.setDate(d.getDate() + diff);
+        d.setHours(Number(hour) || 0, 0, 0, 0);
+
+        return (
+          <span>
+            📅{' '}
+            {d.toLocaleString('fr-FR', {
+              weekday: 'short',
+              day: '2-digit',
+              month: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </span>
+        );
+      }
+    } catch {
+      // on tombera sur le fallback juste en dessous
+    }
+
+    // si on n'a pas réussi à reconstruire, on affiche au moins "Ven • 17:00"
+    return <span>📅 {fmtFromSlot(day, hour)}</span>;
+  }
+
   return null;
 }
 
@@ -1746,7 +1810,7 @@ export default function TeacherLessons() {
                     {demandesGroupes.map(({ lessonId, lesson, studentId, status, studentName, requesterName }) => (
                       <li key={`${lessonId}:${studentId}`} className="border rounded-lg px-3 py-2 flex items-center gap-3">
                         <span className="text-xs text-gray-600">
-                          {lesson.slot_day} {String(lesson.slot_hour).padStart(2, '0')}h
+                          <When lesson={lesson} />
                         </span>
                         <span className="text-sm font-medium">{lesson.subject_id || 'Cours'}</span>
                         {/* ——— NOUVEAU : pastilles mode & pack ——— */}

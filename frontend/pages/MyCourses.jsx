@@ -104,33 +104,31 @@ function formatHour(h) { const n = Number(h) || 0; return `${String(n).padStart(
 function formatLessonDateTime(lesson) {
   if (!lesson) return '';
 
+  const buildFromDate = (d) => {
+    const weekday = d.toLocaleDateString('fr-FR', { weekday: 'short' }); // "ven."
+    const day = String(d.getDate()).padStart(2, '0');                    // "22"
+    const month = String(d.getMonth() + 1).padStart(2, '0');             // "11"
+    const time = d.toLocaleTimeString('fr-FR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });                                                                   // "17:00"
+    return `${weekday} ${day}/${month} · ${time}`;
+  };
+
   const ts = lesson.start_datetime;
   try {
     if (ts?.toDate) {
-      const d = ts.toDate();
-      return d.toLocaleString('fr-FR', {
-        weekday: 'short',
-        day: '2-digit',
-        month: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
+      return buildFromDate(ts.toDate());
     }
     if (typeof ts?.seconds === 'number') {
-      const d = new Date(ts.seconds * 1000);
-      return d.toLocaleString('fr-FR', {
-        weekday: 'short',
-        day: '2-digit',
-        month: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
+      return buildFromDate(new Date(ts.seconds * 1000));
     }
   } catch {}
 
+  // Fallback si on n'a pas de vrai timestamp : on garde slot_day + heure
   const dayLabel = lesson.slot_day || '';
   const hourLabel = lesson.slot_hour != null ? formatHour(lesson.slot_hour) : '';
-  return `${dayLabel} ${hourLabel}`.trim();
+  return `${dayLabel} · ${hourLabel}`.trim();
 }
 
 const statusColors = {
@@ -678,7 +676,7 @@ export default function MyCourses() {
             {group && displayedStatus === 'confirmed' && <ParticipantsPopover c={c} />}
           </div>
           <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>
-          <div className="text-gray-500 text-xs">{when}</div>
+          <div className="text-gray-500 text-xs">📅 {when}</div>
           <div className="mt-1">{paymentBadgeForMe(c)}</div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -807,7 +805,7 @@ export default function MyCourses() {
                           {/* ———————————————————————————————— */}
                         </div>
                         <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>
-                        <div className="text-gray-500 text-xs">${formatLessonDateTime(c)}</div>
+                        <div className="text-gray-500 text-xs">📅 {formatLessonDateTime(c)}</div>
                       </div>
                       <div className="flex gap-2">
                         <button className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => acceptInvite(c)}>
