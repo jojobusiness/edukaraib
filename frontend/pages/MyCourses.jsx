@@ -98,7 +98,40 @@ function nextOccurrence(slot_day, slot_hour, now = new Date()) {
   if (start <= now) start.setDate(start.getDate() + 7);
   return start;
 }
+
 function formatHour(h) { const n = Number(h) || 0; return `${String(n).padStart(2, '0')}:00`; }
+
+function formatLessonDateTime(lesson) {
+  if (!lesson) return '';
+
+  const ts = lesson.start_datetime;
+  try {
+    if (ts?.toDate) {
+      const d = ts.toDate();
+      return d.toLocaleString('fr-FR', {
+        weekday: 'short',
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+    if (typeof ts?.seconds === 'number') {
+      const d = new Date(ts.seconds * 1000);
+      return d.toLocaleString('fr-FR', {
+        weekday: 'short',
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+  } catch {}
+
+  const dayLabel = lesson.slot_day || '';
+  const hourLabel = lesson.slot_hour != null ? formatHour(lesson.slot_hour) : '';
+  return `${dayLabel} ${hourLabel}`.trim();
+}
 
 const statusColors = {
   booked: 'bg-yellow-100 text-yellow-800',
@@ -603,7 +636,7 @@ export default function MyCourses() {
   }
 
   function CourseCard({ c, showDocs = true, showReview = false }) {
-    const when = (c.slot_day || c.slot_hour != null) ? `${c.slot_day} ${formatHour(c.slot_hour)}` : '';
+    const when = formatLessonDateTime(c);
     const group = isGroupLesson(c);
 
     // ✅ priorité “Terminé”, puis statut PAR PARTICIPANT pour les groupes
@@ -733,7 +766,7 @@ export default function MyCourses() {
           <div className="text-xl font-bold text-primary">Prochain cours</div>
           <div className="text-gray-700 mt-1">
             {nextCourse
-              ? `${nextCourse.subject_id || 'Cours'} · ${nextCourse.slot_day} ${formatHour(nextCourse.slot_hour)} · ${modeLabel(nextCourse)} • ${packLabelForMe(nextCourse)} · avec ${teacherNameFor(nextCourse.teacher_id)}`
+              ? `${nextCourse.subject_id || 'Cours'} · ${formatLessonDateTime(c)} · ${modeLabel(nextCourse)} • ${packLabelForMe(nextCourse)} · avec ${teacherNameFor(nextCourse.teacher_id)}`
               : 'Aucun cours confirmé à venir'}
           </div>
         </div>
@@ -774,7 +807,7 @@ export default function MyCourses() {
                           {/* ———————————————————————————————— */}
                         </div>
                         <div className="text-gray-700 text-sm">Professeur : <span className="font-semibold">{teacherNameFor(c.teacher_id)}</span></div>
-                        <div className="text-gray-500 text-xs">{c.slot_day} {formatHour(c.slot_hour)}</div>
+                        <div className="text-gray-500 text-xs">${formatLessonDateTime(c)}</div>
                       </div>
                       <div className="flex gap-2">
                         <button className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded shadow font-semibold" onClick={() => acceptInvite(c)}>
