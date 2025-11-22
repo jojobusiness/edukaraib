@@ -917,8 +917,8 @@ export default function TeacherLessons() {
   const refuses = useMemo(() => {
     return lessons.filter((l) => {
       if (!isGroupLessonStrict(l)) {
-        // Individuel: basé sur le participant propriétaire
-        return individualStatus(l) === 'rejected' || l.status === 'rejected';
+        // Individuel : uniquement le statut du participant propriétaire
+        return individualStatus(l) === 'rejected';
       }
       // Groupe: au moins un élève rejeté, ou statut global rejeté
       const pm = l.participantsMap || {};
@@ -1386,25 +1386,24 @@ export default function TeacherLessons() {
             (l.is_group && hasAnyConfirmedParticipantUI(l));
 
           if (!isAccepted && statusStr !== 'rejected') {
-            try {
-              await updateDoc(doc(db, 'lessons', l.id), { status: 'rejected' });
-            } catch {}
-            try {
-              const recipients = new Set();
-              if (l.student_id) recipients.add(l.student_id);
-              (l.participant_ids || []).forEach((sid) => recipients.add(sid));
-              await sendEmailsToUsers(
-                Array.from(recipients),
-                {
-                  title: "Cours refusé automatiquement",
-                  message: "Votre demande a expiré (non confirmée à temps). Vous pouvez refaire une demande.",
-                  ctaUrl: `${window.location.origin}/smart-dashboard`,
-                  ctaText: "Refaire une demande",
-                },
-                l
-              );
-            } catch {}
-            return;
+            const isGroup = isGroupLessonStrict(l);
+            const owner = !isGroup ? getOwnerStudentId(l) : null;
+
+            if (isGroup) {
+              // Groupe → on rejette chaque participant pas accepté
+              const pm = { ...(l.participantsMap || {}) };
+              for (const sid of Object.keys(pm)) {
+                if (!['confirmed','accepted','rejected','removed','deleted'].includes(String(pm[sid]?.status || '')))
+                  pm[sid] = { ...(pm[sid] || {}), status: 'rejected' };
+              }
+              await updateDoc(doc(db, "lessons", l.id), { participantsMap: pm });
+            } else if (owner) {
+              // Individuel → statut sur participantsMap ET status du cours
+              await updateDoc(doc(db, "lessons", l.id), {
+                status: "rejected",
+                [`participantsMap.${owner}.status`]: "rejected",
+              });
+            }
           }
         }
 
