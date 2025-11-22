@@ -134,10 +134,18 @@ export default function VisioRoom() {
 
   // 2) Nom complet de la room (JAAS)
   const roomName = useMemo(() => {
-    const r = state.lesson?.visio?.room;
-    // On stocke déjà le chemin complet côté prof: "vpaas-magic-cookie-.../jk_xxx"
-    if (typeof r === 'string' && r.length > 0) return r;
-    // fallback ultra simple au cas où
+    const raw = state.lesson?.visio?.room;
+
+    if (typeof raw === 'string' && raw.length > 0) {
+      // 1) Cas nouveau format: déjà "vpaas-magic-cookie-.../jk_xxx"
+      if (raw.startsWith(JAAS_ROOM_PREFIX)) {
+        return raw;
+      }
+      // 2) Ancien format: juste "jk_xxx" → on préfixe pour JAAS
+      return `${JAAS_ROOM_PREFIX}${raw}`;
+    }
+
+    // 3) Fallback: on fabrique une room JAAS à partir de l'id du cours
     return `${JAAS_ROOM_PREFIX}jk_${lessonId}`;
   }, [state.lesson, lessonId]);
 
