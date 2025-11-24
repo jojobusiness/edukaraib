@@ -125,9 +125,20 @@ function formatLessonDateTime(lesson) {
     }
   } catch {}
 
-  // Fallback si on n'a pas de vrai timestamp : on garde slot_day + heure
+  // 🔁 Fallback : on reconstruit une date à partir de slot_day + slot_hour
   const dayLabel = lesson.slot_day || '';
-  const hourLabel = lesson.slot_hour != null ? formatHour(lesson.slot_hour) : '';
+  const hour = lesson.slot_hour;
+
+  if (dayLabel) {
+    try {
+      const approx = nextOccurrence(dayLabel, hour, new Date());
+      if (approx) return buildFromDate(approx);
+    } catch {
+      // on tombera sur le fallback texte en dessous
+    }
+  }
+
+  const hourLabel = hour != null ? formatHour(hour) : '';
   return `${dayLabel} · ${hourLabel}`.trim();
 }
 

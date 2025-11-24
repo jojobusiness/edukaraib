@@ -102,13 +102,13 @@ function formatLessonDateTime(lesson) {
   if (!lesson) return '';
 
   const buildFromDate = (d) => {
-    const weekday = d.toLocaleDateString('fr-FR', { weekday: 'short' }); // "ven."
-    const day = String(d.getDate()).padStart(2, '0');                    // "22"
-    const month = String(d.getMonth() + 1).padStart(2, '0');             // "11"
+    const weekday = d.toLocaleDateString('fr-FR', { weekday: 'short' });
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
     const time = d.toLocaleTimeString('fr-FR', {
       hour: '2-digit',
       minute: '2-digit',
-    });                                                                   // "17:00"
+    });
     return `${weekday} ${day}/${month} · ${time}`;
   };
 
@@ -122,9 +122,18 @@ function formatLessonDateTime(lesson) {
     }
   } catch {}
 
-  // Fallback si on n'a pas de vrai timestamp : on garde slot_day + heure
+  // 🔁 Fallback : slot_day + slot_hour → date calculée comme chez le prof
   const dayLabel = lesson.slot_day || '';
-  const hourLabel = lesson.slot_hour != null ? formatHour(lesson.slot_hour) : '';
+  const hour = lesson.slot_hour;
+
+  if (dayLabel) {
+    try {
+      const approx = nextOccurrence(dayLabel, hour, new Date());
+      if (approx) return buildFromDate(approx);
+    } catch {}
+  }
+
+  const hourLabel = hour != null ? formatHour(hour) : '';
   return `${dayLabel} · ${hourLabel}`.trim();
 }
 
