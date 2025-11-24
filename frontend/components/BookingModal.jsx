@@ -214,35 +214,53 @@ const remainingFor = (day, hour) => {
 
   // Heures à afficher
   const hours = useMemo(() => {
-    const all = Object.values(availability || {}).flat().filter((h) => Number.isInteger(h));
-    if (all.length === 0) return Array.from({ length: 12 }, (_, i) => i + 8); // 8 → 19h
+    const all = Object.values(availability || {})
+      .flat()
+      .filter((h) => Number.isInteger(h));
+
+    if (all.length === 0) {
+      // défaut 8h → 19h
+      return Array.from({ length: 12 }, (_, i) => i + 8);
+    }
+
     const min = Math.max(0, Math.min(...all));
     const max = Math.min(23, Math.max(...all));
+
     return Array.from({ length: (max - min + 1) }, (_, i) => min + i);
   }, [availability]);
 
   // -------- Actions UI --------
   const toggleSelect = (day, hour) => {
     if (!canBook) return;
-    const dayDate = dateForLabel(day);
+
+    const dayDate = dateForLabel(day); // Date réelle de ce jour dans la semaine affichée
+    if (!dayDate) return;
+
     if (!isAvailable(day, hour) || isBooked(day, hour)) return;
     if (isSlotLockedByDate(dayDate, hour)) return;
 
+    // On construit une date complète à partir du dayDate de la semaine affichée
+    const dateStr = dayDate.toISOString().slice(0, 10); // "YYYY-MM-DD"
+    const week = activeWeekKey;                         // lundi de la semaine (clé)
+    const startAt = new Date(dayDate);
+    startAt.setHours(hour, 0, 0, 0);
+
     if (multiSelect) {
-      setSelected(prev => {
-        const exists = prev.some(s => s.day === day && s.hour === hour);
-        if (exists) return prev.filter(s => !(s.day === day && s.hour === hour));
+      setSelected((prev) => {
+        const exists = prev.some((s) => s.day === day && s.hour === hour);
+        if (exists) {
+          // on retire si on reclique
+          return prev.filter((s) => !(s.day === day && s.hour === hour));
+        }
         if (requiredCount && prev.length >= requiredCount) return prev; // limite pack
-        const date = dayDateKey(day);            // "YYYY-MM-DD" de la semaine affichée
-        const week = activeWeekKey;              // lundi ISO de la semaine affichée
-        const startAt = new Date(date + 'T00:00:00'); startAt.setHours(hour,0,0,0);
-        return [...prev, { day, hour, date, week, startAt }];
+
+        return [
+          ...prev,
+          { day, hour, date: dateStr, week, startAt },
+        ];
       });
     } else {
-      const date = dayDateKey(day);
-      const week = activeWeekKey;
-      const startAt = new Date(date + 'T00:00:00'); startAt.setHours(hour,0,0,0);
-      setSelected([{ day, hour, date, week, startAt }]);
+      setSelected([{ day, hour, date: dateStr, week, startAt }]);
     }
   };
 
