@@ -945,7 +945,7 @@ export default function ParentCourses() {
                   const childrenLabel = kidsConfirmed.length > 1
                     ? `Participants: ${kidsConfirmed.map((id) => studentMap.get(id) || id).join(', ')}`
                     : (studentMap.get(kidsConfirmed[0]) || c.student_id);
-                  return `${c.subject_id || 'Cours'} · ${formatLessonDateTime(c)} · ${modeLabel(c)} • ${packLabelForChild(c)} · ${childrenLabel} · avec ${teacherNameFor(c.teacher_id)}`;
+                  return `${c.subject_id || 'Cours'} · 📅 ${formatLessonDateTime(c)} · ${modeLabel(c)} • ${packLabelForChild(c)} · ${childrenLabel} · avec ${teacherNameFor(c.teacher_id)}`;
                 })()
               : 'Aucun cours confirmé à venir'}
           </div>

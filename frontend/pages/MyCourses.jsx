@@ -764,7 +764,7 @@ export default function MyCourses() {
           <div className="text-xl font-bold text-primary">Prochain cours</div>
           <div className="text-gray-700 mt-1">
             {nextCourse
-              ? `${nextCourse.subject_id || 'Cours'} · ${formatLessonDateTime(nextCourse)} · ${modeLabel(nextCourse)} • ${packLabelForMe(nextCourse)} · avec ${teacherNameFor(nextCourse.teacher_id)}`
+              ? `${nextCourse.subject_id || 'Cours'} · 📅 ${formatLessonDateTime(nextCourse)} · ${modeLabel(nextCourse)} • ${packLabelForMe(nextCourse)} · avec ${teacherNameFor(nextCourse.teacher_id)}`
               : 'Aucun cours confirmé à venir'}
           </div>
         </div>
