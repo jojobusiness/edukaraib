@@ -189,9 +189,25 @@ const remainingFor = (day, hour) => {
   };
 
   const isAvailable = (day, hour) => Array.isArray(availability[day]) && availability[day].includes(hour);
-  const isSelected  = (day, hour) => selected.some(s => s.day === day && s.hour === hour);
+  const isSelected = (day, hour) => {
+    const dkey = dayDateKey(day);
+    const wkey = activeWeekKey;
 
-  // 🧠 Quand on change de semaine (ou que le planning change), ne garder que les créneaux encore valides
+    return selected.some((s) => {
+      if (s.day !== day || s.hour !== hour) return false;
+
+      // si la sélection a une date précise, on compare à la date de la semaine active
+      if (s.date && dkey) return s.date === dkey;
+
+      // sinon, on compare à la semaine (clé ISO du lundi)
+      if (s.week) return s.week === wkey;
+
+      // fallback (ancien comportement)
+      return true;
+    });
+  };
+
+  
   React.useEffect(() => {
     setSelected((prev) => {
       if (!Array.isArray(prev) || prev.length === 0) return prev;
@@ -199,7 +215,7 @@ const remainingFor = (day, hour) => {
         const stillAvailable = Array.isArray(availability[day]) && availability[day].includes(hour);
         if (!stillAvailable) return false;
 
-        const dayDate = dateForLabel(day); // semaine active actuelle
+        const dayDate = dateForLabel(day); // basé sur la semaine actuelle au moment de la sélection
         if (isSlotLockedByDate(dayDate, hour)) return false;
 
         if (isBooked(day, hour)) return false;
@@ -210,7 +226,7 @@ const remainingFor = (day, hour) => {
         return true;
       });
     });
-  }, [weekAnchor, availability, remainingBySlot, bookedSlots]); // filtrage intelligent
+  }, [availability, remainingBySlot, bookedSlots]);
 
   // Heures à afficher
   const hours = useMemo(() => {

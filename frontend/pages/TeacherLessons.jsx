@@ -44,74 +44,53 @@ const fmtFromSlot = (slot_day, slot_hour) =>
 
 const slotLabel = (l) => fmtFromSlot(l.slot_day, l.slot_hour);
 
-function When({ lesson }) {
-  const ts = lesson?.start_datetime;
+// 🔹 Même format que sur parent / étudiant : "lun. 24/11 · 17:00"
+function formatLessonDateTime(lesson) {
+  if (!lesson) return '';
 
-  // 1) Cas Firestore: on a un vrai timestamp → date + heure complètes
-  if (ts?.toDate) {
+  const buildFromDate = (d) => {
+    const weekday = d.toLocaleDateString('fr-FR', { weekday: 'short' }); // "lun."
+    const day = String(d.getDate()).padStart(2, '0');                    // "24"
+    const month = String(d.getMonth() + 1).padStart(2, '0');             // "11"
+    const time = d.toLocaleTimeString('fr-FR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });                                                                  // "17:00"
+    return `${weekday} ${day}/${month} · ${time}`;
+  };
+
+  const ts = lesson.start_datetime;
+
+  // 1) start_datetime Firestore (comme sur étudiant)
+  try {
+    if (ts?.toDate) {
+      return buildFromDate(ts.toDate());
+    }
+    if (typeof ts?.seconds === 'number') {
+      return buildFromDate(new Date(ts.seconds * 1000));
+    }
+  } catch {}
+
+  // 2) Fallback : on reconstruit à partir de slot_day + slot_hour,
+  //    mais on garde quand même un affichage propre.
+  const dayLabel = lesson.slot_day || '';
+  const hour = lesson.slot_hour;
+
+  if (dayLabel) {
     try {
-      const d = ts.toDate();
-      return (
-        <span>
-          📅{' '}
-          {d.toLocaleString('fr-FR', {
-            weekday: 'short',
-            day: '2-digit',
-            month: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-        </span>
-      );
+      // on réutilise nextOccurrence défini plus haut dans ce fichier
+      const approx = nextOccurrence(dayLabel, hour, new Date());
+      if (approx) return buildFromDate(approx);
     } catch {}
   }
 
-  // 2) Cas Timestamp "seconds"
-  if (typeof ts?.seconds === 'number') {
-    return <span>📅 {fmtTime(ts.seconds * 1000)}</span>;
-  }
+  const hourLabel = hour != null ? `${String(hour).padStart(2, '0')}:00` : '';
+  return `${dayLabel} · ${hourLabel}`.trim();
+}
 
-  // 3) Fallback : on reconstruit une date à partir de slot_day + slot_hour (semaine courante)
-  const day = lesson?.slot_day;
-  const hour = lesson?.slot_hour;
-
-  if (day || hour != null) {
-    try {
-      const now = new Date();
-      const d = new Date(now);
-
-      const key = String(day || '').toLowerCase().slice(0, 3); // "lun", "mar", "mer"...
-      const map = { lun: 1, mar: 2, mer: 3, jeu: 4, ven: 5, sam: 6, dim: 0 };
-      const target = map[key];
-
-      if (typeof target === 'number') {
-        const cur = d.getDay(); // 0 = dim ... 6 = sam
-        let diff = target - cur;
-        d.setDate(d.getDate() + diff);
-        d.setHours(Number(hour) || 0, 0, 0, 0);
-
-        return (
-          <span>
-            📅{' '}
-            {d.toLocaleString('fr-FR', {
-              weekday: 'short',
-              day: '2-digit',
-              month: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-          </span>
-        );
-      }
-    } catch {
-      // on tombera sur le fallback juste en dessous
-    }
-
-    // si on n'a pas réussi à reconstruire, on affiche au moins "Ven • 17:00"
-    return <span>📅 {fmtFromSlot(day, hour)}</span>;
-  }
-
-  return null;
+function When({ lesson }) {
+  const label = formatLessonDateTime(lesson);
+  return label ? <span>📅 {label}</span> : null;
 }
 
 function StatusPill({ status }) {
