@@ -304,41 +304,33 @@ const isIndividualPaid = (l) => {
 /* ---------- time helpers ---------- */
 const getStartMs = (lesson) => {
   const ts = lesson?.start_datetime;
-  // 1) Si on a un vrai timestamp Firestore, on l'utilise
+
+  // 1) start_datetime Firestore → on l’utilise directement
   if (ts?.toDate) {
-    try { return ts.toDate().getTime(); } catch { return null; }
+    try {
+      return ts.toDate().getTime();
+    } catch {
+      /* ignore */
+    }
   }
-  if (typeof ts?.seconds === 'number') return ts.seconds * 1000;
-
-  // 2) Fallback pour les anciens cours : on reconstruit à partir de slot_day + slot_hour
-  const day = lesson?.slot_day;
-  const hour = lesson?.slot_hour;
-  if (!day || hour == null) return null;
-
-  try {
-    const now = new Date();
-    const d = new Date(now);
-
-    // map des jours en français abrégés : "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"
-    const key = String(day).toLowerCase().slice(0, 3); // "lun", "mar", etc.
-    const map = { lun: 1, mar: 2, mer: 3, jeu: 4, ven: 5, sam: 6, dim: 0 };
-    const target = map[key];
-
-    if (typeof target !== 'number') return null;
-
-    const cur = d.getDay(); // 0 = dimanche ... 6 = samedi
-    let diff = target - cur;
-
-    // On considère le créneau de la semaine COURANTE :
-    //  - si le jour est déjà passé, diff < 0 → on recule de quelques jours
-    //  - si c'est aujourd'hui, on garde aujourd'hui et on met l'heure demandée
-    d.setDate(d.getDate() + diff);
-    d.setHours(Number(hour) || 0, 0, 0, 0);
-
-    return d.getTime();
-  } catch {
-    return null;
+  if (typeof ts?.seconds === 'number') {
+    return ts.seconds * 1000;
   }
+
+  // 2) Nouveau : on utilise le champ "date" + "slot_hour" si présents
+  //    (ceux qui viennent du nouveau BookingModal)
+  if (lesson?.date && lesson.slot_hour != null) {
+    try {
+      const d = new Date(`${lesson.date}T00:00:00`);
+      d.setHours(Number(lesson.slot_hour) || 0, 0, 0, 0);
+      return d.getTime();
+    } catch {
+      return null;
+    }
+  }
+
+  // 3) Sinon on ne sait pas, on NE FAIT PAS de refus auto
+  return null;
 };
 
 /* ---------- affichage mode / pack ---------- */
