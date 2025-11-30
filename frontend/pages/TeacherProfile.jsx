@@ -177,6 +177,15 @@ const mondayOf = (d) => {
 };
 const weekKeyOf = (d) => mondayOf(d).toISOString().slice(0,10); // "YYYY-MM-DD" du lundi
 
+// Date -> "YYYY-MM-DD" en heure locale
+const formatLocalDate = (d) => {
+  if (!d) return null;
+  const y   = d.getFullYear();
+  const m   = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 export default function TeacherProfile() {
   const { teacherId } = useParams();
   const navigate = useNavigate();
@@ -261,51 +270,111 @@ export default function TeacherProfile() {
     return () => unsub();
   }, [teacherId]);
 
-  // Dispos + blocs
+  // Dispos + infos de réservation (par date)
   useEffect(() => {
     if (!teacher) return;
-    const qLessons = query(collection(db, 'lessons'), where('teacher_id', '==', teacherId));
+
+    const qLessons = query(
+      collection(db, 'lessons'),
+      where('teacher_id', '==', teacherId)
+    );
+
     const unsubLessons = onSnapshot(qLessons, (snap) => {
-      const { blocked, remainingMap } = computeBookedAndRemaining(
-        snap.docs,
-        teacher,
-        selectedStudentId || auth.currentUser?.uid || null // ← enfant choisi en priorité
-      );
-      // Semaine courante (lundi ISO)
-      const currentWeekKey = weekKeyOf(new Date());
-      const fill = { ...remainingMap };
-      const defCap =
-        teacher?.group_enabled && Number(teacher?.group_capacity) > 1
+      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      const booked = [];
+      const remaining = {};
+
+      const teacherGroupEnabled = !!teacher.group_enabled;
+      const defaultCap =
+        teacherGroupEnabled && Number(teacher.group_capacity) > 1
           ? Math.floor(Number(teacher.group_capacity))
           : 1;
 
-      const avail = teacher?.availability || {};
+      docs.forEach((l) => {
+        const day  = l.slot_day;
+        const hour = l.slot_hour;
+        if (!day || typeof hour !== 'number') return;
+
+        // status global de la leçon
+        const globalStatus = String(l.status || '').toLowerCase();
+        if (['removed', 'deleted'].includes(globalStatus)) return;
+
+        // date locale du cours
+        let dateStr = l.date || null;
+        if (!dateStr && l.startAt) {
+          const d = new Date(l.startAt);
+          if (!Number.isNaN(d.getTime())) {
+            dateStr = formatLocalDate(d);
+          }
+        }
+
+        // clé semaine (lundi)
+        let weekStr = l.week || null;
+        if (!weekStr && dateStr) {
+          const d = new Date(`${dateStr}T00:00:00`);
+          weekStr = weekKeyOf(d);
+        }
+
+        // infos pour BookingModal (isBooked + pastilles enfants)
+        booked.push({
+          day,
+          hour,
+          date: dateStr || null,
+          week: weekStr || null,
+          startAt: l.startAt || null,
+          participant_ids: Array.isArray(l.participant_ids) ? l.participant_ids : [],
+          student_id: l.student_id || null,
+          participantsMap: l.participantsMap || {},
+          is_group: !!l.is_group,
+          capacity: l.capacity,
+          status: l.status,
+        });
+
+        // places restantes pour les groupes (par DATE)
+        if (l.is_group) {
+          const ids = Array.isArray(l.participant_ids) ? l.participant_ids : [];
+          const pm  = l.participantsMap || {};
+          let occupied = 0;
+          const uniq = new Set(ids);
+          uniq.forEach((sid) => {
+            const st = String(pm?.[sid]?.status || l.status || 'pending').toLowerCase();
+            if (!['rejected','removed','deleted'].includes(st)) occupied += 1;
+          });
+
+          const cap = Number(l.capacity || 0) > 0 ? Number(l.capacity) : defaultCap;
+          const remains = Math.max(0, cap - occupied);
+
+          if (remains > 0) {
+            // si on a une date précise, on la privilégie
+            if (dateStr) {
+              const k = `${day}:${hour}:${dateStr}`;
+              remaining[k] = Math.max(remaining[k] || 0, remains);
+            } else {
+              const kPlain = `${day}:${hour}`;
+              remaining[kPlain] = Math.max(remaining[kPlain] || 0, remains);
+            }
+          }
+        }
+      });
+
+      // ➕ capacité par défaut pour les créneaux sans groupe
+      const avail = teacher.availability || {};
       Object.entries(avail).forEach(([day, hours]) => {
         (hours || []).forEach((h) => {
-          const key = `${day}:${h}`;
-          const isBlocked = blocked.some((b) => b.day === day && b.hour === h);
-          if (!fill[key] && !isBlocked) {
-            fill[key] = defCap;
+          const plainKey = `${day}:${h}`;
+          if (remaining[plainKey] == null) {
+            remaining[plainKey] = defaultCap;
           }
         });
       });
 
-      // 👉 1) Marquer les slots “pris” avec la semaine courante
-      const blockedWithWeek = blocked.map(b => ({ ...b, week: currentWeekKey }));
-      setBookedSlots(blockedWithWeek);
-
-      // 👉 2) Dupliquer les capacités avec une clé "jour:heure:semaine"
-      const fillWithWeek = Object.fromEntries(
-        Object.entries(fill).flatMap(([k, v]) => ([
-          [k, v],                              // compat (jour:heure)
-          [`${k}:${currentWeekKey}`, v],       // précis (jour:heure:semaine)
-        ]))
-      );
-      setRemainingBySlot(fillWithWeek);
+      setBookedSlots(booked);
+      setRemainingBySlot(remaining);
     });
 
     return () => unsubLessons();
-  }, [teacherId, teacher, selectedStudentId]);
+  }, [teacherId, teacher]);
 
   // Infos auteurs d’avis (nom + avatar)
   useEffect(() => {

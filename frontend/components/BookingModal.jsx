@@ -171,18 +171,24 @@ export default function BookingModal({
     return m;
   }, [bookedSlots, myStudentIds]);
 
-// places restantes (date > semaine, pas de fallback global)
-const remainingFor = (day, hour) => {
-  const dkey = dayDateKey(day);
-  const wkKey = `${day}:${hour}:${activeWeekKey}`;
-  if (dkey && typeof remainingBySlot?.[`${day}:${hour}:${dkey}`] === 'number') {
-    return remainingBySlot[`${day}:${hour}:${dkey}`];
-  }
-  if (typeof remainingBySlot?.[wkKey] === 'number') {
-    return remainingBySlot[wkKey];
-  }
-  return null;
-};
+  // places restantes : d’abord par date précise, puis semaine, puis clé simple jour:heure
+  const remainingFor = (day, hour) => {
+    const dkey   = dayDateKey(day);                     // ex: "2025-12-01"
+    const dateK  = dkey ? `${day}:${hour}:${dkey}` : null;
+    const weekK  = `${day}:${hour}:${activeWeekKey}`;
+    const plainK = `${day}:${hour}`;
+
+    if (dateK && typeof remainingBySlot?.[dateK] === 'number') {
+      return remainingBySlot[dateK];
+    }
+    if (typeof remainingBySlot?.[weekK] === 'number') {
+      return remainingBySlot[weekK];
+    }
+    if (typeof remainingBySlot?.[plainK] === 'number') {
+      return remainingBySlot[plainK];
+    }
+    return null;
+  };
 
   // ✅ Y a-t-il une résa ? (utilise la structure {any, mine})
   const isBooked = (day, hour) => {
