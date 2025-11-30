@@ -341,6 +341,29 @@ const isIndividualPaid = (l) => {
   return false;
 };
 
+/* ---------- payment helpers (groupe) ---------- */
+const isGroupFullyPaid = (l) => {
+  if (!l || !isGroupLessonStrict(l)) return false;
+
+  const pm = l.participantsMap || {};
+  const ids = Array.isArray(l.participant_ids) && l.participant_ids.length
+    ? l.participant_ids
+    : Object.keys(pm);
+
+  if (!ids.length) return false;
+
+  // On considère seulement les participants "actifs" (acceptés / confirmés)
+  const activeIds = ids.filter((sid) => {
+    const st = String(pm?.[sid]?.status || '').toLowerCase();
+    return st === 'accepted' || st === 'confirmed';
+  });
+
+  if (!activeIds.length) return false;
+
+  // Tous les participants actifs doivent être is_paid === true
+  return activeIds.every((sid) => pm?.[sid]?.is_paid === true);
+};
+
 /* ---------- time helpers ---------- */
 const getStartMs = (lesson) => {
   const d = getLessonStartDate(lesson);
@@ -1420,6 +1443,36 @@ export default function TeacherLessons() {
             } catch {}
           }
         }
+
+        // 3) 30 minutes après la fin : passer automatiquement en "completed" si payé
+        // On considère 1h de cours par slot (tu peux ajuster si tu ajoutes un champ de durée)
+        const durationMs = 60 * 60 * 1000;           // 1 heure
+        const completeAfterMs = 30 * 60 * 1000;      // +30 minutes
+        const completeAtMs = startMs + durationMs + completeAfterMs;
+
+        if (now >= completeAtMs && String(l.status || '') === 'confirmed') {
+          try {
+            if (!isGroupLessonStrict(l)) {
+              // 🔹 Cas INDIVIDUEL : élève payé → completed
+              if (isIndividualPaid(l)) {
+                await updateDoc(doc(db, 'lessons', l.id), {
+                  status: 'completed',
+                  completed_at: serverTimestamp(),
+                });
+              }
+            } else {
+              // 🔹 Cas GROUPE : tous les participants confirmés payés → completed
+              if (isGroupFullyPaid(l) && hasAnyConfirmedParticipantUI(l)) {
+                await updateDoc(doc(db, 'lessons', l.id), {
+                  status: 'completed',
+                  completed_at: serverTimestamp(),
+                });
+              }
+            }
+          } catch (e) {
+            console.error('auto-complete error', e);
+          }
+        }
       });
 
       try { await Promise.all(updates); } catch {}
@@ -1650,15 +1703,10 @@ export default function TeacherLessons() {
                   👥 Gérer le groupe
                 </button>
 
-                {/* Terminer */}
-                <button
-                  className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded shadow font-semibold"
-                  onClick={() => handleStatus(lesson, 'completed')}
-                  disabled={lesson.status === 'completed'}
-                  title={lesson.status === 'completed' ? 'Déjà terminé' : 'Marquer comme terminé'}
-                >
-                  ✅ Terminé
-                </button>
+                {/* Info : complétion automatique */}
+                <p className="text-xs text-gray-500 italic">
+                  ✅ Se automatiquement 30 min après la fin (si le cours est payé).
+                </p>
               </>
             )}
           </div>
