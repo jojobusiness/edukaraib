@@ -1705,7 +1705,7 @@ export default function TeacherLessons() {
 
                 {/* Info : complétion automatique */}
                 <p className="text-xs text-gray-500 italic">
-                  ✅ Se automatiquement 30 min après la fin (si le cours est payé).
+                  ✅ Complété automatiquement 30 min après la fin (si le cours est payé).
                 </p>
               </>
             )}
