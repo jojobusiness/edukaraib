@@ -34,8 +34,22 @@ const buildMonthMatrix = (cursor) => {
   }
   return weeks;
 };
+
 // map 'Lun'..'Dim' -> index 0..6
 const DAY_INDEX = { 'Lun':0, 'Mar':1, 'Mer':2, 'Jeu':3, 'Ven':4, 'Sam':5, 'Dim':6 };
+
+// Construit un Date à partir d'une date "YYYY-MM-DD" + une heure (nombre)
+const startAtFromDate = (dateStr, hour) => {
+  if (!dateStr) return null;
+  try {
+    const d = new Date(`${dateStr}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return null;
+    d.setHours(Number(hour) || 0, 0, 0, 0);
+    return d;
+  } catch {
+    return null;
+  }
+};
 
 export default function BookingModal({
   availability = {},

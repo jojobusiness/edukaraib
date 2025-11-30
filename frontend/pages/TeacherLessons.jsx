@@ -44,7 +44,7 @@ const fmtFromSlot = (slot_day, slot_hour) =>
 
 const slotLabel = (l) => fmtFromSlot(l.slot_day, l.slot_hour);
 
-// 🔹 Date/heure réelle d'un cours (prend en compte start_datetime, date, week + slot_day)
+// 🔹 Date/heure RÉELLE d'un cours (logique métier) — pas de fallback approximatif ici
 function getLessonStartDate(lesson) {
   if (!lesson) return null;
 
@@ -65,45 +65,52 @@ function getLessonStartDate(lesson) {
     return d;
   }
 
-  // 2) champ "date" (YYYY-MM-DD)
+  // 2) champ "date" (YYYY-MM-DD) — créé par le nouveau BookingModal
   if (lesson.date) {
-    const d = new Date(`${lesson.date}T00:00:00`);
-    if (!Number.isNaN(d.getTime())) {
-      d.setHours(hour, 0, 0, 0);
-      return d;
-    }
-  }
-
-  // 3) champ "week" + slot_day (week = lundi de la semaine)
-  if (lesson.week && lesson.slot_day) {
-    const monday = new Date(`${lesson.week}T00:00:00`); // ex: "2025-12-01"
-    if (!Number.isNaN(monday.getTime())) {
-      const key = String(lesson.slot_day).toLowerCase().slice(0, 3); // lun, mar, mer...
-      const map = { lun: 0, mar: 1, mer: 2, jeu: 3, ven: 4, sam: 5, dim: 6 };
-      const offset = map[key];
-      if (typeof offset === 'number') {
-        monday.setDate(monday.getDate() + offset);
-        monday.setHours(hour, 0, 0, 0);
-        return monday;
+    try {
+      const d = new Date(`${lesson.date}T00:00:00`);
+      if (!Number.isNaN(d.getTime())) {
+        d.setHours(hour, 0, 0, 0);
+        return d;
       }
-    }
+    } catch {}
   }
 
-  // 4) dernier fallback : ancienne logique "nextOccurrence" (uniquement pour très vieux cours)
-  if (lesson.slot_day) {
-    const approx = nextOccurrence(lesson.slot_day, lesson.slot_hour, new Date());
-    if (approx) return approx;
+  // 3) champ "week" + slot_day (week = lundi de la semaine) — créé par BookingModal/TeacherProfile
+  if (lesson.week && lesson.slot_day) {
+    try {
+      const monday = new Date(`${lesson.week}T00:00:00`); // ex: "2025-12-01"
+      if (!Number.isNaN(monday.getTime())) {
+        const key = String(lesson.slot_day).toLowerCase().slice(0, 3); // lun, mar, mer...
+        const map = { lun: 0, mar: 1, mer: 2, jeu: 3, ven: 4, sam: 5, dim: 6 };
+        const offset = map[key];
+        if (typeof offset === 'number') {
+          monday.setDate(monday.getDate() + offset);
+          monday.setHours(hour, 0, 0, 0);
+          return monday;
+        }
+      }
+    } catch {}
   }
 
+  // ❌ Pas de date absolue fiable -> on renvoie null.
+  // On n'utilise PAS nextOccurrence ici pour éviter les faux refus.
   return null;
 }
 
 
-// 🔹 Même format que sur parent / étudiant : "lun. 24/11 · 17:00"
+// 🔹 Affichage "lun. 24/11 · 17:00" (on peut utiliser un fallback approximatif uniquement pour l'affichage)
 function formatLessonDateTime(lesson) {
-  const d = getLessonStartDate(lesson);
+  let d = getLessonStartDate(lesson);
+
+  // Pour les vieux cours sans date absolue, on peut afficher une approximation
+  if (!d && lesson.slot_day && lesson.slot_hour != null) {
+    const approx = nextOccurrence(lesson.slot_day, lesson.slot_hour, new Date());
+    if (approx) d = approx;
+  }
+
   if (!d) {
-    // vieux cours sans info fiable : on garde un affichage simple
+    // Si vraiment rien, on garde un format simple texte
     const dayLabel = lesson?.slot_day || '';
     const hour = lesson?.slot_hour;
     const hourLabel = hour != null ? `${String(hour).padStart(2, '0')}:00` : '';
@@ -1457,21 +1464,6 @@ export default function TeacherLessons() {
       alert("Impossible de créer le lien visio.");
     }
   }
-
-  function computeVisioWindow(lesson) {
-  // start_datetime Firestore -> JS Date
-  let start = null;
-  const sd = lesson?.start_datetime;
-  if (sd?.toDate) start = sd.toDate();
-  else if (typeof sd?.seconds === 'number') start = new Date(sd.seconds * 1000);
-
-  // par défaut: lien ouvert 10 minutes avant, expiré 2h après le début
-  if (!start) return { opensAt: null, expiresAt: null };
-
-  const opensAt = new Date(start.getTime() - 10 * 60 * 1000); // T-10min
-  const expiresAt = new Date(start.getTime() + 2 * 60 * 60 * 1000); // T+2h
-  return { opensAt, expiresAt };
-}
 
   const Card = ({ lesson, showActionsForPending }) => {
   const isGroup = isGroupLessonStrict(lesson);
