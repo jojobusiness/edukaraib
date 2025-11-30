@@ -38,6 +38,15 @@ const buildMonthMatrix = (cursor) => {
 // map 'Lun'..'Dim' -> index 0..6
 const DAY_INDEX = { 'Lun':0, 'Mar':1, 'Mer':2, 'Jeu':3, 'Ven':4, 'Sam':5, 'Dim':6 };
 
+// Formate une date en "YYYY-MM-DD" en restant en heure locale
+const formatLocalDate = (d) => {
+  if (!d) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 // Construit un Date à partir d'une date "YYYY-MM-DD" + une heure (nombre)
 const startAtFromDate = (dateStr, hour) => {
   if (!dateStr) return null;
@@ -117,13 +126,13 @@ export default function BookingModal({
   // YYYY-MM-DD du jour (dans la semaine active) pour un label 'Lun'..'Dim'
   const dayDateKey = (label) => {
     const d = dateForLabel(label);
-    return d ? d.toISOString().slice(0,10) : null;
+    return formatLocalDate(d);
   };
 
-  // ISO du lundi de la semaine active (ex: "2025-11-10")
+  // Clé "YYYY-MM-DD" du lundi de la semaine active
   const activeWeekKey = React.useMemo(() => {
     const d = startOfWeekMon(weekAnchor);
-    return d.toISOString().slice(0,10);
+    return formatLocalDate(d);
   }, [weekAnchor]);
 
   // bookedMap sensible à la semaine (avec fallback jour:heure)
@@ -252,49 +261,51 @@ const remainingFor = (day, hour) => {
     if (!isAvailable(day, hour) || isBooked(day, hour)) return;
     if (isSlotLockedByDate(dayDate, hour)) return;
 
-    // On construit une date complète à partir du dayDate de la semaine affichée
-    const dateStr = dayDate.toISOString().slice(0, 10); // "YYYY-MM-DD"
-    const week = activeWeekKey;                         // lundi de la semaine (clé)
-    const startAt = new Date(dayDate);
-    startAt.setHours(hour, 0, 0, 0);
+    // Date locale de ce créneau
+    const dateKey = formatLocalDate(dayDate);   // "2025-12-01"
+    const weekKey = activeWeekKey;              // lundi "YYYY-MM-DD" de la semaine
+    const startAt  = startAtFromDate(dateKey, hour); // Date complète locale
 
     if (multiSelect) {
-      setSelected(prev => {
-        const dateKey = dayDateKey(day);             // ex: "2025-12-01"
-        const weekKey = activeWeekKey;               // lundi de la semaine en cours
-        const startAt = startAtFromDate(dateKey, hour);
-
-        // on teste l'existence avec jour + heure + date
+      setSelected((prev) => {
+        // Vérifie s'il existe déjà CE créneau pour CETTE date
         const exists = prev.some(
-          s => s.day === day && s.hour === hour && s.date === dateKey
+          (s) => s.day === day && s.hour === hour && s.date === dateKey
         );
 
-        // si déjà sélectionné → on retire SEULEMENT ce cours-là (pas les autres semaines)
+        // Si déjà sélectionné → on enlève uniquement cette occurrence
         if (exists) {
           return prev.filter(
-            s => !(s.day === day && s.hour === hour && s.date === dateKey)
+            (s) => !(s.day === day && s.hour === hour && s.date === dateKey)
           );
         }
 
-        // limite pack
+        // Limite de pack
         if (requiredCount && prev.length >= requiredCount) return prev;
 
-        // on ajoute un slot complet avec la date & la semaine
-        return [...prev, {
+        // Ajout d'un créneau complet (jour + heure + date + semaine + startAt)
+        return [
+          ...prev,
+          {
+            day,
+            hour,
+            date: dateKey,
+            week: weekKey,
+            startAt,
+          },
+        ];
+      });
+    } else {
+      // Mode 1 seul créneau
+      setSelected([
+        {
           day,
           hour,
           date: dateKey,
           week: weekKey,
-          startAt
-        }];
-      });
-    } else {
-      // branche 1 seul créneau : tu peux garder ce que tu as déjà,
-      // mais assure-toi qu'on remplit bien date / week / startAt pareil
-      const dateKey = dayDateKey(day);
-      const weekKey = activeWeekKey;
-      const startAt = startAtFromDate(dateKey, hour);
-      setSelected([{ day, hour, date: dateKey, week: weekKey, startAt }]);
+          startAt,
+        },
+      ]);
     }
   };
 
