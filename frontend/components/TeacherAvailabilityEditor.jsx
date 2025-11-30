@@ -13,6 +13,20 @@ export default function TeacherAvailabilityEditor({ value = {}, onChange }) {
     x.setHours(0, 0, 0, 0);
     return x;
   };
+
+  const formatLocalDate = (d) => {
+    if (!d) return null;
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const weekKeyOf = (d) => {
+    const monday = startOfWeekMon(d);
+    return formatLocalDate(monday); // "YYYY-MM-DD" du lundi de la semaine
+  };
+
   const startOfMonth = (d) => { const x = new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x; };
   const addMonths = (d, n) => { const x = new Date(d); x.setMonth(x.getMonth() + n); return x; };
   const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -81,19 +95,44 @@ export default function TeacherAvailabilityEditor({ value = {}, onChange }) {
     return false; // futur
   };
 
-  // =============== Accès/écriture (compat schéma "Lun..Dim") ===============
-  // On garde ta structure: value = { 'Lun': [9, 10], ... }
-  // On édite la semaine active, mais on écrit toujours par label (Lun..Dim).
-  // Les verrous utilisent la date réelle du jour sélectionné.
+  // =============== Accès/écriture (NOUVEAU : par semaine) ===============
+  // Nouveau format :
+  // value = {
+  //   "YYYY-MM-DD" (lundi de la semaine) : { 'Lun': [9,10], 'Mar': [14], ... },
+  //   ...
+  // }
   const dayLabelForIndex = (i) => ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'][i];
   const uniqueSorted = (arr) => Array.from(new Set(arr)).sort((a, b) => a - b);
 
-  const readDay = (label) => value[label] || [];
+  const currentWeekKey = () => weekKeyOf(weekAnchor);
+
+  const getWeekMap = (wk) => {
+    const raw = value && typeof value[wk] === 'object' && !Array.isArray(value[wk])
+      ? value[wk]
+      : {};
+    return raw || {};
+  };
+
+  const readDay = (label) => {
+    const wk = currentWeekKey();
+    const weekMap = getWeekMap(wk);
+    return weekMap[label] || [];
+  };
 
   const writeDay = (label, hoursArr, dayDate) => {
-    // filtre les heures verrouillées selon la date réelle du jour
+    const wk = currentWeekKey();
+    const weekMap = getWeekMap(wk);
     const safe = (hoursArr || []).filter((h) => !isSlotLockedByDate(dayDate, h));
-    onChange({ ...value, [label]: uniqueSorted(safe) });
+
+    const nextWeekMap = {
+      ...weekMap,
+      [label]: uniqueSorted(safe),
+    };
+
+    onChange({
+      ...(value || {}),
+      [wk]: nextWeekMap,
+    });
   };
 
   const addHours = (label, addArr, dayDate) => {
@@ -103,10 +142,20 @@ export default function TeacherAvailabilityEditor({ value = {}, onChange }) {
   };
 
   const clearDay = (label, dayDate) => {
-    // on garde les créneaux déjà passés (verrouillés) pour ne rien "effacer" du passé
     const current = readDay(label);
     const remaining = current.filter((h) => isSlotLockedByDate(dayDate, h));
-    onChange({ ...value, [label]: uniqueSorted(remaining) });
+    const wk = currentWeekKey();
+    const weekMap = getWeekMap(wk);
+
+    const nextWeekMap = {
+      ...weekMap,
+      [label]: uniqueSorted(remaining),
+    };
+
+    onChange({
+      ...(value || {}),
+      [wk]: nextWeekMap,
+    });
   };
 
   const selectAllDay = (label, dayDate) => {
@@ -153,27 +202,42 @@ export default function TeacherAvailabilityEditor({ value = {}, onChange }) {
   const doCopy = () => {
     const from = copyPanel.openDay;
     if (!from || copyPanel.targets.length === 0) return;
+
+    const wk = currentWeekKey();
+    const weekMap = getWeekMap(wk);
+
     const fromIdx = jours.indexOf(from);
     const fromDate = activeWeekDays[fromIdx];
     const fromHours = readDay(from).filter((h) => !isSlotLockedByDate(fromDate, h));
-    const next = { ...value };
+
+    const nextWeekMap = { ...weekMap };
+
     copyPanel.targets.forEach((to) => {
       if (to === from) return;
       const toIdx = jours.indexOf(to);
       const toDate = activeWeekDays[toIdx];
-      next[to] = uniqueSorted(fromHours.filter((h) => !isSlotLockedByDate(toDate, h)));
+      nextWeekMap[to] = uniqueSorted(
+        fromHours.filter((h) => !isSlotLockedByDate(toDate, h))
+      );
     });
-    onChange(next);
+
+    onChange({
+      ...(value || {}),
+      [wk]: nextWeekMap,
+    });
     closeCopy();
   };
 
   // Presets (respectent les verrous selon la semaine active)
   const applyPreset = (preset) => {
-    const next = {};
+    const wk = currentWeekKey();
+    const currentWeekMap = getWeekMap(wk);
+    const nextWeekMap = {};
+
     if (preset === 'empty') {
       jours.forEach((label, idx) => {
         const d = activeWeekDays[idx];
-        next[label] = (readDay(label) || []).filter((h) => isSlotLockedByDate(d, h));
+        nextWeekMap[label] = (readDay(label) || []).filter((h) => isSlotLockedByDate(d, h));
       });
     } else if (preset === 'office') {
       jours.forEach((label, idx) => {
@@ -181,7 +245,7 @@ export default function TeacherAvailabilityEditor({ value = {}, onChange }) {
         const base = idx <= 4 ? [...rangeHours(8, 12), ...rangeHours(14, 18)] : [];
         const safe = base.filter((h) => !isSlotLockedByDate(d, h));
         const lockedKeep = (readDay(label) || []).filter((h) => isSlotLockedByDate(d, h));
-        next[label] = uniqueSorted([...lockedKeep, ...safe]);
+        nextWeekMap[label] = uniqueSorted([...lockedKeep, ...safe]);
       });
     } else if (preset === 'continuous') {
       jours.forEach((label, idx) => {
@@ -189,10 +253,17 @@ export default function TeacherAvailabilityEditor({ value = {}, onChange }) {
         const base = idx <= 5 ? rangeHours(9, 19) : [];
         const safe = base.filter((h) => !isSlotLockedByDate(d, h));
         const lockedKeep = (readDay(label) || []).filter((h) => isSlotLockedByDate(d, h));
-        next[label] = uniqueSorted([...lockedKeep, ...safe]);
+        nextWeekMap[label] = uniqueSorted([...lockedKeep, ...safe]);
       });
     }
-    onChange(next);
+
+    onChange({
+      ...(value || {}),
+      [wk]: {
+        ...currentWeekMap,
+        ...nextWeekMap,
+      },
+    });
   };
 
   // Styles de bouton selon verrous/état

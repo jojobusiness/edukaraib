@@ -360,14 +360,19 @@ export default function TeacherProfile() {
 
       // ➕ capacité par défaut pour les créneaux sans groupe
       const avail = teacher.availability || {};
-      Object.entries(avail).forEach(([day, hours]) => {
-        (hours || []).forEach((h) => {
-          const plainKey = `${day}:${h}`;
-          if (remaining[plainKey] == null) {
-            remaining[plainKey] = defaultCap;
-          }
+      const hasWeekKeys = Object.keys(avail).some((k) => /^\d{4}-\d{2}-\d{2}$/.test(k));
+
+      if (!hasWeekKeys) {
+        // Ancien format : { 'Lun': [9,10], ... }
+        Object.entries(avail).forEach(([day, hours]) => {
+          (hours || []).forEach((h) => {
+            const plainKey = `${day}:${h}`;
+            if (remaining[plainKey] == null) {
+              remaining[plainKey] = defaultCap;
+            }
+          });
         });
-      });
+      }
 
       setBookedSlots(booked);
       setRemainingBySlot(remaining);

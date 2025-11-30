@@ -80,6 +80,12 @@ export default function BookingModal({
 }) {
   const [selected, setSelected] = useState([]);
 
+  // ➕ détecter si availability est "par semaine" (clés = YYYY-MM-DD)
+  const isPerWeekAvailability = useMemo(() => {
+    const avail = availability || {};
+    return Object.keys(avail).some((k) => /^\d{4}-\d{2}-\d{2}$/.test(k));
+  }, [availability]);
+
   // Fermer avec Esc
   React.useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
@@ -217,7 +223,22 @@ export default function BookingModal({
     return Array.from(set).map(sid => idToName[sid] || sid);
   };
 
-  const isAvailable = (day, hour) => Array.isArray(availability[day]) && availability[day].includes(hour);
+  // Dispo effective pour la semaine active
+  const weekAvailability = useMemo(() => {
+    if (!isPerWeekAvailability) {
+      // ancien format : { 'Lun': [9,10], ... }
+      return availability || {};
+    }
+    // nouveau format : { 'YYYY-MM-DD' (lundi): { 'Lun': [9,10], ... }, ... }
+    const wk = activeWeekKey; // "YYYY-MM-DD" calculé plus haut
+    const raw = availability && availability[wk];
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
+    return {}; // semaine non configurée => vide
+  }, [availability, isPerWeekAvailability, activeWeekKey]);
+
+  const isAvailable = (day, hour) =>
+    Array.isArray(weekAvailability[day]) && weekAvailability[day].includes(hour);
+
   // un créneau sélectionné = jour + heure + date de la semaine concernée
   const isSelected = (day, hour) => {
     const dateKey = dayDateKey(day); // "2025-12-01" par ex
@@ -242,7 +263,9 @@ export default function BookingModal({
 
   // Heures à afficher
   const hours = useMemo(() => {
-    const all = Object.values(availability || {})
+    const availSource = isPerWeekAvailability ? weekAvailability : (availability || {});
+
+    const all = Object.values(availSource)
       .flat()
       .filter((h) => Number.isInteger(h));
 
@@ -255,7 +278,7 @@ export default function BookingModal({
     const max = Math.min(23, Math.max(...all));
 
     return Array.from({ length: (max - min + 1) }, (_, i) => min + i);
-  }, [availability]);
+  }, [availability, weekAvailability, isPerWeekAvailability]);
 
   // -------- Actions UI --------
   const toggleSelect = (day, hour) => {
