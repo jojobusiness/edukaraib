@@ -540,7 +540,7 @@ export default function ParentPayments() {
                         )
                       ) : (
                         <div className="text-xs text-gray-500">
-                          📅 {formatFullDate(l)}
+                          {formatFullDate(r.lesson)}
                         </div>
                       )}
                     </div>

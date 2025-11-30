@@ -477,7 +477,7 @@ export default function StudentPayments() {
                       )
                     ) : (
                       <div className="text-xs text-gray-500">
-                        📅 {formatFullDate(l)}
+                        {formatFullDate(l)}
                       </div>
                     )}
                   </div>
