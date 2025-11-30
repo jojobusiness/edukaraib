@@ -14,12 +14,50 @@ import {
 import DashboardLayout from '../components/DashboardLayout';
 import fetchWithAuth from '../utils/fetchWithAuth';
 
-const billedHours = (l) => {
-  const pt = String(l.pack_type || l.booking_kind || l.type || '').toLowerCase();
-  if (pt === 'pack5' || String(l.pack_hours) === '5' || l.is_pack5) return 5;
-  if (pt === 'pack10' || String(l.pack_hours) === '10' || l.is_pack10) return 10;
-  const h = Number(l.duration_hours);
-  return Number.isFinite(h) && h > 0 ? Math.floor(h) : 1;
+// Convertit slot_day + slot_hour + date/start_datetime en objet Date complet
+const buildStartDate = (lesson) => {
+  const hour = Number(lesson.slot_hour ?? 0);
+
+  // 1) Prend start_datetime Firestore si présent
+  const ts = lesson.start_datetime || lesson.startAt;
+  if (ts?.toDate) {
+    const d = ts.toDate();
+    d.setHours(hour, 0, 0, 0);
+    return d;
+  }
+  if (typeof ts?.seconds === 'number') {
+    const d = new Date(ts.seconds * 1000);
+    d.setHours(hour, 0, 0, 0);
+    return d;
+  }
+
+  // 2) Prend la date "YYYY-MM-DD" (pour semaines futures)
+  if (lesson.date) {
+    const d = new Date(`${lesson.date}T00:00:00`);
+    d.setHours(hour, 0, 0, 0);
+    return d;
+  }
+
+  return null;
+};
+
+// Format final : "📅 Lun 24/11 • 10:00"
+const formatFullDate = (lesson) => {
+  const d = buildStartDate(lesson);
+  if (!d) return '—';
+
+  const weekday = d
+    .toLocaleDateString('fr-FR', { weekday: 'short' })
+    .replace('.', ''); // lun → lun
+
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const time = d.toLocaleTimeString('fr-FR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  return `📅 ${weekday} ${day}/${month} • ${time}`;
 };
 
 const fmtDateTime = (start_datetime, slot_day, slot_hour) => {
@@ -153,11 +191,6 @@ const pmFor = (lesson, uid) => {
     return pm?.[uid] || { is_paid: !!lesson.is_paid, status: lesson.status };
   }
   return pm?.[uid] || null;
-};
-
-const isPackFor = (lesson, uid) => {
-  const p = pmFor(lesson, uid);
-  return !!(p && p.pack && (p.pack_hours === 5 || p.pack_hours === 10));
 };
 
 export default function ParentPayments() {
@@ -461,12 +494,53 @@ export default function ParentPayments() {
                       {isPackForChild(r.lesson, r.forStudent) ? (
                         r.__slots?.length > 0 && (
                           <div className="text-xs text-gray-600 mt-1">
-                            Horaires du pack : {r.__slots.join(' • ')}
+                            {(() => {
+                              // Convertit les labels en vraies dates
+                              const parsed = r.__slots
+                                .map((label) => ({ label, date: buildStartDate(r.lesson) }))
+                                .filter((x) => x.date);
+
+                              // Regroupe par jour+date
+                              const groups = {};
+                              parsed.forEach(({ date }) => {
+                                const key = date.toDateString(); // "Mon Nov 24 2025"
+                                if (!groups[key]) groups[key] = [];
+                                groups[key].push(date);
+                              });
+
+                              return (
+                                <div className="text-xs text-gray-600 mt-1">
+                                  Horaires du pack :
+                                  <ul className="ml-2 mt-1 space-y-1">
+                                    {Object.values(groups).map((arr) => {
+                                      const d = arr[0];
+                                      const weekday = d
+                                        .toLocaleDateString('fr-FR', { weekday: 'short' })
+                                        .replace('.', '');
+                                      const dd = String(d.getDate()).padStart(2, '0');
+                                      const mm = String(d.getMonth() + 1).padStart(2, '0');
+
+                                      const hours = arr
+                                        .map((x) =>
+                                          x.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+                                        )
+                                        .join(' • ');
+
+                                      return (
+                                        <li key={d.toISOString()}>
+                                          {weekday} {dd}/{mm} : {hours}
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                </div>
+                              );
+                            })()}
                           </div>
                         )
                       ) : (
                         <div className="text-xs text-gray-500">
-                          📅 {fmtDateTime(r.lesson.start_datetime, r.lesson.slot_day, r.lesson.slot_hour)}
+                          📅 {formatFullDate(l)}
                         </div>
                       )}
                     </div>
