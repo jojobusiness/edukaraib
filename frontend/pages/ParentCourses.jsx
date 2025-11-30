@@ -98,43 +98,82 @@ function nextOccurrence(slot_day, slot_hour, now = new Date()) {
 
 function formatHour(h) { const n = Number(h) || 0; return `${String(n).padStart(2, '0')}:00`; }
 
-function formatLessonDateTime(lesson) {
-  if (!lesson) return '';
+function getLessonStartDate(lesson) {
+  if (!lesson) return null;
+  const hour = Number(lesson.slot_hour ?? 0);
 
-  const buildFromDate = (d) => {
-    const weekday = d.toLocaleDateString('fr-FR', { weekday: 'short' });
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const time = d.toLocaleTimeString('fr-FR', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-    return `${weekday} ${day}/${month} · ${time}`;
-  };
-
-  const ts = lesson.start_datetime;
-  try {
-    if (ts?.toDate) {
-      return buildFromDate(ts.toDate());
-    }
-    if (typeof ts?.seconds === 'number') {
-      return buildFromDate(new Date(ts.seconds * 1000));
-    }
-  } catch {}
-
-  // 🔁 Fallback : slot_day + slot_hour → date calculée comme chez le prof
-  const dayLabel = lesson.slot_day || '';
-  const hour = lesson.slot_hour;
-
-  if (dayLabel) {
+  // 1) Nouveau champ start_datetime OU ancien startAt
+  const ts = lesson.start_datetime || lesson.startAt;
+  if (ts?.toDate) {
     try {
-      const approx = nextOccurrence(dayLabel, hour, new Date());
-      if (approx) return buildFromDate(approx);
+      const d = ts.toDate();
+      d.setHours(hour, d.getMinutes() || 0, 0, 0);
+      return d;
+    } catch {}
+  }
+  if (typeof ts?.seconds === 'number') {
+    const d = new Date(ts.seconds * 1000);
+    d.setHours(hour, d.getMinutes() || 0, 0, 0);
+    return d;
+  }
+
+  // 2) Champ "date" (YYYY-MM-DD)
+  if (lesson.date) {
+    try {
+      const d = new Date(`${lesson.date}T00:00:00`);
+      if (!Number.isNaN(d.getTime())) {
+        d.setHours(hour, 0, 0, 0);
+        return d;
+      }
     } catch {}
   }
 
-  const hourLabel = hour != null ? formatHour(hour) : '';
-  return `${dayLabel} · ${hourLabel}`.trim();
+  // 3) Champ "week" + slot_day (week = lundi de la semaine)
+  if (lesson.week && lesson.slot_day) {
+    try {
+      const monday = new Date(`${lesson.week}T00:00:00`);
+      if (!Number.isNaN(monday.getTime())) {
+        const key = String(lesson.slot_day).toLowerCase().slice(0, 3);
+        const map = { lun: 0, mar: 1, mer: 2, jeu: 3, ven: 4, sam: 5, dim: 6 };
+        const offset = map[key];
+        if (typeof offset === 'number') {
+          monday.setDate(monday.getDate() + offset);
+          monday.setHours(hour, 0, 0, 0);
+          return monday;
+        }
+      }
+    } catch {}
+  }
+
+  // 4) Très vieux cours : approximation pour affichage
+  if (lesson.slot_day) {
+    try {
+      return nextOccurrence(lesson.slot_day, lesson.slot_hour, new Date());
+    } catch {}
+  }
+
+  return null;
+}
+
+function formatLessonDateTime(lesson) {
+  if (!lesson) return '';
+
+  const d = getLessonStartDate(lesson);
+  if (!d) {
+    const dayLabel = lesson.slot_day || '';
+    const hourLabel = lesson.slot_hour != null ? formatHour(lesson.slot_hour) : '';
+    return `${dayLabel} · ${hourLabel}`.trim();
+  }
+
+  const weekday = d.toLocaleDateString('fr-FR', { weekday: 'short' });
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const time = d.toLocaleTimeString('fr-FR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  return `${weekday} ${day}/${month} · ${time}`;
 }
 
 const statusColors = {
