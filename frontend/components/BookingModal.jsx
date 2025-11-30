@@ -189,44 +189,27 @@ const remainingFor = (day, hour) => {
   };
 
   const isAvailable = (day, hour) => Array.isArray(availability[day]) && availability[day].includes(hour);
+  // un créneau sélectionné = jour + heure + date de la semaine concernée
   const isSelected = (day, hour) => {
-    const dkey = dayDateKey(day);
-    const wkey = activeWeekKey;
-
-    return selected.some((s) => {
-      if (s.day !== day || s.hour !== hour) return false;
-
-      // si la sélection a une date précise, on compare à la date de la semaine active
-      if (s.date && dkey) return s.date === dkey;
-
-      // sinon, on compare à la semaine (clé ISO du lundi)
-      if (s.week) return s.week === wkey;
-
-      // fallback (ancien comportement)
-      return true;
-    });
+    const dateKey = dayDateKey(day); // "2025-12-01" par ex
+    return selected.some(s =>
+      s.day === day &&
+      s.hour === hour &&
+      (!dateKey || s.date === dateKey)   // on distingue bien les semaines
+    );
   };
 
   
+  // 🧠 Si le prof change son planning (heures dispo), on vire juste les créneaux qui n'existent plus.
+  // On NE touche PAS aux semaines → tu peux garder plusieurs semaines sélectionnées.
   React.useEffect(() => {
     setSelected((prev) => {
       if (!Array.isArray(prev) || prev.length === 0) return prev;
       return prev.filter(({ day, hour }) => {
-        const stillAvailable = Array.isArray(availability[day]) && availability[day].includes(hour);
-        if (!stillAvailable) return false;
-
-        const dayDate = dateForLabel(day); // basé sur la semaine actuelle au moment de la sélection
-        if (isSlotLockedByDate(dayDate, hour)) return false;
-
-        if (isBooked(day, hour)) return false;
-
-        const rem = remainingFor(day, hour);
-        if (rem !== null && rem <= 0) return false;
-
-        return true;
+        return Array.isArray(availability[day]) && availability[day].includes(hour);
       });
     });
-  }, [availability, remainingBySlot, bookedSlots]);
+  }, [availability]);
 
   // Heures à afficher
   const hours = useMemo(() => {
@@ -262,21 +245,42 @@ const remainingFor = (day, hour) => {
     startAt.setHours(hour, 0, 0, 0);
 
     if (multiSelect) {
-      setSelected((prev) => {
-        const exists = prev.some((s) => s.day === day && s.hour === hour);
-        if (exists) {
-          // on retire si on reclique
-          return prev.filter((s) => !(s.day === day && s.hour === hour));
-        }
-        if (requiredCount && prev.length >= requiredCount) return prev; // limite pack
+      setSelected(prev => {
+        const dateKey = dayDateKey(day);             // ex: "2025-12-01"
+        const weekKey = activeWeekKey;               // lundi de la semaine en cours
+        const startAt = startAtFromDate(dateKey, hour);
 
-        return [
-          ...prev,
-          { day, hour, date: dateStr, week, startAt },
-        ];
+        // on teste l'existence avec jour + heure + date
+        const exists = prev.some(
+          s => s.day === day && s.hour === hour && s.date === dateKey
+        );
+
+        // si déjà sélectionné → on retire SEULEMENT ce cours-là (pas les autres semaines)
+        if (exists) {
+          return prev.filter(
+            s => !(s.day === day && s.hour === hour && s.date === dateKey)
+          );
+        }
+
+        // limite pack
+        if (requiredCount && prev.length >= requiredCount) return prev;
+
+        // on ajoute un slot complet avec la date & la semaine
+        return [...prev, {
+          day,
+          hour,
+          date: dateKey,
+          week: weekKey,
+          startAt
+        }];
       });
     } else {
-      setSelected([{ day, hour, date: dateStr, week, startAt }]);
+      // branche 1 seul créneau : tu peux garder ce que tu as déjà,
+      // mais assure-toi qu'on remplit bien date / week / startAt pareil
+      const dateKey = dayDateKey(day);
+      const weekKey = activeWeekKey;
+      const startAt = startAtFromDate(dateKey, hour);
+      setSelected([{ day, hour, date: dateKey, week: weekKey, startAt }]);
     }
   };
 

@@ -44,48 +44,81 @@ const fmtFromSlot = (slot_day, slot_hour) =>
 
 const slotLabel = (l) => fmtFromSlot(l.slot_day, l.slot_hour);
 
-// 🔹 Même format que sur parent / étudiant : "lun. 24/11 · 17:00"
-function formatLessonDateTime(lesson) {
-  if (!lesson) return '';
+// 🔹 Date/heure réelle d'un cours (prend en compte start_datetime, date, week + slot_day)
+function getLessonStartDate(lesson) {
+  if (!lesson) return null;
 
-  const buildFromDate = (d) => {
-    const weekday = d.toLocaleDateString('fr-FR', { weekday: 'short' }); // "lun."
-    const day = String(d.getDate()).padStart(2, '0');                    // "24"
-    const month = String(d.getMonth() + 1).padStart(2, '0');             // "11"
-    const time = d.toLocaleTimeString('fr-FR', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });                                                                  // "17:00"
-    return `${weekday} ${day}/${month} · ${time}`;
-  };
+  const hour = Number(lesson.slot_hour ?? 0);
 
+  // 1) start_datetime Firestore
   const ts = lesson.start_datetime;
-
-  // 1) start_datetime Firestore (comme sur étudiant)
-  try {
-    if (ts?.toDate) {
-      return buildFromDate(ts.toDate());
-    }
-    if (typeof ts?.seconds === 'number') {
-      return buildFromDate(new Date(ts.seconds * 1000));
-    }
-  } catch {}
-
-  // 2) Fallback : on reconstruit à partir de slot_day + slot_hour,
-  //    mais on garde quand même un affichage propre.
-  const dayLabel = lesson.slot_day || '';
-  const hour = lesson.slot_hour;
-
-  if (dayLabel) {
+  if (ts?.toDate) {
     try {
-      // on réutilise nextOccurrence défini plus haut dans ce fichier
-      const approx = nextOccurrence(dayLabel, hour, new Date());
-      if (approx) return buildFromDate(approx);
+      const d = ts.toDate();
+      d.setHours(hour, d.getMinutes() || 0, 0, 0);
+      return d;
     } catch {}
   }
+  if (typeof ts?.seconds === 'number') {
+    const d = new Date(ts.seconds * 1000);
+    d.setHours(hour, d.getMinutes() || 0, 0, 0);
+    return d;
+  }
 
-  const hourLabel = hour != null ? `${String(hour).padStart(2, '0')}:00` : '';
-  return `${dayLabel} · ${hourLabel}`.trim();
+  // 2) champ "date" (YYYY-MM-DD)
+  if (lesson.date) {
+    const d = new Date(`${lesson.date}T00:00:00`);
+    if (!Number.isNaN(d.getTime())) {
+      d.setHours(hour, 0, 0, 0);
+      return d;
+    }
+  }
+
+  // 3) champ "week" + slot_day (week = lundi de la semaine)
+  if (lesson.week && lesson.slot_day) {
+    const monday = new Date(`${lesson.week}T00:00:00`); // ex: "2025-12-01"
+    if (!Number.isNaN(monday.getTime())) {
+      const key = String(lesson.slot_day).toLowerCase().slice(0, 3); // lun, mar, mer...
+      const map = { lun: 0, mar: 1, mer: 2, jeu: 3, ven: 4, sam: 5, dim: 6 };
+      const offset = map[key];
+      if (typeof offset === 'number') {
+        monday.setDate(monday.getDate() + offset);
+        monday.setHours(hour, 0, 0, 0);
+        return monday;
+      }
+    }
+  }
+
+  // 4) dernier fallback : ancienne logique "nextOccurrence" (uniquement pour très vieux cours)
+  if (lesson.slot_day) {
+    const approx = nextOccurrence(lesson.slot_day, lesson.slot_hour, new Date());
+    if (approx) return approx;
+  }
+
+  return null;
+}
+
+
+// 🔹 Même format que sur parent / étudiant : "lun. 24/11 · 17:00"
+function formatLessonDateTime(lesson) {
+  const d = getLessonStartDate(lesson);
+  if (!d) {
+    // vieux cours sans info fiable : on garde un affichage simple
+    const dayLabel = lesson?.slot_day || '';
+    const hour = lesson?.slot_hour;
+    const hourLabel = hour != null ? `${String(hour).padStart(2, '0')}:00` : '';
+    return `${dayLabel} · ${hourLabel}`.trim();
+  }
+
+  const weekday = d.toLocaleDateString('fr-FR', { weekday: 'short' }); // "lun."
+  const day = String(d.getDate()).padStart(2, '0');                    // "24"
+  const month = String(d.getMonth() + 1).padStart(2, '0');             // "11"
+  const time = d.toLocaleTimeString('fr-FR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });                                                                  // "17:00"
+
+  return `${weekday} ${day}/${month} · ${time}`;
 }
 
 function When({ lesson }) {
@@ -303,34 +336,8 @@ const isIndividualPaid = (l) => {
 
 /* ---------- time helpers ---------- */
 const getStartMs = (lesson) => {
-  const ts = lesson?.start_datetime;
-
-  // 1) start_datetime Firestore → on l’utilise directement
-  if (ts?.toDate) {
-    try {
-      return ts.toDate().getTime();
-    } catch {
-      /* ignore */
-    }
-  }
-  if (typeof ts?.seconds === 'number') {
-    return ts.seconds * 1000;
-  }
-
-  // 2) Nouveau : on utilise le champ "date" + "slot_hour" si présents
-  //    (ceux qui viennent du nouveau BookingModal)
-  if (lesson?.date && lesson.slot_hour != null) {
-    try {
-      const d = new Date(`${lesson.date}T00:00:00`);
-      d.setHours(Number(lesson.slot_hour) || 0, 0, 0, 0);
-      return d.getTime();
-    } catch {
-      return null;
-    }
-  }
-
-  // 3) Sinon on ne sait pas, on NE FAIT PAS de refus auto
-  return null;
+  const d = getLessonStartDate(lesson);
+  return d ? d.getTime() : null;
 };
 
 /* ---------- affichage mode / pack ---------- */
@@ -374,11 +381,16 @@ function nextOccurrence(day, hour, base = new Date()) {
 }
 
 function computeVisioWindow(lesson) {
-  // Window: open right away if you want immediate join, or from 15 min before start
-  const start = nextOccurrence(lesson.slot_day, lesson.slot_hour, new Date());
-  const opensAt = start ? new Date(start.getTime() - 15 * 60 * 1000) : new Date();
-  const durationH = Number(lesson.duration_hours) > 0 ? Number(lesson.duration_hours) : 1; // par défaut 1h
-  const expiresAt = start ? new Date(start.getTime() + durationH * 60 * 60 * 1000) : new Date(Date.now() + durationH * 60 * 60 * 1000);
+  const start = getLessonStartDate(lesson);
+
+  if (!start) {
+    return { opensAt: null, expiresAt: null };
+  }
+
+  // lien ouvert 10 minutes avant, expiré 2h après le début
+  const opensAt = new Date(start.getTime() - 10 * 60 * 1000); // T-10 min
+  const expiresAt = new Date(start.getTime() + 2 * 60 * 60 * 1000); // T+2 h
+
   return { opensAt, expiresAt };
 }
 
