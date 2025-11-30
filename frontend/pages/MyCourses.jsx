@@ -99,19 +99,22 @@ function nextOccurrence(slot_day, slot_hour, now = new Date()) {
   return start;
 }
 
-function formatHour(h) { const n = Number(h) || 0; return `${String(n).padStart(2, '0')}:00`; }
+function formatHour(h) {
+  const n = Number(h) || 0;
+  return `${String(n).padStart(2, '0')}:00`;
+}
 
 function formatLessonDateTime(lesson) {
   if (!lesson) return '';
 
   const buildFromDate = (d) => {
-    const weekday = d.toLocaleDateString('fr-FR', { weekday: 'short' }); // "ven."
-    const day = String(d.getDate()).padStart(2, '0');                    // "22"
+    const weekday = d.toLocaleDateString('fr-FR', { weekday: 'short' }); // "lun."
+    const day = String(d.getDate()).padStart(2, '0');                    // "24"
     const month = String(d.getMonth() + 1).padStart(2, '0');             // "11"
     const time = d.toLocaleTimeString('fr-FR', {
       hour: '2-digit',
       minute: '2-digit',
-    });                                                                   // "17:00"
+    });                                                                  // "17:00"
     return `${weekday} ${day}/${month} · ${time}`;
   };
 
@@ -131,10 +134,11 @@ function formatLessonDateTime(lesson) {
 
   if (dayLabel) {
     try {
+      // même logique que sur ParentCourses / TeacherLessons
       const approx = nextOccurrence(dayLabel, hour, new Date());
       if (approx) return buildFromDate(approx);
     } catch {
-      // on tombera sur le fallback texte en dessous
+      // si ça casse, on tombe sur le fallback texte
     }
   }
 
