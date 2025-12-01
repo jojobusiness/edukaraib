@@ -250,27 +250,50 @@ export default function BookingModal({
   };
 
   
-  // 🧠 Si le prof change son planning (heures dispo), on vire juste les créneaux qui n'existent plus.
-  // On NE touche PAS aux semaines → tu peux garder plusieurs semaines sélectionnées.
+  // Quand les dispos changent, on enlève seulement les créneaux qui n'existent plus
   React.useEffect(() => {
     setSelected((prev) => {
       if (!Array.isArray(prev) || prev.length === 0) return prev;
+
+      // Ancien format : { Lun: [9,10], ... }
+      if (!isPerWeekAvailability) {
+        return prev.filter(({ day, hour }) => {
+          return Array.isArray(availability?.[day]) && availability[day].includes(hour);
+        });
+      }
+
+      // Nouveau format par semaine : { "YYYY-MM-DD": { Lun: [..], ... } }
       return prev.filter(({ day, hour }) => {
-        return Array.isArray(availability[day]) && availability[day].includes(hour);
+        const arr = weekAvailability?.[day];
+        return Array.isArray(arr) && arr.includes(hour);
       });
     });
-  }, [availability]);
+  }, [availability, weekAvailability, isPerWeekAvailability]);
 
-  // Heures à afficher
+  // Heures à afficher (robuste, même si certaines valeurs ne sont pas des tableaux)
   const hours = useMemo(() => {
     const availSource = isPerWeekAvailability ? weekAvailability : (availability || {});
 
-    const all = Object.values(availSource)
-      .flat()
-      .filter((h) => Number.isInteger(h));
+    const all = [];
+    Object.values(availSource || {}).forEach((v) => {
+      if (Array.isArray(v)) {
+        v.forEach((h) => {
+          if (Number.isInteger(h)) all.push(h);
+        });
+      } else if (v && typeof v === 'object') {
+        // Cas nouveau format éventuel : { Lun: [9,10], ... } imbriqué
+        Object.values(v).forEach((sub) => {
+          if (Array.isArray(sub)) {
+            sub.forEach((h) => {
+              if (Number.isInteger(h)) all.push(h);
+            });
+          }
+        });
+      }
+    });
 
     if (all.length === 0) {
-      // défaut 8h → 19h
+      // défaut 8h → 19h si aucune dispo trouvée
       return Array.from({ length: 12 }, (_, i) => i + 8);
     }
 
