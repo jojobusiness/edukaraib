@@ -246,6 +246,30 @@ export default function TeacherCalendar() {
     rejected: 'bg-red-100 text-red-700',
   };
 
+    const getDateForDisplay = (L) => {
+    if (!L) return null;
+
+    // 1) startAt déjà un Date (cas "semaine courante")
+    if (L.startAt instanceof Date) return L.startAt;
+    if (L.startAt?.toDate) {
+      try { return L.startAt.toDate(); } catch {}
+    }
+    if (typeof L.startAt?.seconds === 'number') {
+      return new Date(L.startAt.seconds * 1000);
+    }
+
+    // 2) startAtGlobal (prochain cours global)
+    if (L.startAtGlobal instanceof Date) return L.startAtGlobal;
+    if (L.startAtGlobal?.toDate) {
+      try { return L.startAtGlobal.toDate(); } catch {}
+    }
+    if (typeof L.startAtGlobal?.seconds === 'number') {
+      return new Date(L.startAtGlobal.seconds * 1000);
+    }
+
+    return null;
+  };
+
   return (
     <DashboardLayout role="teacher">
       <div className="max-w-2xl mx-auto">
@@ -314,10 +338,21 @@ export default function TeacherCalendar() {
                 {/* Date/heure — startAt (semaine) sinon startAtGlobal (fallback) */}
                 {(() => {
                   const L = nextOne || nextAny;
-                  const d = (L.startAt) || (L.startAtGlobal) || null;
+                  const d = getDateForDisplay(L);
+                  if (!d) return null;
+
                   return (
                     <span className="text-sm text-gray-500 ml-auto">
-                      {d?.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' })} • {d?.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                      {d.toLocaleDateString('fr-FR', {
+                        weekday: 'long',
+                        day: 'numeric',
+                        month: 'short',
+                      })}{' '}
+                      •{' '}
+                      {d.toLocaleTimeString('fr-FR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
                     </span>
                   );
                 })()}
