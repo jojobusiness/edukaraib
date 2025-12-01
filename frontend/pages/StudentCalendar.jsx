@@ -11,6 +11,63 @@ import {
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
 
+const DAY_OFFSETS = { lun: 0, mar: 1, mer: 2, jeu: 3, ven: 4, sam: 5, dim: 6 };
+
+function getLessonStartDate(lesson) {
+  if (!lesson) return null;
+  const hour = Number(lesson.slot_hour ?? 0);
+
+  // 1) Timestamp Firestore : start_datetime ou startAt
+  const ts = lesson.start_datetime || lesson.startAt;
+  if (ts?.toDate) {
+    try {
+      const d = ts.toDate();
+      d.setHours(hour, 0, 0, 0);
+      return d;
+    } catch {}
+  }
+  if (typeof ts?.seconds === 'number') {
+    const d = new Date(ts.seconds * 1000);
+    d.setHours(hour, 0, 0, 0);
+    return d;
+  }
+
+  // 2) Champ "date" (YYYY-MM-DD)
+  if (lesson.date) {
+    const d = new Date(`${lesson.date}T00:00:00`);
+    if (!Number.isNaN(d.getTime())) {
+      d.setHours(hour, 0, 0, 0);
+      return d;
+    }
+  }
+
+  // 3) Champ "week" (lundi de la semaine) + slot_day
+  if (lesson.week && lesson.slot_day) {
+    const d = new Date(`${lesson.week}T00:00:00`);
+    if (!Number.isNaN(d.getTime())) {
+      const key = String(lesson.slot_day).toLowerCase().slice(0, 3); // "Lun" -> "lun"
+      const offset = DAY_OFFSETS[key];
+      if (typeof offset === 'number') {
+        d.setDate(d.getDate() + offset);
+        d.setHours(hour, 0, 0, 0);
+        return d;
+      }
+    }
+  }
+
+  return null;
+}
+
+// Format : 📅 lun. 24/11 · 10:00
+function formatNextLessonDate(d) {
+  if (!d) return '';
+  const weekday = d.toLocaleDateString('fr-FR', { weekday: 'short' }); // "lun."
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const time = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  return `📅 ${weekday} ${day}/${month} · ${time}`;
+}
+
 // --- Helpers ---
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
@@ -75,33 +132,6 @@ const mondayOf = (d) => {
 };
 const weekKeyOf = (d) => mondayOf(d).toISOString().slice(0,10);
 
-// Calcule la prochaine date réelle (au-delà de la semaine en cours)
-// Ex : (Mar, 10) renverra le mardi à 10h de cette semaine ou de la prochaine
-function nextOccurrenceFromNow(slot_day, slot_hour) {
-  if (!FR_DAY_CODES.includes(slot_day)) return null;
-
-  const now = new Date();
-  now.setSeconds(0, 0);
-  const targetHour = Number(slot_hour) || 0;
-
-  // 0 = Lundi ... 6 = Dimanche
-  const todayIdx = (now.getDay() + 6) % 7;
-  const slotIdx = FR_DAY_CODES.indexOf(slot_day);
-
-  let addDays = slotIdx - todayIdx;
-  if (addDays < 0) addDays += 7; // jour suivant la semaine si passé
-
-  const d = new Date(now);
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() + addDays);
-  d.setHours(targetHour, 0, 0, 0);
-
-  // Si le cours d'aujourd'hui est déjà passé → semaine prochaine
-  if (addDays === 0 && d <= now) d.setDate(d.getDate() + 7);
-
-  return d;
-}
-
 export default function StudentCalendar() {
   const [lessons, setLessons] = useState([]);
   const [nextAny, setNextAny] = useState(null);
@@ -110,16 +140,52 @@ export default function StudentCalendar() {
   const [openGroupId, setOpenGroupId] = useState(null);
   const [loading, setLoading] = useState(true);
   const nameCacheRef = useRef(new Map());
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [monthAnchor, setMonthAnchor] = useState(() => new Date());
+
+  useEffect(() => {
+    setMonthAnchor(new Date(weekStart));
+  }, [weekStart]);
+
+  const goToWeek = (d) => {
+    setWeekKey(weekKeyOf(d));
+  };
+
+  const goPrevWeek = () => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() - 7);
+    setWeekKey(weekKeyOf(d));
+  };
+
+  const goNextWeek = () => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + 7);
+    setWeekKey(weekKeyOf(d));
+  };
+
+  const weekRangeLabel = useMemo(() => {
+    const start = new Date(weekStart);
+    const end = new Date(weekStart);
+    end.setDate(end.getDate() + 6);
+    const s = start.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+    const e = end.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+    return `${s} - ${e}`;
+  }, [weekStart]);
+
+  const buildMonthDays = () => {
+    const year = monthAnchor.getFullYear();
+    const month = monthAnchor.getMonth();
+    const first = new Date(year, month, 1);
+    const last = new Date(year, month + 1, 0);
+    const days = [];
+    for (let d = new Date(first); d <= last; d.setDate(d.getDate() + 1)) {
+      days.push(new Date(d));
+    }
+    return days;
+  };
 
   // weekKey auto (se met à jour quand on change de semaine)
   const [weekKey, setWeekKey] = useState(weekKeyOf(new Date()));
-  useEffect(() => {
-    const id = setInterval(() => {
-      const k = weekKeyOf(new Date());
-      setWeekKey(prev => (prev === k ? prev : k));
-    }, 60 * 1000);
-    return () => clearInterval(id);
-  }, []);
 
   // Semaine courante
   const weekStart = useMemo(() => mondayOf(new Date(weekKey)), [weekKey]);
@@ -134,16 +200,6 @@ export default function StudentCalendar() {
     }
     return out;
   }, [weekStart]);
-  const weekByCode = useMemo(() => Object.fromEntries(week.map(w => [w.code, w.date])), [week]);
-
-  // Projeter un cours sur la semaine courante
-  const withStartAt = (l) => {
-    const base = weekByCode[l.slot_day];
-    if (!base) return null;
-    const d = new Date(base);
-    d.setHours(Number(l.slot_hour) || 0, 0, 0, 0);
-    return { ...l, startAt: d };
-  };
 
   useEffect(() => {
     const fetchLessons = async () => {
@@ -176,24 +232,26 @@ export default function StudentCalendar() {
         return l.status === 'confirmed';
       });
 
-      // Scope semaine
-      const weekScoped = data
-        .map(withStartAt)
-        .filter(Boolean)
+      // Projection avec vraie date (startAt) + scope semaine
+      const enhanced = data
+        .map(l => {
+          const d = getLessonStartDate(l);
+          if (!d) return null;
+          return { ...l, startAt: d };
+        })
+        .filter(Boolean);
+
+      const weekScoped = enhanced
         .filter(l => l.startAt >= weekStart && l.startAt < weekEnd);
+
       setLessons(weekScoped);
 
-      // Fallback global pour "Prochain cours"
+      // Prochain cours global (toutes semaines)
       const now = new Date();
-      const nextGlobal = data
-        .filter(l => l.status === 'confirmed')
-        .map(l => {
-          const when = nextOccurrenceFromNow(l.slot_day, l.slot_hour);
-          return when ? { ...l, startAtGlobal: when } : null;
-        })
-        .filter(Boolean)
-        .filter(l => l.startAtGlobal > now)
-        .sort((a, b) => a.startAtGlobal - b.startAtGlobal)[0] || null;
+      const nextGlobal = enhanced
+        .filter(l => l.status === 'confirmed' && l.startAt > now)
+        .sort((a, b) => a.startAt - b.startAt)[0] || null;
+
       setNextAny(nextGlobal);
 
       // Profils profs pour affichage
@@ -279,7 +337,8 @@ export default function StudentCalendar() {
                 ? (() => {
                     const nc = nextCourse || nextAny;
                     const prof = teacherMap.get(nc.teacher_id) || {};
-                    const when = `${nc.slot_day} ${String(nc.slot_hour).padStart(2,'0')}h`;
+                    const d = nc.startAt || nc.startAtGlobal;
+                    const when = formatNextLessonDate(d);
                     return `${nc.subject_id || 'Cours'} · ${when} · avec ${prof.name || nc.teacher_id}`;
                   })()
                 : 'Aucun cours confirmé à venir' }
@@ -293,6 +352,127 @@ export default function StudentCalendar() {
           </div>
         ) : (
           <div className="bg-white p-6 rounded-xl shadow border">
+            {/* Header navigation semaines */}
+            <div className="flex items-center justify-between mb-4">
+              <button
+                type="button"
+                onClick={goPrevWeek}
+                className="px-2 py-1 text-sm rounded hover:bg-gray-100"
+              >
+                ← Semaine précédente
+              </button>
+
+              <div className="text-sm font-semibold text-gray-700">
+                Semaine du {weekRangeLabel}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowMonthPicker(v => !v)}
+                  className="px-2 py-1 text-sm rounded border hover:bg-gray-50"
+                >
+                  📆 Calendrier
+                </button>
+                <button
+                  type="button"
+                  onClick={goNextWeek}
+                  className="px-2 py-1 text-sm rounded hover:bg-gray-100"
+                >
+                  Semaine suivante →
+                </button>
+              </div>
+            </div>
+
+            {/* Mini calendrier (popup) */}
+            {showMonthPicker && (
+              <div className="relative mb-4">
+                <div className="absolute z-20 right-0 bg-white border rounded-lg shadow p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const d = new Date(monthAnchor);
+                        d.setMonth(d.getMonth() - 1);
+                        setMonthAnchor(d);
+                      }}
+                      className="px-2 py-1 text-xs rounded hover:bg-gray-100"
+                    >
+                      ←
+                    </button>
+                    <div className="text-xs font-semibold">
+                      {monthAnchor.toLocaleDateString('fr-FR', {
+                        month: 'long',
+                        year: 'numeric',
+                      })}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const d = new Date(monthAnchor);
+                        d.setMonth(d.getMonth() + 1);
+                        setMonthAnchor(d);
+                      }}
+                      className="px-2 py-1 text-xs rounded hover:bg-gray-100"
+                    >
+                      →
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-1 text-[11px] text-center mb-1">
+                    {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d, i) => (
+                      <div key={i} className="font-semibold text-gray-500">
+                        {d}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-1 text-[11px] text-center">
+                    {(() => {
+                      const days = buildMonthDays();
+                      const first = days[0];
+                      const pad = (first.getDay() + 6) % 7; // aligné sur lundi
+                      const blanks = Array.from({ length: pad }, (_, i) => (
+                        <div key={`b${i}`} />
+                      ));
+                      return [
+                        ...blanks,
+                        ...days.map((d) => {
+                          const dayNum = d.getDate();
+                          const isCurrentWeek =
+                            d >= weekStart &&
+                            d < (() => {
+                              const e = new Date(weekStart);
+                              e.setDate(e.getDate() + 7);
+                              return e;
+                            })();
+                          return (
+                            <button
+                              key={d.toISOString()}
+                              type="button"
+                              onClick={() => {
+                                goToWeek(d);
+                                setShowMonthPicker(false);
+                              }}
+                              className={
+                                'w-7 h-7 rounded-full flex items-center justify-center ' +
+                                (isCurrentWeek
+                                  ? 'bg-primary text-white'
+                                  : 'hover:bg-gray-100 text-gray-700')
+                              }
+                            >
+                              {dayNum}
+                            </button>
+                          );
+                        }),
+                      ];
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Planning hebdo */}
             {week.map(({ code, label }) => (
               <div key={code} className="mb-5">
                 <div className="font-bold text-secondary text-sm mb-2 uppercase">
