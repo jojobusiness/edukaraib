@@ -1420,27 +1420,88 @@ export default function TeacherLessons() {
           }
         }
 
-        // 2) Individuel accepté mais non payé à l'heure → refusé
-        if (!l.is_group && String(l.status || '') === 'confirmed') {
-          if (now >= startMs && !isIndividualPaid(l)) {
-            try {
-              await updateDoc(doc(db, 'lessons', l.id), { status: 'rejected' });
-            } catch {}
-            try {
-              const recipients = new Set();
-              if (l.student_id) recipients.add(l.student_id);
-              (l.participant_ids || []).forEach((sid) => recipients.add(sid));
-              await sendEmailsToUsers(
-                Array.from(recipients),
-                {
-                  title: "Cours refusé automatiquement",
-                  message: "Votre demande a expiré (non confirmée à temps). Vous pouvez refaire une demande.",
-                  ctaUrl: `${window.location.origin}/smart-dashboard`,
-                  ctaText: "Refaire une demande",
-                },
-                l
-              );
-            } catch {}
+        // 2) Cours confirmés mais non payés à l'heure → refus automatiques
+        if (String(l.status || '') === 'confirmed' && now >= startMs) {
+          const isGroup = isGroupLessonStrict(l);
+
+          if (!isGroup) {
+            // 🔹 INDIVIDUEL : on refuse le cours + le participant propriétaire
+            if (!isIndividualPaid(l)) {
+              const owner = getOwnerStudentId(l);
+              const update = { status: 'rejected' };
+              if (owner) {
+                update[`participantsMap.${owner}.status`] = 'rejected';
+              }
+
+              try {
+                await updateDoc(doc(db, 'lessons', l.id), update);
+              } catch {}
+
+              try {
+                const recipients = new Set();
+                if (owner) recipients.add(owner);
+                if (l.student_id) recipients.add(l.student_id);
+                (l.participant_ids || []).forEach((sid) => recipients.add(sid));
+
+                await sendEmailsToUsers(
+                  Array.from(recipients),
+                  {
+                    title: "Cours refusé (paiement manquant)",
+                    message:
+                      "Votre cours a été automatiquement refusé car il n'a pas été payé à temps. " +
+                      "Vous pouvez refaire une demande ou choisir un autre créneau.",
+                    ctaUrl: `${window.location.origin}/smart-dashboard`,
+                    ctaText: "Voir mes cours",
+                  },
+                  l
+                );
+              } catch {}
+            }
+          } else {
+            // 🔹 GROUPE : on NE touche PAS au status global, seulement aux participants non payés
+            const pm = { ...(l.participantsMap || {}) };
+            const ids = Array.isArray(l.participant_ids) && l.participant_ids.length
+              ? l.participant_ids
+              : Object.keys(pm);
+
+            const rejectedStudents = [];
+
+            ids.forEach((sid) => {
+              const info = pm[sid] || {};
+              const st = String(info.status || '').toLowerCase();
+              const isAccepted = st === 'accepted' || st === 'confirmed';
+              const isPaid = info.is_paid === true;
+
+              // élève accepté/confirmé mais pas payé → rejeté uniquement lui
+              if (isAccepted && !isPaid) {
+                pm[sid] = { ...info, status: 'rejected' };
+                rejectedStudents.push(sid);
+              }
+            });
+
+            if (rejectedStudents.length) {
+              try {
+                await updateDoc(doc(db, 'lessons', l.id), {
+                  participantsMap: pm,
+                  participant_ids: ids,
+                });
+              } catch {}
+
+              try {
+                await sendEmailsToUsers(
+                  rejectedStudents,
+                  {
+                    title: "Participation refusée (paiement manquant)",
+                    message:
+                      "Votre participation à un cours groupé a été automatiquement refusée " +
+                      "car le paiement n'a pas été reçu à temps.",
+                    ctaUrl: `${window.location.origin}/smart-dashboard`,
+                    ctaText: "Voir mes cours",
+                  },
+                  l
+                );
+              } catch {}
+            }
           }
         }
 
