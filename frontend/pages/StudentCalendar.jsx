@@ -142,8 +142,24 @@ export default function StudentCalendar() {
   const nameCacheRef = useRef(new Map());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [monthAnchor, setMonthAnchor] = useState(() => new Date());
+  // weekKey auto (se met à jour quand on change de semaine)
+  const [weekKey, setWeekKey] = useState(weekKeyOf(new Date()));
 
-  useEffect(() => {
+  // Semaine courante
+  const weekStart = useMemo(() => mondayOf(new Date(weekKey)), [weekKey]);
+  const weekEnd   = useMemo(() => { const d = new Date(weekStart); d.setDate(d.getDate()+7); return d; }, [weekStart]);
+  const week = useMemo(() => {
+    const labels = FR_DAY_CODES;
+    const out = [];
+    for (let i=0;i<7;i++) {
+      const d = new Date(weekStart); d.setDate(d.getDate()+i);
+      const label = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
+      out.push({ code: labels[i], label, date: d });
+    }
+    return out;
+  }, [weekStart]);
+
+    useEffect(() => {
     setMonthAnchor(new Date(weekStart));
   }, [weekStart]);
 
@@ -183,23 +199,6 @@ export default function StudentCalendar() {
     }
     return days;
   };
-
-  // weekKey auto (se met à jour quand on change de semaine)
-  const [weekKey, setWeekKey] = useState(weekKeyOf(new Date()));
-
-  // Semaine courante
-  const weekStart = useMemo(() => mondayOf(new Date(weekKey)), [weekKey]);
-  const weekEnd   = useMemo(() => { const d = new Date(weekStart); d.setDate(d.getDate()+7); return d; }, [weekStart]);
-  const week = useMemo(() => {
-    const labels = FR_DAY_CODES;
-    const out = [];
-    for (let i=0;i<7;i++) {
-      const d = new Date(weekStart); d.setDate(d.getDate()+i);
-      const label = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
-      out.push({ code: labels[i], label, date: d });
-    }
-    return out;
-  }, [weekStart]);
 
   useEffect(() => {
     const fetchLessons = async () => {

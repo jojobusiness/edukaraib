@@ -151,6 +151,30 @@ export default function ParentCalendar() {
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [monthAnchor, setMonthAnchor] = useState(() => new Date());
 
+  // Semaine courante pilotée par weekKey (lundi ISO)
+  const [weekKey, setWeekKey] = useState(weekKeyOf(new Date()));
+  useEffect(() => {
+    const id = setInterval(() => {
+      const k = weekKeyOf(new Date());
+      setWeekKey(prev => (prev === k ? prev : k));
+    }, 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Dates de la semaine à partir de weekKey
+  const weekStart = useMemo(() => mondayOf(new Date(weekKey)), [weekKey]);
+  const weekEnd   = useMemo(() => { const d = new Date(weekStart); d.setDate(d.getDate()+7); return d; }, [weekStart]);
+  const week = useMemo(() => {
+    const out = [];
+    for (let i=0;i<7;i++) {
+      const d = new Date(weekStart); d.setDate(d.getDate()+i);
+      const code = FR_DAY_CODES[i];
+      const label = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
+      out.push({ code, label, date: d });
+    }
+    return out;
+  }, [weekStart]);
+
   useEffect(() => {
     setMonthAnchor(new Date(weekStart));
   }, [weekStart]);
@@ -191,30 +215,6 @@ export default function ParentCalendar() {
     }
     return days;
   };
-
-  // Semaine courante pilotée par weekKey (lundi ISO)
-  const [weekKey, setWeekKey] = useState(weekKeyOf(new Date()));
-  useEffect(() => {
-    const id = setInterval(() => {
-      const k = weekKeyOf(new Date());
-      setWeekKey(prev => (prev === k ? prev : k));
-    }, 60 * 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  // Dates de la semaine à partir de weekKey
-  const weekStart = useMemo(() => mondayOf(new Date(weekKey)), [weekKey]);
-  const weekEnd   = useMemo(() => { const d = new Date(weekStart); d.setDate(d.getDate()+7); return d; }, [weekStart]);
-  const week = useMemo(() => {
-    const out = [];
-    for (let i=0;i<7;i++) {
-      const d = new Date(weekStart); d.setDate(d.getDate()+i);
-      const code = FR_DAY_CODES[i];
-      const label = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
-      out.push({ code, label, date: d });
-    }
-    return out;
-  }, [weekStart]);
 
   useEffect(() => {
     const run = async () => {
