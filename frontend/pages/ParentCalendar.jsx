@@ -134,8 +134,15 @@ const mondayOf = (d) => {
   x.setDate(x.getDate() - off);
   return x;
 };
-const weekKeyOf = (d) => mondayOf(d).toISOString().slice(0,10);
 
+// Après (local, sans UTC)
+const weekKeyOf = (d) => {
+  const m = mondayOf(d);
+  const year  = m.getFullYear();
+  const month = String(m.getMonth() + 1).padStart(2, '0');
+  const day   = String(m.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;   // ex: "2025-12-01"
+};
 
 export default function ParentCalendar() {
   const [lessons, setLessons] = useState([]);

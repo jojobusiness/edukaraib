@@ -126,7 +126,15 @@ const mondayOf = (d) => {
   x.setDate(x.getDate() - off);
   return x;
 };
-const weekKeyOf = (d) => mondayOf(d).toISOString().slice(0,10);
+
+// Après (local, sans UTC)
+const weekKeyOf = (d) => {
+  const m = mondayOf(d);
+  const year  = m.getFullYear();
+  const month = String(m.getMonth() + 1).padStart(2, '0');
+  const day   = String(m.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;   // ex: "2025-12-01"
+};
 
 export default function TeacherCalendar() {
   const [lessons, setLessons] = useState([]);
@@ -245,10 +253,18 @@ export default function TeacherCalendar() {
 
       setNextAny(nextGlobal);
 
-      // 4) Noms
-      const studentIds = Array.from(new Set(eligible.map(l => l.student_id).filter(Boolean)));
-      const names = await Promise.all(studentIds.map(id => resolveStudentName(id, nameCacheRef)));
-      setStudentMap(new Map(studentIds.map((id, i) => [id, names[i]]) ));
+      // 4) Noms — on prend tous les cours du prof (rawAll), pas seulement la semaine courante
+      const studentIds = Array.from(
+        new Set(
+          rawAll
+            .map(l => l.student_id)
+            .filter(Boolean)
+        )
+      );
+      const names = await Promise.all(
+        studentIds.map(id => resolveStudentName(id, nameCacheRef))
+      );
+      setStudentMap(new Map(studentIds.map((id, i) => [id, names[i]])));
 
       const idSet = new Set();
       eligible.forEach(l => {
