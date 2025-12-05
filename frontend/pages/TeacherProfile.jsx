@@ -355,6 +355,19 @@ export default function TeacherProfile() {
               remaining[kPlain] = Math.max(remaining[kPlain] || 0, remains);
             }
           }
+          // --- AJOUT : placer la capacité en clé DATE d'abord, puis SEMAINE puis SIMPLE ---
+          if (remains > 0) {
+              if (dateStr) {
+                  // clé par date précise
+                  remaining[`${day}:${hour}:${dateStr}`] = Math.max(remaining[`${day}:${hour}:${dateStr}`] || 0, remains);
+              }
+              if (weekStr) {
+                  // clé par semaine
+                  remaining[`${day}:${hour}:${weekStr}`] = Math.max(remaining[`${day}:${hour}:${weekStr}`] || 0, remains);
+              }
+              // clé simple fallback
+              remaining[`${day}:${hour}`] = Math.max(remaining[`${day}:${hour}`] || 0, remains);
+          }
         }
       });
 
