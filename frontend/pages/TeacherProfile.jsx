@@ -373,16 +373,40 @@ export default function TeacherProfile() {
 
       // ➕ capacité par défaut pour les créneaux sans groupe
       const avail = teacher.availability || {};
-      const hasWeekKeys = Object.keys(avail).some((k) => /^\d{4}-\d{2}-\d{2}$/.test(k));
+      const hasWeekKeys = Object.keys(avail).some((k) =>
+        /^\d{4}-\d{2}-\d{2}$/.test(k)
+      );
 
       if (!hasWeekKeys) {
-        // Ancien format : { 'Lun': [9,10], ... }
+        // 🧷 Ancien format : { 'Lun': [9,10], ... }
         Object.entries(avail).forEach(([day, hours]) => {
           (hours || []).forEach((h) => {
             const plainKey = `${day}:${h}`;
             if (remaining[plainKey] == null) {
               remaining[plainKey] = defaultCap;
             }
+          });
+        });
+      } else {
+        // 🆕 Nouveau format :
+        // { 'YYYY-MM-DD' (lundi): { 'Lun': [9,10], ... }, ... }
+        Object.entries(avail).forEach(([weekKey, days]) => {
+          if (!days || typeof days !== 'object' || Array.isArray(days)) return;
+
+          Object.entries(days).forEach(([day, hours]) => {
+            (hours || []).forEach((h) => {
+              const plainKey = `${day}:${h}`;
+              const weekK    = `${day}:${h}:${weekKey}`;
+
+              // fallback global pour tous les lundis 9h, etc.
+              if (remaining[plainKey] == null) {
+                remaining[plainKey] = defaultCap;
+              }
+              // clé spécifique à la semaine (2025-12-01, 2025-12-08, ...)
+              if (remaining[weekK] == null) {
+                remaining[weekK] = defaultCap;
+              }
+            });
           });
         });
       }
