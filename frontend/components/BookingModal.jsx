@@ -558,8 +558,11 @@ export default function BookingModal({
                             {booked ? '❌' : sel ? '✔' : ''}
 
                             {/* 🔵 remets CE bloc */}
-                            {remaining !== null && !booked && !locked && canBook && (
-                              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] leading-[18px] text-center pointer-events-none" title={`Places restantes : ${remaining}`}>
+                            {remaining !== null && dispo && !booked && !locked && canBook && (
+                              <span
+                                className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] leading-[18px] text-center pointer-events-none"
+                                title={`Places restantes : ${remaining}`}
+                              >
                                 {remaining}
                               </span>
                             )}                  
