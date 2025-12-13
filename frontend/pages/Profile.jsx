@@ -185,14 +185,28 @@ export default function Profile() {
   };
 
   // Helper : compter les participants actifs
-  const isActiveStatus = (s) => !['rejected','removed','deleted'].includes(String(s||'').toLowerCase());
+  function isLessonEmpty(lesson = {}) {
+    const hasStudentId = !!lesson.student_id;
 
-  function activeParticipantsCount(lesson = {}) {
     const ids = Array.isArray(lesson.participant_ids) ? lesson.participant_ids : [];
-    const pm  = lesson.participantsMap || {};
-    let n = 0;
-    ids.forEach((sid) => { if (isActiveStatus(pm?.[sid]?.status || lesson.status)) n++; });
-    return n;
+    const pm = lesson.participantsMap || {};
+
+    const hasAnyParticipant =
+      ids.length > 0 || (pm && typeof pm === 'object' && Object.keys(pm).length > 0);
+
+    return !hasStudentId && !hasAnyParticipant;
+  }
+
+  function isFutureLesson(lesson = {}) {
+    try {
+      if (!lesson.startAt) return true;
+      const d = typeof lesson.startAt.toDate === 'function'
+        ? lesson.startAt.toDate()
+        : new Date(lesson.startAt);
+      return d.getTime() >= Date.now();
+    } catch {
+      return true;
+    }
   }
 
   // Met à jour en toute sécurité les cours (ne touche pas ceux avec des participants)
@@ -206,8 +220,11 @@ export default function Profile() {
       for (const d of snap.docs) {
         const l = d.data();
 
-        // 🛑 ne pas modifier les cours avec participants actifs
-        if (activeParticipantsCount(l) > 0) continue;
+        // ✅ ne toucher QUE les cours vraiment vides
+        if (!isLessonEmpty(l)) continue;
+
+        // ✅ éviter de modifier l’historique
+        if (!isFutureLesson(l)) continue;
 
         const ref = doc(db, 'lessons', d.id);
         const patch = {
