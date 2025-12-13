@@ -128,6 +128,116 @@ function statusLabel(st) {
   }
 }
 
+async function getEmailFromDoc(pathCol, uid) {
+  try {
+    const s = await getDoc(doc(db, pathCol, uid));
+    if (s.exists()) {
+      const d = s.data();
+      return d.email || d.contactEmail || d.parentEmail || null;
+    }
+  } catch {}
+  return null;
+}
+
+async function getUserEmail(uid) {
+  if (!uid) return null;
+  return (
+    (await getEmailFromDoc('users', uid)) ||
+    (await getEmailFromDoc('teachers', uid)) ||
+    (await getEmailFromDoc('parents', uid)) ||
+    (await getEmailFromDoc('students', uid))
+  );
+}
+
+async function getParentIdForStudent(studentId, lessonCtx) {
+  const pm = lessonCtx?.participantsMap || {};
+  const viaMap = pm?.[studentId]?.parent_id || pm?.[studentId]?.booked_by;
+  if (viaMap) return viaMap;
+
+  try {
+    const s = await getDoc(doc(db, 'students', studentId));
+    if (s.exists()) {
+      const d = s.data();
+      return d.parent_id || d.parentId || d.booked_by || null;
+    }
+  } catch {}
+
+  try {
+    const u = await getDoc(doc(db, 'users', studentId));
+    if (u.exists()) {
+      const d = u.data();
+      return d.parent_id || d.parentId || d.booked_by || null;
+    }
+  } catch {}
+
+  return null;
+}
+
+async function sendEmailsToUsers(
+  userIds = [],
+  { title, message, ctaUrl, ctaText = 'Ouvrir' },
+  lessonCtx = null
+) {
+  const emails = new Set();
+
+  // emails directs
+  for (const uid of userIds) {
+    const em = await getUserEmail(uid);
+    if (em) emails.add(em);
+  }
+
+  // fallback parent si pas d’email élève
+  if (lessonCtx && Array.isArray(lessonCtx.participant_ids)) {
+    for (const sid of lessonCtx.participant_ids) {
+      const hasStudentEmail = await getUserEmail(sid);
+      if (!hasStudentEmail) {
+        const pid = await getParentIdForStudent(sid, lessonCtx);
+        const pem = await getUserEmail(pid);
+        if (pem) emails.add(pem);
+      }
+    }
+  }
+
+  if (!emails.size) return;
+
+  await Promise.all(
+    Array.from(emails).map((to) =>
+      fetch('/api/notify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to,
+          title,
+          message,
+          ctaUrl: ctaUrl || `${window.location.origin}/smart-dashboard`,
+          ctaText,
+        }),
+      }).catch(() => {})
+    )
+  );
+}
+
+function isPackParticipant(ent = {}) {
+  return (
+    !!ent.pack ||
+    !!ent.is_pack ||
+    ent.pack_hours === 5 ||
+    ent.pack_hours === 10 ||
+    !!ent.pack_id ||
+    !!ent.pack_type
+  );
+}
+
+function packBadgeText(ent = {}) {
+  const h = Number(ent.pack_hours || 0);
+  if (h === 5) return 'PACK 5h';
+  if (h === 10) return 'PACK 10h';
+  // fallback si pack_type existe
+  if (String(ent.pack_type || '').toLowerCase().includes('pack5')) return 'PACK 5h';
+  if (String(ent.pack_type || '').toLowerCase().includes('pack10')) return 'PACK 10h';
+  return 'PACK';
+}
+
 /* ---------------- composant principal ---------------- */
 export default function GroupSettingsModal({ open, onClose, lesson }) {
   const [capacity, setCapacity] = useState(lesson?.capacity || 1);
@@ -329,20 +439,25 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     }
   }
 
-  // ✅ INVITER : passe en groupé, +1 capacité (min 2), garde l’élève d’origine confirmé
-  // L’invité est marqué "invited_student" ⇒ **visible uniquement dans “Invitations”** (pas “Participants”).
+  // ✅ INVITER : passe en groupé si besoin, MAIS ne change PAS la capacité
   async function addByPick(p) {
     if (!p?.id) return;
     const id = p.id;
-    if (participantIds.includes(id)) {
+
+    // Déjà listé ?
+    if ((participantIds || []).includes(id)) {
       alert('Déjà présent dans la liste.');
       return;
     }
 
-    const ref = doc(db, 'lessons', lesson.id);
+    // ✅ Bloquer si pas de place (en se basant sur ton calcul affiché)
+    // freeDisplayed = capacity - confirmedDisplayed
+    if (freeDisplayed <= 0) {
+      alert("Impossible d'inviter : le groupe est complet. Augmente la capacité si tu veux plus de places.");
+      return;
+    }
 
-    // Capacité à +1 (minimum 2)
-    const newCap = Math.max((Number(capacity) || 1) + 1, 2);
+    const ref = doc(db, 'lessons', lesson.id);
 
     // invited payload
     const invitedPayload = {
@@ -355,13 +470,19 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
       added_at: serverTimestamp(),
     };
 
+    // ✅ capacité = inchangée (mais si cours devient groupé, on force mini 2)
+    const cap = Math.max(Number(capacity || 1), 2);
+
     const patch = {
       is_group: true,
-      capacity: newCap,
-      participant_ids: singleStudentId ? arrayUnion(id, singleStudentId) : arrayUnion(id),
+      capacity: cap,
+      participant_ids: singleStudentId
+        ? arrayUnion(id, singleStudentId)
+        : arrayUnion(id),
       [`participantsMap.${id}`]: invitedPayload,
     };
 
+    // garder l’élève d’origine confirmé s’il existe
     if (singleStudentId) {
       patch[`participantsMap.${singleStudentId}`] = {
         parent_id: lesson.parent_id || null,
@@ -377,7 +498,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     try {
       await updateDoc(ref, patch);
 
-      // notif élève invité
+      // notif in-app
       try {
         await addDoc(collection(db, 'notifications'), {
           user_id: id,
@@ -400,14 +521,42 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
   // 🗑️ Retirer un invité/participant :
   // si après retrait il ne reste que l’élève d’origine ⇒ on repasse en individuel (géré par onSnapshot + auto-downgrade).
   async function removeStudent(id) {
+      const ent = participantsMap?.[id] || {};
+      if (isPackParticipant(ent)) {
+        alert("Impossible : cet élève est sur un pack. (Retrait désactivé)");
+        return;
+      }
+
     const ok = window.confirm("Retirer cet élève de la liste ?");
     if (!ok) return;
+    
+    const ref = doc(db, 'lessons', lesson.id);
+
     try {
-      await updateDoc(doc(db, 'lessons', lesson.id), {
-        participant_ids: arrayRemove(id),
-        [`participantsMap.${id}`]: deleteField(),
+      // IMPORTANT: on garde l’id dans participant_ids (comme ta BD),
+      // mais on le sort de l’affichage via filtre (je te le mets juste après).
+      await updateDoc(ref, {
+        [`participantsMap.${id}.status`]: nextStatus,
+        [`participantsMap.${id}.removed_at`]: serverTimestamp(),
       });
-      // Le onSnapshot détectera s’il faut downgrade (aucun “autre” actif).
+
+      // ✉️ Email (même logique que DocumentsModal)
+      const who = nameMap?.[id] || 'Un élève';
+      const title = isPack ? 'Modification de votre réservation (Pack)' : 'Cours refusé / retrait';
+      const message = isPack
+        ? `Vous avez été retiré(e) du créneau ${lesson.slot_day} ${lesson.slot_hour}h (${lesson.subject_id || 'cours'}). Votre pack n’est pas annulé.`
+        : `Votre participation au cours ${lesson.subject_id || 'cours'} (${lesson.slot_day} ${lesson.slot_hour}h) a été refusée.`;
+
+      await sendEmailsToUsers(
+        [id],
+        {
+          title,
+          message,
+          ctaUrl: `${window.location.origin}/smart-dashboard`,
+          ctaText: 'Ouvrir EduKaraib',
+        },
+        { ...lesson, participant_ids: participantIds, participantsMap }
+      );
     } catch (e) {
       console.error(e);
       alert("Impossible de retirer l'élève.");
@@ -421,9 +570,13 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
   const participantsForRender = useMemo(() => {
     const base = Array.from(new Set(participantIds || []))
       .filter((sid) => {
-        const st = participantsMap?.[sid]?.status;
-        return st !== 'invited_student' && st !== 'invited_parent';
+        const st = String(participantsMap?.[sid]?.status || '').toLowerCase();
+        // ✅ on cache les invités + rejetés/retirés/supprimés
+        if (st === 'invited_student' || st === 'invited_parent') return false;
+        if (st === 'rejected' || st === 'removed' || st === 'deleted') return false;
+        return true;
       });
+
     if (singleStudentId && !base.includes(singleStudentId)) base.push(singleStudentId);
     return base;
   }, [participantIds, participantsMap, singleStudentId]);
@@ -509,19 +662,36 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
               <div className="flex flex-wrap gap-2">
                 {participantsForRender.map((sid) => {
                   const ent = participantsMap?.[sid] || {};
-                  const isVirtualIndividual = singleStudentId === sid && !(participantIds || []).includes(sid);
+                  const isVirtualIndividual =
+                    singleStudentId === sid && !(participantIds || []).includes(sid);
+
                   const st = isVirtualIndividual ? 'confirmed' : (ent.status || 'pending');
                   const paid = isVirtualIndividual ? !!lesson?.is_paid : !!ent.is_paid;
+
+                  const isPack = !isVirtualIndividual && isPackParticipant(ent);
 
                   return (
                     <Chip
                       key={`pt:${sid}`}
-                      onRemove={isVirtualIndividual ? undefined : () => removeStudent(sid)}
-                      title={`Statut : ${statusLabel(st)}`}
+                      // ✅ Crois retirée si pack OU si virtuel individuel
+                      onRemove={isVirtualIndividual || isPack ? undefined : () => removeStudent(sid)}
+                      title={`Statut : ${statusLabel(st)}${isPack ? ' · Pack' : ''}`}
                     >
                       {nameMap[sid] || sid}
+
+                      {/* ✅ Badge pack */}
+                      {isPack && (
+                        <>
+                          {' '}
+                          <span className="ml-1 inline-flex items-center rounded-full bg-purple-100 text-purple-800 px-2 py-0.5 text-xs font-semibold">
+                            {packBadgeText(ent)}{ent.pack_mode ? ` · ${String(ent.pack_mode).toUpperCase()}` : ''}
+                          </span>
+                        </>
+                      )}
+
                       {' · '}
                       <span className="text-gray-700">{statusLabel(st)}</span>
+
                       {(st === 'accepted' || st === 'confirmed') && (
                         <>
                           {' · '}
