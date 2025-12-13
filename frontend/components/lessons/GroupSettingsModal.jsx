@@ -521,31 +521,29 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
   // 🗑️ Retirer un invité/participant :
   // si après retrait il ne reste que l’élève d’origine ⇒ on repasse en individuel (géré par onSnapshot + auto-downgrade).
   async function removeStudent(id) {
-      const ent = participantsMap?.[id] || {};
-      if (isPackParticipant(ent)) {
-        alert("Impossible : cet élève est sur un pack. (Retrait désactivé)");
-        return;
-      }
+    const ent = participantsMap?.[id] || {};
+    if (isPackParticipant(ent)) {
+      alert("Impossible : cet élève est sur un pack. (Retrait désactivé)");
+      return;
+    }
 
     const ok = window.confirm("Retirer cet élève de la liste ?");
     if (!ok) return;
-    
+
     const ref = doc(db, 'lessons', lesson.id);
 
     try {
-      // IMPORTANT: on garde l’id dans participant_ids (comme ta BD),
-      // mais on le sort de l’affichage via filtre (je te le mets juste après).
+      // ✅ Pour non-pack : on met rejected
       await updateDoc(ref, {
-        [`participantsMap.${id}.status`]: nextStatus,
+        [`participantsMap.${id}.status`]: 'rejected',
         [`participantsMap.${id}.removed_at`]: serverTimestamp(),
       });
 
-      // ✉️ Email (même logique que DocumentsModal)
-      const who = nameMap?.[id] || 'Un élève';
-      const title = isPack ? 'Modification de votre réservation (Pack)' : 'Cours refusé / retrait';
-      const message = isPack
-        ? `Vous avez été retiré(e) du créneau ${lesson.slot_day} ${lesson.slot_hour}h (${lesson.subject_id || 'cours'}). Votre pack n’est pas annulé.`
-        : `Votre participation au cours ${lesson.subject_id || 'cours'} (${lesson.slot_day} ${lesson.slot_hour}h) a été refusée.`;
+      // ✉️ Email (comme DocumentsModal)
+      const title = 'Cours refusé / retrait';
+      const message =
+        `Votre participation au cours ${lesson.subject_id || 'cours'} ` +
+        `(${lesson.slot_day} ${lesson.slot_hour}h) a été refusée.`;
 
       await sendEmailsToUsers(
         [id],
