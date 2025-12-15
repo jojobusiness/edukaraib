@@ -900,7 +900,9 @@ export default function TeacherLessons() {
     return Object.values(pm).some((v) => v?.status === 'accepted' || v?.status === 'confirmed');
   };
 
-  // Confirmés (dédupliqué par id) : groupe (≥1 participant accepté/confirmé) ou statut global 'confirmed'
+  // Confirmés :
+  // - INDIV : basé sur individualStatus()
+  // - GROUPE : uniquement si au moins 1 participant accepted/confirmed
   const confirmes = useMemo(() => {
     const seen = new Set();
     const out = [];
@@ -909,11 +911,10 @@ export default function TeacherLessons() {
       if (l.status === 'completed') continue;
 
       let ok = false;
+
       if (isGroupLessonStrict(l)) {
-        const pm = l.participantsMap || {};
-        const ids = Array.isArray(l.participant_ids) ? l.participant_ids : Object.keys(pm);
-        ok = ids.some(sid => ['accepted','confirmed'].includes(String(pm?.[sid]?.status || '')))
-            || l.status === 'confirmed';
+        // ✅ un groupe n’est “confirmé” que si au moins 1 élève est accepté/confirmé
+        ok = hasAnyConfirmedParticipantUI(l);
       } else {
         ok = individualStatus(l) === 'confirmed';
       }
@@ -1534,6 +1535,24 @@ export default function TeacherLessons() {
             console.error('auto-complete error', e);
           }
         }
+
+        // ✅ NEW: cours groupé confirmé mais plus aucun élève accepté/confirmé -> rejet après l'heure
+        if (now >= startMs && String(l.status || '') === 'confirmed' && isGroupLessonStrict(l)) {
+          const anyConfirmed = hasAnyConfirmedParticipantUI(l);
+
+          // “vide” = personne accepté/confirmé (ex: tous rejected/removed/deleted)
+          if (!anyConfirmed) {
+            try {
+              await updateDoc(doc(db, 'lessons', l.id), {
+                status: 'rejected',
+                rejected_at: serverTimestamp(),
+                rejected_reason: 'no_students',
+                rejected_note: 'Aucun élève',
+              });
+            } catch {}
+          }
+        }
+
       });
 
       try { await Promise.all(updates); } catch {}
@@ -2034,6 +2053,12 @@ export default function TeacherLessons() {
                       )}
                     </div>
 
+                    {String(l?.rejected_reason || '') === 'no_students' && (
+                      <div className="mt-1 text-sm font-semibold text-red-700">
+                        Motif : Aucun élève
+                      </div>
+                    )}
+                    
                     {/* Demandeur (parent) si connu */}
                     {l.requesterName ? (
                       <p className="text-sm text-gray-600 mt-1">
