@@ -747,7 +747,8 @@ export default function MyCourses() {
                 );
               }
 
-              if (!isPaid) {
+              // 🔓 MODE TEST : on ignore le paiement
+              if (!isPaid && !VISIO_FREE_ACCESS) {
                 return (
                   <span
                     className="px-3 py-2 rounded bg-amber-100 text-amber-800 font-semibold"
