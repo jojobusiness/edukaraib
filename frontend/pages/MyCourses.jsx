@@ -16,6 +16,9 @@ import {
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
+// ⚠️ MODE TEST VISIO (désactive le paiement)
+const VISIO_FREE_ACCESS = true;
+
 /* ---------- Helpers ---------- */
 
 /* ---------- Email helpers (prof) ---------- */
