@@ -16,9 +16,6 @@ import {
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
-// ⚠️ MODE TEST VISIO (désactive le paiement)
-const VISIO_FREE_ACCESS = true;
-
 /* ---------- Helpers ---------- */
 
 /* ---------- Email helpers (prof) ---------- */
@@ -750,8 +747,7 @@ export default function MyCourses() {
                 );
               }
 
-              // 🔓 MODE TEST : on ignore le paiement
-              if (!isPaid && !VISIO_FREE_ACCESS) {
+              if (!isPaid) {
                 return (
                   <span
                     className="px-3 py-2 rounded bg-amber-100 text-amber-800 font-semibold"

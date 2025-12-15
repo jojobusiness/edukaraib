@@ -1717,15 +1717,19 @@ export default function TeacherLessons() {
 
                       return (
                         <>
-                          <a
-                            href={lesson.visio?.joinUrl}
-                            target="_blank"
-                            rel="noreferrer"
+                          <button
+                            type="button"
                             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded shadow font-semibold"
                             title="Ouvrir la visio"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation(); // ✅ empêche le clic de remonter sur la Card
+                              const url = lesson.visio?.joinUrl;
+                              if (url) window.open(url, "_blank", "noopener,noreferrer");
+                            }}
                           >
                             🎥 Démarrer la visio
-                          </a>
+                          </button>
                           <button
                             className="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-2 rounded shadow font-semibold"
                             onClick={() => navigator.clipboard.writeText(lesson.visio?.joinUrl || "")}
