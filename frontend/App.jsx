@@ -191,7 +191,8 @@ function App() {
             <Route path="/admin/dashboard" element={<RequireRole roles={['admin']}><AdminDashboard /></RequireRole>} />
 
             <Route path="/auth/action" element={<AuthAction />} />
-            <Route path="/__/auth/action" element={<AuthAction />} />  {/* ✅ compat lien Firebase */}
+            <Route path="/__/auth/action" element={<AuthAction />} />
+            <Route path="/__auth/action" element={<AuthAction />} />   {/* ✅ ton lien actuel */}
 
             {/* 404 */}
             <Route path="*" element={<NotFound />} />

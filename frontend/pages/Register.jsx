@@ -210,9 +210,10 @@ export default function Register() {
     setLoading(true);
     try {
       await reload(pendingUser);
+
       if (!pendingUser.emailVerified) {
-        setLoading(false);
-        return alert("Ton email n’est pas encore vérifié. Clique le lien dans le mail, puis réessaie.");
+        // ✅ On laisse continuer, mais on avertit
+        alert("Ton email n’est pas encore vérifié. Tu peux continuer, mais certaines actions pourront être limitées tant que tu n’as pas validé ton email.");
       }
 
       // Upload avatar si présent
