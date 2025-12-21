@@ -84,6 +84,12 @@ export default function Register() {
 
   const navigate = useNavigate();
 
+  // ✅ Lien utilisé dans les emails Firebase (vérif email)
+  const actionCodeSettings = {
+    url: 'https://www.edukaraib.com/auth/action',
+    handleCodeInApp: true,
+  };
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
 
@@ -187,7 +193,7 @@ export default function Register() {
     setLoading(true);
     try {
       const cred = await createUserWithEmailAndPassword(auth, form.email, form.password);
-      await sendEmailVerification(cred.user);
+      await sendEmailVerification(cred.user, actionCodeSettings);
       setPendingUser(cred.user);
       setWaitingEmailVerify(true);
     } catch (err) {
@@ -320,7 +326,7 @@ export default function Register() {
   const resendVerification = async () => {
     if (!pendingUser) return;
     try {
-      await sendEmailVerification(pendingUser);
+      await sendEmailVerification(pendingUser, actionCodeSettings);
       alert("Email de vérification renvoyé. Pense à vérifier tes spams.");
     } catch (e) {
       alert("Impossible d’envoyer l’email de vérification pour le moment.");

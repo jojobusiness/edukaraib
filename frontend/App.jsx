@@ -45,6 +45,7 @@ import PrivateRoute from './components/PrivateRoute';
 import StudentRoute from './components/StudentRoute';
 import RequireRole from './routes/RequireRole';
 import AdminDashboard from './pages/AdminDashboard';
+import AuthAction from './pages/AuthAction';
 
 /* === Google Analytics PageView Tracker === */
 function PageViewTracker() {
@@ -188,6 +189,9 @@ function App() {
 
             {/* 🛠️ Administrateur */}
             <Route path="/admin/dashboard" element={<RequireRole roles={['admin']}><AdminDashboard /></RequireRole>} />
+
+            <Route path="/auth/action" element={<AuthAction />} />
+            <Route path="/__/auth/action" element={<AuthAction />} />  {/* ✅ compat lien Firebase */}
 
             {/* 404 */}
             <Route path="*" element={<NotFound />} />
