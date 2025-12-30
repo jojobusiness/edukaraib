@@ -241,7 +241,7 @@ export default function Search() {
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
               >
-                <option value="">{'Toute la France'}</option>
+                <option value="">{'Toute la Guyane'}</option>
                 {Array.from(new Set(teachers.map(t => (t.city || t.location || '').trim()).filter(Boolean))).sort().map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
