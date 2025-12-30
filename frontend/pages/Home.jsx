@@ -191,21 +191,38 @@ export default function Home() {
       {/* HERO */}
       <header className="relative isolate overflow-hidden">
         <img
-          src="/accueil.jpg"
-          alt="Élève et professeur - EduKaraib"
-          className="absolute inset-0 h-full w-full object-cover opacity-40"
+          src="/hero-promo-2026.png"
+          alt="Offre nouvelle année EduKaraib"
+          className="absolute inset-0 h-full w-full object-cover"
         />
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-24 flex items-center justify-center">
-          <div className="w-full max-w-3xl text-center">
-            <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight text-gray-900">
-              Trouvez le meilleur prof <span className="text-primary">près de chez vous</span>
-            </h1>
-            <p className="mt-4 text-lg md:text-xl text-gray-700">
-              Cours particuliers en Guyane : soutien scolaire, langues, musique, informatique et plus encore.
-            </p>
+        <div className="absolute inset-0 bg-white/60 backdrop-blur-sm" />
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-28">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
+        <div>
+          <span className="inline-block mb-4 px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold">
+            🎓 Offre nouvelle année – Guyane
+          </span>
+
+          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-gray-900">
+            Commencez l’année scolaire
+            <span className="block text-primary">avec les bons professeurs</span>
+          </h1>
+
+          <p className="mt-4 text-lg text-gray-700 max-w-xl">
+            1 à 2 heures de cours offertes avec nos packs de soutien scolaire.
+            Professeurs locaux, présentiel ou visio.
+          </p>
+
+          <ul className="mt-6 space-y-2 text-gray-700">
+            <li>✔ Professeurs vérifiés en Guyane</li>
+            <li>✔ Présentiel ou visio</li>
+            <li>✔ Packs économiques pour l’année</li>
+          </ul>
+        </div>
+          <div className="bg-white/95 backdrop-blur rounded-3xl shadow-xl border border-gray-100 p-4 md:p-6">
             <form
               onSubmit={onSearch}
-              className="mt-8 bg-white/95 backdrop-blur rounded-3xl shadow-xl border border-gray-100 p-4 md:p-5 grid grid-cols-1 md:grid-cols-4 gap-3"
+              className="grid grid-cols-1 md:grid-cols-4 gap-3"
             >
               <input
                 className="border rounded-2xl px-4 py-3 w-full text-base md:text-lg"
@@ -245,6 +262,7 @@ export default function Home() {
               <span className="inline-flex items-center gap-2"><span className="text-xl">🔒</span> Paiement sécurisé</span>
               <span className="inline-flex items-center gap-2"><span className="text-xl">⚡</span> Réservation rapide</span>
             </div>
+          </div>
           </div>
         </div>
       </header>
