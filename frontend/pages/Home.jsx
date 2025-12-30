@@ -256,20 +256,20 @@ export default function Home() {
               </button>
             </form>
 
-            <img
-              src="/packs-offre-2026.png"
-              alt="Offre packs EduKaraib"
-              className="mt-6 rounded-2xl shadow-lg w-full max-w-sm mx-auto"
-            />
-
             {/* Badges de confiance */}
             <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-600">
               <span className="inline-flex items-center gap-2"><span className="text-xl">⭐</span> Avis vérifiés</span>
               <span className="inline-flex items-center gap-2"><span className="text-xl">🔒</span> Paiement sécurisé</span>
               <span className="inline-flex items-center gap-2"><span className="text-xl">⚡</span> Réservation rapide</span>
-            </div>
-            
+            </div>           
           </div>
+
+          <img
+            src="/packs-offre-2026.png"
+            alt="Offre packs EduKaraib"
+            className="mt-6 rounded-2xl shadow-lg w-full max-w-sm mx-auto"
+          /> 
+
           </div>
         </div>
       </header>
