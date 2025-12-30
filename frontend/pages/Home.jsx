@@ -436,7 +436,7 @@ export default function Home() {
             </details>
             <details className="border rounded-xl p-4 mb-3">
               <summary className="cursor-pointer font-semibold">Puis-je avoir un cours en visio ?</summary>
-              <p className="mt-2 text-gray-600 text-sm">Les visios ne sont pas encore disponibles, nos équipes travaillent actuellement pour les rendre disponibles.</p>
+              <p className="mt-2 text-gray-600 text-sm">Les visios sont officiellement disponibles ! Connectez-vous dès maintenant et profitez pleinement de la fonctionnalité.</p>
             </details>
             <details className="border rounded-xl p-4">
               <summary className="cursor-pointer font-semibold">Comment sont gérés les paiements et remboursements ?</summary>

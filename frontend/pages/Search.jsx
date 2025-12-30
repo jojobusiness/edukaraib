@@ -172,7 +172,7 @@ export default function Search() {
       {/* Header titre/compteur */}
       <div className="max-w-6xl mx-auto px-4 pt-6">
         <h1 className="text-2xl md:text-3xl font-semibold bg-gradient-to-r from-indigo-600 to-pink-500 text-transparent bg-clip-text">
-          {subjectLabel} en {city || 'France'}
+          {subjectLabel} en {city || 'Guyane'}
         </h1>
         <p className="text-gray-600 mt-1">{resultsCount} prof(s) disponible(s)</p>
       </div>
