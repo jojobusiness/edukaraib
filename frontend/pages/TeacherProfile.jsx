@@ -7,139 +7,6 @@ import {
 } from 'firebase/firestore';
 import BookingModal from '../components/BookingModal';
 
-function computeBookedAndRemaining(lessonsDocs, teacherDoc, forStudentId) {
-  const bySlot = new Map();
-  lessonsDocs.forEach((docu) => {
-    const l = docu.data();
-    if (!l.slot_day && l.slot_hour == null) return;
-    const key = `${l.slot_day}|${l.slot_hour}`;
-    if (!bySlot.has(key)) bySlot.set(key, { individuals: [], groups: [] });
-    if (l.is_group) bySlot.get(key).groups.push({ id: docu.id, ...l });
-    else bySlot.get(key).individuals.push({ id: docu.id, ...l });
-  });
-  const blocked = [];
-  const remainingMap = {};
-
-  for (const [key, { individuals, groups }] of bySlot.entries()) {
-    const [day, hourStr] = key.split('|');
-    const hour = Number(hourStr);
-    const label = `${day}:${hour}`;
-
-    // Helper: statut "actif" (= occupe une place) si pas rejeté/supprimé
-    const isActive = (s) =>
-      !['rejected','removed','deleted'].includes(String(s || '').toLowerCase());
-
-    // --- NOUVEAU: regarder si l'enfant courant est déjà "actif" sur un individuel de ce créneau
-    let childActiveOnIndividual = false;
-    let anyActiveIndividual = false;
-
-    for (const l of individuals) {
-      const ownerSid =
-        l?.student_id ||
-        (Array.isArray(l?.participant_ids) && l.participant_ids.length === 1
-          ? l.participant_ids[0]
-          : null);
-
-      // statut de l'élève propriétaire
-      const st = ownerSid
-        ? (l?.participantsMap?.[ownerSid]?.status ?? l?.status ?? 'booked')
-        : (l?.status ?? 'booked');
-
-      if (isActive(st)) {
-        anyActiveIndividual = true;
-        // si l'individuel "actif" appartient à l'enfant sélectionné, bloquer POUR LUI
-        if (forStudentId && ownerSid === forStudentId) {
-          childActiveOnIndividual = true;
-        }
-      }
-    }
-
-    // 👉 Cas 1: l'enfant courant est déjà pris en individuel (pending/accepted/confirmed)
-    // => on BLOQUE pour l'enfant (badge "pris" dans l'UI)
-    if (childActiveOnIndividual) {
-      blocked.push({ day, hour });
-      // on continue pour publier quand même les places restantes si groupe activé (voir plus bas)
-    }
-
-    // 👉 Cas 2: aucun individuel actif pour l'enfant, mais au moins un individuel actif existe
-    // - si le prof autorise les groupes (capacité > 1), on NE bloque PAS globalement,
-    //   on publie la capacité restante théorique = cap défaut - 1
-    // - sinon, on bloque le créneau (comportement historique)
-    const teacherGroupEnabled = !!teacherDoc?.group_enabled;
-    const teacherDefaultCap =
-      typeof teacherDoc?.group_capacity === 'number' && teacherDoc.group_capacity > 1
-        ? Math.floor(teacherDoc.group_capacity)
-        : 1;
-
-    if (anyActiveIndividual && !childActiveOnIndividual) {
-      if (teacherGroupEnabled && teacherDefaultCap > 1) {
-        const capLeft = Math.max(0, teacherDefaultCap - 1);
-        if (capLeft > 0) {
-          remainingMap[label] = Math.max(remainingMap[label] || 0, capLeft);
-        }
-        // pas de blocked ici → les autres peuvent rejoindre
-      } else {
-        blocked.push({ day, hour });
-      }
-    }
-
-    if (groups.length > 0) {
-      // 1) Calculer la capacité restante globale pour l’affichage (toujours)
-      let slotRemaining = 0;
-      let hasAnyAvailableGroup = false;
-
-      groups.forEach((g) => {
-        const cap = Number(g.capacity || 0) > 0
-          ? Number(g.capacity)
-          : (teacherDefaultCap > 1 ? teacherDefaultCap : 1);
-
-        const ids = Array.isArray(g.participant_ids) ? g.participant_ids : [];
-        const pm  = g.participantsMap || {};
-
-        // participants “actifs” = pas rejected/removed/deleted (=> pending inclus)
-        let occupied = 0;
-        const uniq = new Set(ids); // garde-fou anti-doublons
-        uniq.forEach((sid) => {
-          const st = String(pm?.[sid]?.status || 'pending').toLowerCase();
-          if (!['rejected','removed','deleted'].includes(st)) occupied += 1;
-        });
-
-        const remains = Math.max(0, cap - occupied);
-        if (remains > 0) {
-          hasAnyAvailableGroup = true;
-          slotRemaining = Math.max(slotRemaining, remains); // on garde le MAX
-        }
-      });
-
-      // 2) Écrire la capacité restante SI dispo
-      if (hasAnyAvailableGroup) {
-        remainingMap[label] = slotRemaining;
-      }
-
-      // 3) Puis décider si le créneau est “bloqué” pour l’enfant sélectionné
-      const childAlreadyIn = !!forStudentId && groups.some((g) => {
-        const ids = Array.isArray(g.participant_ids) ? g.participant_ids : [];
-        if (!ids.includes(forStudentId)) return false;
-        const st = String(g.participantsMap?.[forStudentId]?.status || 'pending').toLowerCase();
-        return !['removed','deleted','rejected'].includes(st); // pending/accepted/confirmed bloquent
-      });
-
-      if (!hasAnyAvailableGroup) {
-        // pas de place nulle part
-        blocked.push({ day, hour });
-      } else if (childAlreadyIn) {
-        // l’enfant a déjà une place “active” → on bloque POUR LUI,
-        // mais on a quand même mis remainingMap[label] pour l’affichage global
-        blocked.push({ day, hour });
-      }
-
-      continue;
-    }
-  }
-
-  return { blocked, remainingMap };
-}
-
 const DAYS_ORDER = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
 function pickDisplayName(x = {}) {
@@ -154,17 +21,6 @@ function pickAvatar(x = {}) {
 }
 function getReviewerId(r = {}) {
   return r.reviewer_id || r.author_id || r.user_id || r.student_id || r.created_by || null;
-}
-
-// Un participant "actif" = pas 'rejected' / 'removed' / 'deleted'
-const isActiveStatus = (s) => !['rejected','removed','deleted'].includes(String(s||'').toLowerCase());
-
-function activeParticipantsCount(lesson = {}) {
-  const ids = Array.isArray(lesson.participant_ids) ? lesson.participant_ids : [];
-  const pm  = lesson.participantsMap || {};
-  let n = 0;
-  ids.forEach((sid) => { if (isActiveStatus(pm?.[sid]?.status || lesson.status)) n++; });
-  return n;
 }
 
 const mondayOf = (d) => {
@@ -209,51 +65,13 @@ export default function TeacherProfile() {
   const [bookMode, setBookMode] = useState('presentiel'); // 'presentiel' | 'visio'
   const [packHours, setPackHours] = useState(1);          // 1 | 5 | 10
   
-  async function safelyApplyGroupSettings({ teacherId, wantGroup, capacity }) {
-    // wantGroup: boolean (true = activer groupé, false = individuel)
-    // capacity:  nombre (>=1)
-    const cap = Math.max(1, Number(capacity || 1));
-
-    const qLessons = query(collection(db, 'lessons'), where('teacher_id', '==', teacherId));
-    const snap = await getDocs(qLessons);
-
-    const updates = [];
-    for (const d of snap.docs) {
-      const l = d.data();
-
-      // 🔒 Ne JAMAIS modifier les leçons qui ont déjà des participants "actifs"
-      if (activeParticipantsCount(l) > 0) continue;
-
-      // Leçon "vide" => on peut ajuster son "format"
-      const ref = doc(db, 'lessons', d.id);
-      const patch = {
-        is_group: !!wantGroup,
-        capacity: wantGroup ? cap : 1,
-        // On ne touche PAS au status s'il y a des participants (déjà exclu ci-dessus)
-        // Ici la leçon est vide: status peut rester tel quel (booked, draft, etc.)
-      };
-
-      // Hygiène: enlever d’éventuels résidus pack “globaux” au niveau leçon
-      patch.is_pack = deleteField();
-      patch.pack_type = deleteField();
-      patch.pack_mode = deleteField();
-      patch.pack_hours = deleteField();
-      patch.pack_hours_total = deleteField();
-      patch.pack_hours_remaining = deleteField();
-
-      updates.push(updateDoc(ref, patch));
-    }
-
-    if (updates.length) await Promise.allSettled(updates);
-  }
-
   // Charger prof
   useEffect(() => {
     const unsubTeacher = onSnapshot(doc(db, 'users', teacherId), (snap) => {
       if (snap.exists()) {
         const t = { ...snap.data(), id: teacherId };
         setTeacher(t);
-        setBookMode('presentiel'); // défaut
+        setBookMode(t.visio_enabled && !t.presentiel_enabled ? 'visio' : 'presentiel');
       } else {
         setTeacher(null);
       }
@@ -953,12 +771,23 @@ export default function TeacherProfile() {
   const displayPack5Visio  = p5VisioRaw  != null ? p5VisioRaw  + 50  : null;
   const displayPack10Visio = p10VisioRaw != null ? p10VisioRaw + 100 : null;
 
+  const presentielOnly = !!teacher.presentiel_enabled && !teacher.visio_enabled;
+  const visioOnly = !!teacher.visio_enabled && !teacher.presentiel_enabled;
+  const onlyMode = presentielOnly ? 'presentiel' : (visioOnly ? 'visio' : null);
+
   // —————————— UI / style inspiré Superprof ——————————
   return (
     <div className="min-h-screen w-full bg-gradient-to-b from-white via-gray-50 to-gray-100">
       {/* Header visuel */}
       <div className="relative bg-primary/5 border-b border-gray-100">
         <div className="max-w-5xl mx-auto px-4 py-10 md:py-14">
+            <button
+              type="button"
+              onClick={() => navigate('/search')}
+              className="mb-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-sm font-semibold"
+            >
+              ← Rechercher un professeur
+            </button>
           <div className="flex items-start gap-4">
             <img
               src={teacher.avatarUrl || teacher.avatar_url || teacher.photoURL || '/avatar-default.png'}
@@ -978,18 +807,29 @@ export default function TeacherProfile() {
               )}
               {/* Tarifs en badges */}
               <div className="mt-4 flex flex-wrap gap-2">
-                <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
-                  Présentiel : <b>{displayHourPresentiel != null ? `${displayHourPresentiel.toFixed(2)} € / h` : '—'}</b>
-                </span>
-                <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
-                  Visio : <b>{teacher.visio_enabled ? `${displayHourVisio.toFixed(2)} € / h` : 'Non proposé'}</b>
-                </span>
-                <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
-                  Pack 5h (présentiel) : <b>{displayPack5Presentiel != null ? `${displayPack5Presentiel.toFixed(2)} €` : '—'}</b>
-                </span>
-                <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
-                  Pack 10h (présentiel) : <b>{displayPack10Presentiel != null ? `${displayPack10Presentiel.toFixed(2)} €` : '—'}</b>
-                </span>
+                {teacher.presentiel_enabled && (
+                  <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
+                    Présentiel : <b>{displayHourPresentiel != null ? `${displayHourPresentiel.toFixed(2)} € / h` : '—'}</b>
+                  </span>
+                )}
+
+                {teacher.visio_enabled && (
+                  <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
+                    Visio : <b>{displayHourVisio != null ? `${displayHourVisio.toFixed(2)} € / h` : '—'}</b>
+                  </span>
+                )}
+
+                {teacher.presentiel_enabled && (
+                  <>
+                    <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
+                      Pack 5h (présentiel) : <b>{displayPack5Presentiel != null ? `${displayPack5Presentiel.toFixed(2)} €` : '—'}</b>
+                    </span>
+                    <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
+                      Pack 10h (présentiel) : <b>{displayPack10Presentiel != null ? `${displayPack10Presentiel.toFixed(2)} €` : '—'}</b>
+                    </span>
+                  </>
+                )}
+
                 {teacher.visio_enabled && (
                   <>
                     <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
@@ -1008,6 +848,11 @@ export default function TeacherProfile() {
           <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1">Mode</label>
+            {onlyMode ? (
+              <div className="w-full border rounded-xl px-3 py-2 bg-gray-50 text-slate-800 font-semibold">
+                {onlyMode === 'visio' ? 'Visio' : 'Présentiel'}
+              </div>
+            ) : (
               <select
                 className="w-full border rounded-xl px-3 py-2"
                 value={bookMode}
@@ -1016,6 +861,7 @@ export default function TeacherProfile() {
                 <option value="presentiel">Présentiel</option>
                 {teacher.visio_enabled && <option value="visio">Visio</option>}
               </select>
+            )}
             </div>
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1">Pack</label>
@@ -1182,17 +1028,36 @@ export default function TeacherProfile() {
             <hr className="my-4 border-gray-100" />
             <h4 className="text-sm font-semibold text-slate-900">Tarifs</h4>
             <div className="mt-2 text-sm text-slate-700 space-y-1">
-              <div>Présentiel : <b>{displayHourPresentiel != null ? `${displayHourPresentiel.toFixed(2)} € / h` : '—'}</b></div>
-              <div>Visio : <b>{teacher.visio_enabled ? `${displayHourVisio.toFixed(2)} € / h` : '—'}</b></div>
-
-              <div>Pack 5h (présentiel) : <b>{displayPack5Presentiel != null ? `${displayPack5Presentiel.toFixed(2)} €` : '—'}</b></div>
-              <div>Pack 10h (présentiel) : <b>{displayPack10Presentiel != null ? `${displayPack10Presentiel.toFixed(2)} €` : '—'}</b></div>
+              {teacher.presentiel_enabled && (
+                <>
+                  <div>
+                    Présentiel : <b>{displayHourPresentiel != null ? `${displayHourPresentiel.toFixed(2)} € / h` : '—'}</b>
+                  </div>
+                  <div>
+                    Pack 5h (présentiel) : <b>{displayPack5Presentiel != null ? `${displayPack5Presentiel.toFixed(2)} €` : '—'}</b>
+                  </div>
+                  <div>
+                    Pack 10h (présentiel) : <b>{displayPack10Presentiel != null ? `${displayPack10Presentiel.toFixed(2)} €` : '—'}</b>
+                  </div>
+                </>
+              )}
 
               {teacher.visio_enabled && (
                 <>
-                  <div>Pack 5h (visio) : <b>{displayPack5Visio != null ? `${displayPack5Visio.toFixed(2)} €` : '—'}</b></div>
-                  <div>Pack 10h (visio) : <b>{displayPack10Visio != null ? `${displayPack10Visio.toFixed(2)} €` : '—'}</b></div>
+                  <div>
+                    Visio : <b>{displayHourVisio != null ? `${displayHourVisio.toFixed(2)} € / h` : '—'}</b>
+                  </div>
+                  <div>
+                    Pack 5h (visio) : <b>{displayPack5Visio != null ? `${displayPack5Visio.toFixed(2)} €` : '—'}</b>
+                  </div>
+                  <div>
+                    Pack 10h (visio) : <b>{displayPack10Visio != null ? `${displayPack10Visio.toFixed(2)} €` : '—'}</b>
+                  </div>
                 </>
+              )}
+
+              {!teacher.presentiel_enabled && !teacher.visio_enabled && (
+                <div className="text-gray-500">Tarifs non disponibles.</div>
               )}
             </div>
           </div>
