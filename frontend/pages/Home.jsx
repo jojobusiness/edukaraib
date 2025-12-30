@@ -263,13 +263,6 @@ export default function Home() {
               <span className="inline-flex items-center gap-2"><span className="text-xl">⚡</span> Réservation rapide</span>
             </div>           
           </div>
-
-          <img
-            src="/packs-offre-2026.png"
-            alt="Offre packs EduKaraib"
-            className="mt-6 rounded-2xl shadow-lg w-full max-w-sm mx-auto"
-          /> 
-
           </div>
         </div>
       </header>
