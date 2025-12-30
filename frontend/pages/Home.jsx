@@ -190,79 +190,89 @@ export default function Home() {
 
       {/* HERO */}
       <header className="relative isolate overflow-hidden">
+        {/* Image desktop uniquement */}
         <img
           src="/hero-promo-2026.png"
           alt="Offre nouvelle année EduKaraib"
-          className="absolute inset-0 h-full w-full object-cover"
+          className="hidden lg:block absolute inset-0 h-full w-full object-cover"
         />
-        <div className="absolute inset-0 bg-white/60 backdrop-blur-sm" />
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-28">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
-        <div>
-          <span className="inline-block mb-4 px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold">
-            🎓 Offre nouvelle année – Guyane
-          </span>
 
-          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-gray-900">
-            Commencez l’année scolaire
-            <span className="block text-primary">avec les bons professeurs</span>
-          </h1>
+        {/* Overlay flou desktop uniquement */}
+        <div className="hidden lg:block absolute inset-0 bg-white/60 backdrop-blur-sm" />
 
-          <p className="mt-4 text-lg text-gray-700 max-w-xl">
-            1 à 2 heures de cours offertes avec nos packs de soutien scolaire.
-            Professeurs locaux, présentiel ou visio.
-          </p>
-
-          <ul className="mt-6 space-y-2 text-gray-700">
-            <li>✔ Professeurs vérifiés en Guyane</li>
-            <li>✔ Présentiel ou visio</li>
-            <li>✔ Packs économiques pour l’année</li>
-          </ul>
-        </div>
-          <div className="bg-white/95 backdrop-blur rounded-3xl shadow-xl border border-gray-100 p-4 md:p-6 mt-6 lg:mt-12">
-            <form
-              onSubmit={onSearch}
-              className="grid grid-cols-1 md:grid-cols-4 gap-3"
-            >
-              <input
-                className="border rounded-2xl px-4 py-3 w-full text-base md:text-lg"
-                placeholder="Quelle matière ? (ex: Mathématiques)"
-                value={qSubject}
-                onChange={(e) => setQSubject(e.target.value)}
-              />
-              <input
-                className="border rounded-2xl px-4 py-3 w-full text-base md:text-lg"
-                placeholder="Ville / commune (ex: Cayenne)"
-                value={qCity}
-                onChange={(e) => setQCity(e.target.value)}
-              />
-              <select
-                className="border rounded-2xl px-4 py-3 w-full text-base md:text-lg text-gray-700"
-                value={qLevel}
-                onChange={(e) => setQLevel(e.target.value)}
-              >
-                <option value="">Niveau</option>
-                <option value="Primaire">Primaire</option>
-                <option value="Collège">Collège</option>
-                <option value="Lycée">Lycée</option>
-                <option value="Supérieur">Supérieur</option>
-                <option value="Adulte">Adulte</option>
-              </select>
-              <button
-                type="submit"
-                className="bg-primary hover:bg-primary-dark text-white font-semibold rounded-2xl px-6 py-3 text-base md:text-lg"
-              >
-                Rechercher
-              </button>
-            </form>
-
-            {/* Badges de confiance */}
-            <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-600">
-              <span className="inline-flex items-center gap-2"><span className="text-xl">⭐</span> Avis vérifiés</span>
-              <span className="inline-flex items-center gap-2"><span className="text-xl">🔒</span> Paiement sécurisé</span>
-              <span className="inline-flex items-center gap-2"><span className="text-xl">⚡</span> Réservation rapide</span>
-            </div>           
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-28">
+          {/* Image mobile visible (pas en background) */}
+          <div className="lg:hidden mb-6">
+            <img
+              src="/hero-promo-2026.png"
+              alt="Offre nouvelle année EduKaraib"
+              className="w-full h-56 sm:h-64 object-cover rounded-2xl"
+            />
           </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
+            <div>
+              <span className="inline-block mb-4 px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold">
+                🎓 Offre nouvelle année – Guyane
+              </span>
+
+              <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-gray-900">
+                Commencez l’année scolaire
+                <span className="block text-primary">avec les bons professeurs</span>
+              </h1>
+
+              <p className="mt-4 text-lg text-gray-700 max-w-xl">
+                1 à 2 heures de cours offertes avec nos packs de soutien scolaire.
+                Professeurs locaux, présentiel ou visio.
+              </p>
+
+              <ul className="mt-6 space-y-2 text-gray-700">
+                <li>✔ Professeurs vérifiés en Guyane</li>
+                <li>✔ Présentiel ou visio</li>
+                <li>✔ Packs économiques pour l’année</li>
+              </ul>
+            </div>
+
+            <div className="bg-white/95 backdrop-blur rounded-3xl shadow-xl border border-gray-100 p-4 md:p-6 mt-6 lg:mt-12">
+              <form onSubmit={onSearch} className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <input
+                  className="border rounded-2xl px-4 py-3 w-full text-base md:text-lg"
+                  placeholder="Quelle matière ? (ex: Mathématiques)"
+                  value={qSubject}
+                  onChange={(e) => setQSubject(e.target.value)}
+                />
+                <input
+                  className="border rounded-2xl px-4 py-3 w-full text-base md:text-lg"
+                  placeholder="Ville / commune (ex: Cayenne)"
+                  value={qCity}
+                  onChange={(e) => setQCity(e.target.value)}
+                />
+                <select
+                  className="border rounded-2xl px-4 py-3 w-full text-base md:text-lg text-gray-700"
+                  value={qLevel}
+                  onChange={(e) => setQLevel(e.target.value)}
+                >
+                  <option value="">Niveau</option>
+                  <option value="Primaire">Primaire</option>
+                  <option value="Collège">Collège</option>
+                  <option value="Lycée">Lycée</option>
+                  <option value="Supérieur">Supérieur</option>
+                  <option value="Adulte">Adulte</option>
+                </select>
+                <button
+                  type="submit"
+                  className="bg-primary hover:bg-primary-dark text-white font-semibold rounded-2xl px-6 py-3 text-base md:text-lg"
+                >
+                  Rechercher
+                </button>
+              </form>
+
+              <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-600">
+                <span className="inline-flex items-center gap-2"><span className="text-xl">⭐</span> Avis vérifiés</span>
+                <span className="inline-flex items-center gap-2"><span className="text-xl">🔒</span> Paiement sécurisé</span>
+                <span className="inline-flex items-center gap-2"><span className="text-xl">⚡</span> Réservation rapide</span>
+              </div>
+            </div>
           </div>
         </div>
       </header>
