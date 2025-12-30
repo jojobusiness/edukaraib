@@ -201,17 +201,38 @@ export default function Home() {
         <div className="hidden lg:block absolute inset-0 bg-white/60 backdrop-blur-sm" />
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-28">
-          {/* Image mobile visible (pas en background) */}
-          <div className="lg:hidden mb-6">
+          {/* HERO MOBILE : image + texte superposé */}
+          <div className="lg:hidden relative h-[420px] rounded-3xl overflow-hidden mb-8">
+
+            {/* Image */}
             <img
               src="/hero-promo-2026.png"
               alt="Offre nouvelle année EduKaraib"
-              className="w-full h-56 sm:h-64 object-cover rounded-2xl"
+              className="absolute inset-0 w-full h-full object-cover"
             />
+
+            {/* Overlay flou */}
+            <div className="absolute inset-0 bg-white/60 backdrop-blur-md" />
+
+            {/* Texte */}
+            <div className="relative z-10 h-full flex flex-col justify-end p-5">
+              <span className="inline-block mb-2 px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold w-fit">
+                🎓 Offre nouvelle année – Guyane
+              </span>
+
+              <h1 className="text-2xl font-extrabold text-gray-900 leading-tight">
+                Commencez l’année scolaire
+                <span className="block text-primary">avec les bons professeurs</span>
+              </h1>
+
+              <p className="mt-2 text-sm text-gray-700">
+                1 à 2 heures de cours offertes avec nos packs.
+              </p>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
-            <div>
+            <div className="hidden lg:block">
               <span className="inline-block mb-4 px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold">
                 🎓 Offre nouvelle année – Guyane
               </span>
