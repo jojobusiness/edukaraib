@@ -197,7 +197,7 @@ export default function Home() {
         />
         <div className="absolute inset-0 bg-white/60 backdrop-blur-sm" />
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-28">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
         <div>
           <span className="inline-block mb-4 px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold">
             🎓 Offre nouvelle année – Guyane
@@ -219,7 +219,7 @@ export default function Home() {
             <li>✔ Packs économiques pour l’année</li>
           </ul>
         </div>
-          <div className="bg-white/95 backdrop-blur rounded-3xl shadow-xl border border-gray-100 p-4 md:p-6">
+          <div className="bg-white/95 backdrop-blur rounded-3xl shadow-xl border border-gray-100 p-4 md:p-6 mt-6 lg:mt-12">
             <form
               onSubmit={onSearch}
               className="grid grid-cols-1 md:grid-cols-4 gap-3"
