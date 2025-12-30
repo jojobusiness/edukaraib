@@ -47,26 +47,6 @@ const existsCity = (city) => {
 
 const TODAY = new Date().toISOString().split('T')[0];
 
-async function callDeleteAccount() {
-  const u = auth.currentUser;
-  if (!u) throw new Error("Not signed in");
-
-  const idToken = await u.getIdToken(true);
-  console.log("DELETE token starts:", idToken.slice(0, 20)); // juste pour voir que c'est pas vide
-
-  const r = await fetch('/api/delete-account', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${idToken}`,
-    },
-  });
-
-  const json = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(json?.error || `HTTP ${r.status}`);
-  return json;
-}
-
 export default function Profile() {
   const [userLoaded, setUserLoaded] = useState(false);
   const [showAvailDrawer, setShowAvailDrawer] = useState(false);
@@ -455,13 +435,22 @@ export default function Profile() {
   };
 
   async function callDeleteAccount() {
-    const idToken = await auth.currentUser.getIdToken(true);
+    const u = auth.currentUser;
+    if (!u) throw new Error("Not signed in");
+
+    const idToken = await u.getIdToken(true);
+    console.log("DELETE token starts:", idToken.slice(0, 20)); // juste pour voir que c'est pas vide
+
     const r = await fetch('/api/delete-account', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
     });
-    const json = await r.json();
-    if (!r.ok) throw new Error(json?.error || 'Deletion failed');
+
+    const json = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(json?.error || `HTTP ${r.status}`);
     return json;
   }
 
