@@ -184,6 +184,51 @@ export default function Home() {
     []
   );
 
+  const getModesLabel = (t) => {
+    const pres = !!t.presentiel_enabled;
+    const visio = !!t.visio_enabled;
+    if (pres && visio) return 'Visio + Présentiel';
+    if (pres) return 'Présentiel';
+    if (visio) return 'Visio';
+    return '';
+  };
+
+  const getDisplayNameParts = (t) => {
+    const fn = (t.firstName || '').trim();
+    const ln = (t.lastName || '').trim();
+
+    if (fn || ln) return { first: fn || 'Prof', last: ln || '' };
+
+    const full = (t.fullName || t.name || 'Professeur').trim();
+    const parts = full.split(' ').filter(Boolean);
+    if (parts.length <= 1) return { first: full, last: '' };
+
+    return { first: parts[0], last: parts.slice(1).join(' ') };
+  };
+
+  const getReviewCount = (t) =>
+    Number(t.reviewsCount ?? t.reviews_count ?? t.nbReviews ?? t.countReviews ?? 0);
+
+  const getRating = (t) =>
+    Number(t.avgRating ?? t.rating ?? 0);
+
+  const getPriceLines = (t) => {
+    const pres = !!t.presentiel_enabled;
+    const visio = !!t.visio_enabled;
+
+    const presPrice = Number(t.price_per_hour ?? t.presentiel_price_per_hour ?? 0);
+    const visioPrice = Number(t.visio_price_per_hour ?? 0);
+
+    const lines = [];
+    if (pres && presPrice > 0) lines.push({ label: 'Présentiel', price: presPrice });
+    if (visio && visioPrice > 0) lines.push({ label: 'Visio', price: visioPrice });
+
+    // fallback si pas les flags mais un prix existe
+    if (!lines.length && presPrice > 0) lines.push({ label: 'Cours', price: presPrice });
+
+    return lines;
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-white">
       <Navbar />
@@ -194,42 +239,52 @@ export default function Home() {
         <img
           src="/hero-promo-2026.png"
           alt="Offre nouvelle année EduKaraib"
-          className="hidden lg:block absolute inset-0 h-full w-full object-cover"
+          className="hidden lg:block absolute inset-0 h-full w-full object-cover object-right"
         />
 
         {/* Overlay flou desktop uniquement */}
         <div className="hidden lg:block absolute inset-0 bg-white/60 backdrop-blur-sm" />
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-28">
-          {/* HERO MOBILE : image + texte superposé */}
-          <div className="lg:hidden relative min-h-[520px] sm:min-h-[560px] rounded-3xl overflow-hidden mb-8">
-
-            {/* Image */}
+        {/* HERO MOBILE : image + texte superposé (complet) */}
+        <div className="lg:hidden relative rounded-3xl overflow-hidden mb-8">
+          {/* Image */}
+          <div className="relative min-h-[640px]">
             <img
               src="/hero-promo-2026.png"
               alt="Offre nouvelle année EduKaraib"
-              className="absolute inset-0 w-full h-full object-cover"
+              className="absolute inset-0 w-full h-full object-cover object-[70%_center]"
             />
 
-            {/* Overlay flou */}
-            <div className="absolute inset-0 bg-white/60 backdrop-blur-md" />
+            {/* léger voile pour lisibilité */}
+            <div className="absolute inset-0 bg-white/35" />
 
-            {/* Texte */}
-            <div className="relative z-10 h-full flex flex-col justify-between p-5">
-              <span className="inline-block mb-2 px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold w-fit">
-                🎓 Offre nouvelle année – Guyane
-              </span>
+            {/* Bloc texte en bas */}
+            <div className="absolute inset-x-0 bottom-0 p-4">
+              <div className="rounded-2xl bg-white/80 backdrop-blur-md border border-white/60 shadow-lg p-4">
+                <span className="inline-flex items-center gap-2 mb-3 px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold w-fit">
+                  🎓 Offre nouvelle année – Guyane
+                </span>
 
-              <h1 className="text-2xl font-extrabold text-gray-900 leading-tight">
-                Commencez l’année scolaire
-                <span className="block text-primary">avec les bons professeurs</span>
-              </h1>
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 leading-tight">
+                  Commencez l’année scolaire
+                  <span className="block text-primary">avec les bons professeurs</span>
+                </h1>
 
-              <p className="mt-2 text-sm text-gray-700">
-                1 à 2 heures de cours offertes avec nos packs.
-              </p>
+                <p className="mt-2 text-sm text-gray-700">
+                  1 à 2 heures de cours offertes avec nos packs de soutien scolaire.
+                  Professeurs locaux, présentiel ou visio.
+                </p>
+
+                <ul className="mt-3 space-y-1 text-sm text-gray-700">
+                  <li className="flex items-center gap-2"><span className="text-primary">✔</span> Professeurs vérifiés en Guyane</li>
+                  <li className="flex items-center gap-2"><span className="text-primary">✔</span> Présentiel ou visio</li>
+                  <li className="flex items-center gap-2"><span className="text-primary">✔</span> Packs économiques pour l’année</li>
+                </ul>
+              </div>
             </div>
           </div>
+        </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
             <div className="hidden lg:block">
@@ -311,44 +366,147 @@ export default function Home() {
           ) : teachers.length === 0 ? (
             <div className="py-12 text-center text-gray-400">Aucun professeur pour le moment.</div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
-              {teachers.map((prof) => (
-                <Link
-                  key={prof.id}
-                  to={`/profils/${prof.id}`}
-                  className="group border rounded-2xl overflow-hidden bg-white hover:shadow-xl transition"
-                >
-                  <div className="aspect-square bg-gray-100 overflow-hidden">
-                    <img
-                      src={prof.avatarUrl || prof.photoURL || '/avatar-default.png'}
-                      alt={prof.fullName || 'Professeur'}
-                      className="h-full w-full object-cover group-hover:scale-105 transition"
-                    />
-                  </div>
-                  <div className="p-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <h3 className="font-semibold truncate">{prof.fullName || 'Professeur'}</h3>
-                      {Number(prof.avgRating ?? prof.rating) > 0 && (
-                        <span className="text-sm text-amber-600">{Number(prof.avgRating ?? prof.rating)}★</span>
-                      )}
-                    </div>
-                    <div className="mt-1 text-sm text-gray-600 truncate">
-                      {Array.isArray(prof.subjects) && prof.subjects.length > 0
+            <>
+              {/* MOBILE : slider horizontal */}
+              <div className="sm:hidden -mx-4 px-4 overflow-x-auto pb-2">
+                <div className="flex gap-4 snap-x snap-mandatory">
+                  {teachers.slice(0, 12).map((prof) => {
+                    const { first, last } = getDisplayNameParts(prof);
+                    const modes = getModesLabel(prof);
+                    const rating = getRating(prof);
+                    const reviewsCount = getReviewCount(prof);
+                    const subject =
+                      Array.isArray(prof.subjects) && prof.subjects.length > 0
                         ? prof.subjects.join(', ')
-                        : prof.main_subject || 'Matière non spécifiée'}
+                        : prof.main_subject || 'Matière non spécifiée';
+                    const bio = (prof.bio || '').trim();
+                    const prices = getPriceLines(prof);
+
+                    return (
+                      <Link
+                        key={prof.id}
+                        to={`/profils/${prof.id}`}
+                        className="snap-start shrink-0 w-[78%] max-w-[320px] rounded-3xl overflow-hidden bg-white border shadow-sm"
+                      >
+                        {/* IMAGE + NOM SUR IMAGE */}
+                        <div className="relative h-60 bg-gray-100">
+                          <img
+                            src={prof.avatarUrl || prof.photoURL || '/avatar-default.png'}
+                            alt={prof.fullName || 'Professeur'}
+                            className="absolute inset-0 h-full w-full object-cover"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+
+                          <div className="absolute left-4 right-4 bottom-4 text-white">
+                            <div className="flex items-end justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-lg font-extrabold leading-none truncate">{first}</div>
+                                {last && <div className="text-sm opacity-95 truncate">{last}</div>}
+                              </div>
+
+                              {modes && (
+                                <span className="shrink-0 text-xs font-semibold px-3 py-1 rounded-full bg-white/20 border border-white/25 backdrop-blur">
+                                  {modes}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* CONTENU */}
+                        <div className="p-4">
+                          <div className="flex items-center gap-2 text-sm">
+                            {rating > 0 ? (
+                              <>
+                                <span className="text-amber-600 font-semibold">⭐ {rating.toFixed(1)}</span>
+                                <span className="text-gray-500">({reviewsCount} avis)</span>
+                              </>
+                            ) : (
+                              <span className="text-gray-500">Nouveau professeur</span>
+                            )}
+                          </div>
+
+                          <div className="mt-2 text-sm text-gray-800">
+                            <span className="font-semibold">{subject}</span>
+                            {bio ? <span className="text-gray-600"> — {bio}</span> : null}
+                          </div>
+
+                          <div className="mt-3 space-y-1">
+                            {prices.map((p) => (
+                              <div key={p.label} className="flex items-center justify-between text-sm">
+                                <span className="text-gray-600">{p.label}</span>
+                                <span className="font-extrabold text-primary">
+                                  {p.price.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}/h
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* DESKTOP : grid normal */}
+              <div className="hidden sm:grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
+                {teachers.map((prof) => (
+                  <Link
+                    key={prof.id}
+                    to={`/profils/${prof.id}`}
+                    className="group border rounded-2xl overflow-hidden bg-white hover:shadow-xl transition"
+                  >
+                    <div className="aspect-square bg-gray-100 overflow-hidden">
+                      <img
+                        src={prof.avatarUrl || prof.photoURL || '/avatar-default.png'}
+                        alt={prof.fullName || 'Professeur'}
+                        className="h-full w-full object-cover group-hover:scale-105 transition"
+                      />
                     </div>
-                    <div className="mt-1 text-sm text-gray-500">
-                      {prof.location || prof.city || 'Guyane'}
-                    </div>
-                    {prof.price_per_hour && (
-                      <div className="mt-2 font-semibold">
-                        {(Number(prof.price_per_hour) + 10).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })} / h
+                    <div className="p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="font-semibold truncate">{prof.fullName || 'Professeur'}</h3>
                       </div>
-                    )}
-                  </div>
-                </Link>
-              ))}
-            </div>
+
+                      {getModesLabel(prof) ? (
+                        <div className="mt-1 text-xs font-semibold text-primary">
+                          {getModesLabel(prof)}
+                        </div>
+                      ) : null}
+
+                      <div className="mt-2 text-sm text-gray-600">
+                        {getRating(prof) > 0 ? (
+                          <>
+                            <span className="text-amber-600 font-semibold">⭐ {getRating(prof).toFixed(1)}</span>
+                            <span className="text-gray-500"> ({getReviewCount(prof)} avis)</span>
+                          </>
+                        ) : (
+                          <span className="text-gray-500">Nouveau professeur</span>
+                        )}
+                      </div>
+
+                      <div className="mt-2 text-sm text-gray-700">
+                        {(Array.isArray(prof.subjects) && prof.subjects.length > 0)
+                          ? prof.subjects.join(', ')
+                          : prof.main_subject || 'Matière non spécifiée'}
+                        {prof.bio ? <span className="text-gray-500"> — {prof.bio}</span> : null}
+                      </div>
+
+                      <div className="mt-3 space-y-1">
+                        {getPriceLines(prof).map((p) => (
+                          <div key={p.label} className="flex items-center justify-between text-sm">
+                            <span className="text-gray-600">{p.label}</span>
+                            <span className="font-semibold text-primary">
+                              {p.price.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}/h
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </section>
