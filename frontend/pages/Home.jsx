@@ -202,7 +202,7 @@ export default function Home() {
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-28">
           {/* HERO MOBILE : image + texte superposé */}
-          <div className="lg:hidden relative h-[420px] rounded-3xl overflow-hidden mb-8">
+          <div className="lg:hidden relative min-h-[520px] sm:min-h-[560px] rounded-3xl overflow-hidden mb-8">
 
             {/* Image */}
             <img
@@ -215,7 +215,7 @@ export default function Home() {
             <div className="absolute inset-0 bg-white/60 backdrop-blur-md" />
 
             {/* Texte */}
-            <div className="relative z-10 h-full flex flex-col justify-end p-5">
+            <div className="relative z-10 h-full flex flex-col justify-between p-5">
               <span className="inline-block mb-2 px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold w-fit">
                 🎓 Offre nouvelle année – Guyane
               </span>
