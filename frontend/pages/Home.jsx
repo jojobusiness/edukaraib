@@ -229,6 +229,19 @@ export default function Home() {
     return lines;
   };
 
+  const getSubjectLabel = (t) => {
+    const s = t.subjects;
+
+    // DB: parfois string ("Maths")
+    if (typeof s === 'string' && s.trim()) return s.trim();
+
+    // parfois array
+    if (Array.isArray(s) && s.length) return s.filter(Boolean).join(', ');
+
+    // fallback
+    return t.main_subject || 'Matière non spécifiée';
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-white">
       <Navbar />
@@ -246,43 +259,47 @@ export default function Home() {
         <div className="hidden lg:block absolute inset-0 bg-white/60 backdrop-blur-sm" />
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-28">
-        {/* HERO MOBILE : image + texte superposé (complet) */}
+        {/* HERO MOBILE : image + texte sur l'image (style PC) */}
         <div className="lg:hidden relative rounded-3xl overflow-hidden mb-8">
-          {/* Image */}
-          <div className="relative min-h-[640px]">
+          {/* hauteur adaptable : l'image suit le contenu */}
+          <div className="relative">
             <img
               src="/hero-promo-2026.png"
               alt="Offre nouvelle année EduKaraib"
-              className="absolute inset-0 w-full h-full object-cover object-[70%_center]"
+              className="absolute inset-0 w-full h-full object-cover object-[78%_center]"
             />
 
-            {/* léger voile pour lisibilité */}
-            <div className="absolute inset-0 bg-white/35" />
+            {/* voile + blur léger sur toute l'image */}
+            <div className="absolute inset-0 bg-white/35 backdrop-blur-[2px]" />
 
-            {/* Bloc texte en bas */}
-            <div className="absolute inset-x-0 bottom-0 p-4">
-              <div className="rounded-2xl bg-white/80 backdrop-blur-md border border-white/60 shadow-lg p-4">
+            {/* CONTENU superposé (pas de carte) */}
+            <div className="relative px-4 py-6">
+              {/* petit “panneau” blur juste derrière le texte, mais pas un bloc visible */}
+              <div className="inline-block rounded-2xl bg-white/55 backdrop-blur-md border border-white/40 shadow-sm px-4 py-3">
                 <span className="inline-flex items-center gap-2 mb-3 px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold w-fit">
                   🎓 Offre nouvelle année – Guyane
                 </span>
 
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 leading-tight">
+                <h1 className="text-3xl font-extrabold text-gray-900 leading-tight">
                   Commencez l’année scolaire
                   <span className="block text-primary">avec les bons professeurs</span>
                 </h1>
 
-                <p className="mt-2 text-sm text-gray-700">
+                <p className="mt-2 text-sm text-gray-800">
                   1 à 2 heures de cours offertes avec nos packs de soutien scolaire.
                   Professeurs locaux, présentiel ou visio.
                 </p>
 
-                <ul className="mt-3 space-y-1 text-sm text-gray-700">
+                <ul className="mt-3 space-y-1 text-sm text-gray-800">
                   <li className="flex items-center gap-2"><span className="text-primary">✔</span> Professeurs vérifiés en Guyane</li>
                   <li className="flex items-center gap-2"><span className="text-primary">✔</span> Présentiel ou visio</li>
                   <li className="flex items-center gap-2"><span className="text-primary">✔</span> Packs économiques pour l’année</li>
                 </ul>
               </div>
             </div>
+
+            {/* IMPORTANT : donne une “hauteur” à l’image via padding */}
+            <div className="pt-[70%]" />
           </div>
         </div>
 
@@ -422,7 +439,7 @@ export default function Home() {
                                 <span className="text-gray-500">({reviewsCount} avis)</span>
                               </>
                             ) : (
-                              <span className="text-gray-500">Nouveau professeur</span>
+                              <span className="text-gray-500">⭐ — (0 avis)</span>
                             )}
                           </div>
 
@@ -486,9 +503,7 @@ export default function Home() {
                       </div>
 
                       <div className="mt-2 text-sm text-gray-700">
-                        {(Array.isArray(prof.subjects) && prof.subjects.length > 0)
-                          ? prof.subjects.join(', ')
-                          : prof.main_subject || 'Matière non spécifiée'}
+                        {getSubjectLabel(prof)}
                         {prof.bio ? <span className="text-gray-500"> — {prof.bio}</span> : null}
                       </div>
 
