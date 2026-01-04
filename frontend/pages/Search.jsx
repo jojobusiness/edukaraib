@@ -37,11 +37,13 @@ export default function Search() {
     const n = typeof raw === 'string' ? Number(raw.replace(',', '.')) : Number(raw);
     return Number.isFinite(n) ? n : null;
   };
+
   const getSubjectsText = (subs) => {
     if (Array.isArray(subs)) return subs.join(' ');
     if (typeof subs === 'string') return subs;
     return '';
   };
+
   const hasLevel = (teacher, targetLevel) => {
     if (!targetLevel) return true;
     const lv = teacher.level || teacher.levels || teacher.teaching_levels;
@@ -49,14 +51,21 @@ export default function Search() {
     if (typeof lv === 'string') return lv.toLowerCase().includes(targetLevel.toLowerCase());
     return false;
   };
+
   const matchesMode = (teacher, m) => {
     if (!m) return true;
-    const online   = !!(teacher.mode_online ?? teacher.online ?? teacher.visio);
-    const inperson = !!(teacher.mode_inperson ?? teacher.presentiel ?? teacher.in_person);
+
+    const online =
+      !!(teacher.visio_enabled ?? teacher.mode_online ?? teacher.online ?? teacher.visio);
+
+    const inperson =
+      !!(teacher.presentiel_enabled ?? teacher.mode_inperson ?? teacher.presentiel ?? teacher.in_person);
+
     if (m === 'visio') return online === true;
     if (m === 'presentiel') return inperson === true;
     return true;
   };
+
   const matchesCity = (teacher, c) => {
     if (!c) return true;
     const tCity = (teacher.city || teacher.location || '').toLowerCase();
@@ -161,7 +170,11 @@ export default function Search() {
             </button>
             <button
               onClick={() => toggleMode('presentiel')}
-              className={`px-3 py-1.5 rounded-full text-sm border ${mode==='presentiel' ? 'bg-primary text-white border-primary' : 'bg-white hover:bg-gray-50 border-gray-200'}`}
+              className={`px-3 py-1.5 rounded-full text-sm border transition ${
+                mode==='presentiel'
+                  ? 'bg-primary text-white border-primary shadow-sm'
+                  : 'bg-white hover:bg-gray-100 border-gray-300 text-gray-700'
+              }`}
             >
               Présentiel
             </button>
@@ -339,10 +352,10 @@ function TeacherCard({ teacher, navigate }) {
 
   const subjectsText = Array.isArray(teacher.subjects)
     ? teacher.subjects.join(', ')
-    : (teacher.subjects || 'Matière non précisée');
+    : (teacher.subjects || teacher.subject || teacher.matiere || 'Matière non précisée');
 
-  const isVisio = !!(teacher.mode_online ?? teacher.online ?? teacher.visio);
-  const isPres  = !!(teacher.mode_inperson ?? teacher.presentiel ?? teacher.in_person);
+  const isVisio = !!(teacher.visio_enabled ?? teacher.mode_online ?? teacher.online ?? teacher.visio);
+  const isPres  = !!(teacher.presentiel_enabled ?? teacher.mode_inperson ?? teacher.presentiel ?? teacher.in_person);
 
   const rating = Number(teacher.avgRating ?? teacher.rating ?? 0);
   const reviewsCount = Number(teacher.reviewsCount ?? teacher.totalReviews ?? 0);
@@ -361,7 +374,7 @@ function TeacherCard({ teacher, navigate }) {
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition">
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition p-4 flex gap-4">
       <div className="shrink-0">
         <img
           src={teacher.avatarUrl || "/avatar-default.png"}
