@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import {
@@ -78,6 +78,72 @@ export default function TeacherProfile() {
     });
     return () => unsubTeacher();
   }, [teacherId]);
+
+  useEffect(() => {
+    if (!teacher) return;
+
+    const mainSubjectRaw = teacher.subjects || '';
+    const mainSubject = String(mainSubjectRaw).split(',')[0].trim(); // "Maths" si "Maths, Physique"
+
+    if (!mainSubject) {
+      setSimilarTeachers([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      setLoadingSimilar(true);
+      try {
+        // 1) On récupère des profs qui ont la même matière (subjects)
+        const qTeachers = query(
+          collection(db, 'users'),
+          where('role', '==', 'teacher'),
+          where('subjects', '==', mainSubject)
+        );
+
+        const snap = await getDocs(qTeachers);
+        const candidates = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(t => t.id !== teacherId);
+
+        // Limite raisonnable
+        const shortlist = candidates.slice(0, 10);
+
+        // 2) Calcul notes/nb avis par prof (client-side, petit volume)
+        const withRatings = await Promise.all(
+          shortlist.map(async (t) => {
+            const qRev = query(collection(db, 'reviews'), where('teacher_id', '==', t.id));
+            const revSnap = await getDocs(qRev);
+            const ratings = revSnap.docs.map(x => Number(x.data()?.rating || 0)).filter(n => !Number.isNaN(n));
+            const count = ratings.length;
+            const avg = count ? (ratings.reduce((a,b)=>a+b,0) / count) : 0;
+
+            return {
+              ...t,
+              avgRating: avg,
+              reviewsCount: count,
+            };
+          })
+        );
+
+        // 3) On tri : meilleurs en premier (note puis nb avis)
+        withRatings.sort((a, b) => {
+          if ((b.avgRating || 0) !== (a.avgRating || 0)) return (b.avgRating || 0) - (a.avgRating || 0);
+          return (b.reviewsCount || 0) - (a.reviewsCount || 0);
+        });
+
+        if (!cancelled) setSimilarTeachers(withRatings.slice(0, 8));
+      } catch (e) {
+        console.error('similar teachers error:', e);
+        if (!cancelled) setSimilarTeachers([]);
+      } finally {
+        if (!cancelled) setLoadingSimilar(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [teacher, teacherId]);
 
   // Avis
   useEffect(() => {
@@ -316,6 +382,52 @@ export default function TeacherProfile() {
       }
     })();
     return () => { cancelled = true; };
+  }, []);
+ 
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)'); // lg+
+    const TOP_OFFSET = 24; // = top-6
+
+    const compute = () => {
+      if (!mq.matches) {
+        setStickyMode('sticky');
+        setStickyTopPx(0);
+        return;
+      }
+      const layoutEl = layoutRef.current;
+      const stickyEl = stickyRef.current;
+      const stopEl = stopRef.current;
+      if (!layoutEl || !stickyEl || !stopEl) return;
+
+      const layoutTop = layoutEl.getBoundingClientRect().top + window.scrollY;
+      const stopTop = stopEl.getBoundingClientRect().top + window.scrollY;
+
+      const stickyHeight = stickyEl.offsetHeight;
+      const maxScrollTop = stopTop - stickyHeight - TOP_OFFSET; // scrollY max avant collision
+
+      // si on dépasse => on stoppe (position absolute dans le layout)
+      if (window.scrollY >= maxScrollTop) {
+        setStickyMode('stopped');
+        setStickyTopPx(maxScrollTop - layoutTop);
+      } else {
+        setStickyMode('sticky');
+        setStickyTopPx(0);
+      }
+    };
+
+    const onScroll = () => compute();
+    const onResize = () => compute();
+
+    compute();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onResize);
+    mq.addEventListener?.('change', compute);
+
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onResize);
+      mq.removeEventListener?.('change', compute);
+    };
   }, []);
 
   const meUid = auth.currentUser?.uid;
@@ -738,15 +850,16 @@ export default function TeacherProfile() {
     }
   };
 
-  if (!teacher) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="max-w-xl mx-auto bg-white p-6 rounded-xl shadow text-center">
-          Chargement…
-        </div>
-      </div>
-    );
-  }
+  // ✅ Profs similaires
+  const [similarTeachers, setSimilarTeachers] = useState([]);
+  const [loadingSimilar, setLoadingSimilar] = useState(false);
+
+  // ✅ Sticky stop propre
+  const layoutRef = useRef(null);       // conteneur "grid" global
+  const stickyRef = useRef(null);       // le bloc sticky (wrapper)
+  const stopRef = useRef(null);         // début de la section "profs similaires"
+  const [stickyMode, setStickyMode] = useState('sticky'); // 'sticky' | 'stopped'
+  const [stickyTopPx, setStickyTopPx] = useState(0);      // top absolu quand stopped
 
   const basePrice = Number(teacher.price_per_hour || 0);
   const visioPrice = effectiveVisioPrice(teacher);
@@ -804,9 +917,19 @@ export default function TeacherProfile() {
         ? "Présentiel"
         : "Mode non précisé";
 
+  if (!teacher) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="max-w-xl mx-auto bg-white p-6 rounded-xl shadow text-center">
+          Chargement…
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen w-full bg-white">
-      <div className="max-w-6xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+      <div ref={layoutRef} className="max-w-6xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 relative">
 
         {/* ========================= */}
         {/* COLONNE GAUCHE (CONTENU)  */}
@@ -913,16 +1036,95 @@ export default function TeacherProfile() {
             </div>
           </section>
 
-          {/* 🔻 Section “profs similaires” (à ajouter plus tard ici)
-              -> quand tu arrives ici, la sticky card s’arrête naturellement en bas de page */}
-          {/* <SimilarTeachers ... /> */}
+          {/* ========================= */}
+          {/* PROFS SIMILAIRES (STOPPER) */}
+          {/* ========================= */}
+          <section ref={stopRef} className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="text-xl md:text-2xl font-extrabold text-slate-900">Profs similaires</h2>
+              <span className="text-sm text-slate-500">
+                Même matière ({String(teacher.subjects || '').split(',')[0].trim() || '—'})
+              </span>
+            </div>
+
+            {loadingSimilar && (
+              <div className="mt-4 text-sm text-slate-500">Chargement…</div>
+            )}
+
+            {!loadingSimilar && similarTeachers.length === 0 && (
+              <div className="mt-4 text-sm text-slate-500">Aucun professeur similaire trouvé pour le moment.</div>
+            )}
+
+            {/* Mobile: slider horizontal / Desktop: grid */}
+            <div className="mt-5">
+              <div className="flex lg:grid lg:grid-cols-2 gap-4 overflow-x-auto lg:overflow-visible pb-2 snap-x snap-mandatory">
+                {similarTeachers.map((t) => {
+                  const first = t.firstName || '';
+                  const last = t.lastName || (t.fullName ? String(t.fullName).split(' ').slice(-1).join(' ') : '');
+                  const displayName = `${first} ${last}`.trim() || t.fullName || 'Professeur';
+                  const avatar = t.avatarUrl || t.avatar_url || t.photoURL || '/avatar-default.png';
+
+                  const modeLabelSmall =
+                    t.presentiel_enabled && t.visio_enabled
+                      ? 'Présentiel + Visio'
+                      : t.visio_enabled
+                        ? 'Visio'
+                        : t.presentiel_enabled
+                          ? 'Présentiel'
+                          : '—';
+
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => navigate(`/teacher/${t.id}`)}
+                      className="min-w-[260px] lg:min-w-0 snap-start text-left border rounded-2xl overflow-hidden hover:shadow-md transition bg-white"
+                      type="button"
+                    >
+                      <div className="relative">
+                        <img src={avatar} alt={displayName} className="w-full h-40 object-cover" />
+                        <div className="absolute bottom-2 left-2 px-2 py-1 rounded-full text-[11px] font-bold bg-black/65 text-white">
+                          {modeLabelSmall}
+                        </div>
+                      </div>
+
+                      <div className="p-4">
+                        <div className="font-extrabold text-slate-900">{displayName}</div>
+
+                        <div className="mt-2 flex items-center gap-2 text-sm">
+                          <span className="text-yellow-500">
+                            {"★".repeat(Math.round(t.avgRating || 0)).padEnd(5, "☆")}
+                          </span>
+                          <span className="text-slate-700 font-semibold">
+                            {(t.avgRating || 0).toFixed(1)}
+                          </span>
+                          <span className="text-slate-500">({t.reviewsCount || 0})</span>
+                        </div>
+
+                        <div className="mt-2 text-sm text-slate-600">
+                          {t.subjects || '—'} — {t.bio || t.about_me || 'Voir le profil'}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
         </main>
 
         {/* ========================= */}
         {/* COLONNE DROITE (STICKY)   */}
         {/* ========================= */}
-        <aside className="lg:col-span-4">
-          <div className="lg:sticky lg:top-6 space-y-4">
+        <aside className="lg:col-span-4 relative">
+          <div
+            ref={stickyRef}
+            className="space-y-4"
+            style={
+              stickyMode === 'stopped'
+                ? { position: 'absolute', top: `${stickyTopPx}px`, width: '100%' }
+                : { position: 'sticky', top: '24px' }
+            }
+          >
 
             {/* Carte prof unique (SUPERPROF LIKE) */}
             <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
