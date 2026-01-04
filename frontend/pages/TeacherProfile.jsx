@@ -65,6 +65,17 @@ export default function TeacherProfile() {
   const [bookMode, setBookMode] = useState('presentiel'); // 'presentiel' | 'visio'
   const [packHours, setPackHours] = useState(1);          // 1 | 5 | 10
   
+  // ✅ Profs similaires
+  const [similarTeachers, setSimilarTeachers] = useState([]);
+  const [loadingSimilar, setLoadingSimilar] = useState(false);
+
+  // ✅ Sticky stop propre
+  const layoutRef = useRef(null);       // conteneur "grid" global
+  const stickyRef = useRef(null);       // le bloc sticky (wrapper)
+  const stopRef = useRef(null);         // début de la section "profs similaires"
+  const [stickyMode, setStickyMode] = useState('sticky'); // 'sticky' | 'stopped'
+  const [stickyTopPx, setStickyTopPx] = useState(0);      // top absolu quand stopped
+
   // Charger prof
   useEffect(() => {
     const unsubTeacher = onSnapshot(doc(db, 'users', teacherId), (snap) => {
@@ -850,42 +861,33 @@ export default function TeacherProfile() {
     }
   };
 
-  // ✅ Profs similaires
-  const [similarTeachers, setSimilarTeachers] = useState([]);
-  const [loadingSimilar, setLoadingSimilar] = useState(false);
+  // ⚠️ IMPORTANT : ne jamais lire teacher.xxx sans guard
+  const safeTeacher = teacher || {};
 
-  // ✅ Sticky stop propre
-  const layoutRef = useRef(null);       // conteneur "grid" global
-  const stickyRef = useRef(null);       // le bloc sticky (wrapper)
-  const stopRef = useRef(null);         // début de la section "profs similaires"
-  const [stickyMode, setStickyMode] = useState('sticky'); // 'sticky' | 'stopped'
-  const [stickyTopPx, setStickyTopPx] = useState(0);      // top absolu quand stopped
-
-  const basePrice = Number(teacher.price_per_hour || 0);
-  const visioPrice = effectiveVisioPrice(teacher);
-  const p5 = pack5Display(teacher);
-  const p10 = pack10Display(teacher);
-
-  // --- UNIQUEMENT POUR L’AFFICHAGE DES PRIX (commissions incluses) ---
-  const computePack = (rate, hours) => (rate > 0 ? Number((hours * rate * 0.9).toFixed(2)) : null);
+  const basePrice = Number(safeTeacher?.price_per_hour || 0);
+  const visioPrice = effectiveVisioPrice(safeTeacher);
+  const p5 = pack5Display(safeTeacher);
+  const p10 = pack10Display(safeTeacher);
 
   const displayHourPresentiel = Number.isFinite(basePrice) ? basePrice + 10 : null;
 
   const effectiveVisio = (visioPrice ?? basePrice);
-  const displayHourVisio = teacher.visio_enabled ? (effectiveVisio + 10) : null;
+  const displayHourVisio = safeTeacher?.visio_enabled ? (effectiveVisio + 10) : null;
 
   // Packs présentiel
   const displayPack5Presentiel  = p5  != null ? p5  + 50  : null;
   const displayPack10Presentiel = p10 != null ? p10 + 100 : null;
 
-  // Packs visio
-  const p5VisioRaw  = teacher.visio_enabled ? computePack(effectiveVisio, 5)  : null;
-  const p10VisioRaw = teacher.visio_enabled ? computePack(effectiveVisio, 10) : null;
+  const computePack = (rate, hours) => (rate > 0 ? Number((hours * rate * 0.9).toFixed(2)) : null);
+
+  const p5VisioRaw  = safeTeacher?.visio_enabled ? computePack(effectiveVisio, 5)  : null;
+  const p10VisioRaw = safeTeacher?.visio_enabled ? computePack(effectiveVisio, 10) : null;
+
   const displayPack5Visio  = p5VisioRaw  != null ? p5VisioRaw  + 50  : null;
   const displayPack10Visio = p10VisioRaw != null ? p10VisioRaw + 100 : null;
 
-  const presentielOnly = !!teacher.presentiel_enabled && !teacher.visio_enabled;
-  const visioOnly = !!teacher.visio_enabled && !teacher.presentiel_enabled;
+  const presentielOnly = !!safeTeacher?.presentiel_enabled && !safeTeacher?.visio_enabled;
+  const visioOnly = !!safeTeacher?.visio_enabled && !safeTeacher?.presentiel_enabled;
   const onlyMode = presentielOnly ? 'presentiel' : (visioOnly ? 'visio' : null);
 
   // 🔸 Mets ici le chemin de TON image promo (dans /public par ex)
