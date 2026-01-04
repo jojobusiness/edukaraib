@@ -259,47 +259,41 @@ export default function Home() {
         <div className="hidden lg:block absolute inset-0 bg-white/60 backdrop-blur-sm" />
 
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 md:py-28">
-        {/* HERO MOBILE : image + texte sur l'image (style PC) */}
+        {/* HERO MOBILE : image + texte superposé (SANS bloc) */}
         <div className="lg:hidden relative rounded-3xl overflow-hidden mb-8">
-          {/* hauteur adaptable : l'image suit le contenu */}
-          <div className="relative">
+          {/* Image */}
+          <div className="relative min-h-[420px]">
             <img
               src="/hero-promo-2026.png"
               alt="Offre nouvelle année EduKaraib"
-              className="absolute inset-0 w-full h-full object-cover object-[78%_center]"
+              className="absolute inset-0 w-full h-full object-cover object-[82%_center] blur-[1px] scale-[1.02]"
             />
 
-            {/* voile + blur léger sur toute l'image */}
-            <div className="absolute inset-0 bg-white/35 backdrop-blur-[2px]" />
+            {/* voile pour lisibilité */}
+            <div className="absolute inset-0 bg-white/35" />
 
-            {/* CONTENU superposé (pas de carte) */}
-            <div className="relative px-4 py-6">
-              {/* petit “panneau” blur juste derrière le texte, mais pas un bloc visible */}
-              <div className="inline-block rounded-2xl bg-white/55 backdrop-blur-md border border-white/40 shadow-sm px-4 py-3">
-                <span className="inline-flex items-center gap-2 mb-3 px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold w-fit">
-                  🎓 Offre nouvelle année – Guyane
-                </span>
+            {/* Texte directement sur l’image */}
+            <div className="relative px-5 pt-6 pb-6">
+              <span className="inline-flex items-center gap-2 mb-4 px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold">
+                🎓 Offre nouvelle année – Guyane
+              </span>
 
-                <h1 className="text-3xl font-extrabold text-gray-900 leading-tight">
-                  Commencez l’année scolaire
-                  <span className="block text-primary">avec les bons professeurs</span>
-                </h1>
+              <h1 className="text-4xl font-extrabold text-gray-900 leading-tight">
+                Commencez l’année scolaire
+                <span className="block text-primary">avec les bons professeurs</span>
+              </h1>
 
-                <p className="mt-2 text-sm text-gray-800">
-                  1 à 2 heures de cours offertes avec nos packs de soutien scolaire.
-                  Professeurs locaux, présentiel ou visio.
-                </p>
+              <p className="mt-3 text-base text-gray-800 max-w-[32ch]">
+                1 à 2 heures de cours offertes avec nos packs de soutien scolaire.
+                Professeurs locaux, présentiel ou visio.
+              </p>
 
-                <ul className="mt-3 space-y-1 text-sm text-gray-800">
-                  <li className="flex items-center gap-2"><span className="text-primary">✔</span> Professeurs vérifiés en Guyane</li>
-                  <li className="flex items-center gap-2"><span className="text-primary">✔</span> Présentiel ou visio</li>
-                  <li className="flex items-center gap-2"><span className="text-primary">✔</span> Packs économiques pour l’année</li>
-                </ul>
-              </div>
+              <ul className="mt-4 space-y-2 text-base text-gray-800">
+                <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Professeurs vérifiés en Guyane</li>
+                <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Présentiel ou visio</li>
+                <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Packs économiques pour l’année</li>
+              </ul>
             </div>
-
-            {/* IMPORTANT : donne une “hauteur” à l’image via padding */}
-            <div className="pt-[70%]" />
           </div>
         </div>
 
@@ -392,10 +386,7 @@ export default function Home() {
                     const modes = getModesLabel(prof);
                     const rating = getRating(prof);
                     const reviewsCount = getReviewCount(prof);
-                    const subject =
-                      Array.isArray(prof.subjects) && prof.subjects.length > 0
-                        ? prof.subjects.join(', ')
-                        : prof.main_subject || 'Matière non spécifiée';
+                    const subject = getSubjectLabel(prof);
                     const bio = (prof.bio || '').trim();
                     const prices = getPriceLines(prof);
 
@@ -465,61 +456,80 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* DESKTOP : grid normal */}
+              {/* DESKTOP : grid */}
               <div className="hidden sm:grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
-                {teachers.map((prof) => (
-                  <Link
-                    key={prof.id}
-                    to={`/profils/${prof.id}`}
-                    className="group border rounded-2xl overflow-hidden bg-white hover:shadow-xl transition"
-                  >
-                    <div className="aspect-square bg-gray-100 overflow-hidden">
-                      <img
-                        src={prof.avatarUrl || prof.photoURL || '/avatar-default.png'}
-                        alt={prof.fullName || 'Professeur'}
-                        className="h-full w-full object-cover group-hover:scale-105 transition"
-                      />
-                    </div>
-                    <div className="p-4">
-                      <div className="flex items-center justify-between gap-2">
-                        <h3 className="font-semibold truncate">{prof.fullName || 'Professeur'}</h3>
-                      </div>
+                {teachers.map((prof) => {
+                  const { first, last } = getDisplayNameParts(prof);
+                  const modes = getModesLabel(prof);
+                  const rating = getRating(prof);
+                  const reviewsCount = getReviewCount(prof);
+                  const subject = getSubjectLabel(prof);
+                  const bio = (prof.bio || '').trim();
+                  const prices = getPriceLines(prof);
 
-                      {getModesLabel(prof) ? (
-                        <div className="mt-1 text-xs font-semibold text-primary">
-                          {getModesLabel(prof)}
-                        </div>
-                      ) : null}
+                  return (
+                    <Link
+                      key={prof.id}
+                      to={`/profils/${prof.id}`}
+                      className="group rounded-3xl overflow-hidden bg-white border hover:shadow-xl transition"
+                    >
+                      {/* IMAGE + NOM SUR IMAGE */}
+                      <div className="relative h-56 bg-gray-100">
+                        <img
+                          src={prof.avatarUrl || prof.photoURL || '/avatar-default.png'}
+                          alt={prof.fullName || 'Professeur'}
+                          className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
 
-                      <div className="mt-2 text-sm text-gray-600">
-                        {getRating(prof) > 0 ? (
-                          <>
-                            <span className="text-amber-600 font-semibold">⭐ {getRating(prof).toFixed(1)}</span>
-                            <span className="text-gray-500"> ({getReviewCount(prof)} avis)</span>
-                          </>
-                        ) : (
-                          <span className="text-gray-500">Nouveau professeur</span>
-                        )}
-                      </div>
+                        <div className="absolute left-4 right-4 bottom-4 text-white">
+                          <div className="flex items-end justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-lg font-extrabold leading-none truncate">{first}</div>
+                              {last && <div className="text-sm opacity-95 truncate">{last}</div>}
+                            </div>
 
-                      <div className="mt-2 text-sm text-gray-700">
-                        {getSubjectLabel(prof)}
-                        {prof.bio ? <span className="text-gray-500"> — {prof.bio}</span> : null}
-                      </div>
-
-                      <div className="mt-3 space-y-1">
-                        {getPriceLines(prof).map((p) => (
-                          <div key={p.label} className="flex items-center justify-between text-sm">
-                            <span className="text-gray-600">{p.label}</span>
-                            <span className="font-semibold text-primary">
-                              {p.price.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}/h
-                            </span>
+                            {modes && (
+                              <span className="shrink-0 text-xs font-semibold px-3 py-1 rounded-full bg-white/20 border border-white/25 backdrop-blur">
+                                {modes}
+                              </span>
+                            )}
                           </div>
-                        ))}
+                        </div>
                       </div>
-                    </div>
-                  </Link>
-                ))}
+
+                      {/* RESTE EN DESSOUS (pas un “bloc”) */}
+                      <div className="p-4">
+                        <div className="flex items-center gap-2 text-sm">
+                          {rating > 0 ? (
+                            <>
+                              <span className="text-amber-600 font-semibold">⭐ {rating.toFixed(1)}</span>
+                              <span className="text-gray-500">({reviewsCount} avis)</span>
+                            </>
+                          ) : (
+                            <span className="text-gray-500">⭐ — (0 avis)</span>
+                          )}
+                        </div>
+
+                        <div className="mt-2 text-sm text-gray-800">
+                          <span className="font-semibold">{subject}</span>
+                          {bio ? <span className="text-gray-600"> — {bio}</span> : null}
+                        </div>
+
+                        <div className="mt-3 space-y-1">
+                          {prices.map((p) => (
+                            <div key={p.label} className="flex items-center justify-between text-sm">
+                              <span className="text-gray-600">{p.label}</span>
+                              <span className="font-extrabold text-primary">
+                                {p.price.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })}/h
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
             </>
           )}
