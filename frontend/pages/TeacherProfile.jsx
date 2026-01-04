@@ -939,7 +939,7 @@ export default function TeacherProfile() {
               <img
                 src={teacher.avatarUrl || teacher.avatar_url || teacher.photoURL || "/avatar-default.png"}
                 alt={teacher.fullName || "Prof"}
-                className="w-full h-[70vh] min-h-[420px] max-h-[560px] object-cover block"
+                className="w-full h-[70vh] min-h-[420px] max-h-[560px] object-cover block rounded-b-3xl"
               />
 
               {/* badge mode dans l’image */}
@@ -949,9 +949,9 @@ export default function TeacherProfile() {
             </div>
 
             {/* Carte qui remonte sur l’image (Superprof-like) */}
-            <div className="-mt-10 px-4 pb-6">
+            <div className="-mt-24 px-4 pb-6 relative z-10">
               <div className="bg-white border border-gray-100 rounded-2xl shadow-lg p-5">
-                <div className="text-xl font-extrabold text-slate-900">
+                <div className="text-2xl font-extrabold text-slate-900 leading-tight">
                   {teacher.firstName || ""} {teacher.lastName || teacher.fullName || "Professeur"}
                 </div>
 
@@ -1287,7 +1287,7 @@ export default function TeacherProfile() {
                 <img
                   src={teacher.avatarUrl || teacher.avatar_url || teacher.photoURL || "/avatar-default.png"}
                   alt={teacher.fullName || "Prof"}
-                  className="w-full h-64 object-cover"
+                  className="w-full h-64 object-cover rounded-b-2xl"
                 />
 
                 <div className="absolute bottom-3 left-3 px-3 py-1.5 rounded-full text-xs font-bold bg-black/65 text-white">
