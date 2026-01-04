@@ -905,6 +905,16 @@ export default function TeacherProfile() {
 
   return (
     <div className="min-h-screen w-full bg-white">
+      <div className="max-w-6xl mx-auto px-4 pt-6">
+        <button
+          type="button"
+          onClick={() => navigate('/search')}
+          className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-slate-900"
+        >
+          <span className="text-lg">←</span>
+          Retour à la recherche
+        </button>
+      </div>
       <div ref={layoutRef} className="max-w-6xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 relative">
 
         {/* COLONNE GAUCHE (CONTENU)  */}
@@ -917,9 +927,42 @@ export default function TeacherProfile() {
               alt="Offre packs"
               className="w-full rounded-2xl border border-gray-100 shadow-sm object-cover"
             />
-            {/* Localisation sous l'image */}
-            <div className="mt-3 text-sm text-slate-600">
-              📍 {teacher.city || teacher.location || "Localisation non précisée"}
+            
+            {/* Bio (grande, très visible) */}
+            <div className="mt-4">
+              <div className="text-xl md:text-2xl font-extrabold text-slate-900 leading-snug">
+                {teacher.bio || teacher.about_me || "Le professeur n’a pas encore ajouté de bio."}
+              </div>
+            </div>
+
+            {/* Localisation sous l'image (bulle + icône, texte plus grand) */}
+            <div className="mt-4 flex justify-center sm:justify-start">
+              <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-5 py-3 shadow-sm">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  className="text-slate-700"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M12 21s7-4.35 7-11a7 7 0 10-14 0c0 6.65 7 11 7 11z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  />
+                  <path
+                    d="M12 10a2 2 0 100-4 2 2 0 000 4z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  />
+                </svg>
+
+                <span className="text-base md:text-lg font-semibold text-slate-900">
+                  Chez {teacher.firstName || teacher.fullName || "le prof"} :{" "}
+                  {teacher.city || teacher.location || "Localisation non précisée"}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1123,6 +1166,20 @@ export default function TeacherProfile() {
                   </span>
                   <span className="text-slate-700 font-semibold">{avgRating ? avgRating.toFixed(1) : "0.0"}</span>
                   <span className="text-slate-500">({reviewsCount} avis)</span>
+                </div>
+
+                {/* Tarifs à l'heure (visio / présentiel) */}
+                <div className="mt-2 text-sm text-slate-700">
+                  {teacher.presentiel_enabled && (
+                    <div>
+                      Présentiel : <span className="font-extrabold">{displayHourPresentiel != null ? `${displayHourPresentiel.toFixed(2)} € / h` : '—'}</span>
+                    </div>
+                  )}
+                  {teacher.visio_enabled && (
+                    <div>
+                      Visio : <span className="font-extrabold">{displayHourVisio != null ? `${displayHourVisio.toFixed(2)} € / h` : '—'}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* nb d’élèves */}
