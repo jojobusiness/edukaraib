@@ -919,6 +919,134 @@ export default function TeacherProfile() {
 
         {/* COLONNE GAUCHE (CONTENU)  */}
         <main className="lg:col-span-8 space-y-8">
+          {/* ===== HERO + CARD (MOBILE) ===== */}
+          <div className="lg:hidden">
+            {/* Image prof (dans la page) */}
+            <div className="relative">
+              <img
+                src={teacher.avatarUrl || teacher.avatar_url || teacher.photoURL || "/avatar-default.png"}
+                alt={teacher.fullName || "Prof"}
+                className="w-full h-[320px] object-cover rounded-2xl border border-gray-100"
+              />
+
+              {/* badge mode dans l’image */}
+              <div className="absolute bottom-4 left-4 px-3 py-1.5 rounded-full text-xs font-bold bg-black/65 text-white">
+                {modeLabel}
+              </div>
+            </div>
+
+            {/* Carte qui remonte sur l’image (Superprof-like) */}
+            <div className="-mt-10 px-2">
+              <div className="bg-white border border-gray-100 rounded-2xl shadow-lg p-5">
+                <div className="text-xl font-extrabold text-slate-900">
+                  {teacher.firstName || ""} {teacher.lastName || teacher.fullName || "Professeur"}
+                </div>
+
+                {/* étoiles + avis */}
+                <div className="mt-2 flex items-center gap-2 text-sm">
+                  <span className="text-yellow-500">
+                    {"★".repeat(Math.round(avgRating || 0)).padEnd(5, "☆")}
+                  </span>
+                  <span className="text-slate-700 font-semibold">
+                    {avgRating ? avgRating.toFixed(1) : "0.0"}
+                  </span>
+                  <span className="text-slate-500">({reviewsCount} avis)</span>
+                </div>
+
+                {/* Tarifs à l’heure (visio/presentiel) */}
+                <div className="mt-2 text-sm text-slate-700">
+                  {teacher.presentiel_enabled && (
+                    <div>
+                      Présentiel :{" "}
+                      <span className="font-extrabold">
+                        {displayHourPresentiel != null ? `${displayHourPresentiel.toFixed(2)} € / h` : "—"}
+                      </span>
+                    </div>
+                  )}
+                  {teacher.visio_enabled && (
+                    <div>
+                      Visio :{" "}
+                      <span className="font-extrabold">
+                        {displayHourVisio != null ? `${displayHourVisio.toFixed(2)} € / h` : "—"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* nb élèves */}
+                <div className="mt-2 text-sm text-slate-600">
+                  {uniqueStudentsCount} élève{uniqueStudentsCount > 1 ? "s" : ""} a déjà pris un cours avec ce professeur
+                </div>
+
+                {/* Bouton contacter */}
+                {!isOwnProfile && (
+                  <button
+                    className="mt-4 w-full bg-yellow-400 text-slate-900 px-5 py-3 rounded-xl font-semibold shadow hover:bg-yellow-500 transition"
+                    onClick={() => {
+                      if (!auth.currentUser) return navigate("/login");
+                      navigate(`/chat/${teacherId}`);
+                    }}
+                  >
+                    Contacter le professeur
+                  </button>
+                )}
+
+                {/* Sélecteurs côte à côte */}
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Mode</label>
+                    {onlyMode ? (
+                      <div className="w-full border rounded-xl px-3 py-2 bg-gray-50 text-slate-800 font-semibold text-sm">
+                        {onlyMode === "visio" ? "Visio" : "Présentiel"}
+                      </div>
+                    ) : (
+                      <select
+                        className="w-full border rounded-xl px-3 py-2 text-sm"
+                        value={bookMode}
+                        onChange={(e) => setBookMode(e.target.value)}
+                      >
+                        <option value="presentiel">Présentiel</option>
+                        {teacher.visio_enabled && <option value="visio">Visio</option>}
+                      </select>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Pack</label>
+                    <select
+                      className="w-full border rounded-xl px-3 py-2 text-sm"
+                      value={packHours}
+                      onChange={(e) => setPackHours(Number(e.target.value))}
+                    >
+                      <option value={1}>1h</option>
+                      <option value={5}>5h</option>
+                      <option value={10}>10h</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Réserver */}
+                {(!isTeacherUser && !isOwnProfile) && (
+                  <button
+                    className="mt-4 w-full bg-primary text-white px-5 py-3 rounded-xl font-semibold shadow hover:bg-primary-dark transition"
+                    onClick={() => {
+                      if (!auth.currentUser) return navigate("/login");
+                      setShowBooking(true);
+                      setConfirmationMsg("");
+                    }}
+                  >
+                    {isBooking ? "Envoi…" : "Réserver"}
+                  </button>
+                )}
+
+                {confirmationMsg && (
+                  <div className="mt-3 bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2 rounded-xl text-sm">
+                    {confirmationMsg}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
 
           {/* Image promo (à côté de la carte sticky, sans empiéter) */}
           <div className="w-full">
@@ -927,7 +1055,7 @@ export default function TeacherProfile() {
               alt="Offre packs"
               className="w-full rounded-2xl border border-gray-100 shadow-sm object-cover"
             />
-            
+
             {/* Bio (grande, très visible) */}
             <div className="mt-4">
               <div className="text-xl md:text-2xl font-extrabold text-slate-900 leading-snug">
