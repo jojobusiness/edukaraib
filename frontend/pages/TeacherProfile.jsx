@@ -917,7 +917,10 @@ export default function TeacherProfile() {
           </button>
         </div>
       </div>
-      <div ref={layoutRef} className="max-w-6xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 relative">
+      <div
+        ref={layoutRef}
+        className="max-w-6xl mx-auto px-0 lg:px-4 py-0 lg:py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 relative"
+      >
 
         {/* COLONNE GAUCHE (CONTENU)  */}
         <main className="lg:col-span-8 space-y-8">
@@ -926,17 +929,17 @@ export default function TeacherProfile() {
             <button
               type="button"
               onClick={() => navigate('/search')}
-              className="absolute top-4 left-4 z-20 w-10 h-10 rounded-full bg-white/90 shadow flex items-center justify-center text-slate-900"
+              className="absolute top-3 left-3 z-20 w-10 h-10 rounded-full bg-white/90 shadow flex items-center justify-center text-slate-900"
               aria-label="Retour"
             >
               ←
             </button>
             {/* Image prof (dans la page) */}
-            <div className="relative -mx-4">
+            <div className="relative w-full">
               <img
                 src={teacher.avatarUrl || teacher.avatar_url || teacher.photoURL || "/avatar-default.png"}
                 alt={teacher.fullName || "Prof"}
-                className="w-full h-[420px] sm:h-[480px] object-cover"
+                className="w-full h-[70vh] min-h-[420px] max-h-[560px] object-cover block"
               />
 
               {/* badge mode dans l’image */}
@@ -946,7 +949,7 @@ export default function TeacherProfile() {
             </div>
 
             {/* Carte qui remonte sur l’image (Superprof-like) */}
-            <div className="-mt-16 px-4">
+            <div className="-mt-10 px-4 pb-6">
               <div className="bg-white border border-gray-100 rounded-2xl shadow-lg p-5">
                 <div className="text-xl font-extrabold text-slate-900">
                   {teacher.firstName || ""} {teacher.lastName || teacher.fullName || "Professeur"}
