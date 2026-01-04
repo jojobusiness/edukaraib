@@ -293,6 +293,14 @@ export default function Home() {
     return 'Matière non spécifiée';
   };
 
+  const reviewBgClass = (id) => {
+    const colors = ['bg-yellow-100', 'bg-green-100', 'bg-blue-100'];
+    let hash = 0;
+    const s = String(id || '');
+    for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+    return colors[hash % colors.length];
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-white">
       <Navbar />
@@ -652,39 +660,131 @@ export default function Home() {
         <section className="py-12 bg-white">
           <div className="max-w-7xl mx-auto px-4">
             <h2 className="text-2xl font-bold mb-6">Ils nous font confiance</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+            {/* Mobile: slider horizontal | Desktop: grid */}
+            <div className="md:hidden -mx-4 px-4 overflow-x-auto pb-2">
+              <div className="flex gap-4 snap-x snap-mandatory">
+                {reviews.slice(0, 10).map((r) => {
+                  const t = r.teacher_id ? teacherMap.get(r.teacher_id) : null;
+
+                  const parentName =
+                    (r.fullName || r.userName || r.reviewerName || '').trim() || 'Parent';
+
+                  const avatar =
+                    r.userAvatar ||
+                    r.avatarUrl ||
+                    r.photoURL ||
+                    '/avatar-default.png';
+
+                  const profName =
+                    (t?.fullName || t?.name || [t?.firstName, t?.lastName].filter(Boolean).join(' ')).trim() ||
+                    'Professeur';
+
+                  const profSubject = getSubjectLabel(t || {});
+                  const starsCount = Math.max(0, Math.min(5, Math.round(Number(r.rating) || 0)));
+                  const stars = '★★★★★'.slice(0, starsCount);
+
+                  return (
+                    <div
+                      key={r.id}
+                      className={`snap-start shrink-0 w-[86%] max-w-[340px] rounded-3xl p-5 ${reviewBgClass(r.id)}`}
+                    >
+                      {/* header: avatar + prénom */}
+                      <div className="flex items-start gap-3">
+                        <img
+                          src={avatar}
+                          alt={parentName}
+                          className="h-12 w-12 rounded-full object-cover border border-white/60"
+                        />
+                        <div className="min-w-0">
+                          <div className="font-extrabold text-gray-900 leading-tight truncate">
+                            {parentName}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* nom prof + matière */}
+                      <div className="mt-4 text-sm text-gray-900 font-semibold">
+                        {profName}{' '}
+                        <span className="font-normal text-gray-700">
+                          (Prof {profSubject})
+                        </span>
+                      </div>
+
+                      {/* commentaire */}
+                      <p className="mt-3 text-gray-900/90 text-sm leading-relaxed">
+                        {r.comment}
+                      </p>
+
+                      {/* étoiles */}
+                      <div className="mt-4 flex items-center gap-2">
+                        <span className="text-amber-600 text-sm font-semibold">{stars}</span>
+                        <span className="text-gray-700 text-sm">
+                          {Number(r.rating || 0).toFixed(0)}/5
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Desktop */}
+            <div className="hidden md:grid grid-cols-3 gap-6">
               {reviews.slice(0, 6).map((r) => {
                 const t = r.teacher_id ? teacherMap.get(r.teacher_id) : null;
-                const reviewerName = r.fullName || r.userName || r.reviewerName || t?.fullName || t?.name || 'Utilisateur';
-                const reviewerAvatar =
+
+                const parentName =
+                  (r.fullName || r.userName || r.reviewerName || '').trim() || 'Parent';
+
+                const avatar =
                   r.userAvatar ||
                   r.avatarUrl ||
                   r.photoURL ||
-                  (r.user_id && teacherMap.get(r.user_id)?.avatarUrl) || // récupère la vraie photo de l’auteur si stockée
-                  (r.student_id && teacherMap.get(r.student_id)?.avatarUrl) ||
-                  (r.parent_id && teacherMap.get(r.parent_id)?.avatarUrl) ||
                   '/avatar-default.png';
-                const stars = '★★★★★'.slice(0, Math.round(Number(r.rating) || 0));
+
+                const profName =
+                  (t?.fullName || t?.name || [t?.firstName, t?.lastName].filter(Boolean).join(' ')).trim() ||
+                  'Professeur';
+
+                const profSubject = getSubjectLabel(t || {});
+                const starsCount = Math.max(0, Math.min(5, Math.round(Number(r.rating) || 0)));
+                const stars = '★★★★★'.slice(0, starsCount);
+
                 return (
                   <div
                     key={r.id}
-                    className="group border rounded-2xl overflow-hidden bg-white hover:shadow-xl transition"
+                    className={`rounded-3xl p-6 ${reviewBgClass(r.id)}`}
                   >
-                    <div className="aspect-[4/3] bg-gray-100 overflow-hidden">
+                    <div className="flex items-start gap-3">
                       <img
-                        src={reviewerAvatar}
-                        alt={reviewerName}
-                        className="h-full w-full object-cover group-hover:scale-105 transition"
+                        src={avatar}
+                        alt={parentName}
+                        className="h-12 w-12 rounded-full object-cover border border-white/60"
                       />
-                    </div>
-                    <div className="p-5">
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <h3 className="font-semibold text-primary truncate">{reviewerName}</h3>
-                        <span className="text-sm text-amber-600">{stars}</span>
+                      <div className="min-w-0">
+                        <div className="font-extrabold text-gray-900 leading-tight truncate">
+                          {parentName}
+                        </div>
                       </div>
-                      <p className="text-gray-700 text-sm leading-relaxed italic">
-                        “{r.comment}”
-                      </p>
+                    </div>
+
+                    <div className="mt-4 text-sm text-gray-900 font-semibold">
+                      {profName}{' '}
+                      <span className="font-normal text-gray-700">
+                        (Prof {profSubject})
+                      </span>
+                    </div>
+
+                    <p className="mt-3 text-gray-900/90 text-sm leading-relaxed">
+                      {r.comment}
+                    </p>
+
+                    <div className="mt-4 flex items-center gap-2">
+                      <span className="text-amber-600 text-sm font-semibold">{stars}</span>
+                      <span className="text-gray-700 text-sm">
+                        {Number(r.rating || 0).toFixed(0)}/5
+                      </span>
                     </div>
                   </div>
                 );
