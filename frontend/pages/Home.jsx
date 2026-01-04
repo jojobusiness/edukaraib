@@ -71,7 +71,7 @@ export default function Home() {
                 'Professeur',
               avatarUrl: u.avatarUrl || u.photoURL,
               location: u.city || u.location,
-              subjects: Array.isArray(u.subjects) ? u.subjects : [],
+              subjects: u.subjects ?? u.subjectsLabel ?? u.subject ?? u.main_subject,
               price_per_hour: u.price_per_hour || u.price,
               rating: u.rating,
             };
