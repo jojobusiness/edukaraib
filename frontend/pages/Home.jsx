@@ -156,6 +156,61 @@ export default function Home() {
     run();
   }, []);
 
+  // ── Agrégation avis par prof (avgRating + reviewsCount) ─────────
+  useEffect(() => {
+    const run = async () => {
+      try {
+        if (!teachers?.length) return;
+
+        const ids = teachers.map(t => t.id).filter(Boolean);
+
+        // Firestore: where("in") max 10 éléments
+        const chunks = [];
+        for (let i = 0; i < ids.length; i += 10) chunks.push(ids.slice(i, i + 10));
+
+        const stats = new Map(); // teacherId => { sum, count }
+
+        for (const chunk of chunks) {
+          const qRev = query(
+            collection(db, "reviews"),
+            where("teacher_id", "in", chunk)
+          );
+          const snap = await getDocs(qRev);
+
+          snap.docs.forEach(d => {
+            const r = d.data();
+            const tid = r.teacher_id;
+            const rating = Number(r.rating || 0);
+            if (!tid || rating <= 0) return;
+
+            const prev = stats.get(tid) || { sum: 0, count: 0 };
+            prev.sum += rating;
+            prev.count += 1;
+            stats.set(tid, prev);
+          });
+        }
+
+        // Injecte avg + count dans teachers
+        setTeachers(prev =>
+          prev.map(t => {
+            const s = stats.get(t.id);
+            if (!s) return { ...t, _avgRating: 0, _reviewsCount: 0 };
+            return {
+              ...t,
+              _avgRating: s.sum / s.count,
+              _reviewsCount: s.count,
+            };
+          })
+        );
+      } catch (e) {
+        console.error("Aggregation reviews failed:", e);
+      }
+    };
+
+    run();
+    // important: on relance quand les teachers changent
+  }, [teachers.length]);
+
   // ── Catégories / Villes ──────────────────────────────────────
   const categories = useMemo(
     () => [
@@ -207,10 +262,10 @@ export default function Home() {
   };
 
   const getReviewCount = (t) =>
-    Number(t.reviewsCount ?? t.reviews_count ?? t.nbReviews ?? t.countReviews ?? 0);
+    Number(t._reviewsCount ?? t.reviewsCount ?? t.reviews_count ?? t.nbReviews ?? t.countReviews ?? 0);
 
   const getRating = (t) =>
-    Number(t.avgRating ?? t.rating ?? 0);
+    Number(t._avgRating ?? t.avgRating ?? t.rating ?? 0);
 
   const getPriceLines = (t) => {
     const pres = !!t.presentiel_enabled;
@@ -230,16 +285,12 @@ export default function Home() {
   };
 
   const getSubjectLabel = (t) => {
-    const s = t.subjects;
+    const s = t.subjects ?? t.subject ?? t.main_subject;
 
-    // DB: parfois string ("Maths")
     if (typeof s === 'string' && s.trim()) return s.trim();
-
-    // parfois array
     if (Array.isArray(s) && s.length) return s.filter(Boolean).join(', ');
 
-    // fallback
-    return t.main_subject || 'Matière non spécifiée';
+    return 'Matière non spécifiée';
   };
 
   return (
@@ -394,10 +445,10 @@ export default function Home() {
                       <Link
                         key={prof.id}
                         to={`/profils/${prof.id}`}
-                        className="snap-start shrink-0 w-[78%] max-w-[320px] rounded-3xl overflow-hidden bg-white border shadow-sm"
+                        className="snap-start shrink-0 w-[78%] max-w-[320px]"
                       >
                         {/* IMAGE + NOM SUR IMAGE */}
-                        <div className="relative h-60 bg-gray-100">
+                        <div className="relative h-60 bg-gray-100 rounded-3xl overflow-hidden">
                           <img
                             src={prof.avatarUrl || prof.photoURL || '/avatar-default.png'}
                             alt={prof.fullName || 'Professeur'}
@@ -422,7 +473,7 @@ export default function Home() {
                         </div>
 
                         {/* CONTENU */}
-                        <div className="p-4">
+                        <div className="mt-3 px-1">
                           <div className="flex items-center gap-2 text-sm">
                             {rating > 0 ? (
                               <>
@@ -439,7 +490,7 @@ export default function Home() {
                             {bio ? <span className="text-gray-600"> — {bio}</span> : null}
                           </div>
 
-                          <div className="mt-3 space-y-1">
+                          <div className="mt-3 space-y-1">                           
                             {prices.map((p) => (
                               <div key={p.label} className="flex items-center justify-between text-sm">
                                 <span className="text-gray-600">{p.label}</span>
@@ -471,10 +522,10 @@ export default function Home() {
                     <Link
                       key={prof.id}
                       to={`/profils/${prof.id}`}
-                      className="group rounded-3xl overflow-hidden bg-white border hover:shadow-xl transition"
+                      className="group"
                     >
                       {/* IMAGE + NOM SUR IMAGE */}
-                      <div className="relative h-56 bg-gray-100">
+                      <div className="relative h-56 bg-gray-100 rounded-3xl overflow-hidden">
                         <img
                           src={prof.avatarUrl || prof.photoURL || '/avatar-default.png'}
                           alt={prof.fullName || 'Professeur'}
@@ -499,7 +550,7 @@ export default function Home() {
                       </div>
 
                       {/* RESTE EN DESSOUS (pas un “bloc”) */}
-                      <div className="p-4">
+                      <div className="mt-3 px-1">
                         <div className="flex items-center gap-2 text-sm">
                           {rating > 0 ? (
                             <>
