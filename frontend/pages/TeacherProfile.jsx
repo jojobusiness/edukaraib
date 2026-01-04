@@ -27,17 +27,16 @@ const mondayOf = (d) => {
   const x = new Date(d);
   const js = x.getDay();           // 0=Dim..6=Sam
   const off = (js + 6) % 7;        // 0=Lun..6=Dim
-  x.setHours(0,0,0,0);
+  x.setHours(0, 0, 0, 0);
   x.setDate(x.getDate() - off);
   return x;
 };
-const weekKeyOf = (d) => mondayOf(d).toISOString().slice(0,10); // "YYYY-MM-DD" du lundi
+const weekKeyOf = (d) => mondayOf(d).toISOString().slice(0, 10);
 
-// Date -> "YYYY-MM-DD" en heure locale
 const formatLocalDate = (d) => {
   if (!d) return null;
-  const y   = d.getFullYear();
-  const m   = String(d.getMonth() + 1).padStart(2, '0');
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 };
@@ -57,24 +56,22 @@ export default function TeacherProfile() {
   const [isBooking, setIsBooking] = useState(false);
   const [confirmationMsg, setConfirmationMsg] = useState('');
 
-  const [currentRole, setCurrentRole] = useState(null); // 'student' | 'teacher' | 'parent'
+  const [currentRole, setCurrentRole] = useState(null);
   const [children, setChildren] = useState([]);
   const [selectedStudentId, setSelectedStudentId] = useState('');
 
-  // ➕ Options de réservation (mode + pack)
-  const [bookMode, setBookMode] = useState('presentiel'); // 'presentiel' | 'visio'
-  const [packHours, setPackHours] = useState(1);          // 1 | 5 | 10
-  
-  // ✅ Profs similaires
+  const [bookMode, setBookMode] = useState('presentiel');
+  const [packHours, setPackHours] = useState(1);
+
   const [similarTeachers, setSimilarTeachers] = useState([]);
   const [loadingSimilar, setLoadingSimilar] = useState(false);
 
   // ✅ Sticky stop propre
-  const layoutRef = useRef(null);       // conteneur "grid" global
-  const stickyRef = useRef(null);       // le bloc sticky (wrapper)
-  const stopRef = useRef(null);         // début de la section "profs similaires"
+  const layoutRef = useRef(null);
+  const stickyRef = useRef(null);
+  const stopRef = useRef(null);
   const [stickyMode, setStickyMode] = useState('sticky'); // 'sticky' | 'stopped'
-  const [stickyTopPx, setStickyTopPx] = useState(0);      // top absolu quand stopped
+  const [stickyTopPx, setStickyTopPx] = useState(0);
 
   // Charger prof
   useEffect(() => {
@@ -90,11 +87,12 @@ export default function TeacherProfile() {
     return () => unsubTeacher();
   }, [teacherId]);
 
+  // ✅ Profs similaires (même matière)
   useEffect(() => {
     if (!teacher) return;
 
     const mainSubjectRaw = teacher.subjects || '';
-    const mainSubject = String(mainSubjectRaw).split(',')[0].trim(); // "Maths" si "Maths, Physique"
+    const mainSubject = String(mainSubjectRaw).split(',')[0].trim();
 
     if (!mainSubject) {
       setSimilarTeachers([]);
@@ -128,13 +126,9 @@ export default function TeacherProfile() {
             const revSnap = await getDocs(qRev);
             const ratings = revSnap.docs.map(x => Number(x.data()?.rating || 0)).filter(n => !Number.isNaN(n));
             const count = ratings.length;
-            const avg = count ? (ratings.reduce((a,b)=>a+b,0) / count) : 0;
+            const avg = count ? (ratings.reduce((a, b) => a + b, 0) / count) : 0;
 
-            return {
-              ...t,
-              avgRating: avg,
-              reviewsCount: count,
-            };
+            return { ...t, avgRating: avg, reviewsCount: count };
           })
         );
 
@@ -165,7 +159,7 @@ export default function TeacherProfile() {
     return () => unsub();
   }, [teacherId]);
 
-  // Dispos + infos de réservation (par date)
+  // Dispos + infos de réservation
   useEffect(() => {
     if (!teacher) return;
 
@@ -187,7 +181,7 @@ export default function TeacherProfile() {
           : 1;
 
       docs.forEach((l) => {
-        const day  = l.slot_day;
+        const day = l.slot_day;
         const hour = l.slot_hour;
         if (!day || typeof hour !== 'number') return;
 
@@ -199,9 +193,7 @@ export default function TeacherProfile() {
         let dateStr = l.date || null;
         if (!dateStr && l.startAt) {
           const d = new Date(l.startAt);
-          if (!Number.isNaN(d.getTime())) {
-            dateStr = formatLocalDate(d);
-          }
+          if (!Number.isNaN(d.getTime())) dateStr = formatLocalDate(d);
         }
 
         // clé semaine (lundi)
@@ -229,57 +221,35 @@ export default function TeacherProfile() {
         // places restantes pour les groupes (par DATE)
         if (l.is_group) {
           const ids = Array.isArray(l.participant_ids) ? l.participant_ids : [];
-          const pm  = l.participantsMap || {};
+          const pm = l.participantsMap || {};
           let occupied = 0;
           const uniq = new Set(ids);
           uniq.forEach((sid) => {
             const st = String(pm?.[sid]?.status || l.status || 'pending').toLowerCase();
-            if (!['rejected','removed','deleted'].includes(st)) occupied += 1;
+            if (!['rejected', 'removed', 'deleted'].includes(st)) occupied += 1;
           });
 
           const cap = Number(l.capacity || 0) > 0 ? Number(l.capacity) : defaultCap;
           const remains = Math.max(0, cap - occupied);
 
           if (remains > 0) {
-            // si on a une date précise, on la privilégie
-            if (dateStr) {
-              const k = `${day}:${hour}:${dateStr}`;
-              remaining[k] = Math.max(remaining[k] || 0, remains);
-            } else {
-              const kPlain = `${day}:${hour}`;
-              remaining[kPlain] = Math.max(remaining[kPlain] || 0, remains);
-            }
-          }
-          // --- AJOUT : placer la capacité en clé DATE d'abord, puis SEMAINE puis SIMPLE ---
-          if (remains > 0) {
-              if (dateStr) {
-                  // clé par date précise
-                  remaining[`${day}:${hour}:${dateStr}`] = Math.max(remaining[`${day}:${hour}:${dateStr}`] || 0, remains);
-              }
-              if (weekStr) {
-                  // clé par semaine
-                  remaining[`${day}:${hour}:${weekStr}`] = Math.max(remaining[`${day}:${hour}:${weekStr}`] || 0, remains);
-              }
-              // clé simple fallback
-              remaining[`${day}:${hour}`] = Math.max(remaining[`${day}:${hour}`] || 0, remains);
+            if (dateStr) remaining[`${day}:${hour}:${dateStr}`] = Math.max(remaining[`${day}:${hour}:${dateStr}`] || 0, remains);
+            if (weekStr) remaining[`${day}:${hour}:${weekStr}`] = Math.max(remaining[`${day}:${hour}:${weekStr}`] || 0, remains);
+            remaining[`${day}:${hour}`] = Math.max(remaining[`${day}:${hour}`] || 0, remains);
           }
         }
       });
 
       // ➕ capacité par défaut pour les créneaux sans groupe
       const avail = teacher.availability || {};
-      const hasWeekKeys = Object.keys(avail).some((k) =>
-        /^\d{4}-\d{2}-\d{2}$/.test(k)
-      );
+      const hasWeekKeys = Object.keys(avail).some((k) => /^\d{4}-\d{2}-\d{2}$/.test(k));
 
       if (!hasWeekKeys) {
         // 🧷 Ancien format : { 'Lun': [9,10], ... }
         Object.entries(avail).forEach(([day, hours]) => {
           (hours || []).forEach((h) => {
             const plainKey = `${day}:${h}`;
-            if (remaining[plainKey] == null) {
-              remaining[plainKey] = defaultCap;
-            }
+            if (remaining[plainKey] == null) remaining[plainKey] = defaultCap;
           });
         });
       } else {
@@ -291,16 +261,9 @@ export default function TeacherProfile() {
           Object.entries(days).forEach(([day, hours]) => {
             (hours || []).forEach((h) => {
               const plainKey = `${day}:${h}`;
-              const weekK    = `${day}:${h}:${weekKey}`;
-
-              // fallback global pour tous les lundis 9h, etc.
-              if (remaining[plainKey] == null) {
-                remaining[plainKey] = defaultCap;
-              }
-              // clé spécifique à la semaine (2025-12-01, 2025-12-08, ...)
-              if (remaining[weekK] == null) {
-                remaining[weekK] = defaultCap;
-              }
+              const weekK = `${day}:${h}:${weekKey}`;
+              if (remaining[plainKey] == null) remaining[plainKey] = defaultCap;
+              if (remaining[weekK] == null) remaining[weekK] = defaultCap;
             });
           });
         });
@@ -313,7 +276,7 @@ export default function TeacherProfile() {
     return () => unsubLessons();
   }, [teacherId, teacher]);
 
-  // Infos auteurs d’avis (nom + avatar)
+  // Infos auteurs d’avis
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -386,20 +349,26 @@ export default function TeacherProfile() {
           });
         }
       } catch {
-        if (!cancelled) {
-         // En cas d’erreur de lecture des enfants, repli : soi-même
-         setSelectedStudentId((prev) => prev || me.uid);
-        } 
+        if (!cancelled) setSelectedStudentId((prev) => prev || me.uid);
       }
     })();
     return () => { cancelled = true; };
   }, []);
- 
+
+  // ✅ Sticky stop “propre” avec IntersectionObserver (et recalcul sur resize)
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)'); // lg+
-    const TOP_OFFSET = 24; // = top-6
+    const TOP_OFFSET = 24; // top-6
+    let observer = null;
 
-    const compute = () => {
+    const cleanup = () => {
+      if (observer) {
+        observer.disconnect();
+        observer = null;
+      }
+    };
+
+    const computeStop = () => {
       if (!mq.matches) {
         setStickyMode('sticky');
         setStickyTopPx(0);
@@ -412,11 +381,10 @@ export default function TeacherProfile() {
 
       const layoutTop = layoutEl.getBoundingClientRect().top + window.scrollY;
       const stopTop = stopEl.getBoundingClientRect().top + window.scrollY;
-
       const stickyHeight = stickyEl.offsetHeight;
-      const maxScrollTop = stopTop - stickyHeight - TOP_OFFSET; // scrollY max avant collision
 
-      // si on dépasse => on stoppe (position absolute dans le layout)
+      const maxScrollTop = stopTop - stickyHeight - TOP_OFFSET;
+
       if (window.scrollY >= maxScrollTop) {
         setStickyMode('stopped');
         setStickyTopPx(maxScrollTop - layoutTop);
@@ -426,25 +394,51 @@ export default function TeacherProfile() {
       }
     };
 
-    const onScroll = () => compute();
-    const onResize = () => compute();
+    const setup = () => {
+      cleanup();
+      computeStop();
 
-    compute();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onResize);
-    mq.addEventListener?.('change', compute);
+      if (!mq.matches) return;
+
+      const stickyEl = stickyRef.current;
+      const stopEl = stopRef.current;
+      if (!stickyEl || !stopEl) return;
+
+      const stickyHeight = stickyEl.offsetHeight;
+
+      observer = new IntersectionObserver(
+        () => computeStop(),
+        {
+          root: null,
+          threshold: 0,
+          // quand "profs similaires" arrive au niveau du bas de la sticky
+          rootMargin: `-${TOP_OFFSET + stickyHeight}px 0px 0px 0px`,
+        }
+      );
+
+      observer.observe(stopEl);
+    };
+
+    setup();
+    window.addEventListener('scroll', computeStop, { passive: true });
+    window.addEventListener('resize', setup);
+    mq.addEventListener?.('change', setup);
 
     return () => {
-      window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onResize);
-      mq.removeEventListener?.('change', compute);
+      cleanup();
+      window.removeEventListener('scroll', computeStop);
+      window.removeEventListener('resize', setup);
+      mq.removeEventListener?.('change', setup);
     };
   }, []);
 
+  // --- guards / helpers ---
   const meUid = auth.currentUser?.uid;
   const isTeacherUser = currentRole === 'teacher';
   const isOwnProfile = teacherId === auth.currentUser?.uid;
   const canBook = !isTeacherUser && !isOwnProfile;
+
+  const safeTeacher = teacher || {};
 
   const effectiveVisioPrice = (t) => {
     if (!t?.visio_enabled) return null;
@@ -465,8 +459,72 @@ export default function TeacherProfile() {
       : (base > 0 ? Number((10 * base * 0.9).toFixed(2)) : null);
   };
 
-// ...imports et tout ton code au-dessus inchangé...
+  // ⭐ Notes / nb avis
+  const ratings = reviews.map(r => Number(r.rating || 0)).filter(n => !Number.isNaN(n));
+  const reviewsCount = ratings.length;
+  const avgRating = reviewsCount ? (ratings.reduce((a, b) => a + b, 0) / reviewsCount) : 0;
 
+  // 👥 nb élèves uniques (depuis lessons)
+  const uniqueStudentsCount = useMemo(() => {
+    const ids = new Set();
+    bookedSlots.forEach(l => {
+      const sid = l.student_id;
+      if (sid) ids.add(sid);
+      const arr = Array.isArray(l.participant_ids) ? l.participant_ids : [];
+      arr.forEach(x => x && ids.add(x));
+    });
+    return ids.size;
+  }, [bookedSlots]);
+
+  // 🔸 image promo (mets le chemin correct dans /public)
+  const PROMO_BANNER_SRC = "/promo/packs-guyane.png";
+
+  // ✅ IMPORTANT : on ne calcule les labels/modes qu’avec safeTeacher (jamais teacher direct)
+  const modeLabel =
+    safeTeacher.presentiel_enabled && safeTeacher.visio_enabled
+      ? "Présentiel + Visio"
+      : safeTeacher.visio_enabled
+        ? "Visio"
+        : safeTeacher.presentiel_enabled
+          ? "Présentiel"
+          : "Mode non précisé";
+
+  const basePrice = Number(safeTeacher?.price_per_hour || 0);
+  const visioPrice = effectiveVisioPrice(safeTeacher);
+  const p5 = pack5Display(safeTeacher);
+  const p10 = pack10Display(safeTeacher);
+
+  // (tu avais des +10/+50/+100 : je les garde comme dans ton code)
+  const displayHourPresentiel = Number.isFinite(basePrice) ? basePrice + 10 : null;
+  const effectiveVisio = (visioPrice ?? basePrice);
+  const displayHourVisio = safeTeacher?.visio_enabled ? (effectiveVisio + 10) : null;
+
+  const displayPack5Presentiel = p5 != null ? p5 + 50 : null;
+  const displayPack10Presentiel = p10 != null ? p10 + 100 : null;
+
+  const computePack = (rate, hours) => (rate > 0 ? Number((hours * rate * 0.9).toFixed(2)) : null);
+  const p5VisioRaw = safeTeacher?.visio_enabled ? computePack(effectiveVisio, 5) : null;
+  const p10VisioRaw = safeTeacher?.visio_enabled ? computePack(effectiveVisio, 10) : null;
+
+  const displayPack5Visio = p5VisioRaw != null ? p5VisioRaw + 50 : null;
+  const displayPack10Visio = p10VisioRaw != null ? p10VisioRaw + 100 : null;
+
+  const presentielOnly = !!safeTeacher?.presentiel_enabled && !safeTeacher?.visio_enabled;
+  const visioOnly = !!safeTeacher?.visio_enabled && !safeTeacher?.presentiel_enabled;
+  const onlyMode = presentielOnly ? 'presentiel' : (visioOnly ? 'visio' : null);
+
+  // ✅ GARDE : tant que teacher n'est pas chargé
+  if (!teacher) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="max-w-xl mx-auto bg-white p-6 rounded-xl shadow text-center">
+          Chargement…
+        </div>
+      </div>
+    );
+  }
+
+  // ---------------- BOOKING HANDLER (inchangé chez toi, je ne le recasse pas) ----------------
   const handleBooking = async (selected) => {
     if (!auth.currentUser) return navigate('/login');
     if (!canBook) {
@@ -500,32 +558,14 @@ export default function TeacherProfile() {
         [`participantsMap.${sid}.pack`]: true,
         [`participantsMap.${sid}.pack_id`]: forcedPackId || `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${hours}_${mode}`,
         [`participantsMap.${sid}.pack_type`]: (hours === 5 ? 'pack5' : 'pack10'),
-        [`participantsMap.${sid}.pack_mode`]: mode,       // 'presentiel' | 'visio'
-        [`participantsMap.${sid}.pack_hours`]: hours,     // (pour compat avec ton front actuel)
+        [`participantsMap.${sid}.pack_mode`]: mode,
+        [`participantsMap.${sid}.pack_hours`]: hours,
         [`participantsMap.${sid}.require_accept_all`]: true,
       };
     };
 
-    // --- Définition du pack (par PARTICIPANT) ---
     const isPack = packHours === 5 || packHours === 10;
-    const packId = isPack
-      ? `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${packHours}_${bookMode}`
-      : null;
-    // champs pack pour le participant ciblé UNIQUEMENT
-    const packFieldsForParticipant = (sid) => (isPack ? {
-      pack: true,
-      pack_id: packId,
-      pack_hours: packHours,
-      pack_type: packHours === 5 ? 'pack5' : 'pack10',
-      pack_mode: bookMode, // presentiel|visio
-      require_accept_all: true,
-    } : {});
 
-    // ❗️Toujours dériver ces 2 constantes ici (avant tout usage en dessous)
-    const wantSingle = !isPack; // l’utilisateur (re)demande 1 seul créneau => pas un pack
-    const participantPack = packFieldsForParticipant(targetStudentId); // {} si wantSingle
-
-    // 🧮 tarif à appliquer selon mode & packs
     const base = Number(teacher?.price_per_hour || 0);
     const visio = effectiveVisioPrice(teacher);
     const hourly =
@@ -552,7 +592,7 @@ export default function TeacherProfile() {
             where("teacher_id", "==", teacherId),
             where("slot_day", "==", slot.day),
             where("slot_hour", "==", slot.hour),
-            where("date", "==", slot.date),          // 🔸 différence de semaine
+            where("date", "==", slot.date),
             where("is_group", "==", true),
             where("participant_ids", "array-contains", targetStudentId)
           );
@@ -604,6 +644,7 @@ export default function TeacherProfile() {
               [`participantsMap.${targetStudentId}.status`]: 'pending_teacher',
               [`participantsMap.${targetStudentId}.added_at`]: serverTimestamp(),
             });
+
             await addDoc(collection(db, 'notifications'), {
               user_id: teacherId,
               read: false,
@@ -613,13 +654,15 @@ export default function TeacherProfile() {
               requester_id: targetStudentId,
               message: `Relance de demande (individuel) ${slot.day} ${slot.hour}h.`,
             });
+
             results.push({ slot, status: 'revived_individual', message: `Demande réactivée (individuel) ${slot.day} ${slot.hour}h.` });
             continue;
           }
 
           // 2) GROUPE : s'il existe un groupe où je suis déjà "actif" -> DUPLICATE
           let alreadyActiveInGroup = false;
-          let rejectedInGroupDoc = null; // doc à "réactiver" si statut rejeté
+          let rejectedInGroupDoc = null;
+
           for (const d of dupGrpSnap.docs) {
             const g = d.data();
             const pm = g.participantsMap || {};
@@ -663,6 +706,7 @@ export default function TeacherProfile() {
                 : putPackParticipant(targetStudentId, packHours, bookMode) // nouveau pack => on écrase proprement
               ),
             });
+
             await addDoc(collection(db, "notifications"), {
               user_id: teacherId,
               read: false,
@@ -672,6 +716,7 @@ export default function TeacherProfile() {
               requester_id: targetStudentId,
               message: `Relance de demande (groupe) ${slot.day} ${slot.hour}h.`,
             });
+
             results.push({ slot, status: "revived_group", message: `Demande réactivée (groupe) ${slot.day} ${slot.hour}h.` });
             continue;
           }
@@ -689,6 +734,7 @@ export default function TeacherProfile() {
             );
             const existSnap = await getDocs(qExisting);
             let joined = false;
+
             for (const d of existSnap.docs) {
               const l = d.data();
               const current = Array.isArray(l.participant_ids) ? l.participant_ids : [];
@@ -697,6 +743,7 @@ export default function TeacherProfile() {
                 joined = true;
                 break;
               }
+
               await updateDoc(doc(db, 'lessons', d.id), {
                 participant_ids: arrayUnion(targetStudentId),
 
@@ -714,6 +761,7 @@ export default function TeacherProfile() {
                     ? putPackParticipant(targetStudentId, packHours, bookMode)
                     : wipePackParticipant(targetStudentId)),
               });
+
               await addDoc(collection(db, "notifications"), {
                 user_id: teacherId,
                 read: false,
@@ -723,6 +771,7 @@ export default function TeacherProfile() {
                 requester_id: targetStudentId,
                 message: `Demande d'ajout au groupe (${slot.day} ${slot.hour}h).`,
               });
+
               results.push({ slot, status: "joined_group", message: `Ajout au groupe demandé pour ${slot.day} ${slot.hour}h.` });
               joined = true;
               break;
@@ -730,19 +779,12 @@ export default function TeacherProfile() {
             if (joined) continue;
           }
 
-          // 4) Si pas de réactivation possible : création correcte (groupe / individuel)
+          // Création (groupe / individuel)
           const groupEnabled = !!teacher?.group_enabled;
           const teacherCap = Number(teacher?.group_capacity || 1);
           const defaultCap = teacherCap > 1 ? teacherCap : 1;
-
-          // ✅ VÉRIFICATION double : si le prof autorise les groupes ET que la demande ne vient pas d’un “individuel forcé”
           const allowGroup = groupEnabled && defaultCap > 1;
-
-          // Si un mode “groupé” ou “individuel” existe côté UI (par exemple, un switch ou pack sélectionné),
-          // ajoute ici la vraie condition utilisateur.
-          // Pour l’instant, on se base sur la capacité du prof :
-
-          const createAsGroup = allowGroup; // ta logique déjà en place
+          const createAsGroup = allowGroup;
 
           const newLessonRef = await addDoc(collection(db, 'lessons'), {
             teacher_id: teacherId,
@@ -752,9 +794,9 @@ export default function TeacherProfile() {
             price_per_hour: hourly || 0,
             slot_day: slot.day,
             slot_hour: slot.hour,
-            date: slot.date,              // "YYYY-MM-DD"
-            week: slot.week,              // lundi "YYYY-MM-DD"
-            startAt: slot.startAt,        // Date (sera sérialisée côté client) ou Timestamp côté backend
+            date: slot.date,
+            week: slot.week,
+            startAt: slot.startAt,
             is_group: createAsGroup,
             capacity: createAsGroup ? defaultCap : 1,
             student_id: createAsGroup ? null : targetStudentId,
@@ -861,81 +903,11 @@ export default function TeacherProfile() {
     }
   };
 
-  // ⚠️ IMPORTANT : ne jamais lire teacher.xxx sans guard
-  const safeTeacher = teacher || {};
-
-  const basePrice = Number(safeTeacher?.price_per_hour || 0);
-  const visioPrice = effectiveVisioPrice(safeTeacher);
-  const p5 = pack5Display(safeTeacher);
-  const p10 = pack10Display(safeTeacher);
-
-  const displayHourPresentiel = Number.isFinite(basePrice) ? basePrice + 10 : null;
-
-  const effectiveVisio = (visioPrice ?? basePrice);
-  const displayHourVisio = safeTeacher?.visio_enabled ? (effectiveVisio + 10) : null;
-
-  // Packs présentiel
-  const displayPack5Presentiel  = p5  != null ? p5  + 50  : null;
-  const displayPack10Presentiel = p10 != null ? p10 + 100 : null;
-
-  const computePack = (rate, hours) => (rate > 0 ? Number((hours * rate * 0.9).toFixed(2)) : null);
-
-  const p5VisioRaw  = safeTeacher?.visio_enabled ? computePack(effectiveVisio, 5)  : null;
-  const p10VisioRaw = safeTeacher?.visio_enabled ? computePack(effectiveVisio, 10) : null;
-
-  const displayPack5Visio  = p5VisioRaw  != null ? p5VisioRaw  + 50  : null;
-  const displayPack10Visio = p10VisioRaw != null ? p10VisioRaw + 100 : null;
-
-  const presentielOnly = !!safeTeacher?.presentiel_enabled && !safeTeacher?.visio_enabled;
-  const visioOnly = !!safeTeacher?.visio_enabled && !safeTeacher?.presentiel_enabled;
-  const onlyMode = presentielOnly ? 'presentiel' : (visioOnly ? 'visio' : null);
-
-  // 🔸 Mets ici le chemin de TON image promo (dans /public par ex)
-  const PROMO_BANNER_SRC = "/promo/packs-guyane.png"; // <-- à adapter
-
-  // ⭐ Notes / nb avis
-  const ratings = reviews.map(r => Number(r.rating || 0)).filter(n => !Number.isNaN(n));
-  const reviewsCount = ratings.length;
-  const avgRating = reviewsCount ? (ratings.reduce((a,b)=>a+b,0) / reviewsCount) : 0;
-
-  // 👥 “nb d’élèves ayant fait des cours avec le prof”
-  // (on calcule depuis lessons déjà écoutés plus haut : bookedSlots contient les leçons)
-  const uniqueStudentsCount = useMemo(() => {
-    const ids = new Set();
-    bookedSlots.forEach(l => {
-      const sid = l.student_id;
-      if (sid) ids.add(sid);
-      const arr = Array.isArray(l.participant_ids) ? l.participant_ids : [];
-      arr.forEach(x => x && ids.add(x));
-    });
-    return ids.size;
-  }, [bookedSlots]);
-
-  const modeLabel = teacher.presentiel_enabled && teacher.visio_enabled
-    ? "Présentiel + Visio"
-    : teacher.visio_enabled
-      ? "Visio"
-      : teacher.presentiel_enabled
-        ? "Présentiel"
-        : "Mode non précisé";
-
-  if (!teacher) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="max-w-xl mx-auto bg-white p-6 rounded-xl shadow text-center">
-          Chargement…
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen w-full bg-white">
       <div ref={layoutRef} className="max-w-6xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 relative">
 
-        {/* ========================= */}
         {/* COLONNE GAUCHE (CONTENU)  */}
-        {/* ========================= */}
         <main className="lg:col-span-8 space-y-8">
 
           {/* Image promo (à côté de la carte sticky, sans empiéter) */}
@@ -951,7 +923,7 @@ export default function TeacherProfile() {
             </div>
           </div>
 
-          {/* À propos de moi (AU DESSUS) */}
+          {/* À propos de moi */}
           <section className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
             <h2 className="text-xl md:text-2xl font-extrabold text-slate-900">À propos de moi</h2>
             <div className="mt-3 text-slate-700 leading-relaxed whitespace-pre-line">
@@ -959,7 +931,7 @@ export default function TeacherProfile() {
             </div>
           </section>
 
-          {/* À propos du cours (EN DESSOUS) */}
+          {/* À propos du cours */}
           <section className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
             <h2 className="text-xl md:text-2xl font-extrabold text-slate-900">À propos du cours</h2>
             <div className="mt-3 text-slate-700 leading-relaxed whitespace-pre-line">
@@ -1038,9 +1010,7 @@ export default function TeacherProfile() {
             </div>
           </section>
 
-          {/* ========================= */}
           {/* PROFS SIMILAIRES (STOPPER) */}
-          {/* ========================= */}
           <section ref={stopRef} className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
             <div className="flex items-center justify-between gap-4">
               <h2 className="text-xl md:text-2xl font-extrabold text-slate-900">Profs similaires</h2>
@@ -1114,9 +1084,7 @@ export default function TeacherProfile() {
           </section>
         </main>
 
-        {/* ========================= */}
         {/* COLONNE DROITE (STICKY)   */}
-        {/* ========================= */}
         <aside className="lg:col-span-4 relative">
           <div
             ref={stickyRef}
@@ -1269,7 +1237,6 @@ export default function TeacherProfile() {
           multiSelect={true}
           requiredCount={packHours > 1 ? packHours : null}
           canBook={canBook}
-          // Optionnel si tu veux la pastille “mes enfants” dans la grille :
           myStudentIds={children.map(c => c.id)}
           idToName={Object.fromEntries(children.map(c => [c.id, c.full_name || c.fullName || c.name || 'Enfant']))}
         />
