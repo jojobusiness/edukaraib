@@ -775,192 +775,106 @@ export default function TeacherProfile() {
   const visioOnly = !!teacher.visio_enabled && !teacher.presentiel_enabled;
   const onlyMode = presentielOnly ? 'presentiel' : (visioOnly ? 'visio' : null);
 
-  // —————————— UI / style inspiré Superprof ——————————
+  // 🔸 Mets ici le chemin de TON image promo (dans /public par ex)
+  const PROMO_BANNER_SRC = "/promo/packs-guyane.png"; // <-- à adapter
+
+  // ⭐ Notes / nb avis
+  const ratings = reviews.map(r => Number(r.rating || 0)).filter(n => !Number.isNaN(n));
+  const reviewsCount = ratings.length;
+  const avgRating = reviewsCount ? (ratings.reduce((a,b)=>a+b,0) / reviewsCount) : 0;
+
+  // 👥 “nb d’élèves ayant fait des cours avec le prof”
+  // (on calcule depuis lessons déjà écoutés plus haut : bookedSlots contient les leçons)
+  const uniqueStudentsCount = useMemo(() => {
+    const ids = new Set();
+    bookedSlots.forEach(l => {
+      const sid = l.student_id;
+      if (sid) ids.add(sid);
+      const arr = Array.isArray(l.participant_ids) ? l.participant_ids : [];
+      arr.forEach(x => x && ids.add(x));
+    });
+    return ids.size;
+  }, [bookedSlots]);
+
+  const modeLabel = teacher.presentiel_enabled && teacher.visio_enabled
+    ? "Présentiel + Visio"
+    : teacher.visio_enabled
+      ? "Visio"
+      : teacher.presentiel_enabled
+        ? "Présentiel"
+        : "Mode non précisé";
+
   return (
-    <div className="min-h-screen w-full bg-gradient-to-b from-white via-gray-50 to-gray-100">
-      {/* Header visuel */}
-      <div className="relative bg-primary/5 border-b border-gray-100">
-        <div className="max-w-5xl mx-auto px-4 py-10 md:py-14">
-            <button
-              type="button"
-              onClick={() => navigate('/search')}
-              className="mb-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-sm font-semibold"
-            >
-              ← Rechercher un professeur
-            </button>
-          <div className="flex items-start gap-4">
+    <div className="min-h-screen w-full bg-white">
+      <div className="max-w-6xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+
+        {/* ========================= */}
+        {/* COLONNE GAUCHE (CONTENU)  */}
+        {/* ========================= */}
+        <main className="lg:col-span-8 space-y-8">
+
+          {/* Image promo (à côté de la carte sticky, sans empiéter) */}
+          <div className="w-full">
             <img
-              src={teacher.avatarUrl || teacher.avatar_url || teacher.photoURL || '/avatar-default.png'}
-              alt={teacher.fullName || 'Prof'}
-              className="w-24 h-24 md:w-28 md:h-28 rounded-2xl object-cover border-2 border-primary shadow"
+              src={PROMO_BANNER_SRC}
+              alt="Offre packs"
+              className="w-full rounded-2xl border border-gray-100 shadow-sm object-cover"
             />
-            <div className="min-w-0">
-              <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-slate-900">
-                {teacher.fullName || teacher.name || 'Professeur'}
-              </h1>
-              <div className="mt-1 text-slate-700">
-                {Array.isArray(teacher.subjects) ? teacher.subjects.join(', ') : teacher.subjects || 'Matière non précisée'}
-              </div>
-              <div className="mt-1 text-sm text-slate-500">{teacher.location || teacher.city || ''}</div>
-              {teacher.bio && (
-                <p className="mt-3 text-slate-700 max-w-2xl">{teacher.bio}</p>
+            {/* Localisation sous l'image */}
+            <div className="mt-3 text-sm text-slate-600">
+              📍 {teacher.city || teacher.location || "Localisation non précisée"}
+            </div>
+          </div>
+
+          {/* À propos de moi (AU DESSUS) */}
+          <section className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
+            <h2 className="text-xl md:text-2xl font-extrabold text-slate-900">À propos de moi</h2>
+            <div className="mt-3 text-slate-700 leading-relaxed whitespace-pre-line">
+              {teacher.about_me || teacher.bio || "Le professeur n’a pas encore renseigné sa présentation."}
+            </div>
+          </section>
+
+          {/* À propos du cours (EN DESSOUS) */}
+          <section className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
+            <h2 className="text-xl md:text-2xl font-extrabold text-slate-900">À propos du cours</h2>
+            <div className="mt-3 text-slate-700 leading-relaxed whitespace-pre-line">
+              {teacher.about_course || "Le professeur n’a pas encore renseigné la description détaillée du cours."}
+            </div>
+          </section>
+
+          {/* Tarifs (tu m’as dit : enlever la section “mode”, et mettre tarifs après) */}
+          <section className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
+            <h2 className="text-xl md:text-2xl font-extrabold text-slate-900">Tarifs</h2>
+
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-slate-700">
+              {teacher.presentiel_enabled && (
+                <div className="border rounded-xl p-4">
+                  <div className="font-semibold">Présentiel</div>
+                  <div className="mt-1">À l’heure : <b>{displayHourPresentiel != null ? `${displayHourPresentiel.toFixed(2)} € / h` : "—"}</b></div>
+                  <div className="mt-1">Pack 5h : <b>{displayPack5Presentiel != null ? `${displayPack5Presentiel.toFixed(2)} €` : "—"}</b></div>
+                  <div className="mt-1">Pack 10h : <b>{displayPack10Presentiel != null ? `${displayPack10Presentiel.toFixed(2)} €` : "—"}</b></div>
+                </div>
               )}
-              {/* Tarifs en badges */}
-              <div className="mt-4 flex flex-wrap gap-2">
-                {teacher.presentiel_enabled && (
-                  <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
-                    Présentiel : <b>{displayHourPresentiel != null ? `${displayHourPresentiel.toFixed(2)} € / h` : '—'}</b>
-                  </span>
-                )}
 
-                {teacher.visio_enabled && (
-                  <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
-                    Visio : <b>{displayHourVisio != null ? `${displayHourVisio.toFixed(2)} € / h` : '—'}</b>
-                  </span>
-                )}
-
-                {teacher.presentiel_enabled && (
-                  <>
-                    <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
-                      Pack 5h (présentiel) : <b>{displayPack5Presentiel != null ? `${displayPack5Presentiel.toFixed(2)} €` : '—'}</b>
-                    </span>
-                    <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
-                      Pack 10h (présentiel) : <b>{displayPack10Presentiel != null ? `${displayPack10Presentiel.toFixed(2)} €` : '—'}</b>
-                    </span>
-                  </>
-                )}
-
-                {teacher.visio_enabled && (
-                  <>
-                    <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
-                      Pack 5h (visio) : <b>{displayPack5Visio != null ? `${displayPack5Visio.toFixed(2)} €` : '—'}</b>
-                    </span>
-                    <span className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-1.5 text-sm shadow-sm">
-                      Pack 10h (visio) : <b>{displayPack10Visio != null ? `${displayPack10Visio.toFixed(2)} €` : '—'}</b>
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Choix rapide (mode + pack) */}
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1">Mode</label>
-            {onlyMode ? (
-              <div className="w-full border rounded-xl px-3 py-2 bg-gray-50 text-slate-800 font-semibold">
-                {onlyMode === 'visio' ? 'Visio' : 'Présentiel'}
-              </div>
-            ) : (
-              <select
-                className="w-full border rounded-xl px-3 py-2"
-                value={bookMode}
-                onChange={(e) => setBookMode(e.target.value)}
-              >
-                <option value="presentiel">Présentiel</option>
-                {teacher.visio_enabled && <option value="visio">Visio</option>}
-              </select>
-            )}
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1">Pack</label>
-              <select
-                className="w-full border rounded-xl px-3 py-2"
-                value={packHours}
-                onChange={(e) => setPackHours(Number(e.target.value))}
-              >
-                <option value={1}>1h (à l’unité)</option>
-                <option value={5}>5h (Pack)</option>
-                <option value={10}>10h (Pack)</option>
-              </select>
-            </div>
-            <div className="flex items-end">
-              <div className="text-sm text-slate-700">
-                {packHours === 5 && (
-                  <>Total pack 5h : <b>{(
-                    (bookMode === 'visio' ? displayPack5Visio : displayPack5Presentiel)
-                    ?? 0
-                  ).toFixed(2)} €</b></>
-                )}
-                {packHours === 10 && (
-                  <>Total pack 10h : <b>{(
-                    (bookMode === 'visio' ? displayPack10Visio : displayPack10Presentiel)
-                    ?? 0
-                  ).toFixed(2)} €</b></>
-                )}
-                {packHours === 1 && (
-                  <>Tarif : <b>{(
-                    (bookMode === 'visio' ? displayHourVisio : displayHourPresentiel)
-                    ?? 0
-                  ).toFixed(2)} €</b> / h</>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* CTA */}
-          <div className="mt-4 flex items-center gap-3">
-            {(!isTeacherUser && !isOwnProfile) && (
-              <button
-                className="bg-primary text-white px-5 py-3 rounded-xl font-semibold shadow hover:bg-primary-dark transition"
-                onClick={() => {
-                  if (!auth.currentUser) return navigate('/login');
-                  setShowBooking(true);
-                  setConfirmationMsg('');
-                }}
-              >
-                {isBooking ? 'Envoi…' : 'Réserver des créneaux'}
-              </button>
-            )}
-            {!isOwnProfile && (
-              <button
-                className="bg-yellow-400 text-slate-900 px-5 py-3 rounded-xl font-semibold shadow hover:bg-yellow-500 transition"
-                onClick={() => {
-                  if (!auth.currentUser) return navigate('/login');
-                  navigate(`/chat/${teacherId}`);
-                }}
-              >
-                Contacter le professeur
-              </button>
-            )}
-          </div>
-
-          {confirmationMsg && (
-            <div className="mt-3 bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2 rounded-xl text-sm">
-              {confirmationMsg}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Corps de page : sections nettes façon fiche Superprof */}
-      <div className="max-w-5xl mx-auto px-4 py-10 grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Colonne principale */}
-        <div className="lg:col-span-2 space-y-8">
-          {/* À propos du cours */}
-          {(teacher.about_course || teacher.about_me) && (
-            <section className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
-              <h2 className="text-xl md:text-2xl font-extrabold text-slate-900">À propos du cours</h2>
-              <div className="mt-3 text-slate-700 leading-relaxed whitespace-pre-line">
-                {teacher.about_course || "Le professeur n’a pas encore renseigné la description détaillée du cours."}
-              </div>
-
-              {teacher.about_me && (
-                <>
-                  <hr className="my-6 border-gray-100" />
-                  <h3 className="text-lg font-bold text-slate-900">À propos de moi</h3>
-                  <p className="mt-2 text-slate-700 whitespace-pre-line">
-                    {teacher.about_me}
-                  </p>
-                </>
+              {teacher.visio_enabled && (
+                <div className="border rounded-xl p-4">
+                  <div className="font-semibold">Visio</div>
+                  <div className="mt-1">À l’heure : <b>{displayHourVisio != null ? `${displayHourVisio.toFixed(2)} € / h` : "—"}</b></div>
+                  <div className="mt-1">Pack 5h : <b>{displayPack5Visio != null ? `${displayPack5Visio.toFixed(2)} €` : "—"}</b></div>
+                  <div className="mt-1">Pack 10h : <b>{displayPack10Visio != null ? `${displayPack10Visio.toFixed(2)} €` : "—"}</b></div>
+                </div>
               )}
-            </section>
-          )}
 
-          {/* Avis */}
+              {!teacher.presentiel_enabled && !teacher.visio_enabled && (
+                <div className="text-gray-500">Tarifs non disponibles.</div>
+              )}
+            </div>
+          </section>
+
+          {/* Avis (tu peux garder ton bloc existant, je ne le casse pas) */}
           <section className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
             <h2 className="text-xl md:text-2xl font-extrabold text-slate-900 mb-4">Avis</h2>
+
             <div className="flex flex-col gap-3">
               {reviews.length === 0 && (
                 <div className="text-gray-400 text-sm">Aucun avis pour ce professeur.</div>
@@ -969,9 +883,10 @@ export default function TeacherProfile() {
               {reviews.map((r) => {
                 const rid = getReviewerId(r);
                 const info = (rid && reviewerInfo[rid]) || {};
-                const name = info.name || 'Utilisateur';
-                const avatar = info.avatar || '/avatar-default.png';
+                const name = info.name || "Utilisateur";
+                const avatar = info.avatar || "/avatar-default.png";
                 const rating = r.rating || 0;
+
                 return (
                   <div key={r.id} className="bg-gray-50 border rounded-xl px-4 py-3">
                     <div className="flex items-center gap-3 mb-2">
@@ -980,13 +895,16 @@ export default function TeacherProfile() {
                         <span className="text-sm font-semibold text-gray-800">{name}</span>
                         {r.created_at?.toDate && (
                           <span className="text-xs text-gray-400">
-                            {r.created_at.toDate().toLocaleDateString('fr-FR')}
+                            {r.created_at.toDate().toLocaleDateString("fr-FR")}
                           </span>
                         )}
                       </div>
                     </div>
+
                     <div className="flex items-start gap-2">
-                      <span className="text-yellow-500">{'★'.repeat(Math.min(5, Math.max(0, Math.round(rating))))}</span>
+                      <span className="text-yellow-500">
+                        {"★".repeat(Math.min(5, Math.max(0, Math.round(rating))))}
+                      </span>
                       <span className="italic text-gray-700">{r.comment}</span>
                     </div>
                   </div>
@@ -994,72 +912,143 @@ export default function TeacherProfile() {
               })}
             </div>
           </section>
-        </div>
 
-        {/* Colonne latérale : infos pratiques */}
-        <aside className="space-y-6">
-          {currentRole === 'parent' && (
-            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
-              <label className="block text-sm font-semibold text-slate-700 mb-1">Qui est l’élève ?</label>
-              <select
-                className="w-full border rounded-xl px-3 py-2"
-                value={selectedStudentId || meUid || ''}
-                onChange={(e) => setSelectedStudentId(e.target.value)}
-              >
-                {meUid && <option value={meUid}>Moi (parent)</option>}
-                {children.map((k) => (
-                  <option key={k.id} value={k.id}>
-                    {k.full_name || k.fullName || k.name || 'Enfant'}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-gray-500 mt-2">
-                Les créneaux en rouge sont indisponibles pour l’élève sélectionné.
-              </p>
+          {/* 🔻 Section “profs similaires” (à ajouter plus tard ici)
+              -> quand tu arrives ici, la sticky card s’arrête naturellement en bas de page */}
+          {/* <SimilarTeachers ... /> */}
+        </main>
+
+        {/* ========================= */}
+        {/* COLONNE DROITE (STICKY)   */}
+        {/* ========================= */}
+        <aside className="lg:col-span-4">
+          <div className="lg:sticky lg:top-6 space-y-4">
+
+            {/* Carte prof unique (SUPERPROF LIKE) */}
+            <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+              {/* Photo + badge mode dans la photo */}
+              <div className="relative">
+                <img
+                  src={teacher.avatarUrl || teacher.avatar_url || teacher.photoURL || "/avatar-default.png"}
+                  alt={teacher.fullName || "Prof"}
+                  className="w-full h-64 object-cover"
+                />
+
+                <div className="absolute bottom-3 left-3 px-3 py-1.5 rounded-full text-xs font-bold bg-black/65 text-white">
+                  {modeLabel}
+                </div>
+              </div>
+
+              <div className="p-5">
+                <div className="text-lg font-extrabold text-slate-900">
+                  {teacher.firstName || ""} {teacher.lastName || teacher.fullName || "Professeur"}
+                </div>
+
+                {/* étoiles + nb avis */}
+                <div className="mt-2 flex items-center gap-2 text-sm">
+                  <span className="text-yellow-500">
+                    {"★".repeat(Math.round(avgRating || 0)).padEnd(5, "☆")}
+                  </span>
+                  <span className="text-slate-700 font-semibold">{avgRating ? avgRating.toFixed(1) : "0.0"}</span>
+                  <span className="text-slate-500">({reviewsCount} avis)</span>
+                </div>
+
+                {/* nb d’élèves */}
+                <div className="mt-2 text-sm text-slate-600">
+                  {uniqueStudentsCount} élève{uniqueStudentsCount > 1 ? "s" : ""} a déjà pris un cours avec ce professeur
+                </div>
+
+                {/* Bouton contacter */}
+                {!isOwnProfile && (
+                  <button
+                    className="mt-4 w-full bg-yellow-400 text-slate-900 px-5 py-3 rounded-xl font-semibold shadow hover:bg-yellow-500 transition"
+                    onClick={() => {
+                      if (!auth.currentUser) return navigate("/login");
+                      navigate(`/chat/${teacherId}`);
+                    }}
+                  >
+                    Contacter le professeur
+                  </button>
+                )}
+
+                {/* Mode + Pack côte à côte */}
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Mode</label>
+                    {onlyMode ? (
+                      <div className="w-full border rounded-xl px-3 py-2 bg-gray-50 text-slate-800 font-semibold text-sm">
+                        {onlyMode === "visio" ? "Visio" : "Présentiel"}
+                      </div>
+                    ) : (
+                      <select
+                        className="w-full border rounded-xl px-3 py-2 text-sm"
+                        value={bookMode}
+                        onChange={(e) => setBookMode(e.target.value)}
+                      >
+                        <option value="presentiel">Présentiel</option>
+                        {teacher.visio_enabled && <option value="visio">Visio</option>}
+                      </select>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Pack</label>
+                    <select
+                      className="w-full border rounded-xl px-3 py-2 text-sm"
+                      value={packHours}
+                      onChange={(e) => setPackHours(Number(e.target.value))}
+                    >
+                      <option value={1}>1h</option>
+                      <option value={5}>5h</option>
+                      <option value={10}>10h</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Bouton réserver */}
+                {(!isTeacherUser && !isOwnProfile) && (
+                  <button
+                    className="mt-4 w-full bg-primary text-white px-5 py-3 rounded-xl font-semibold shadow hover:bg-primary-dark transition"
+                    onClick={() => {
+                      if (!auth.currentUser) return navigate("/login");
+                      setShowBooking(true);
+                      setConfirmationMsg("");
+                    }}
+                  >
+                    {isBooking ? "Envoi…" : "Réserver"}
+                  </button>
+                )}
+
+                {confirmationMsg && (
+                  <div className="mt-3 bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2 rounded-xl text-sm">
+                    {confirmationMsg}
+                  </div>
+                )}
+              </div>
             </div>
-          )}
 
-          <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
-            <h3 className="text-lg font-bold text-slate-900">Modes proposés</h3>
-            <ul className="mt-2 space-y-2 text-sm text-slate-700">
-              <li>• Présentiel : {teacher.presentiel_enabled ? 'Oui' : 'Non'}</li>
-              <li>• Visio : {teacher.visio_enabled ? 'Oui' : 'Non'}</li>
-            </ul>
-            <hr className="my-4 border-gray-100" />
-            <h4 className="text-sm font-semibold text-slate-900">Tarifs</h4>
-            <div className="mt-2 text-sm text-slate-700 space-y-1">
-              {teacher.presentiel_enabled && (
-                <>
-                  <div>
-                    Présentiel : <b>{displayHourPresentiel != null ? `${displayHourPresentiel.toFixed(2)} € / h` : '—'}</b>
-                  </div>
-                  <div>
-                    Pack 5h (présentiel) : <b>{displayPack5Presentiel != null ? `${displayPack5Presentiel.toFixed(2)} €` : '—'}</b>
-                  </div>
-                  <div>
-                    Pack 10h (présentiel) : <b>{displayPack10Presentiel != null ? `${displayPack10Presentiel.toFixed(2)} €` : '—'}</b>
-                  </div>
-                </>
-              )}
+            {/* Parent : choix enfant (si besoin, en dessous de la carte sticky) */}
+            {currentRole === "parent" && (
+              <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5">
+                <label className="block text-sm font-semibold text-slate-700 mb-1">Qui est l’élève ?</label>
+                <select
+                  className="w-full border rounded-xl px-3 py-2"
+                  value={selectedStudentId || meUid || ""}
+                  onChange={(e) => setSelectedStudentId(e.target.value)}
+                >
+                  {meUid && <option value={meUid}>Moi (parent)</option>}
+                  {children.map((k) => (
+                    <option key={k.id} value={k.id}>
+                      {k.full_name || k.fullName || k.name || "Enfant"}
+                    </option>
+                  ))}
+                </select>
 
-              {teacher.visio_enabled && (
-                <>
-                  <div>
-                    Visio : <b>{displayHourVisio != null ? `${displayHourVisio.toFixed(2)} € / h` : '—'}</b>
-                  </div>
-                  <div>
-                    Pack 5h (visio) : <b>{displayPack5Visio != null ? `${displayPack5Visio.toFixed(2)} €` : '—'}</b>
-                  </div>
-                  <div>
-                    Pack 10h (visio) : <b>{displayPack10Visio != null ? `${displayPack10Visio.toFixed(2)} €` : '—'}</b>
-                  </div>
-                </>
-              )}
-
-              {!teacher.presentiel_enabled && !teacher.visio_enabled && (
-                <div className="text-gray-500">Tarifs non disponibles.</div>
-              )}
-            </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Les créneaux en rouge sont indisponibles pour l’élève sélectionné.
+                </p>
+              </div>
+            )}
           </div>
         </aside>
       </div>
