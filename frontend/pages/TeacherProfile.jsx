@@ -906,14 +906,16 @@ export default function TeacherProfile() {
   return (
     <div className="min-h-screen w-full bg-white">
       <div className="max-w-6xl mx-auto px-4 pt-6">
-        <button
-          type="button"
-          onClick={() => navigate('/search')}
-          className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-slate-900"
-        >
-          <span className="text-lg">←</span>
-          Retour à la recherche
-        </button>
+        <div className="hidden lg:block max-w-6xl mx-auto px-4 pt-6">
+          <button
+            type="button"
+            onClick={() => navigate('/search')}
+            className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-slate-900"
+          >
+            <span className="text-lg">←</span>
+            Retour à la recherche
+          </button>
+        </div>
       </div>
       <div ref={layoutRef} className="max-w-6xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 relative">
 
@@ -921,12 +923,20 @@ export default function TeacherProfile() {
         <main className="lg:col-span-8 space-y-8">
           {/* ===== HERO + CARD (MOBILE) ===== */}
           <div className="lg:hidden">
+            <button
+              type="button"
+              onClick={() => navigate('/search')}
+              className="absolute top-4 left-4 z-20 w-10 h-10 rounded-full bg-white/90 shadow flex items-center justify-center text-slate-900"
+              aria-label="Retour"
+            >
+              ←
+            </button>
             {/* Image prof (dans la page) */}
-            <div className="relative">
+            <div className="relative -mx-4">
               <img
                 src={teacher.avatarUrl || teacher.avatar_url || teacher.photoURL || "/avatar-default.png"}
                 alt={teacher.fullName || "Prof"}
-                className="w-full h-[320px] object-cover rounded-2xl border border-gray-100"
+                className="w-full h-[420px] sm:h-[480px] object-cover"
               />
 
               {/* badge mode dans l’image */}
@@ -936,7 +946,7 @@ export default function TeacherProfile() {
             </div>
 
             {/* Carte qui remonte sur l’image (Superprof-like) */}
-            <div className="-mt-10 px-2">
+            <div className="-mt-16 px-4">
               <div className="bg-white border border-gray-100 rounded-2xl shadow-lg p-5">
                 <div className="text-xl font-extrabold text-slate-900">
                   {teacher.firstName || ""} {teacher.lastName || teacher.fullName || "Professeur"}
@@ -1256,7 +1266,7 @@ export default function TeacherProfile() {
         </main>
 
         {/* COLONNE DROITE (STICKY)   */}
-        <aside className="lg:col-span-4 relative">
+        <aside className="hidden lg:block lg:col-span-4 relative">
           <div
             ref={stickyRef}
             className="space-y-4"
