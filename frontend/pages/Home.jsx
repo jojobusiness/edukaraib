@@ -267,6 +267,8 @@ export default function Home() {
   const getRating = (t) =>
     Number(t._avgRating ?? t.avgRating ?? t.rating ?? 0);
 
+  const COMMISSION = 10;
+
   const getPriceLines = (t) => {
     const pres = !!t.presentiel_enabled;
     const visio = !!t.visio_enabled;
@@ -275,11 +277,28 @@ export default function Home() {
     const visioPrice = Number(t.visio_price_per_hour ?? 0);
 
     const lines = [];
-    if (pres && presPrice > 0) lines.push({ label: 'Présentiel', price: presPrice });
-    if (visio && visioPrice > 0) lines.push({ label: 'Visio', price: visioPrice });
 
-    // fallback si pas les flags mais un prix existe
-    if (!lines.length && presPrice > 0) lines.push({ label: 'Cours', price: presPrice });
+    if (pres && presPrice > 0) {
+      lines.push({
+        label: 'Présentiel',
+        price: presPrice + COMMISSION,
+      });
+    }
+
+    if (visio && visioPrice > 0) {
+      lines.push({
+        label: 'Visio',
+        price: visioPrice + COMMISSION,
+      });
+    }
+
+    // fallback si aucun mode détecté
+    if (!lines.length && presPrice > 0) {
+      lines.push({
+        label: 'Cours',
+        price: presPrice + COMMISSION,
+      });
+    }
 
     return lines;
   };

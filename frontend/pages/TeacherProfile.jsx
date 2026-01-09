@@ -61,7 +61,8 @@ export default function TeacherProfile() {
   const [selectedStudentId, setSelectedStudentId] = useState('');
 
   const [bookMode, setBookMode] = useState('presentiel');
-  const [packHours, setPackHours] = useState(1);
+  const [packChoice, setPackChoice] = useState(0); // 0 = aucun pack, 5, 10
+  const [hoursWanted, setHoursWanted] = useState(1); // utilisé seulement si aucun pack
 
   const [similarTeachers, setSimilarTeachers] = useState([]);
   const [loadingSimilar, setLoadingSimilar] = useState(false);
@@ -513,6 +514,9 @@ export default function TeacherProfile() {
   const visioOnly = !!safeTeacher?.visio_enabled && !safeTeacher?.presentiel_enabled;
   const onlyMode = presentielOnly ? 'presentiel' : (visioOnly ? 'visio' : null);
 
+  const freeCount = packChoice === 5 ? 1 : packChoice === 10 ? 2 : 0;
+  const requiredCount = packChoice === 5 ? 6 : packChoice === 10 ? 12 : Math.max(1, Number(hoursWanted) || 1);
+
   // ✅ GARDE : tant que teacher n'est pas chargé
   if (!teacher) {
     return (
@@ -564,7 +568,41 @@ export default function TeacherProfile() {
       };
     };
 
-    const isPack = packHours === 5 || packHours === 10;
+    const wipePackRoot = {
+      pack: deleteField(),
+      is_pack: deleteField(),
+      pack_id: deleteField(),
+      pack_type: deleteField(),
+      pack_mode: deleteField(),
+      pack_hours: deleteField(),        // heures payées
+      pack_bonus_hours: deleteField(),  // offertes
+      pack_hours_total: deleteField(),  // payées + offertes
+      pack_hours_remaining: deleteField(),
+      require_accept_all: deleteField(),
+    };
+
+    const putPackRoot = (forcedPackId) => {
+      if (!isPack) return {};
+      const pid = forcedPackId || `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${paidHours}_${bookMode}`;
+      return {
+        pack: true,
+        pack_id: pid,
+        pack_type: packType,
+        pack_mode: bookMode,
+        pack_hours: paidHours,
+        pack_bonus_hours: bonusHours,
+        pack_hours_total: totalPackHours,
+        pack_hours_remaining: totalPackHours, // au départ
+        require_accept_all: true,
+      };
+    };
+
+    const isPack = packChoice === 5 || packChoice === 10;
+    const paidHours = packChoice;                 // 5 ou 10
+    const bonusHours = packChoice === 5 ? 1 : packChoice === 10 ? 2 : 0;
+    const totalPackHours = isPack ? (paidHours + bonusHours) : 0;
+
+    const packType = paidHours === 5 ? "pack5" : paidHours === 10 ? "pack10" : null;
 
     const base = Number(teacher?.price_per_hour || 0);
     const visio = effectiveVisioPrice(teacher);
@@ -643,6 +681,11 @@ export default function TeacherProfile() {
               [`participantsMap.${targetStudentId}.paid_at`]: null,
               [`participantsMap.${targetStudentId}.status`]: 'pending_teacher',
               [`participantsMap.${targetStudentId}.added_at`]: serverTimestamp(),
+
+              ...(isPack
+                ? putPackParticipant(targetStudentId, paidHours, bookMode, forcedPackId)
+                : wipePackParticipant(targetStudentId)
+              ),
             });
 
             await addDoc(collection(db, 'notifications'), {
@@ -705,6 +748,10 @@ export default function TeacherProfile() {
                 ? wipePackParticipant(targetStudentId)               // unitaire => on enlève tout Pack
                 : putPackParticipant(targetStudentId, packHours, bookMode) // nouveau pack => on écrase proprement
               ),
+              ...(isPack
+                ? putPackParticipant(targetStudentId, paidHours, bookMode, forcedPackId)
+                : wipePackParticipant(targetStudentId)
+              ),
             });
 
             await addDoc(collection(db, "notifications"), {
@@ -756,10 +803,10 @@ export default function TeacherProfile() {
                 [`participantsMap.${targetStudentId}.status`]: 'pending_teacher',
                 [`participantsMap.${targetStudentId}.added_at`]: serverTimestamp(),
 
-                // pack : soit on met un pack propre, soit on nettoie tout
-                ...((packHours === 5 || packHours === 10)
-                    ? putPackParticipant(targetStudentId, packHours, bookMode)
-                    : wipePackParticipant(targetStudentId)),
+                ...(isPack
+                  ? putPackParticipant(targetStudentId, paidHours, bookMode, forcedPackId)
+                  : wipePackParticipant(targetStudentId)
+                ),
               });
 
               await addDoc(collection(db, "notifications"), {
@@ -815,13 +862,17 @@ export default function TeacherProfile() {
             },
 
             mode: bookMode,
+            ...(isPack ? putPackRoot() : {}),
           });
+
+          const forcedPackId = isPack ? `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${paidHours}_${bookMode}` : null;
 
           // Pose/Nettoie le pack APRES création (pour ne pas polluer la leçon)
           await updateDoc(doc(db, 'lessons', newLessonRef.id), {
             ...(isPack
-              ? putPackParticipant(targetStudentId, packHours, bookMode)
-              : wipePackParticipant(targetStudentId)),
+              ? putPackParticipant(targetStudentId, paidHours, bookMode, forcedPackId)
+              : wipePackParticipant(targetStudentId)
+            ),
           });
 
           // Optionnel: notif prof (garde ta version si tu en as déjà une)
@@ -1028,15 +1079,35 @@ export default function TeacherProfile() {
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Pack</label>
                     <select
                       className="w-full border rounded-xl px-3 py-2 text-sm"
-                      value={packHours}
-                      onChange={(e) => setPackHours(Number(e.target.value))}
+                      value={packChoice}
+                      onChange={(e) => setPackChoice(Number(e.target.value))}
                     >
-                      <option value={1}>1h</option>
-                      <option value={5}>5h</option>
-                      <option value={10}>10h</option>
+                      <option value={0}>Aucun pack</option>
+                      <option value={5}>Pack 5h (+1h offerte)</option>
+                      <option value={10}>Pack 10h (+2h offertes)</option>
                     </select>
                   </div>
                 </div>
+
+                {packChoice === 0 && (
+                  <div className="mt-3">
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      Nombre d’heures
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={hoursWanted}
+                      onChange={(e) => setHoursWanted(Math.max(1, Number(e.target.value) || 1))}
+                      className="w-full border rounded-xl px-3 py-2 text-sm"
+                      placeholder="Ex: 3"
+                    />
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Vous devrez sélectionner exactement {hoursWanted} créneau(x).
+                    </p>
+                  </div>
+                )}
 
                 {/* Réserver */}
                 {(!isTeacherUser && !isOwnProfile) && (
@@ -1365,15 +1436,35 @@ export default function TeacherProfile() {
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Pack</label>
                     <select
                       className="w-full border rounded-xl px-3 py-2 text-sm"
-                      value={packHours}
-                      onChange={(e) => setPackHours(Number(e.target.value))}
+                      value={packChoice}
+                      onChange={(e) => setPackChoice(Number(e.target.value))}
                     >
-                      <option value={1}>1h</option>
-                      <option value={5}>5h</option>
-                      <option value={10}>10h</option>
+                      <option value={0}>Aucun pack</option>
+                      <option value={5}>Pack 5h (+1h offerte)</option>
+                      <option value={10}>Pack 10h (+2h offertes)</option>
                     </select>
                   </div>
                 </div>
+
+                {packChoice === 0 && (
+                  <div className="mt-3">
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      Nombre d’heures
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={hoursWanted}
+                      onChange={(e) => setHoursWanted(Math.max(1, Number(e.target.value) || 1))}
+                      className="w-full border rounded-xl px-3 py-2 text-sm"
+                      placeholder="Ex: 3"
+                    />
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Vous devrez sélectionner exactement {hoursWanted} créneau(x).
+                    </p>
+                  </div>
+                )}
 
                 {/* Bouton réserver */}
                 {(!isTeacherUser && !isOwnProfile) && (
@@ -1433,7 +1524,8 @@ export default function TeacherProfile() {
           onClose={() => setShowBooking(false)}
           orderDays={DAYS_ORDER}
           multiSelect={true}
-          requiredCount={packHours > 1 ? packHours : null}
+          requiredCount={requiredCount}
+          freeCount={freeCount}
           canBook={canBook}
           myStudentIds={children.map(c => c.id)}
           idToName={Object.fromEntries(children.map(c => [c.id, c.full_name || c.fullName || c.name || 'Enfant']))}

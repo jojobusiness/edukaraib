@@ -77,8 +77,33 @@ export default function BookingModal({
   requiredCount = null, // null | 5 | 10
   myStudentIds = [],     // ⬅️ IDs des enfants du parent (optionnel)
   idToName = {},         // ⬅️ { [id]: "Nom complet" } pour l’infobulle (optionnel)
+
+  freeCount = 0,
+  showFreeLegend = true,
+
 }) {
   const [selected, setSelected] = useState([]);
+
+  const [giftFlash, setGiftFlash] = useState(null);
+
+  // Tri stable : date puis heure
+  const sortedSelected = useMemo(() => {
+    return [...selected].sort((a, b) => {
+      const ad = a.date || '';
+      const bd = b.date || '';
+      if (ad !== bd) return ad.localeCompare(bd);
+      return (a.hour || 0) - (b.hour || 0);
+    });
+  }, [selected]);
+
+  // Clé unique d’un créneau (pour le comparer)
+  const slotKey = (s) => `${s.day}:${s.hour}:${s.date || ''}`;
+
+  // Les créneaux offerts = les N premiers de la sélection (dans l’ordre)
+  const freeKeys = useMemo(() => {
+    const n = Math.max(0, Number(freeCount) || 0);
+    return new Set(sortedSelected.slice(0, n).map(slotKey));
+  }, [sortedSelected, freeCount]);
 
   // ➕ détecter si availability est "par semaine" (clés = YYYY-MM-DD)
   const isPerWeekAvailability = useMemo(() => {
@@ -335,17 +360,20 @@ export default function BookingModal({
         // Limite de pack
         if (requiredCount && prev.length >= requiredCount) return prev;
 
-        // Ajout d'un créneau complet (jour + heure + date + semaine + startAt)
-        return [
+        const next = [
           ...prev,
-          {
-            day,
-            hour,
-            date: dateKey,
-            week: weekKey,
-            startAt,
-          },
+          { day, hour, date: dateKey, week: weekKey, startAt },
         ];
+
+        // 🎁 si ce nouveau créneau tombe dans les heures offertes (ex: 1ère, ou 1ère+2ème)
+        const nFree = Math.max(0, Number(freeCount) || 0);
+        if (nFree > 0 && prev.length < nFree) {
+          const k = `${day}:${hour}:${dateKey}`;
+          setGiftFlash(k);
+          window.setTimeout(() => setGiftFlash(null), 600);
+        }
+
+        return next;
       });
     } else {
       // Mode 1 seul créneau
@@ -427,6 +455,14 @@ export default function BookingModal({
                 n
               </span>
               Places restantes
+            </span>
+          )}
+          {showFreeLegend && freeCount > 0 && (
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-amber-50 border border-amber-200">
+                🎁
+              </span>
+              = Gratuit
             </span>
           )}
         </div>
@@ -544,6 +580,10 @@ export default function BookingModal({
 
                       const disabledByPack =
                         canBook && dispo && !booked && !locked && !sel && requiredCount && selected.length >= requiredCount;
+                      const dateKey = dayDateKey(dayLabel);
+                      const thisKey = `${dayLabel}:${h}:${dateKey || ''}`;
+                      const isFree = sel && freeKeys.has(thisKey);
+                      const isGiftAnimating = giftFlash === thisKey;
 
                       return (
                         <td key={h} className="px-1 py-1">
@@ -556,6 +596,19 @@ export default function BookingModal({
                             aria-label={remaining !== null ? `${title}. Places restantes : ${remaining}` : title}
                           >
                             {booked ? '❌' : sel ? '✔' : ''}
+
+                            {isFree && (
+                              <span
+                                className={[
+                                  "absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center",
+                                  "bg-amber-50 border border-amber-200 text-base",
+                                  isGiftAnimating ? "animate-bounce" : ""
+                                ].join(" ")}
+                                title="Heure offerte"
+                              >
+                                🎁
+                              </span>
+                            )}
 
                             {/* 🔵 remets CE bloc */}
                             {remaining !== null && dispo && !booked && !locked && canBook && (
