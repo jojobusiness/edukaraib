@@ -542,6 +542,18 @@ export default function TeacherProfile() {
     const bookingFor =
       currentRole === "parent" && targetStudentId !== me.uid ? "child" : "self";
     const slots = Array.isArray(selected) ? selected : [selected];
+
+    const isPack = packChoice === 5 || packChoice === 10;
+    const paidHours = packChoice;                 // 5 ou 10
+    const bonusHours = packChoice === 5 ? 1 : packChoice === 10 ? 2 : 0;
+    const totalPackHours = isPack ? (paidHours + bonusHours) : 0;
+    const packType = paidHours === 5 ? "pack5" : paidHours === 10 ? "pack10" : null;
+
+    // 1 seul pack_id pour tout (root + participant)*
+    const forcedPackId = isPack
+      ? `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${paidHours}_${bookMode}`
+      : null;
+    
     // --- helpers pack (au NIVEAU PARTICIPANT) ---
     const wipePackParticipant = (sid) => ({
       [`participantsMap.${sid}.pack`]: deleteField(),
@@ -568,19 +580,6 @@ export default function TeacherProfile() {
       };
     };
 
-    const wipePackRoot = {
-      pack: deleteField(),
-      is_pack: deleteField(),
-      pack_id: deleteField(),
-      pack_type: deleteField(),
-      pack_mode: deleteField(),
-      pack_hours: deleteField(),        // heures payées
-      pack_bonus_hours: deleteField(),  // offertes
-      pack_hours_total: deleteField(),  // payées + offertes
-      pack_hours_remaining: deleteField(),
-      require_accept_all: deleteField(),
-    };
-
     const putPackRoot = (forcedPackId) => {
       if (!isPack) return {};
       const pid = forcedPackId || `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${paidHours}_${bookMode}`;
@@ -596,13 +595,6 @@ export default function TeacherProfile() {
         require_accept_all: true,
       };
     };
-
-    const isPack = packChoice === 5 || packChoice === 10;
-    const paidHours = packChoice;                 // 5 ou 10
-    const bonusHours = packChoice === 5 ? 1 : packChoice === 10 ? 2 : 0;
-    const totalPackHours = isPack ? (paidHours + bonusHours) : 0;
-
-    const packType = paidHours === 5 ? "pack5" : paidHours === 10 ? "pack10" : null;
 
     const base = Number(teacher?.price_per_hour || 0);
     const visio = effectiveVisioPrice(teacher);
@@ -669,6 +661,11 @@ export default function TeacherProfile() {
               pack_hours_total: deleteField(),
               pack_hours_remaining: deleteField(),
 
+              pack: deleteField(),
+              pack_id: deleteField(),
+              pack_bonus_hours: deleteField(),
+              require_accept_all: deleteField(),
+
               participant_ids: Array.from(new Set([...(existingInd.participant_ids || []), targetStudentId])),
 
               // on repart sur une demande “unitaire” => on efface tout Pack du participant
@@ -729,7 +726,7 @@ export default function TeacherProfile() {
           //    b) groupe où je suis "rejected" -> passer ce participant en pending_teacher
           if (rejectedInGroupDoc) {
             const { id: gId, data: g } = rejectedInGroupDoc;
-            const wantSingle = !(packHours === 5 || packHours === 10);
+            const wantSingle = !(packChoice === 5 || packChoice === 10);
 
             const basePayload = {
               participant_ids: Array.from(new Set([...(g.participant_ids || []), targetStudentId])),
@@ -744,10 +741,6 @@ export default function TeacherProfile() {
 
             await updateDoc(doc(db, 'lessons', gId), {
               ...basePayload,
-              ...(wantSingle
-                ? wipePackParticipant(targetStudentId)               // unitaire => on enlève tout Pack
-                : putPackParticipant(targetStudentId, packHours, bookMode) // nouveau pack => on écrase proprement
-              ),
               ...(isPack
                 ? putPackParticipant(targetStudentId, paidHours, bookMode, forcedPackId)
                 : wipePackParticipant(targetStudentId)
@@ -862,10 +855,8 @@ export default function TeacherProfile() {
             },
 
             mode: bookMode,
-            ...(isPack ? putPackRoot() : {}),
+            ...(!createAsGroup && isPack ? putPackRoot(forcedPackId) : {}),
           });
-
-          const forcedPackId = isPack ? `${auth.currentUser.uid}_${teacherId}_${Date.now()}_${paidHours}_${bookMode}` : null;
 
           // Pose/Nettoie le pack APRES création (pour ne pas polluer la leçon)
           await updateDoc(doc(db, 'lessons', newLessonRef.id), {
@@ -934,7 +925,7 @@ export default function TeacherProfile() {
 
       // Si on vient de "réactiver" un refus en unitaire => coupe l’état UI du pack
       if (isPack && results.some(r => r.status === 'revived_individual' || r.status === 'revived_group')) {
-        setPackHours(1);  // plus d'étiquette Pack dans la confirmation
+        setPackChoice(0);  // plus d'étiquette Pack dans la confirmation
       }
       setShowBooking(false);
 
