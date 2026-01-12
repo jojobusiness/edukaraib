@@ -1052,6 +1052,32 @@ export default function TeacherProfile() {
                   </button>
                 )}
 
+                {/* Parent : choix enfant (MOBILE) */}
+                {currentRole === "parent" && (
+                  <div className="mt-4">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Qui est l’élève ?
+                    </label>
+
+                    <select
+                      className="w-full border rounded-xl px-3 py-2 bg-white"
+                      value={selectedStudentId || meUid || ""}
+                      onChange={(e) => setSelectedStudentId(e.target.value)}
+                    >
+                      {meUid && <option value={meUid}>Moi (parent)</option>}
+                      {children.map((k) => (
+                        <option key={k.id} value={k.id}>
+                          {k.full_name || k.fullName || k.name || "Enfant"}
+                        </option>
+                      ))}
+                    </select>
+
+                    <p className="mt-2 text-xs text-slate-500">
+                      Les créneaux en rouge sont indisponibles pour l’élève sélectionné.
+                    </p>
+                  </div>
+                )}
+
                 {/* Sélecteurs côte à côte */}
                 <div className="mt-4 grid grid-cols-2 gap-3">
                   <div>
@@ -1409,6 +1435,32 @@ export default function TeacherProfile() {
                   </button>
                 )}
 
+                {/* Parent : choix enfant (DESKTOP - fusionné dans la carte) */}
+                {currentRole === "parent" && (
+                  <div className="mt-4">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Qui est l’élève ?
+                    </label>
+
+                    <select
+                      className="w-full border rounded-xl px-3 py-2 bg-white"
+                      value={selectedStudentId || meUid || ""}
+                      onChange={(e) => setSelectedStudentId(e.target.value)}
+                    >
+                      {meUid && <option value={meUid}>Moi (parent)</option>}
+                      {children.map((k) => (
+                        <option key={k.id} value={k.id}>
+                          {k.full_name || k.fullName || k.name || "Enfant"}
+                        </option>
+                      ))}
+                    </select>
+
+                    <p className="mt-2 text-xs text-slate-500">
+                      Les créneaux en rouge sont indisponibles pour l’élève sélectionné.
+                    </p>
+                  </div>
+                )}
+
                 {/* Mode + Pack côte à côte */}
                 <div className="mt-4 grid grid-cols-2 gap-3">
                   <div>
@@ -1484,29 +1536,6 @@ export default function TeacherProfile() {
                 )}
               </div>
             </div>
-
-            {/* Parent : choix enfant (si besoin, en dessous de la carte sticky) */}
-            {currentRole === "parent" && (
-              <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5">
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Qui est l’élève ?</label>
-                <select
-                  className="w-full border rounded-xl px-3 py-2"
-                  value={selectedStudentId || meUid || ""}
-                  onChange={(e) => setSelectedStudentId(e.target.value)}
-                >
-                  {meUid && <option value={meUid}>Moi (parent)</option>}
-                  {children.map((k) => (
-                    <option key={k.id} value={k.id}>
-                      {k.full_name || k.fullName || k.name || "Enfant"}
-                    </option>
-                  ))}
-                </select>
-
-                <p className="text-xs text-gray-500 mt-2">
-                  Les créneaux en rouge sont indisponibles pour l’élève sélectionné.
-                </p>
-              </div>
-            )}
           </div>
         </aside>
       </div>
