@@ -304,14 +304,22 @@ export default function ParentPayments() {
         for (const r of rows) {
           const key = packKeyForChild(r.lesson, r.forStudent);
           if (!slotsByKey.has(key)) slotsByKey.set(key, []);
-          const label = fmtDateTime(r.lesson.start_datetime, r.lesson.slot_day, r.lesson.slot_hour);
-          if (label && label !== '—') {
-            slotsByKey.get(key).push(label);
-          }
+
+          const d = buildStartDate(r.lesson);
+          if (!d) continue;
+
+          slotsByKey.get(key).push({
+            ts: d.getTime(),
+            label: formatFullDate(r.lesson),
+            isGift: isFreeHourForChild(r.lesson, r.forStudent),
+          });
         }
         // (optionnel) dédoublonner + tri
         for (const [k, arr] of slotsByKey) {
-          const uniq = Array.from(new Set(arr));
+          // dédoublonnage par timestamp + tri
+          const map = new Map();
+          arr.forEach((x) => map.set(x.ts, x));
+          const uniq = Array.from(map.values()).sort((a, b) => a.ts - b.ts);
           slotsByKey.set(k, uniq);
         }
 
@@ -503,52 +511,16 @@ export default function ParentPayments() {
                       {isPackForChild(r.lesson, r.forStudent) ? (
                         r.__slots?.length > 0 && (
                           <div className="text-xs text-gray-600 mt-1">
-                            {(() => {
-                              // Convertit les labels en vraies dates
-                              const parsed = (r.__slots || [])
-                                .map((label) => {
-                                  // On parse le label FR si possible : "02/01/2026, 11:00:00" (toLocaleString fr-FR)
-                                  // Sinon on garde juste l'affichage brut.
-                                  const ts = Date.parse(label); // marche souvent si c'est une date complète
-                                  return { label, ts: Number.isFinite(ts) ? ts : null };
-                                })
-                                .filter((x) => x.ts != null)
-                                .sort((a, b) => a.ts - b.ts);
-
-                              const freeCount = r.lesson?.pack_type === 'pack10' ? 2 : r.lesson?.pack_type === 'pack5' ? 1 : 0;
-                              const freeSet = new Set(parsed.slice(0, freeCount).map(x => x.ts));
-
-                              // Regroupe par jour+date
-                              const groups = {};
-                              parsed.forEach(({ date }) => {
-                                const key = date.toDateString(); // "Mon Nov 24 2025"
-                                if (!groups[key]) groups[key] = [];
-                                groups[key].push(date);
-                              });
-
-                              return (
-                                <div className="text-xs text-gray-600 mt-1">
-                                  Horaires du pack :
-                                  <ul className="ml-2 mt-1 space-y-1">
-                                    {parsed.map((x) => {
-                                      const d = new Date(x.ts);
-                                      const weekday = d.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '');
-                                      const dd = String(d.getDate()).padStart(2, '0');
-                                      const mm = String(d.getMonth() + 1).padStart(2, '0');
-                                      const hh = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-
-                                      const isGift = freeSet.has(x.ts);
-
-                                      return (
-                                        <li key={x.ts}>
-                                          {weekday} {dd}/{mm} : {isGift ? '🎁 ' : ''}{hh}
-                                        </li>
-                                      );
-                                    })}
-                                  </ul>
-                                </div>
-                              );
-                            })()}
+                            <div className="text-xs text-gray-600 mt-1">
+                              Horaires du pack :
+                              <ul className="ml-2 mt-1 space-y-1">
+                                {(r.__slots || []).map((x) => (
+                                  <li key={x.ts}>
+                                    {x.isGift ? '🎁 ' : ''}{x.label}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
                           </div>
                         )
                       ) : (

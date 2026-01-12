@@ -254,11 +254,22 @@ export default function StudentPayments() {
         for (const l of enriched) {
           const key = packKeyForMe(l, user.uid);
           if (!slotsByKey.has(key)) slotsByKey.set(key, []);
-          const label =
-            (l.start_datetime?.toDate?.() && l.start_datetime.toDate().toLocaleString('fr-FR')) ||
-            (typeof l.start_datetime?.seconds === 'number' && new Date(l.start_datetime.seconds * 1000).toLocaleString('fr-FR')) ||
-            (l.slot_day ? `${l.slot_day} • ${String(l.slot_hour).padStart(2, '0')}:00` : '—');
-          slotsByKey.get(key).push(label);
+
+          const d = buildStartDate(l);
+          if (!d) continue;
+
+          slotsByKey.get(key).push({
+            ts: d.getTime(),
+            label: formatFullDate(l),
+            isGift: isFreeHourForMe(l, user.uid),
+          });
+        }
+
+        for (const [k, arr] of slotsByKey) {
+          const map = new Map();
+          arr.forEach((x) => map.set(x.ts, x));
+          const uniq = Array.from(map.values()).sort((a, b) => a.ts - b.ts);
+          slotsByKey.set(k, uniq);
         }
 
         // --- regroupement pack ---
@@ -443,48 +454,16 @@ export default function StudentPayments() {
                     {isPackForMe(l, uid) ? (
                       l.__slots?.length > 0 && (
                         <div className="text-xs text-gray-600 mt-1">
-                          {(() => {
-                            const parsed = (l.__slots || [])
-                              .map((label) => {
-                                const ts = Date.parse(label);
-                                return { label, ts: Number.isFinite(ts) ? ts : null };
-                              })
-                              .filter((x) => x.ts != null)
-                              .sort((a, b) => a.ts - b.ts);
-
-                            const freeCount = l?.pack_type === 'pack10' ? 2 : l?.pack_type === 'pack5' ? 1 : 0;
-                            const freeSet = new Set(parsed.slice(0, freeCount).map(x => x.ts));
-
-                            const groups = {};
-                            parsed.forEach(({ date }) => {
-                              const key = date.toDateString();
-                              if (!groups[key]) groups[key] = [];
-                              groups[key].push(date);
-                            });
-
-                            return (
-                              <div className="text-xs text-gray-600 mt-1">
-                                Horaires du pack :
-                                <ul className="ml-2 mt-1 space-y-1">
-                                  {parsed.map((x) => {
-                                    const d = new Date(x.ts);
-                                    const weekday = d.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '');
-                                    const dd = String(d.getDate()).padStart(2, '0');
-                                    const mm = String(d.getMonth() + 1).padStart(2, '0');
-                                    const hh = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-
-                                    const isGift = freeSet.has(x.ts);
-
-                                    return (
-                                      <li key={x.ts}>
-                                        {weekday} {dd}/{mm} : {isGift ? '🎁 ' : ''}{hh}
-                                      </li>
-                                    );
-                                  })}
-                                </ul>
-                              </div>
-                            );
-                          })()}
+                          <div className="text-xs text-gray-600 mt-1">
+                            Horaires du pack :
+                            <ul className="ml-2 mt-1 space-y-1">
+                              {(l.__slots || []).map((x) => (
+                                <li key={x.ts}>
+                                  {x.isGift ? '🎁 ' : ''}{x.label}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
                         </div>
                       )
                     ) : (

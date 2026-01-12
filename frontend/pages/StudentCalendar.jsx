@@ -75,6 +75,14 @@ function formatHourFromSlot(slot_hour) {
   const h = Number(slot_hour) || 0;
   return `${String(h).padStart(2,'0')}:00`;
 }
+
+function isFreeForStudent(lesson, uid) {
+  if (!lesson) return false;
+  if (lesson.is_free_hour) return true;
+  if (!uid) return false;
+  return !!lesson?.participantsMap?.[uid]?.is_free_hour;
+}
+
 async function fetchUserProfile(uid) {
   if (!uid) return null;
   try {
@@ -540,9 +548,15 @@ export default function StudentCalendar() {
                               </button>
                             )}
 
-                            <span className="text-xs text-gray-500 ml-auto">
-                              {formatHourFromSlot(l.slot_hour)}
-                            </span>
+                            {(() => {
+                              const uid = auth.currentUser?.uid;
+                              const gift = isFreeForStudent(l, uid);
+                              return (
+                                <span className="text-xs text-gray-500 ml-auto">
+                                  {gift ? '🎁 ' : ''}{formatHourFromSlot(l.slot_hour)}
+                                </span>
+                              );
+                            })()}
 
                             {isGroup && open && (
                               <div className="absolute top-full mt-2 left-3 z-10 bg-white border rounded-lg shadow p-3 w-64">

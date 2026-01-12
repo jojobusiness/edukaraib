@@ -74,6 +74,18 @@ function formatHourFromSlot(h) {
   const n = Number(h) || 0;
   return `${String(n).padStart(2, '0')}:00`;
 }
+
+function isFreeForAnyChild(lesson, kidIds) {
+  if (!lesson) return false;
+
+  // 1) Flag global si tu l’utilises un jour
+  if (lesson.is_free_hour) return true;
+
+  // 2) Flag par participant (le bon)
+  const pm = lesson.participantsMap || {};
+  return (Array.isArray(kidIds) ? kidIds : []).some((kidId) => !!pm?.[kidId]?.is_free_hour);
+}
+
 async function fetchUserProfile(uid) {
   if (!uid) return null;
   try {
@@ -556,7 +568,14 @@ export default function ParentCalendar() {
                               )}
                             </div>
 
-                            <span className="text-xs text-gray-500 ml-auto">{formatHourFromSlot(l.slot_hour)}</span>
+                            {(() => {
+                              const gift = isFreeForAnyChild(l, kidIds);
+                              return (
+                                <span className="text-xs text-gray-500 ml-auto">
+                                  {gift ? '🎁 ' : ''}{formatHourFromSlot(l.slot_hour)}
+                                </span>
+                              );
+                            })()}
 
                             {isGroup && (
                               <button

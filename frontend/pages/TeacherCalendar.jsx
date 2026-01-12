@@ -74,6 +74,23 @@ function formatHour(h) {
   const n = Number(h) || 0;
   return `${String(n).padStart(2, '0')}:00`;
 }
+
+function hasAnyFreeHour(lesson) {
+  if (!lesson) return false;
+  if (lesson.is_free_hour) return true;
+
+  const pm = lesson.participantsMap || {};
+
+  // individuel : student_id
+  if (!lesson.is_group && lesson.student_id) {
+    return !!pm?.[lesson.student_id]?.is_free_hour;
+  }
+
+  // groupé : n'importe quel participant
+  const ids = Array.isArray(lesson.participant_ids) ? lesson.participant_ids : [];
+  return ids.some((sid) => !!pm?.[sid]?.is_free_hour);
+}
+
 async function fetchUserProfile(uid) {
   if (!uid) return null;
   try {
@@ -616,9 +633,14 @@ export default function TeacherCalendar() {
                               </>
                             )}
 
-                            <span className="text-xs text-gray-500 ml-auto">
-                              {formatHour(l.slot_hour)}
-                            </span>
+                            {(() => {
+                              const gift = hasAnyFreeHour(l);
+                              return (
+                                <span className="text-xs text-gray-500 ml-auto">
+                                  {gift ? '🎁 ' : ''}{formatHour(l.slot_hour)}
+                                </span>
+                              );
+                            })()}
                           </li>
                         );
                       })}
