@@ -121,6 +121,13 @@ const isPackForMe = (l, uid) => {
   );
 };
 
+const isFreeHourForMe = (l, uid) => {
+  if (!l) return false;
+  if (l.is_free_hour) return true;
+  if (uid && l?.participantsMap?.[uid]?.is_free_hour) return true;
+  return false;
+};
+
 const packHoursForMe = (l, uid) => {
   const e = entryForMe(l, uid);
   if (!e) return 1;
@@ -142,6 +149,7 @@ const detectSourceForMe = (l, uid) => {
 };
 
 const billedHoursForMe = (l, uid) => {
+  if (isFreeHourForMe(l, uid)) return 0;
   const ph = packHoursForMe(l, uid);
   if (ph > 1) return ph;
   const h = Number(l.duration_hours);
@@ -149,6 +157,7 @@ const billedHoursForMe = (l, uid) => {
 };
 
 const getDisplayAmountForMe = (l, uid) => {
+  if (isFreeHourForMe(l, uid)) return 0;
   const isVisio = String(l.mode) === 'visio' || l.is_visio === true;
   const baseRate = isVisio && l.visio_enabled && l.visio_same_rate === false
     ? toNumber(l.visio_price_per_hour)
@@ -436,7 +445,7 @@ export default function StudentPayments() {
                         <div className="text-xs text-gray-600 mt-1">
                           {(() => {
                             const parsed = l.__slots
-                              .map((label) => ({ label, date: buildStartDate(l) }))
+                              .map((label) => ({ label, date: buildStartDate(l, label) }))
                               .filter((x) => x.date);
 
                             const groups = {};

@@ -1840,6 +1840,8 @@ export default function TeacherLessons() {
     [demandesIndividuelles, demandesGroupes, pendingPacks]
   );
 
+  const freeCount = p.lesson?.pack_type === 'pack10' ? 2 : p.lesson?.pack_type === 'pack5' ? 1 : 0;
+
   return (
     <DashboardLayout role="teacher">
       <div className="max-w-5xl mx-auto">
@@ -1894,7 +1896,15 @@ export default function TeacherLessons() {
                           ) : null}
                           <span className="text-sm font-medium">{p.lesson.subject_id || 'Cours'}</span>
                           <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{p.modeLabel}</span>
-                          <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">{p.packLabel}</span>
+                          {(() => {
+                            const owner = getPackOwner(p.lesson);
+                            const free = owner ? isFreeHourFor(owner, p.lesson) : false;
+                            return (
+                              <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">
+                                {free ? '🎁 ' : ''}{p.packLabel}
+                              </span>
+                            );
+                          })()}
                           <span className="text-xs text-gray-500 ml-1">
                             • {p.slots.length} horaires
                           </span>
@@ -1921,7 +1931,7 @@ export default function TeacherLessons() {
                         <div className="mt-2 text-xs text-gray-700">
                           {p.slots.map((s, idx) => (
                             <span key={idx} className="inline-block bg-gray-50 border rounded px-2 py-0.5 mr-1 mb-1">
-                              {s.label}
+                              {idx < freeCount ? '🎁 ' : ''}{s.label}
                             </span>
                           ))}
                         </div>
@@ -1934,7 +1944,10 @@ export default function TeacherLessons() {
                 <div className="bg-white p-4 rounded-xl shadow border">
                   <div className="font-semibold text-sm mb-3">Groupes — demandes par élève</div>
                   <ul className="space-y-2">
-                    {demandesGroupes.map(({ lessonId, lesson, studentId, status, studentName, requesterName }) => (
+                    {demandesGroupes.map(({ lessonId, lesson, studentId, status, studentName, requesterName }) => {
+                      const free = isFreeHourFor(studentId, lesson);
+
+                      return (
                       <li key={`${lessonId}:${studentId}`} className="border rounded-lg px-3 py-2 flex items-center gap-3">
                         <span className="text-xs text-gray-600">
                           <When lesson={lesson} />
@@ -1942,7 +1955,14 @@ export default function TeacherLessons() {
                         <span className="text-sm font-medium">{lesson.subject_id || 'Cours'}</span>
                         {/* ——— NOUVEAU : pastilles mode & pack ——— */}
                         <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{modeLabel(lesson)}</span>
-                        <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">{packLabel(lesson)}</span>
+                        {(() => {
+                          const pack = packLabelForLesson(lesson, studentId) || packLabel(lesson);
+                          return pack ? (
+                            <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded">
+                              {free ? '🎁 ' : ''}{pack}
+                            </span>
+                          ) : null;
+                        })()}
                         {/* ———————————————————————————————— */}
                         <span className="text-xs text-gray-600">
                           • Élève : <span className="font-medium">{studentName || studentId}</span>
@@ -1959,7 +1979,8 @@ export default function TeacherLessons() {
                           <button className="px-3 py-1 rounded bg-red-600 text-white text-xs" onClick={() => rejectGroupStudent(lessonId, studentId)}>Refuser</button>
                         </div>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 </div>
               )}
@@ -2126,6 +2147,12 @@ export default function TeacherLessons() {
                         <StatusPill status="completed" />
                         {/* ——— NOUVEAU : pastilles mode & pack ——— */}
                         <ModePackPills l={l} />
+                        {(() => {
+                          const owner = lesson?.is_group ? null : getOwnerStudentId(lesson);
+                          const sid = lesson?.is_group ? null : owner;
+                          const free = sid ? isFreeHourFor(sid, lesson) : false;
+                          return free ? <span className="ml-1 text-xs">🎁</span> : null;
+                        })()}
                         {/* ———————————————————————————————— */}
                       </div>
                       <div className="text-gray-700">

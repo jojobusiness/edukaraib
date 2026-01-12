@@ -128,6 +128,13 @@ const detectSourceFor = (l, sid) => {
 // == Helpers pack/étiquettes par ENFANT ==
 const entryForChild = (l, sid) => l?.participantsMap?.[sid] || null;
 
+const isFreeHourForChild = (l, sid) => {
+  if (!l) return false;
+  if (l.is_free_hour) return true;
+  if (sid && l?.participantsMap?.[sid]?.is_free_hour) return true;
+  return false;
+};
+
 const isPackForChild = (l, sid) => {
   const e = entryForChild(l, sid);
   return !!e && (
@@ -153,6 +160,7 @@ const packKeyForChild = (l, sid) => {
 };
 
 const isEligibleForChildPayment = (lesson, sid) => {
+  if (isFreeHourForChild(lesson, sid)) return false;
   if (lesson?.is_group) {
     const st = lesson?.participantsMap?.[sid]?.status;
     return st === 'accepted' || st === 'confirmed';
@@ -166,6 +174,7 @@ const toNumber = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 const getDisplayAmountForChild = (l, childId) => {
+  if (isFreeHourForChild(l, childId)) return 0;
   const isVisio = String(l.mode) === 'visio' || l.is_visio === true;
   const baseRate = isVisio && l.visio_enabled && l.visio_same_rate === false
     ? toNumber(l.visio_price_per_hour)
@@ -451,6 +460,15 @@ export default function ParentPayments() {
     }
   };
 
+  const freeCount = r.lesson?.pack_type === 'pack10' ? 2 : r.lesson?.pack_type === 'pack5' ? 1 : 0;
+
+  const allDatesSorted = parsed
+    .map(x => x.date)
+    .filter(Boolean)
+    .sort((a,b) => a.getTime() - b.getTime());
+
+  const freeSet = new Set(allDatesSorted.slice(0, freeCount).map(d => d.getTime()));
+
   return (
     <DashboardLayout role="parent">
       <div className="max-w-2xl mx-auto">
@@ -490,7 +508,7 @@ export default function ParentPayments() {
                         {r.forStudent === auth.currentUser?.uid ? 'Parent' : 'Enfant'} : {r.childName || r.forStudent}
                       </div>
                       <div className="text-xs text-gray-500">Type : {detectSourceFor(r.lesson, r.forStudent)}</div>
-
+                      
                       {isPackForChild(r.lesson, r.forStudent) ? (
                         r.__slots?.length > 0 && (
                           <div className="text-xs text-gray-600 mt-1">
@@ -519,6 +537,9 @@ export default function ParentPayments() {
                                         .replace('.', '');
                                       const dd = String(d.getDate()).padStart(2, '0');
                                       const mm = String(d.getMonth() + 1).padStart(2, '0');
+                                      
+                                      const src = detectSourceFor(r.lesson, r.forStudent);
+                                      const free = isFreeHourForChild(r.lesson, r.forStudent);
 
                                       const hours = arr
                                         .map((x) =>
@@ -528,7 +549,7 @@ export default function ParentPayments() {
 
                                       return (
                                         <li key={d.toISOString()}>
-                                          {weekday} {dd}/{mm} : {hours}
+                                          {weekday} {dd}/{mm} : {hours} 
                                         </li>
                                       );
                                     })}
