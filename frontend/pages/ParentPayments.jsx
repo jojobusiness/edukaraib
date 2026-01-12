@@ -460,15 +460,6 @@ export default function ParentPayments() {
     }
   };
 
-  const freeCount = r.lesson?.pack_type === 'pack10' ? 2 : r.lesson?.pack_type === 'pack5' ? 1 : 0;
-
-  const allDatesSorted = parsed
-    .map(x => x.date)
-    .filter(Boolean)
-    .sort((a,b) => a.getTime() - b.getTime());
-
-  const freeSet = new Set(allDatesSorted.slice(0, freeCount).map(d => d.getTime()));
-
   return (
     <DashboardLayout role="parent">
       <div className="max-w-2xl mx-auto">
@@ -514,9 +505,18 @@ export default function ParentPayments() {
                           <div className="text-xs text-gray-600 mt-1">
                             {(() => {
                               // Convertit les labels en vraies dates
-                              const parsed = r.__slots
-                                .map((label) => ({ label, date: buildStartDate(r.lesson) }))
-                                .filter((x) => x.date);
+                              const parsed = (r.__slots || [])
+                                .map((label) => {
+                                  // On parse le label FR si possible : "02/01/2026, 11:00:00" (toLocaleString fr-FR)
+                                  // Sinon on garde juste l'affichage brut.
+                                  const ts = Date.parse(label); // marche souvent si c'est une date complète
+                                  return { label, ts: Number.isFinite(ts) ? ts : null };
+                                })
+                                .filter((x) => x.ts != null)
+                                .sort((a, b) => a.ts - b.ts);
+
+                              const freeCount = r.lesson?.pack_type === 'pack10' ? 2 : r.lesson?.pack_type === 'pack5' ? 1 : 0;
+                              const freeSet = new Set(parsed.slice(0, freeCount).map(x => x.ts));
 
                               // Regroupe par jour+date
                               const groups = {};
@@ -530,26 +530,18 @@ export default function ParentPayments() {
                                 <div className="text-xs text-gray-600 mt-1">
                                   Horaires du pack :
                                   <ul className="ml-2 mt-1 space-y-1">
-                                    {Object.values(groups).map((arr) => {
-                                      const d = arr[0];
-                                      const weekday = d
-                                        .toLocaleDateString('fr-FR', { weekday: 'short' })
-                                        .replace('.', '');
+                                    {parsed.map((x) => {
+                                      const d = new Date(x.ts);
+                                      const weekday = d.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '');
                                       const dd = String(d.getDate()).padStart(2, '0');
                                       const mm = String(d.getMonth() + 1).padStart(2, '0');
-                                      
-                                      const src = detectSourceFor(r.lesson, r.forStudent);
-                                      const free = isFreeHourForChild(r.lesson, r.forStudent);
+                                      const hh = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
-                                      const hours = arr
-                                        .map((x) =>
-                                          x.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-                                        )
-                                        .join(' • ');
+                                      const isGift = freeSet.has(x.ts);
 
                                       return (
-                                        <li key={d.toISOString()}>
-                                          {weekday} {dd}/{mm} : {hours} 
+                                        <li key={x.ts}>
+                                          {weekday} {dd}/{mm} : {isGift ? '🎁 ' : ''}{hh}
                                         </li>
                                       );
                                     })}

@@ -444,9 +444,16 @@ export default function StudentPayments() {
                       l.__slots?.length > 0 && (
                         <div className="text-xs text-gray-600 mt-1">
                           {(() => {
-                            const parsed = l.__slots
-                              .map((label) => ({ label, date: buildStartDate(l, label) }))
-                              .filter((x) => x.date);
+                            const parsed = (l.__slots || [])
+                              .map((label) => {
+                                const ts = Date.parse(label);
+                                return { label, ts: Number.isFinite(ts) ? ts : null };
+                              })
+                              .filter((x) => x.ts != null)
+                              .sort((a, b) => a.ts - b.ts);
+
+                            const freeCount = l?.pack_type === 'pack10' ? 2 : l?.pack_type === 'pack5' ? 1 : 0;
+                            const freeSet = new Set(parsed.slice(0, freeCount).map(x => x.ts));
 
                             const groups = {};
                             parsed.forEach(({ date }) => {
@@ -459,22 +466,18 @@ export default function StudentPayments() {
                               <div className="text-xs text-gray-600 mt-1">
                                 Horaires du pack :
                                 <ul className="ml-2 mt-1 space-y-1">
-                                  {Object.values(groups).map((arr) => {
-                                    const d = arr[0];
-                                    const weekday = d
-                                      .toLocaleDateString('fr-FR', { weekday: 'short' })
-                                      .replace('.', '');
+                                  {parsed.map((x) => {
+                                    const d = new Date(x.ts);
+                                    const weekday = d.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '');
                                     const dd = String(d.getDate()).padStart(2, '0');
                                     const mm = String(d.getMonth() + 1).padStart(2, '0');
-                                    const hours = arr
-                                      .map((x) =>
-                                        x.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
-                                      )
-                                      .join(' • ');
+                                    const hh = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+                                    const isGift = freeSet.has(x.ts);
 
                                     return (
-                                      <li key={d.toISOString()}>
-                                        {weekday} {dd}/{mm} : {hours}
+                                      <li key={x.ts}>
+                                        {weekday} {dd}/{mm} : {isGift ? '🎁 ' : ''}{hh}
                                       </li>
                                     );
                                   })}

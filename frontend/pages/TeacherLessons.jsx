@@ -1840,8 +1840,6 @@ export default function TeacherLessons() {
     [demandesIndividuelles, demandesGroupes, pendingPacks]
   );
 
-  const freeCount = p.lesson?.pack_type === 'pack10' ? 2 : p.lesson?.pack_type === 'pack5' ? 1 : 0;
-
   return (
     <DashboardLayout role="teacher">
       <div className="max-w-5xl mx-auto">
@@ -1885,7 +1883,10 @@ export default function TeacherLessons() {
                 </div>
                   {/* NOUVEAU */}
                   <ul className="space-y-2">
-                    {pendingPacks.map((p) => (
+                    {pendingPacks.map((p) => {
+                      const freeCount = p.lesson?.pack_type === 'pack10' ? 2 : p.lesson?.pack_type === 'pack5' ? 1 : 0;
+
+                      return (
                       <li key={p.packId} className="border rounded-lg px-3 py-2">
                         <div className="flex items-center gap-2 flex-wrap">
                           {/* Sous-texte : demandeur */}
@@ -1936,7 +1937,8 @@ export default function TeacherLessons() {
                           ))}
                         </div>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 </div>
               )}
@@ -2148,10 +2150,10 @@ export default function TeacherLessons() {
                         {/* ——— NOUVEAU : pastilles mode & pack ——— */}
                         <ModePackPills l={l} />
                         {(() => {
-                          const owner = lesson?.is_group ? null : getOwnerStudentId(lesson);
-                          const sid = lesson?.is_group ? null : owner;
-                          const free = sid ? isFreeHourFor(sid, lesson) : false;
-                          return free ? <span className="ml-1 text-xs">🎁</span> : null;
+                            const owner = l?.is_group ? null : getOwnerStudentId(l);
+                            const sid = l?.is_group ? null : owner;
+                            const free = sid ? isFreeHourFor(sid, l) : false;
+                            return free ? <span className="ml-1 text-xs">🎁</span> : null;
                         })()}
                         {/* ———————————————————————————————— */}
                       </div>
