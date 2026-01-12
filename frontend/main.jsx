@@ -5,14 +5,14 @@ import './styles/index.css';
 import { inject } from '@vercel/analytics';
 import { AuthProvider } from './contexts/AuthContext';
 if (import.meta.env.PROD) inject();
-import { AppGuards } from './setup/mobile-and-errors';
+//import { AppGuards } from './setup/mobile-and-errors';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <AuthProvider>
-      <AppGuards>
+      {/*<AppGuards>*/}
         <App />
-      </AppGuards>
+      {/*</AppGuards>*/}
     </AuthProvider>
   </React.StrictMode>
 );
