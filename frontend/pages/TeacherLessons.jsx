@@ -573,6 +573,13 @@ function isGroupLessonStrict(l) {
 
 const isInvitationStatus = (st) => String(st || '').toLowerCase().startsWith('invited_');
 
+function isFreeHourFor(uid, lesson) {
+  if (!lesson) return false;
+  if (lesson.is_free_hour) return true;
+  if (uid && lesson?.participantsMap?.[uid]?.is_free_hour) return true;
+  return false;
+}
+
 /* =================== PAGE =================== */
 export default function TeacherLessons() {
   const [lessons, setLessons] = useState([]);
@@ -1599,21 +1606,21 @@ export default function TeacherLessons() {
   }
 
   const Card = ({ lesson, showActionsForPending }) => {
-  const isGroup = isGroupLessonStrict(lesson);
+    const isGroup = isGroupLessonStrict(lesson);
 
-  const confirmedParticipants = (lesson.participantDetails || []).filter(
-    (p) => p.status === 'accepted' || p.status === 'confirmed'
-  );
+    const confirmedParticipants = (lesson.participantDetails || []).filter(
+      (p) => p.status === 'accepted' || p.status === 'confirmed'
+    );
 
-  // capacity: take an explicit capacity/max if present, else default 10 for groups, 1 for individual
-  const declaredCap =
-    lesson.capacity ??
-    lesson.max_group_size ??
-    lesson.group_size ??
-    (isGroup ? 10 : 1);
+    // capacity: take an explicit capacity/max if present, else default 10 for groups, 1 for individual
+    const declaredCap =
+      lesson.capacity ??
+      lesson.max_group_size ??
+      lesson.group_size ??
+      (isGroup ? 10 : 1);
 
-  const capacity = declaredCap;
-  const used = isGroup ? confirmedParticipants.length : (lesson.student_id ? 1 : 0);
+    const capacity = declaredCap;
+    const used = isGroup ? confirmedParticipants.length : (lesson.student_id ? 1 : 0);
 
     const showList = openParticipantsFor === lesson.id;
 
@@ -1627,15 +1634,24 @@ export default function TeacherLessons() {
       : individualStatus(lesson); // ⬅️ PRISE EN COMPTE DU participant propriétaire pour un individuel
 
     // ⬇️ Pastille paiement pour les cours individuels
-    const indivPaidPill = !isGroup ? (
-      <span
-        className={`text-[11px] px-2 py-0.5 rounded-full ml-2 ${
-          isIndividualPaid(lesson) ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800'
-        }`}
-        title={isIndividualPaid(lesson) ? 'Payé' : 'À payer'}
-      >
-        {isIndividualPaid(lesson) ? 'Payé' : 'À payer'}
-      </span>
+    const ownerId = getOwnerStudentId(lesson); // tu l’as déjà plus haut
+    const isFree = isFreeHourFor(ownerId, lesson);
+
+    const indivPaidPill = (!isGroup && displayedStatus === "confirmed") ? (
+      isFree ? (
+        <span className="text-[11px] px-2 py-0.5 rounded-full ml-2 bg-pink-50 text-pink-700" title="Heure offerte (pack)">
+          🎁 Offert
+        </span>
+      ) : (
+        <span
+          className={`text-[11px] px-2 py-0.5 rounded-full ml-2 ${
+            isIndividualPaid(lesson) ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-800"
+          }`}
+          title={isIndividualPaid(lesson) ? "Payé" : "À payer"}
+        >
+          {isIndividualPaid(lesson) ? "Payé" : "À payer"}
+        </span>
+      )
     ) : null;
 
     return (
@@ -1647,6 +1663,11 @@ export default function TeacherLessons() {
             {indivPaidPill}
             {/* ——— NOUVEAU : pastilles mode & pack ——— */}
             <ModePackPills l={lesson} />
+            {(() => {
+              const owner = getPackOwner(lesson);
+              const isFree = owner ? !!lesson?.participantsMap?.[owner]?.is_free_hour : false;
+              return isFree ? <span className="ml-1 text-xs">🎁</span> : null;
+            })()}
             {/* ———————————————————————————————— */}
             {isGroup && (
               <>
@@ -2058,7 +2079,7 @@ export default function TeacherLessons() {
                         Motif : Aucun élève
                       </div>
                     )}
-                    
+
                     {/* Demandeur (parent) si connu */}
                     {l.requesterName ? (
                       <p className="text-sm text-gray-600 mt-1">

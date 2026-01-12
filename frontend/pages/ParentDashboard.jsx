@@ -81,6 +81,10 @@ function packKeyForKid(lesson, kidId) {
   return `AUTO:${lesson.teacher_id}|${lesson.subject_id || ''}|${kidId}|${mode}|${hours || 'H'}`;
 }
 
+function isFreeFor(lesson, uid) {
+  return !!lesson?.participantsMap?.[uid]?.is_free;
+}
+
 export default function ParentDashboard() {
   const [children, setChildren] = useState([]);
   const [courses, setCourses] = useState([]);
@@ -302,7 +306,25 @@ export default function ParentDashboard() {
                   const datePart = nextOne.startAt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
                   const timePart = nextOne.startAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
                   const who = nextOne.is_group ? 'Groupe' : 'Cours';
-                  return `${who} (${nextOne.subject_id || 'Matière'}) — ${datePart} ${timePart}`;
+                  const kidIds = children.map(c => c.id);
+                  let hasGift = false;
+
+                  if (nextOne?.is_group) {
+                    const ids = Array.isArray(nextOne.participant_ids) ? nextOne.participant_ids : [];
+                    for (const kidId of ids) {
+                      if (kidIds.includes(kidId) && isKidConfirmed(nextOne, kidId) && isFreeFor(nextOne, kidId)) {
+                        hasGift = true;
+                        break;
+                      }
+                    }
+                  } else {
+                    const kidId = nextOne?.student_id;
+                    if (kidId && kidIds.includes(kidId) && isFreeFor(nextOne, kidId)) hasGift = true;
+                  }
+
+                  const gift = hasGift ? ' 🎁' : '';
+
+                  return `${who} (${nextOne.subject_id || 'Matière'}) — ${datePart} ${timePart}${gift}`;
                 })()
               : 'Aucun cours confirmé à venir'}
           </div>

@@ -348,7 +348,12 @@ function packLabelForChild(c, sid) {
   return ''; // pas d’étiquette si horaire
 }
 
-
+function isFreeHourFor(uid, lesson) {
+  if (!lesson) return false;
+  if (lesson.is_free_hour) return true;
+  if (uid && lesson?.participantsMap?.[uid]?.is_free_hour) return true;
+  return false;
+}
 
 /* =================== PAGE =================== */
 export default function ParentCourses() {
@@ -738,9 +743,10 @@ export default function ParentCourses() {
             </span>
             {(() => {
               const lab = packLabelForChild(c, sid);
+              const free = isFreeHourFor(uid, c);
               return lab ? (
                 <span className="text-[11px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded ml-1">
-                  {lab}
+                  {free ? "🎁 " : ""}{lab}
                 </span>
               ) : null;
             })()}
@@ -818,6 +824,14 @@ export default function ParentCourses() {
     // 1) statut effectif de cet enfant
     const st = (c?.participantsMap?.[sid]?.status) || c?.status || 'pending';
     if (st !== 'confirmed') return null; // rien si en attente / refusé
+
+    if (isFreeHourFor(sid, c)) {
+      return (
+        <span className="text-[11px] px-2 py-0.5 rounded-full bg-pink-50 text-pink-700">
+          🎁 Offert
+        </span>
+      );
+    }
 
     // 2) payé ?
     const isPaid = (v) => v === true || v === 'paid' || v === 'succeeded';

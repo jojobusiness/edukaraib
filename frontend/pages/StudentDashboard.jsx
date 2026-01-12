@@ -40,6 +40,10 @@ function nextOccurrence(slot_day, slot_hour, now = new Date()) {
   return start;
 }
 
+function isFreeFor(lesson, uid) {
+  return !!lesson?.participantsMap?.[uid]?.is_free;
+}
+
 // ---------- Fetch helpers ----------
 async function fetchUserProfile(uid) {
   if (!uid) return null;
@@ -328,7 +332,8 @@ export default function StudentDashboard() {
     const who = nextCourse.is_group
       ? 'Groupe'
       : 'Cours';
-    return `${who} ${nextCourse.subject_id ? `(${nextCourse.subject_id}) ` : ''}- ${datePart} ${timePart} avec ${nextCourse.teacherName}`;
+    const gift = nextCourse && isFreeFor(nextCourse, userId) ? ' 🎁' : '';
+    return `${who} ${nextCourse.subject_id ? `(${nextCourse.subject_id}) ` : ''}- ${datePart} ${timePart} avec ${nextCourse.teacherName} — ${gift}`;
   }, [nextCourse]);
 
   return (

@@ -605,7 +605,10 @@ export default function TeacherProfile() {
     setConfirmationMsg("");
     try {
       const results = [];
-      for (const slot of slots) {
+      for (let i = 0; i < slots.length; i++) {
+        const slot = slots[i];
+        const isFree = isPack && i < bonusHours; // pack5 => 1 offerte, pack10 => 2 offertes
+
         try {
           // Vérifier doublons + réactiver si précédemment "rejected"
           const dupIndQ = query(
@@ -840,6 +843,8 @@ export default function TeacherProfile() {
             is_group: createAsGroup,
             capacity: createAsGroup ? defaultCap : 1,
             student_id: createAsGroup ? null : targetStudentId,
+            is_free_hour: isFree,
+            free_reason: isFree ? "pack_bonus" : null,
 
             participant_ids: [targetStudentId],
             participantsMap: {
@@ -851,6 +856,7 @@ export default function TeacherProfile() {
                 paid_at: null,
                 status: 'pending_teacher',
                 added_at: serverTimestamp(),
+                [`participantsMap.${targetStudentId}.is_free_hour`]: isFree,
               },
             },
 

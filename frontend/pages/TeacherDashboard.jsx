@@ -50,6 +50,10 @@ function formatDT(ts) {
   } catch { return ''; }
 }
 
+function isFreeFor(lesson, uid) {
+  return !!lesson?.participantsMap?.[uid]?.is_free;
+}
+
 // ---------- Résolution profil (users / students) ----------
 async function fetchUserProfile(uid) {
   if (!uid) return null;
@@ -351,7 +355,23 @@ export default function TeacherDashboard() {
                   const who = isGroup
                     ? `Groupe (${size}/${cap})`
                     : (studentMap.get(nextOne.student_id) || 'Élève');
-                  return `${nextOne.subject_id || 'Cours'} - ${formatDate(nextOne.startAt)} ${formatTime(nextOne.startAt)} — ${who}`;
+                  const pm = nextOne?.participantsMap || {};
+                  let freeCount = 0;
+
+                  if (nextOne?.is_group) {
+                    const ids = Array.isArray(nextOne.participant_ids) ? nextOne.participant_ids : [];
+                    ids.forEach((sid) => {
+                      if (pm?.[sid]?.status === 'accepted' || pm?.[sid]?.status === 'confirmed') {
+                        if (pm?.[sid]?.is_free) freeCount += 1;
+                      }
+                    });
+                  } else if (nextOne?.student_id) {
+                    if (pm?.[nextOne.student_id]?.is_free) freeCount = 1;
+                  }
+
+                  const giftTag = freeCount > 0 ? ` 🎁${freeCount > 1 ? ` x${freeCount}` : ''}` : '';
+
+                  return `${nextOne.subject_id || 'Cours'} - ${formatDate(nextOne.startAt)} ${formatTime(nextOne.startAt)} — ${who}${giftTag}`;
                 })()
               : 'Aucun cours à venir'}
           </span>
