@@ -607,6 +607,26 @@ export default function Profile() {
               {/* Choix des modes */}
               <div className="rounded-xl border border-gray-200 p-4 space-y-3 bg-gray-50">
                 <h3 className="text-md font-bold text-gray-800">Modes proposés</h3>
+                  <div className="rounded-xl border border-gray-200 p-4 space-y-2 bg-gray-50">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <label className="text-sm font-semibold text-gray-700">
+                          Afficher mon offre sur EduKaraib
+                        </label>
+                        <p className="text-xs text-gray-500">
+                          Si désactivé, ton profil n’apparaît plus dans la recherche et l’accueil.
+                        </p>
+                      </div>
+
+                      <input
+                        type="checkbox"
+                        name="offer_enabled"
+                        checked={profile.offer_enabled !== false}
+                        onChange={handleChange}
+                        className="h-5 w-5"
+                      />
+                    </div>
+                  </div>
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-semibold text-gray-700">Présentiel</label>
                   <input
@@ -616,26 +636,6 @@ export default function Profile() {
                     onChange={handleChange}
                     className="h-5 w-5"
                   />
-                </div>
-                <div className="rounded-xl border border-gray-200 p-4 space-y-2 bg-gray-50">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <label className="text-sm font-semibold text-gray-700">
-                        Afficher mon offre sur EduKaraib
-                      </label>
-                      <p className="text-xs text-gray-500">
-                        Si désactivé, ton profil n’apparaît plus dans la recherche et l’accueil.
-                      </p>
-                    </div>
-
-                    <input
-                      type="checkbox"
-                      name="offer_enabled"
-                      checked={profile.offer_enabled !== false}
-                      onChange={handleChange}
-                      className="h-5 w-5"
-                    />
-                  </div>
                 </div>
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-semibold text-gray-700">Visio</label>
