@@ -101,6 +101,8 @@ export default function Search() {
         list = list.slice().sort((a, b) => ra(b) - ra(a));
       }
     }
+    
+    list = (list || []).filter((t) => t.offer_enabled !== false);
 
     return list;
   }, [teachers, level, city, mode, priceMin, priceMax, sortBy]);

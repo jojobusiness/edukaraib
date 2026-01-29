@@ -78,6 +78,8 @@ export default function Home() {
           });
         }
 
+        all = (all || []).filter((t) => t.offer_enabled !== false);
+
         // Tri : mieux notés à gauche (>=4.7), autres en aléatoire
         const withMeta = (all || []).map((p) => ({
           ...p,
@@ -467,6 +469,7 @@ export default function Home() {
                     const subject = getSubjectLabel(prof);
                     const bio = (prof.bio || '').trim();
                     const prices = getPriceLines(prof);
+                    const visibleTeachers = (teachers || []).filter(t => t.offer_enabled !== false);
 
                     return (
                       <Link
@@ -544,7 +547,8 @@ export default function Home() {
                   const subject = getSubjectLabel(prof);
                   const bio = (prof.bio || '').trim();
                   const prices = getPriceLines(prof);
-
+                  const visibleTeachers = (teachers || []).filter(t => t.offer_enabled !== false);
+                  
                   return (
                     <Link
                       key={prof.id}

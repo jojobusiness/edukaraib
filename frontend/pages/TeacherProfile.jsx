@@ -77,16 +77,25 @@ export default function TeacherProfile() {
   // Charger prof
   useEffect(() => {
     const unsubTeacher = onSnapshot(doc(db, 'users', teacherId), (snap) => {
-      if (snap.exists()) {
-        const t = { ...snap.data(), id: teacherId };
-        setTeacher(t);
-        setBookMode(t.visio_enabled && !t.presentiel_enabled ? 'visio' : 'presentiel');
-      } else {
+      if (!snap.exists()) {
         setTeacher(null);
+        return;
       }
+
+      const t = { ...snap.data(), id: teacherId };
+
+      const viewerUid = auth.currentUser?.uid;
+      if (t.offer_enabled === false && viewerUid !== teacherId) {
+        navigate('/search');
+        return;
+      }
+
+      setTeacher(t);
+      setBookMode(t.visio_enabled && !t.presentiel_enabled ? 'visio' : 'presentiel');
     });
+
     return () => unsubTeacher();
-  }, [teacherId]);
+  }, [teacherId, navigate]);
 
   // ✅ Profs similaires (même matière)
   useEffect(() => {
@@ -115,8 +124,8 @@ export default function TeacherProfile() {
         const snap = await getDocs(qTeachers);
         const candidates = snap.docs
           .map(d => ({ id: d.id, ...d.data() }))
-          .filter(t => t.id !== teacherId);
-
+          .filter(t => t.id !== teacherId)
+          .filter(t => t.offer_enabled !== false);
         // Limite raisonnable
         const shortlist = candidates.slice(0, 10);
 
