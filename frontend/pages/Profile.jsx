@@ -13,6 +13,8 @@ import TeacherAvailabilityEditor from '../components/TeacherAvailabilityEditor';
 import PaymentStatusCard from '../components/stripe/PaymentStatusCard';
 import StripeConnectButtons from '../components/stripe/StripeConnectButtons';
 import { auth, db, storage } from '../lib/firebase';
+import PhoneInput from 'react-phone-number-input';
+import 'react-phone-number-input/style.css';
 
 /* ====== Contrôles & listes (alignés avec Register) ====== */
 // Communes officielles de Guyane (22)
@@ -164,12 +166,6 @@ export default function Profile() {
     if (name === 'firstName' || name === 'lastName') {
       if (NAME_CHARS_REGEX.test(value)) {
         setProfile((p) => ({ ...p, [name]: value }));
-      }
-      return;
-    }
-    if (name === 'phone') {
-      if (/^[+0-9 ()-]*$/.test(value)) {
-        setProfile((p) => ({ ...p, phone: value }));
       }
       return;
     }
@@ -541,9 +537,12 @@ export default function Profile() {
           {/* Téléphone */}
           <div>
             <label className="block mb-1 text-sm font-medium text-gray-700">Téléphone</label>
-            <input type="tel" name="phone" pattern="0[1-9][0-9]{8}" maxLength={10}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2"
-              value={profile.phone || ''} onChange={handleChange} placeholder="ex : 0694xxxxxx" />
+            <PhoneInput
+              international
+              defaultCountry="GF"
+              value={profile.phone}
+              onChange={(value) => setProfile((p) => ({ ...p, phone: value || '' }))}
+            />
           </div>
 
           {/* Ville */}
