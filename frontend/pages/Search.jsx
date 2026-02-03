@@ -71,6 +71,29 @@ export default function Search() {
     const tCity = (teacher.city || teacher.location || '').toLowerCase();
     return tCity.includes(c.toLowerCase());
   };
+  const getHourlyPrices = (t) => {
+    const presEnabled = !!(t.presentiel_enabled ?? t.presentiel ?? t.mode_inperson ?? t.in_person);
+    const visioEnabled = !!(t.visio_enabled ?? t.visio ?? t.mode_online ?? t.online);
+
+    const pres = presEnabled ? parsePrice(t.price_per_hour ?? t.price) : null;
+
+    // si visio_same_rate => même prix que présentiel
+    const visioRaw = (t.visio_same_rate === true) ? (t.price_per_hour ?? t.price) : t.visio_price_per_hour;
+    const visio = visioEnabled ? parsePrice(visioRaw) : null;
+
+    return { pres, visio };
+  };
+
+  const priceForFilters = (t, mode) => {
+    const { pres, visio } = getHourlyPrices(t);
+
+    if (mode === 'visio') return visio;
+    if (mode === 'presentiel') return pres;
+
+    // pas de mode choisi : on prend le prix le plus bas disponible
+    const candidates = [pres, visio].filter((x) => typeof x === 'number');
+    return candidates.length ? Math.min(...candidates) : null;
+  };
 
   // 1) Filtrage de base (toujours actif, même sans recherche texte)
   const baseFiltered = useMemo(() => {
@@ -82,7 +105,7 @@ export default function Search() {
       if (!matchesCity(t, city)) return false;
       if (!matchesMode(t, mode)) return false;
 
-      const p = parsePrice(t.price_per_hour || t.price);
+      const p = priceForFilters(t, mode);
       if (min != null && (p == null || p < min)) return false;
       if (max != null && (p == null || p > max)) return false;
 
@@ -91,7 +114,7 @@ export default function Search() {
 
     // tri
     if (sortBy) {
-      const priceOf = (x) => parsePrice(x.price_per_hour || x.price);
+      const priceOf = (x) => priceForFilters(x, mode);
       if (sortBy === 'priceAsc') {
         list = list.slice().sort((a, b) => (priceOf(a) ?? 1e9) - (priceOf(b) ?? 1e9));
       } else if (sortBy === 'priceDesc') {
@@ -345,12 +368,26 @@ export default function Search() {
 // ───────────────────────── Carte professeur ─────────────────────────
 function TeacherCard({ teacher, navigate }) {
   // prix final = prix prof + 10 €
-  const finalHourlyPrice = (() => {
-    const raw = teacher?.price_per_hour || teacher?.price;
+  const parseLocal = (raw) => {
     const n = typeof raw === 'string' ? Number(raw.replace(',', '.')) : Number(raw);
-    if (!Number.isFinite(n) || n < 0) return null;
-    return n + 10;
-  })();
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const presEnabled = !!(teacher.presentiel_enabled ?? teacher.presentiel ?? teacher.mode_inperson ?? teacher.in_person);
+  const visioEnabled = !!(teacher.visio_enabled ?? teacher.visio ?? teacher.mode_online ?? teacher.online);
+
+  const presBase = presEnabled ? parseLocal(teacher.price_per_hour ?? teacher.price) : null;
+
+  const visioRaw = (teacher.visio_same_rate === true)
+    ? (teacher.price_per_hour ?? teacher.price)
+    : teacher.visio_price_per_hour;
+
+  const visioBase = visioEnabled ? parseLocal(visioRaw) : null;
+
+  // +10€ sur tous les tarifs affichés (comme tu veux)
+  const presPrice = (typeof presBase === 'number') ? presBase + 10 : null;
+  const visioPrice = (typeof visioBase === 'number') ? visioBase + 10 : null;
+
 
   const subjectsText = Array.isArray(teacher.subjects)
     ? teacher.subjects.join(', ')
@@ -415,14 +452,40 @@ function TeacherCard({ teacher, navigate }) {
 
       <div className="shrink-0 flex flex-col items-end justify-between">
         <div className="text-right">
-          {finalHourlyPrice == null ? (
+          {presPrice == null && visioPrice == null ? (
             <span className="inline-block text-sm text-amber-700 font-semibold">Prix non précisé</span>
+          ) : presPrice != null && visioPrice != null ? (
+            presPrice === visioPrice ? (
+              <>
+                <div className="text-2xl font-bold text-primary">
+                  {presPrice.toFixed(0)}<span className="text-base text-gray-700 font-medium"> €</span>
+                </div>
+                <div className="text-xs text-gray-500">/ heure (visio & présentiel)</div>
+              </>
+            ) : (
+              <>
+                <div className="text-lg font-bold text-primary">
+                  Présentiel : {presPrice.toFixed(0)} €
+                </div>
+                <div className="text-lg font-bold text-primary">
+                  Visio : {visioPrice.toFixed(0)} €
+                </div>
+                <div className="text-xs text-gray-500">/ heure</div>
+              </>
+            )
+          ) : presPrice != null ? (
+            <>
+              <div className="text-2xl font-bold text-primary">
+                {presPrice.toFixed(0)}<span className="text-base text-gray-700 font-medium"> €</span>
+              </div>
+              <div className="text-xs text-gray-500">/ heure (présentiel)</div>
+            </>
           ) : (
             <>
               <div className="text-2xl font-bold text-primary">
-                {finalHourlyPrice.toFixed(0)}<span className="text-base text-gray-700 font-medium"> €</span>
+                {visioPrice.toFixed(0)}<span className="text-base text-gray-700 font-medium"> €</span>
               </div>
-              <div className="text-xs text-gray-500">/ heure</div>
+              <div className="text-xs text-gray-500">/ heure (visio)</div>
             </>
           )}
         </div>
