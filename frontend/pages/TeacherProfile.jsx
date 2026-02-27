@@ -1553,6 +1553,28 @@ export default function TeacherProfile() {
                       </select>
                     )}
                   </div>
+                  
+                  {packChoice === 5 && (
+                    <div className="mt-3">
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Code promo</label>
+                      <div className="flex gap-2">
+                        <input
+                          value={promoCode}
+                          onChange={(e) => { setPromoCode(e.target.value); setPromoOk(false); setPromoMsg(''); }}
+                          className="flex-1 border rounded-xl px-3 py-2 text-sm"
+                          placeholder="Ex: AVIS-9F3K2Q"
+                        />
+                        <button
+                          type="button"
+                          onClick={checkPromo}
+                          className="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold"
+                        >
+                          Appliquer
+                        </button>
+                      </div>
+                      {promoMsg && <div className="mt-2 text-[11px] text-slate-600">{promoMsg}</div>}
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Pack</label>
@@ -1562,7 +1584,7 @@ export default function TeacherProfile() {
                       onChange={(e) => setPackChoice(Number(e.target.value))}
                     >
                       <option value={0}>Aucun pack</option>
-                      <option value={5}>Pack 5h (+1h offerte)</option>
+                      <option value={5}>Pack 5h (+{promoOk ? 2 : 1}h offerte{promoOk ? 's' : ''})</option>
                       <option value={10}>Pack 10h (+2h offertes)</option>
                     </select>
                   </div>

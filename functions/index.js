@@ -1,7 +1,7 @@
-import functions from "firebase-functions";
-import admin from "firebase-admin";
-import postmark from "postmark";
-import crypto from "crypto";
+const functions = require("firebase-functions");
+const admin = require("firebase-admin");
+const postmark = require("postmark");
+const crypto = require("crypto");
 
 admin.initializeApp();
 
@@ -90,7 +90,7 @@ async function markSent(notificationId) {
  *  - à chaque création de document dans "notifications/{id}"
  *  - on envoie un email au user_id
  */
-export const onNotificationCreated = functions
+exports.onNotificationCreated = functions
   .region(REGION)
   .runWith({ timeoutSeconds: 60, memory: "256MB", maxInstances: 5 })
   .firestore.document("notifications/{notifId}")
@@ -163,20 +163,26 @@ export const onNotificationCreated = functions
 // -----------------------------------------------------------------------------
 
 function genFirstReviewCode() {
-  // AVIS-XXXXXX
   const raw = crypto.randomBytes(4).toString("hex").toUpperCase();
   return `AVIS-${raw.slice(0, 6)}`;
 }
 
-export const onReviewCreatedGivePromo = functions
+exports.onReviewCreatedGivePromo = functions
   .region(REGION)
   .runWith({ timeoutSeconds: 60, memory: "256MB", maxInstances: 5 })
   .firestore.document("reviews/{reviewId}")
   .onCreate(async (snap, context) => {
     const r = snap.data() || {};
 
+    // ✅ Chez toi l’auteur est left_by_parent_id (prioritaire)
     const reviewerId =
-      r.reviewer_id || r.author_id || r.user_id || r.student_id || r.created_by;
+      r.left_by_parent_id ||
+      r.reviewer_id ||
+      r.author_id ||
+      r.user_id ||
+      r.student_id ||
+      r.created_by;
+
     if (!reviewerId) return null;
 
     const userRef = db.collection("users").doc(reviewerId);
@@ -186,18 +192,24 @@ export const onReviewCreatedGivePromo = functions
     const existing = uSnap.data()?.promo?.first_review?.code;
     if (existing) return null;
 
-    // ✅ (optionnel) sécuriser : uniquement si le cours est bien terminé
+    // ✅ vérifier cours terminé + accepter parent_id / booked_by
     if (r.lesson_id) {
       const lessonSnap = await db.collection("lessons").doc(r.lesson_id).get();
       if (!lessonSnap.exists) return null;
+
       const lesson = lessonSnap.data() || {};
       const st = String(lesson.status || "").toLowerCase();
       if (st !== "completed") return null;
 
+      const participantIds = Array.isArray(lesson.participant_ids) ? lesson.participant_ids : [];
+      const pm = lesson.participantsMap || {};
+
       const isParticipant =
         lesson.student_id === reviewerId ||
-        (Array.isArray(lesson.participant_ids) &&
-          lesson.participant_ids.includes(reviewerId));
+        participantIds.includes(reviewerId) ||
+        !!pm[reviewerId] ||
+        Object.values(pm).some((v) => v?.parent_id === reviewerId || v?.booked_by === reviewerId);
+
       if (!isParticipant) return null;
     }
 
@@ -241,13 +253,13 @@ export const onReviewCreatedGivePromo = functions
         issuedCode = code;
         break;
       } catch (e) {
-        console.error("promo code tx failed", e?.message || e);
+        console.error("promo code tx failed:", e?.message || e);
       }
     }
 
     if (!issuedCode) return null;
 
-    // ✅ Notif in-app + email via ton trigger notifications
+    // ✅ Crée une notif => ton onNotificationCreated enverra le mail
     await db.collection("notifications").add({
       user_id: reviewerId,
       read: false,
@@ -257,7 +269,7 @@ export const onReviewCreatedGivePromo = functions
       promo_code: issuedCode,
       message:
         `Merci pour ton premier avis ! Voici ton code : ${issuedCode}. ` +
-        `Il te donne +1h offerte en plus quand tu prends un pack 5h.`,
+        `Il te donne +1h offerte en plus sur le pack 5h.`,
     });
 
     return null;
