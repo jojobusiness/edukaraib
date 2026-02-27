@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import {
   doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc,
-  serverTimestamp, arrayUnion, onSnapshot, deleteField,
+  serverTimestamp, arrayUnion, onSnapshot, deleteField, runTransaction
 } from 'firebase/firestore';
 import BookingModal from '../components/BookingModal';
 
@@ -63,6 +63,10 @@ export default function TeacherProfile() {
   const [bookMode, setBookMode] = useState('presentiel');
   const [packChoice, setPackChoice] = useState(0); // 0 = aucun pack, 5, 10
   const [hoursWanted, setHoursWanted] = useState(1); // utilisé seulement si aucun pack
+
+  const [promoCode, setPromoCode] = useState('');
+  const [promoOk, setPromoOk] = useState(false);
+  const [promoMsg, setPromoMsg] = useState('');
 
   const [similarTeachers, setSimilarTeachers] = useState([]);
   const [loadingSimilar, setLoadingSimilar] = useState(false);
@@ -523,9 +527,40 @@ export default function TeacherProfile() {
   const visioOnly = !!safeTeacher?.visio_enabled && !safeTeacher?.presentiel_enabled;
   const onlyMode = presentielOnly ? 'presentiel' : (visioOnly ? 'visio' : null);
 
-  const freeCount = packChoice === 5 ? 1 : packChoice === 10 ? 2 : 0;
-  const requiredCount = packChoice === 5 ? 6 : packChoice === 10 ? 12 : Math.max(1, Number(hoursWanted) || 1);
+  useEffect(() => {
+    if (packChoice !== 5) setPromoOk(false);
+  }, [packChoice]);
 
+  const checkPromo = async () => {
+    const me = auth.currentUser;
+    const code = promoCode.trim().toUpperCase();
+
+    if (!me) { setPromoOk(false); setPromoMsg('Connecte-toi pour utiliser un code.'); return; }
+    if (packChoice !== 5) { setPromoOk(false); setPromoMsg('Ce code promo est valable uniquement sur le pack 5h.'); return; }
+    if (!code) { setPromoOk(false); setPromoMsg(''); return; }
+
+    const snap = await getDoc(doc(db, 'promo_codes', code));
+    if (!snap.exists()) { setPromoOk(false); setPromoMsg('Code invalide.'); return; }
+
+    const p = snap.data() || {};
+    if (p.owner_id !== me.uid) { setPromoOk(false); setPromoMsg("Ce code ne t'appartient pas."); return; }
+    if (String(p.status || '').toLowerCase() !== 'active') { setPromoOk(false); setPromoMsg('Code déjà utilisé ou expiré.'); return; }
+    if (Number(p.eligible_pack_hours || 0) !== 5) { setPromoOk(false); setPromoMsg('Ce code ne fonctionne pas sur ce pack.'); return; }
+
+    setPromoOk(true);
+    setPromoMsg('✅ Code activé : +1h offerte en plus sur le pack 5h.');
+  };
+
+  // Pack bonus existant + bonus promo en plus
+  const baseBonusHours = packChoice === 5 ? 1 : packChoice === 10 ? 2 : 0;
+  const promoBonusHours = (packChoice === 5 && promoOk) ? 1 : 0;
+  const freeCount = baseBonusHours + promoBonusHours;
+
+  const requiredCount =
+    packChoice === 5 ? (5 + freeCount)
+    : packChoice === 10 ? (10 + freeCount)
+    : Math.max(1, Number(hoursWanted) || 1);
+    
   // ✅ GARDE : tant que teacher n'est pas chargé
   if (!teacher) {
     return (
@@ -554,9 +589,15 @@ export default function TeacherProfile() {
 
     const isPack = packChoice === 5 || packChoice === 10;
     const paidHours = packChoice;                 // 5 ou 10
-    const bonusHours = packChoice === 5 ? 1 : packChoice === 10 ? 2 : 0;
     const totalPackHours = isPack ? (paidHours + bonusHours) : 0;
     const packType = paidHours === 5 ? "pack5" : paidHours === 10 ? "pack10" : null;
+
+    const baseBonusHours = packChoice === 5 ? 1 : packChoice === 10 ? 2 : 0;
+    const promoBonusHours = (packChoice === 5 && promoOk) ? 1 : 0;
+    const bonusHours = baseBonusHours + promoBonusHours;
+
+    const isFree = isPack && i < bonusHours;
+    const freeReason = isFree ? (i < baseBonusHours ? "pack_bonus" : "first_review_promo") : null;
 
     // 1 seul pack_id pour tout (root + participant)*
     const forcedPackId = isPack
@@ -853,7 +894,7 @@ export default function TeacherProfile() {
             capacity: createAsGroup ? defaultCap : 1,
             student_id: createAsGroup ? null : targetStudentId,
             is_free_hour: isFree,
-            free_reason: isFree ? "pack_bonus" : null,
+            free_reason: freeReason,
 
             participant_ids: [targetStudentId],
             participantsMap: {
@@ -863,9 +904,10 @@ export default function TeacherProfile() {
                 is_paid: false,
                 paid_by: null,
                 paid_at: null,
+                is_free_hour: isFree,
+                free_reason: freeReason,
                 status: 'pending_teacher',
                 added_at: serverTimestamp(),
-                [`participantsMap.${targetStudentId}.is_free_hour`]: isFree,
               },
             },
 
@@ -1115,11 +1157,33 @@ export default function TeacherProfile() {
                       onChange={(e) => setPackChoice(Number(e.target.value))}
                     >
                       <option value={0}>Aucun pack</option>
-                      <option value={5}>Pack 5h (+1h offerte)</option>
+                      <option value={5}>Pack 5h (+{promoOk ? 2 : 1}h offerte{promoOk ? 's' : ''})</option>
                       <option value={10}>Pack 10h (+2h offertes)</option>
                     </select>
                   </div>
                 </div>
+                
+                {packChoice === 5 && (
+                  <div className="mt-3">
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Code promo</label>
+                    <div className="flex gap-2">
+                      <input
+                        value={promoCode}
+                        onChange={(e) => { setPromoCode(e.target.value); setPromoOk(false); setPromoMsg(''); }}
+                        className="flex-1 border rounded-xl px-3 py-2 text-sm"
+                        placeholder="Ex: AVIS-9F3K2Q"
+                      />
+                      <button
+                        type="button"
+                        onClick={checkPromo}
+                        className="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold"
+                      >
+                        Appliquer
+                      </button>
+                    </div>
+                    {promoMsg && <div className="mt-2 text-[11px] text-slate-600">{promoMsg}</div>}
+                  </div>
+                )}
 
                 {packChoice === 0 && (
                   <div className="mt-3">
@@ -1564,6 +1628,7 @@ export default function TeacherProfile() {
           canBook={canBook}
           myStudentIds={children.map(c => c.id)}
           idToName={Object.fromEntries(children.map(c => [c.id, c.full_name || c.fullName || c.name || 'Enfant']))}
+          promoFreeCount={(packChoice === 5 && promoOk) ? 1 : 0}
         />
       )}
     </div>

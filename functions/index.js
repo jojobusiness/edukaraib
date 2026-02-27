@@ -1,6 +1,7 @@
 import functions from "firebase-functions";
 import admin from "firebase-admin";
 import postmark from "postmark";
+import crypto from "crypto";
 
 admin.initializeApp();
 
@@ -153,6 +154,111 @@ export const onNotificationCreated = functions
         { merge: true }
       );
     }
+
+    return null;
+  });
+
+// -----------------------------------------------------------------------------
+// 🎟️ 1er avis => génération d’un code promo (1h bonus sur pack 5h)
+// -----------------------------------------------------------------------------
+
+function genFirstReviewCode() {
+  // AVIS-XXXXXX
+  const raw = crypto.randomBytes(4).toString("hex").toUpperCase();
+  return `AVIS-${raw.slice(0, 6)}`;
+}
+
+export const onReviewCreatedGivePromo = functions
+  .region(REGION)
+  .runWith({ timeoutSeconds: 60, memory: "256MB", maxInstances: 5 })
+  .firestore.document("reviews/{reviewId}")
+  .onCreate(async (snap, context) => {
+    const r = snap.data() || {};
+
+    const reviewerId =
+      r.reviewer_id || r.author_id || r.user_id || r.student_id || r.created_by;
+    if (!reviewerId) return null;
+
+    const userRef = db.collection("users").doc(reviewerId);
+
+    // ✅ stop si déjà un code “1er avis”
+    const uSnap = await userRef.get();
+    const existing = uSnap.data()?.promo?.first_review?.code;
+    if (existing) return null;
+
+    // ✅ (optionnel) sécuriser : uniquement si le cours est bien terminé
+    if (r.lesson_id) {
+      const lessonSnap = await db.collection("lessons").doc(r.lesson_id).get();
+      if (!lessonSnap.exists) return null;
+      const lesson = lessonSnap.data() || {};
+      const st = String(lesson.status || "").toLowerCase();
+      if (st !== "completed") return null;
+
+      const isParticipant =
+        lesson.student_id === reviewerId ||
+        (Array.isArray(lesson.participant_ids) &&
+          lesson.participant_ids.includes(reviewerId));
+      if (!isParticipant) return null;
+    }
+
+    let issuedCode = null;
+
+    for (let i = 0; i < 5; i++) {
+      const code = genFirstReviewCode();
+      const promoRef = db.collection("promo_codes").doc(code);
+
+      try {
+        await db.runTransaction(async (tx) => {
+          const u = await tx.get(userRef);
+          const already = u.data()?.promo?.first_review?.code;
+          if (already) return; // idempotent
+
+          tx.create(promoRef, {
+            owner_id: reviewerId,
+            type: "first_review_pack5_bonus1",
+            bonus_hours: 1,
+            eligible_pack_hours: 5,
+            status: "active",
+            created_at: admin.firestore.FieldValue.serverTimestamp(),
+            source_review_id: context.params.reviewId,
+          });
+
+          tx.set(
+            userRef,
+            {
+              promo: {
+                first_review: {
+                  code,
+                  used: false,
+                  created_at: admin.firestore.FieldValue.serverTimestamp(),
+                },
+              },
+            },
+            { merge: true }
+          );
+        });
+
+        issuedCode = code;
+        break;
+      } catch (e) {
+        console.error("promo code tx failed", e?.message || e);
+      }
+    }
+
+    if (!issuedCode) return null;
+
+    // ✅ Notif in-app + email via ton trigger notifications
+    await db.collection("notifications").add({
+      user_id: reviewerId,
+      read: false,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      type: "promo_first_review",
+      title: "🎟️ Ton code promo est prêt !",
+      promo_code: issuedCode,
+      message:
+        `Merci pour ton premier avis ! Voici ton code : ${issuedCode}. ` +
+        `Il te donne +1h offerte en plus quand tu prends un pack 5h.`,
+    });
 
     return null;
   });

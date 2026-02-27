@@ -80,11 +80,13 @@ export default function BookingModal({
 
   freeCount = 0,
   showFreeLegend = true,
+  promoFreeCount = 0,   // ✅ AJOUT
 
 }) {
   const [selected, setSelected] = useState([]);
 
   const [giftFlash, setGiftFlash] = useState(null);
+  const [promoFlash, setPromoFlash] = useState(null);
 
   // Tri stable : date puis heure
   const sortedSelected = useMemo(() => {
@@ -100,10 +102,24 @@ export default function BookingModal({
   const slotKey = (s) => `${s.day}:${s.hour}:${s.date || ''}`;
 
   // Les créneaux offerts = les N premiers de la sélection (dans l’ordre)
-  const freeKeys = useMemo(() => {
-    const n = Math.max(0, Number(freeCount) || 0);
-    return new Set(sortedSelected.slice(0, n).map(slotKey));
-  }, [sortedSelected, freeCount]);
+  // total heures gratuites (pack + promo)
+  const totalFreeN = Math.max(0, Number(freeCount) || 0);
+
+  // heures gratuites "promo" (max = total)
+  const promoFreeN = Math.min(totalFreeN, Math.max(0, Number(promoFreeCount) || 0));
+
+  // heures gratuites "pack" = le reste
+  const packFreeN = Math.max(0, totalFreeN - promoFreeN);
+
+  // 🎁 (pack) = les packFreeN premiers (par ordre trié)
+  // 🎟️ (promo) = les promoFreeN suivants
+  const packFreeKeys = useMemo(() => {
+    return new Set(sortedSelected.slice(0, packFreeN).map(slotKey));
+  }, [sortedSelected, packFreeN]);
+
+  const promoFreeKeys = useMemo(() => {
+    return new Set(sortedSelected.slice(packFreeN, packFreeN + promoFreeN).map(slotKey));
+  }, [sortedSelected, packFreeN, promoFreeN]);
 
   // ➕ détecter si availability est "par semaine" (clés = YYYY-MM-DD)
   const isPerWeekAvailability = useMemo(() => {
@@ -365,12 +381,32 @@ export default function BookingModal({
           { day, hour, date: dateKey, week: weekKey, startAt },
         ];
 
-        // 🎁 si ce nouveau créneau tombe dans les heures offertes (ex: 1ère, ou 1ère+2ème)
-        const nFree = Math.max(0, Number(freeCount) || 0);
-        if (nFree > 0 && prev.length < nFree) {
+        // 🎁/🎟️ animation si ce créneau devient "gratuit"
+        const totalN = Math.max(0, Number(freeCount) || 0);
+        const promoN = Math.min(totalN, Math.max(0, Number(promoFreeCount) || 0));
+        const packN = Math.max(0, totalN - promoN);
+
+        if (totalN > 0) {
           const k = `${day}:${hour}:${dateKey}`;
-          setGiftFlash(k);
-          window.setTimeout(() => setGiftFlash(null), 600);
+
+          // on calcule la position triée du créneau ajouté (pour coller aux badges)
+          const sortedNext = [...next].sort((a, b) => {
+            const ad = a.date || '';
+            const bd = b.date || '';
+            if (ad !== bd) return ad.localeCompare(bd);
+            return (a.hour || 0) - (b.hour || 0);
+          });
+          const idx = sortedNext.findIndex((s) => `${s.day}:${s.hour}:${s.date || ''}` === k);
+
+          if (idx !== -1 && idx < totalN) {
+            if (idx < packN) {
+              setGiftFlash(k);
+              window.setTimeout(() => setGiftFlash(null), 650);
+            } else {
+              setPromoFlash(k);
+              window.setTimeout(() => setPromoFlash(null), 850);
+            }
+          }
         }
 
         return next;
@@ -457,12 +493,21 @@ export default function BookingModal({
               Places restantes
             </span>
           )}
-          {showFreeLegend && freeCount > 0 && (
+          {showFreeLegend && packFreeN > 0 && (
             <span className="inline-flex items-center gap-1">
               <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-amber-50 border border-amber-200">
                 🎁
               </span>
-              = Gratuit
+              = Offert (pack)
+            </span>
+          )}
+
+          {showFreeLegend && promoFreeN > 0 && (
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded bg-emerald-50 border border-emerald-200">
+                🎟️
+              </span>
+              = Bonus (code promo)
             </span>
           )}
         </div>
@@ -582,8 +627,11 @@ export default function BookingModal({
                         canBook && dispo && !booked && !locked && !sel && requiredCount && selected.length >= requiredCount;
                       const dateKey = dayDateKey(dayLabel);
                       const thisKey = `${dayLabel}:${h}:${dateKey || ''}`;
-                      const isFree = sel && freeKeys.has(thisKey);
+                      const isPackFree = sel && packFreeKeys.has(thisKey);
+                      const isPromoFree = sel && promoFreeKeys.has(thisKey);
+
                       const isGiftAnimating = giftFlash === thisKey;
+                      const isPromoAnimating = promoFlash === thisKey;
 
                       return (
                         <td key={h} className="px-1 py-1">
@@ -597,16 +645,34 @@ export default function BookingModal({
                           >
                             {booked ? '❌' : sel ? '✔' : ''}
 
-                            {isFree && (
+                            {isPackFree && (
                               <span
                                 className={[
                                   "absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center",
                                   "bg-amber-50 border border-amber-200 text-base",
                                   isGiftAnimating ? "animate-bounce" : ""
                                 ].join(" ")}
-                                title="Heure offerte"
+                                title="Heure offerte (pack)"
                               >
                                 🎁
+                              </span>
+                            )}
+
+                            {isPromoFree && (
+                              <span className="absolute -bottom-1 -right-1 w-6 h-6">
+                                {isPromoAnimating && (
+                                  <span className="absolute inset-0 rounded-full bg-emerald-300/40 animate-ping" />
+                                )}
+                                <span
+                                  className={[
+                                    "relative w-6 h-6 rounded-full flex items-center justify-center",
+                                    "bg-emerald-50 border border-emerald-200 text-base",
+                                    isPromoAnimating ? "animate-pulse" : ""
+                                  ].join(" ")}
+                                  title="Heure bonus (code promo)"
+                                >
+                                  🎟️
+                                </span>
                               </span>
                             )}
 
