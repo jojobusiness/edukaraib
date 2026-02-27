@@ -1,4 +1,4 @@
-const functions = require("firebase-functions");
+const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const postmark = require("postmark");
 const crypto = require("crypto");
@@ -11,7 +11,7 @@ const REGION = "europe-west1";
 // Secrets (config)
 const POSTMARK_KEY = functions.config().postmark?.key;
 const FROM_EMAIL = functions.config().mail?.from || "notifications@edukaraib.com";
-const FROM_NAME  = functions.config().mail?.from_name || "EduKaraib";
+const FROM_NAME = functions.config().mail?.from_name || "EduKaraib";
 
 const client = POSTMARK_KEY ? new postmark.ServerClient(POSTMARK_KEY) : null;
 
@@ -35,7 +35,7 @@ async function getUserEmail(userId) {
 /**
  * Helper: fabrique l'objet email
  */
-function buildEmail({ to, title, message, createdAt }) {
+function buildEmail({to, title, message, createdAt}) {
   const subject = title || "Nouvelle notification EduKaraib";
   const text =
     (message || "Vous avez une nouvelle notification sur EduKaraib.") +
@@ -74,11 +74,11 @@ function buildEmail({ to, title, message, createdAt }) {
 async function markSent(notificationId) {
   try {
     await db.collection("notifications").doc(notificationId).set(
-      {
-        email_sent: true,
-        email_sent_at: admin.firestore.FieldValue.serverTimestamp(),
-      },
-      { merge: true }
+        {
+          email_sent: true,
+          email_sent_at: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        {merge: true},
     );
   } catch (e) {
     console.error("markSent error:", e);
@@ -91,72 +91,72 @@ async function markSent(notificationId) {
  *  - on envoie un email au user_id
  */
 exports.onNotificationCreated = functions
-  .region(REGION)
-  .runWith({ timeoutSeconds: 60, memory: "256MB", maxInstances: 5 })
-  .firestore.document("notifications/{notifId}")
-  .onCreate(async (snap, context) => {
-    if (!client) {
-      console.error("POSTMARK_KEY missing in functions config.");
-      return null;
-    }
-
-    const notifId = context.params.notifId;
-    const data = snap.data() || {};
-
-    // si déjà envoyé (rare mais sécurité)
-    if (data.email_sent) return null;
-
-    const userId = data.user_id || data.userId;
-    const to = await getUserEmail(userId);
-    if (!to) {
-      console.warn("No recipient email for notification:", notifId, userId);
-      return null;
-    }
-
-    // anti-bruit : respect d'un éventuel champ "email_disabled"
-    if (data.email_disabled) {
-      console.log("Email disabled on notification:", notifId);
-      return null;
-    }
-
-    // Facultatif: filtrer types (ex: on n'email pas 'payment_due' si déjà payé)
-    // Ici: on envoie tout
-    const createdAt = (() => {
-      try {
-        const ts = data.created_at;
-        if (ts?.toDate) return ts.toDate().toLocaleString("fr-FR");
-        if (typeof ts === "string") return new Date(ts).toLocaleString("fr-FR");
-        return new Date().toLocaleString("fr-FR");
-      } catch {
-        return "";
+    .region(REGION)
+    .runWith({timeoutSeconds: 60, memory: "256MB", maxInstances: 5})
+    .firestore.document("notifications/{notifId}")
+    .onCreate(async (snap, context) => {
+      if (!client) {
+        console.error("POSTMARK_KEY missing in functions config.");
+        return null;
       }
-    })();
 
-    const mail = buildEmail({
-      to,
-      title: data.title || data.type || "Notification EduKaraib",
-      message: data.message || "",
-      createdAt,
+      const notifId = context.params.notifId;
+      const data = snap.data() || {};
+
+      // si déjà envoyé (rare mais sécurité)
+      if (data.email_sent) return null;
+
+      const userId = data.user_id || data.userId;
+      const to = await getUserEmail(userId);
+      if (!to) {
+        console.warn("No recipient email for notification:", notifId, userId);
+        return null;
+      }
+
+      // anti-bruit : respect d'un éventuel champ "email_disabled"
+      if (data.email_disabled) {
+        console.log("Email disabled on notification:", notifId);
+        return null;
+      }
+
+      // Facultatif: filtrer types (ex: on n'email pas 'payment_due' si déjà payé)
+      // Ici: on envoie tout
+      const createdAt = (() => {
+        try {
+          const ts = data.created_at;
+          if (ts?.toDate) return ts.toDate().toLocaleString("fr-FR");
+          if (typeof ts === "string") return new Date(ts).toLocaleString("fr-FR");
+          return new Date().toLocaleString("fr-FR");
+        } catch {
+          return "";
+        }
+      })();
+
+      const mail = buildEmail({
+        to,
+        title: data.title || data.type || "Notification EduKaraib",
+        message: data.message || "",
+        createdAt,
+      });
+
+      try {
+        const res = await client.sendEmail(mail);
+        console.log("Email sent:", res?.MessageID || res);
+        await markSent(notifId);
+      } catch (e) {
+        console.error("sendEmail error:", e?.message || e);
+        // trace l’erreur dans la notif pour debug
+        await db.collection("notifications").doc(notifId).set(
+            {
+              email_error: String(e?.message || e),
+              email_last_try: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            {merge: true},
+        );
+      }
+
+      return null;
     });
-
-    try {
-      const res = await client.sendEmail(mail);
-      console.log("Email sent:", res?.MessageID || res);
-      await markSent(notifId);
-    } catch (e) {
-      console.error("sendEmail error:", e?.message || e);
-      // trace l’erreur dans la notif pour debug
-      await db.collection("notifications").doc(notifId).set(
-        {
-          email_error: String(e?.message || e),
-          email_last_try: admin.firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-    }
-
-    return null;
-  });
 
 // -----------------------------------------------------------------------------
 // 🎟️ 1er avis => génération d’un code promo (1h bonus sur pack 5h)
@@ -168,14 +168,14 @@ function genFirstReviewCode() {
 }
 
 exports.onReviewCreatedGivePromo = functions
-  .region(REGION)
-  .runWith({ timeoutSeconds: 60, memory: "256MB", maxInstances: 5 })
-  .firestore.document("reviews/{reviewId}")
-  .onCreate(async (snap, context) => {
-    const r = snap.data() || {};
+    .region(REGION)
+    .runWith({timeoutSeconds: 60, memory: "256MB", maxInstances: 5})
+    .firestore.document("reviews/{reviewId}")
+    .onCreate(async (snap, context) => {
+      const r = snap.data() || {};
 
-    // ✅ Chez toi l’auteur est left_by_parent_id (prioritaire)
-    const reviewerId =
+      // ✅ Chez toi l’auteur est left_by_parent_id (prioritaire)
+      const reviewerId =
       r.left_by_parent_id ||
       r.reviewer_id ||
       r.author_id ||
@@ -183,94 +183,94 @@ exports.onReviewCreatedGivePromo = functions
       r.student_id ||
       r.created_by;
 
-    if (!reviewerId) return null;
+      if (!reviewerId) return null;
 
-    const userRef = db.collection("users").doc(reviewerId);
+      const userRef = db.collection("users").doc(reviewerId);
 
-    // ✅ stop si déjà un code “1er avis”
-    const uSnap = await userRef.get();
-    const existing = uSnap.data()?.promo?.first_review?.code;
-    if (existing) return null;
+      // ✅ stop si déjà un code “1er avis”
+      const uSnap = await userRef.get();
+      const existing = uSnap.data()?.promo?.first_review?.code;
+      if (existing) return null;
 
-    // ✅ vérifier cours terminé + accepter parent_id / booked_by
-    if (r.lesson_id) {
-      const lessonSnap = await db.collection("lessons").doc(r.lesson_id).get();
-      if (!lessonSnap.exists) return null;
+      // ✅ vérifier cours terminé + accepter parent_id / booked_by
+      if (r.lesson_id) {
+        const lessonSnap = await db.collection("lessons").doc(r.lesson_id).get();
+        if (!lessonSnap.exists) return null;
 
-      const lesson = lessonSnap.data() || {};
-      const st = String(lesson.status || "").toLowerCase();
-      if (st !== "completed") return null;
+        const lesson = lessonSnap.data() || {};
+        const st = String(lesson.status || "").toLowerCase();
+        if (st !== "completed") return null;
 
-      const participantIds = Array.isArray(lesson.participant_ids) ? lesson.participant_ids : [];
-      const pm = lesson.participantsMap || {};
+        const participantIds = Array.isArray(lesson.participant_ids) ? lesson.participant_ids : [];
+        const pm = lesson.participantsMap || {};
 
-      const isParticipant =
+        const isParticipant =
         lesson.student_id === reviewerId ||
         participantIds.includes(reviewerId) ||
         !!pm[reviewerId] ||
         Object.values(pm).some((v) => v?.parent_id === reviewerId || v?.booked_by === reviewerId);
 
-      if (!isParticipant) return null;
-    }
+        if (!isParticipant) return null;
+      }
 
-    let issuedCode = null;
+      let issuedCode = null;
 
-    for (let i = 0; i < 5; i++) {
-      const code = genFirstReviewCode();
-      const promoRef = db.collection("promo_codes").doc(code);
+      for (let i = 0; i < 5; i++) {
+        const code = genFirstReviewCode();
+        const promoRef = db.collection("promo_codes").doc(code);
 
-      try {
-        await db.runTransaction(async (tx) => {
-          const u = await tx.get(userRef);
-          const already = u.data()?.promo?.first_review?.code;
-          if (already) return; // idempotent
+        try {
+          await db.runTransaction(async (tx) => {
+            const u = await tx.get(userRef);
+            const already = u.data()?.promo?.first_review?.code;
+            if (already) return; // idempotent
 
-          tx.create(promoRef, {
-            owner_id: reviewerId,
-            type: "first_review_pack5_bonus1",
-            bonus_hours: 1,
-            eligible_pack_hours: 5,
-            status: "active",
-            created_at: admin.firestore.FieldValue.serverTimestamp(),
-            source_review_id: context.params.reviewId,
+            tx.create(promoRef, {
+              owner_id: reviewerId,
+              type: "first_review_pack5_bonus1",
+              bonus_hours: 1,
+              eligible_pack_hours: 5,
+              status: "active",
+              created_at: admin.firestore.FieldValue.serverTimestamp(),
+              source_review_id: context.params.reviewId,
+            });
+
+            tx.set(
+                userRef,
+                {
+                  promo: {
+                    first_review: {
+                      code,
+                      used: false,
+                      created_at: admin.firestore.FieldValue.serverTimestamp(),
+                    },
+                  },
+                },
+                {merge: true},
+            );
           });
 
-          tx.set(
-            userRef,
-            {
-              promo: {
-                first_review: {
-                  code,
-                  used: false,
-                  created_at: admin.firestore.FieldValue.serverTimestamp(),
-                },
-              },
-            },
-            { merge: true }
-          );
-        });
-
-        issuedCode = code;
-        break;
-      } catch (e) {
-        console.error("promo code tx failed:", e?.message || e);
+          issuedCode = code;
+          break;
+        } catch (e) {
+          console.error("promo code tx failed:", e?.message || e);
+        }
       }
-    }
 
-    if (!issuedCode) return null;
+      if (!issuedCode) return null;
 
-    // ✅ Crée une notif => ton onNotificationCreated enverra le mail
-    await db.collection("notifications").add({
-      user_id: reviewerId,
-      read: false,
-      created_at: admin.firestore.FieldValue.serverTimestamp(),
-      type: "promo_first_review",
-      title: "🎟️ Ton code promo est prêt !",
-      promo_code: issuedCode,
-      message:
+      // ✅ Crée une notif => ton onNotificationCreated enverra le mail
+      await db.collection("notifications").add({
+        user_id: reviewerId,
+        read: false,
+        created_at: admin.firestore.FieldValue.serverTimestamp(),
+        type: "promo_first_review",
+        title: "🎟️ Ton code promo est prêt !",
+        promo_code: issuedCode,
+        message:
         `Merci pour ton premier avis ! Voici ton code : ${issuedCode}. ` +
         `Il te donne +1h offerte en plus sur le pack 5h.`,
-    });
+      });
 
-    return null;
-  });
+      return null;
+    });

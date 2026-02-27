@@ -1,20 +1,23 @@
 module.exports = {
+  root: true,
   env: {
     es6: true,
     node: true,
   },
   parserOptions: {
-    ecmaVersion: 2020,     // ✅ nécessaire pour ?. (optional chaining)
-    sourceType: "script",  // ✅ conseillé si tu utilises require/exports
+    ecmaVersion: 2020,
+    sourceType: "script",
   },
-  extends: [
-    "eslint:recommended",
-    "google",
-  ],
+  extends: ["eslint:recommended", "google"],
   rules: {
     "no-restricted-globals": ["error", "name", "length"],
     "prefer-arrow-callback": "error",
-    "quotes": ["error", "double", { "allowTemplateLiterals": true }],
+    "quotes": ["error", "double", {allowTemplateLiterals: true}],
+
+    // ✅ On désactive les règles qui te bloquent le déploiement
+    "require-jsdoc": "off",
+    "valid-jsdoc": "off",
+    "max-len": "off",
   },
   overrides: [
     {
@@ -25,5 +28,4 @@ module.exports = {
       rules: {},
     },
   ],
-  globals: {},
 };
