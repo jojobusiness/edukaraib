@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
 import {
   addDoc,
   collection,
@@ -61,18 +61,55 @@ export default function ReviewForm({ lessonId, teacherId, studentId, onReviewSen
       await addDoc(collection(db, 'reviews'), {
         lesson_id: lessonId,
         teacher_id: teacherId,
-        student_id: studentId,   // auteur côté élève (ou enfant)
+
+        // auteur "élève/enfant"
+        student_id: studentId,
+
+        // ✅ auteur connecté (parent ou élève)
+        left_by_parent_id: auth.currentUser?.uid || null,
+
         rating,
         comment: String(comment || '').trim(),
         created_at: serverTimestamp(),
 
-        // (optionnel mais utile pour requêtes/tri)
         lesson_status: lesson.status,
         lesson_is_group: !!isGroup,
         slot_day: lesson.slot_day || null,
         slot_hour: lesson.slot_hour ?? null,
         subject_id: lesson.subject_id || null,
       });
+
+      // 1) Récupère le token Firebase (obligatoire pour verifyAuth)
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) {
+        console.warn("No auth token => promo API skipped");
+      } else {
+        // 2) Appel API Vercel (crée promo + notif + email)
+        const resp = await fetch("/api/create-promo-first-review", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ lessonId }), // ⚠️ la variable lessonId doit exister
+        });
+
+        let data = null;
+        try { data = await resp.json(); } catch {}
+
+        if (data?.ok && data?.code) {
+          // ✅ Si c'est le premier avis => already=false, sinon already=true
+          // Affiche au user (toast / alert / UI)
+          // exemple simple :
+          alert(
+            data.already
+              ? `Ton code promo est toujours actif : ${data.code}`
+              : `🎉 Merci ! Voici ton code promo : ${data.code} ( +1h sur pack 5h )`
+          );
+        } else {
+          console.warn("Promo API failed:", data);
+        }
+      }
 
       setSent(true);
       setSubmitting(false);
