@@ -1,5 +1,6 @@
 // api/create-promo-first-review.js
 import crypto from "crypto";
+import { Resend } from "resend";
 import { adminDb, verifyAuth } from "./_firebaseAdmin.mjs";
 
 function makeCode() {
@@ -14,30 +15,23 @@ function isCompleted(lesson) {
 function isUserLinkedToLesson(uid, lesson) {
   if (!lesson) return false;
 
-  // cours 1-to-1
   if (lesson.student_id === uid) return true;
 
-  // participants list
   const ids = Array.isArray(lesson.participant_ids) ? lesson.participant_ids : [];
   if (ids.includes(uid)) return true;
 
-  // participantsMap direct
   const pm = lesson.participantsMap || {};
   if (pm[uid]) return true;
 
-  // parent / booked_by dans participantsMap
   return Object.values(pm).some((v) => v?.parent_id === uid || v?.booked_by === uid);
 }
 
 export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method !== "POST") {
-    return res.status(405).json({ ok: false, error: "METHOD_NOT_ALLOWED" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "METHOD_NOT_ALLOWED" });
 
-  // ✅ Auth via ton helper (Authorization: Bearer <idToken>)
   const decoded = await verifyAuth(req, res);
-  if (!decoded) return; // verifyAuth a déjà répondu 401
+  if (!decoded) return; // verifyAuth a déjà répondu
 
   const uid = decoded.uid;
   const { lessonId } = req.body || {};
@@ -46,30 +40,25 @@ export default async function handler(req, res) {
   try {
     const userRef = adminDb.collection("users").doc(uid);
 
-    // 1) Idempotent : si déjà code => renvoie
+    // 1) idempotent : déjà code ?
     const userSnap = await userRef.get();
     const existing = userSnap.data()?.promo?.first_review?.code;
     if (existing) {
-      return res.status(200).json({ ok: true, code: existing, already: true });
+      return res.status(200).json({ ok: true, code: existing, already: true, emailSent: false });
     }
 
-    // 2) Vérifier le cours
+    // 2) check lesson
     const lessonRef = adminDb.collection("lessons").doc(lessonId);
     const lessonSnap = await lessonRef.get();
-    if (!lessonSnap.exists) {
-      return res.status(404).json({ ok: false, error: "LESSON_NOT_FOUND" });
-    }
+    if (!lessonSnap.exists) return res.status(404).json({ ok: false, error: "LESSON_NOT_FOUND" });
 
     const lesson = lessonSnap.data();
-    if (!isCompleted(lesson)) {
-      return res.status(403).json({ ok: false, error: "LESSON_NOT_COMPLETED" });
-    }
-
+    if (!isCompleted(lesson)) return res.status(403).json({ ok: false, error: "LESSON_NOT_COMPLETED" });
     if (!isUserLinkedToLesson(uid, lesson)) {
       return res.status(403).json({ ok: false, error: "NOT_LINKED_TO_LESSON" });
     }
 
-    // 3) Transaction : create promo + notification
+    // 3) transaction create promo + notif
     let issuedCode = null;
 
     await adminDb.runTransaction(async (tx) => {
@@ -80,7 +69,7 @@ export default async function handler(req, res) {
         return;
       }
 
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 8; i++) {
         const code = makeCode();
         const promoRef = adminDb.collection("promo_codes").doc(code);
 
@@ -128,40 +117,57 @@ export default async function handler(req, res) {
       }
     });
 
-    if (!issuedCode) {
-      return res.status(500).json({ ok: false, error: "CODE_GENERATION_FAILED" });
-    }
+    if (!issuedCode) return res.status(500).json({ ok: false, error: "CODE_GENERATION_FAILED" });
 
-    // 4) Email via ton API existante /api/notify-email (Resend)
+    // 4) Email direct Resend (plus fiable que fetch /api/notify-email)
+    let emailSent = false;
+    const resendKey = process.env.RESEND_API_KEY || "";
     const email = userSnap.data()?.email || decoded.email;
-    if (email) {
-      const baseUrl = process.env.APP_BASE_URL || "https://edukaraib.com";
-      // important sur Vercel: origin pas toujours présent => fallback baseUrl
-      const origin = req.headers.origin || baseUrl;
 
-      // On tente d’envoyer l’email, mais on ne bloque pas le succès promo si email échoue
+    if (resendKey && email) {
       try {
-        await fetch(`${origin}/api/notify-email`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            to: email,
-            title: "🎟️ Ton code promo EduKaraib",
-            message:
-              `Merci pour ton premier avis ! Ton code est ${issuedCode}. ` +
-              `Il te donne +1h offerte en plus sur le pack 5h.`,
-            ctaText: "Utiliser mon code",
-            ctaUrl: `${baseUrl}/recherche-prof`,
-          }),
+        const resend = new Resend(resendKey);
+
+        const APP_BASE_URL = process.env.APP_BASE_URL || "https://edukaraib.com";
+        const FROM_TEST = "EduKaraib <onboarding@resend.dev>";
+        const FROM_PRO = "EduKaraib <notifications@edukaraib.com>";
+
+        const html = `
+          <div style="font-family:Arial,sans-serif;line-height:1.5">
+            <h2>🎟️ Ton code promo est prêt !</h2>
+            <p>Merci pour ton premier avis. Voici ton code :</p>
+            <p style="font-size:20px;font-weight:700">${issuedCode}</p>
+            <p>Il te donne <b>+1h offerte en plus</b> sur un <b>pack 5h</b>.</p>
+            <p><a href="${APP_BASE_URL}/recherche-prof">Utiliser mon code</a></p>
+          </div>
+        `;
+
+        let result = await resend.emails.send({
+          from: FROM_TEST,
+          to: [email],
+          subject: "🎟️ Ton code promo EduKaraib",
+          html,
         });
+
+        // second try (sender pro)
+        if (!result?.id) {
+          result = await resend.emails.send({
+            from: FROM_PRO,
+            to: [email],
+            subject: "🎟️ Ton code promo EduKaraib",
+            html,
+          });
+        }
+
+        emailSent = !!result?.id;
       } catch (e) {
-        console.error("[notify-email] failed:", e?.message || e);
+        console.error("[resend] failed:", e?.message || e);
       }
     }
 
-    return res.status(200).json({ ok: true, code: issuedCode, already: false });
+    return res.status(200).json({ ok: true, code: issuedCode, already: false, emailSent });
   } catch (e) {
     console.error("[create-promo-first-review] error:", e?.message || e);
-    return res.status(500).json({ ok: false, error: "SERVER_ERROR" });
+    return res.status(500).json({ ok: false, error: "SERVER_ERROR", details: e?.message });
   }
 }

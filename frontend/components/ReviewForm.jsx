@@ -91,23 +91,22 @@ export default function ReviewForm({ lessonId, teacherId, studentId, onReviewSen
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ lessonId }), // ⚠️ la variable lessonId doit exister
+          body: JSON.stringify({ lessonId }),
         });
 
         let data = null;
         try { data = await resp.json(); } catch {}
 
+        console.log("PROMO API status:", resp.status, "data:", data);
+
         if (data?.ok && data?.code) {
-          // ✅ Si c'est le premier avis => already=false, sinon already=true
-          // Affiche au user (toast / alert / UI)
-          // exemple simple :
           alert(
             data.already
               ? `Ton code promo est toujours actif : ${data.code}`
               : `🎉 Merci ! Voici ton code promo : ${data.code} ( +1h sur pack 5h )`
           );
         } else {
-          console.warn("Promo API failed:", data);
+          alert(`Promo non créée : ${data?.error || "erreur inconnue"}`);
         }
       }
 
