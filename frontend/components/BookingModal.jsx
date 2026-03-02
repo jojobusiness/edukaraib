@@ -98,6 +98,8 @@ export default function BookingModal({
     });
   }, [selected]);
 
+  const requiredN = requiredCount ? Number(requiredCount) : null;
+
   // Clé unique d’un créneau (pour le comparer)
   const slotKey = (s) => `${s.day}:${s.hour}:${s.date || ''}`;
 
@@ -374,7 +376,7 @@ export default function BookingModal({
         }
 
         // Limite de pack
-        if (requiredCount && prev.length >= requiredCount) return prev;
+        if (requiredN && prev.length >= requiredN) return prev;
 
         const next = [
           ...prev,
@@ -428,11 +430,11 @@ export default function BookingModal({
   const handleSubmit = () => {
     if (!canBook) return;
     if (!selected.length) return;
-    if (requiredCount && selected.length !== requiredCount) return; // impose exact
+    if (requiredN && selected.length !== requiredN) return; // impose exact
     if (multiSelect) onBook(selected); else onBook(selected[0]);
   };
 
-  const need = requiredCount ? (requiredCount - selected.length) : null;
+  const need = requiredN ? (requiredN - selected.length) : null;
 
   // -------- RENDER --------
   return (
@@ -458,7 +460,7 @@ export default function BookingModal({
 
         {requiredCount && (
           <div className="mb-3 text-sm text-slate-700">
-            Pack : sélectionnez <b>{requiredCount}</b> créneau(x). Reste à choisir : <b>{need}</b>.
+            Pack : sélectionnez <b>{requiredN}</b> créneau(x). Reste à choisir : <b>{need}</b>.
           </div>
         )}
 
@@ -711,12 +713,12 @@ export default function BookingModal({
           disabled={
             !canBook ||
             !selected.length ||
-            (requiredCount && selected.length !== requiredCount)
+            (requiredN && selected.length !== requiredN)
           }
           title={!canBook ? 'La réservation est désactivée pour les professeurs' : undefined}
         >
           {requiredCount
-            ? `Réserver ${selected.length}/${requiredCount} créneau(x)`
+            ? `Réserver ${selected.length}/${requiredN} créneau(x)`
             : (multiSelect
                 ? `Réserver ${selected.length} créneau${selected.length > 1 ? 'x' : ''}`
                 : 'Réserver ce créneau')}

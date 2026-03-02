@@ -1557,17 +1557,17 @@ export default function TeacherProfile() {
                   {packChoice === 5 && (
                     <div className="mt-3">
                       <label className="block text-xs font-semibold text-slate-600 mb-1">Code promo</label>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 items-stretch">
                         <input
                           value={promoCode}
                           onChange={(e) => { setPromoCode(e.target.value); setPromoOk(false); setPromoMsg(''); }}
-                          className="flex-1 border rounded-xl px-3 py-2 text-sm"
+                          className="flex-1 min-w-0 border rounded-xl px-3 py-2 text-sm"
                           placeholder="Ex: AVIS-9F3K2Q"
                         />
                         <button
                           type="button"
                           onClick={checkPromo}
-                          className="px-3 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold"
+                          className="shrink-0 px-3 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold"
                         >
                           Appliquer
                         </button>
