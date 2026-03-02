@@ -525,7 +525,11 @@ export default function MyCourses() {
     if (!uid) return [];
     const out = [];
     for (const c of courses) {
-      if (Array.isArray(c.participant_ids) && c.participant_ids.includes(uid)) {
+      // ✅ 1) jamais "en attente" si terminé
+      if (String(c?.status || '') === 'completed') continue;
+
+      // ✅ 2) Groupe uniquement si is_group === true
+      if (c?.is_group === true && Array.isArray(c.participant_ids) && c.participant_ids.includes(uid)) {
         const st = String(c?.participantsMap?.[uid]?.status || '');
         if (!['accepted', 'confirmed', 'rejected', 'removed', 'deleted'].includes(st)) {
           out.push(c);

@@ -2140,7 +2140,8 @@ export default function TeacherLessons() {
                 const confirmedParticipants = (l.participantDetails || []).filter(
                   (p) => p.status === 'accepted' || p.status === 'confirmed'
                 );
-                const capacity = l.capacity || (Array.isArray(l.participant_ids) ? l.participant_ids.length : 1);
+                const isGroup = isGroupLessonStrict(l);
+                const capacity = l.capacity ?? (isGroup ? 10 : 1);
                 return (
                   <div key={l.id} className="bg-white p-6 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between">
                     <div className="flex-1">
@@ -2158,9 +2159,9 @@ export default function TeacherLessons() {
                         {/* ———————————————————————————————— */}
                       </div>
                       <div className="text-gray-700">
-                        {(Array.isArray(l.participant_ids) && l.participant_ids.length > 0)
-                          ? `Élèves (👥 ${confirmedParticipants.length}/${capacity})`
-                          : <>Élève : <span className="font-semibold">{l.studentName || '—'}</span></>}
+                        {isGroup
+                        ? `Élèves (👥 ${confirmedParticipants.length}/${capacity})`
+                        : <>Élève : <span className="font-semibold">{l.studentName || '—'}</span></>}
                       </div>
                       <div className="text-gray-500 text-sm"><When lesson={l} /></div>
                     </div>

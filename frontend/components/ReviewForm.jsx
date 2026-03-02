@@ -79,8 +79,34 @@ export default function ReviewForm({ lessonId, teacherId, studentId, onReviewSen
         subject_id: lesson.subject_id || null,
       });
 
-      // 1) Récupère le token Firebase (obligatoire pour verifyAuth)
+      // ✅ DEBUG: on force l’appel API promo
+      console.log("✅ Review created, calling promo API…");
+
       const token = await auth.currentUser?.getIdToken();
+      console.log("Promo token exists?", !!token);
+
+      if (!token) {
+        alert("Erreur: token manquant (user pas connecté ?) => promo non appelée.");
+      } else {
+        const resp = await fetch("/api/create-promo-first-review", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ lessonId }), // ⚠️ lessonId doit être une variable existante
+        });
+
+        let data = null;
+        try { data = await resp.json(); } catch {}
+
+        console.log("PROMO API status:", resp.status);
+        console.log("PROMO API data:", data);
+
+        alert(`PROMO API: status=${resp.status} code=${data?.code || "none"} err=${data?.error || "none"}`);
+      }
+
+      // 1) Récupère le token Firebase (obligatoire pour verifyAuth)
       if (!token) {
         console.warn("No auth token => promo API skipped");
       } else {
