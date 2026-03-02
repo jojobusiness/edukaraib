@@ -19,6 +19,8 @@ export default function ReviewModal({ open, onClose, lesson, onSent }) {
   const [promo, setPromo] = useState({ status: "idle", code: "", emailSent: null }); 
   // status: idle | success | error
 
+  const [autoCloseAfterPromo, setAutoCloseAfterPromo] = useState(false);
+
   useEffect(() => {
     if (open) {
       setRating(5);
@@ -51,10 +53,16 @@ export default function ReviewModal({ open, onClose, lesson, onSent }) {
       const data = await resp.json().catch(() => ({}));
 
       if (data?.ok && data?.code && data?.already === false) {
-        // ✅ Afficher seulement si c’est la 1ère fois
+        // ✅ Afficher le code uniquement la 1ère fois
         setPromo({ status: "success", code: data.code, emailSent: !!data.emailSent });
+
+        // ✅ Auto-close (laisse 1.2s pour lire)
+        setAutoCloseAfterPromo(true);
+        setTimeout(() => {
+          onClose?.();
+        }, 1200);
       } else {
-        // ✅ Si already=true => ne rien montrer (évite confusion)
+        // ✅ Si already=true => ne rien afficher (évite malentendu)
         setPromo({ status: "idle", code: "", emailSent: null });
       }
     } catch (e) {
