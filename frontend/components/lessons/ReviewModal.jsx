@@ -29,6 +29,37 @@ export default function ReviewModal({ open, onClose, lesson, onSent }) {
         left_by_parent_id: auth.currentUser?.uid || null,
       });
 
+      // 🎟️ Promo "1er avis" (API Vercel)
+      try {
+        const token = await auth.currentUser?.getIdToken?.();
+        if (token) {
+          const resp = await fetch("/api/create-promo-first-review", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ lessonId: lesson.id }),
+          });
+
+          const data = await resp.json().catch(() => ({}));
+
+          if (data?.ok && data?.code) {
+            alert(
+              data.already
+                ? `🎟️ Ton code promo est déjà actif : ${data.code}`
+                : `🎉 Merci pour ton avis ! Ton code promo : ${data.code}\n(+1h offerte sur le pack 5h)`
+            );
+          } else {
+            console.warn("Promo API failed:", resp.status, data);
+          }
+        } else {
+          console.warn("No token -> promo skipped");
+        }
+      } catch (e) {
+        console.warn("Promo call error:", e);
+      }
+
       await addDoc(collection(db, 'notifications'), {
         user_id: lesson.teacher_id,
         type: 'review_left',
