@@ -77,8 +77,18 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         to: email,
-        title: "🎟️ Ton code promo EduKaraib",
-        message: `Merci pour ton premier avis !\n\nTon code est : ${code}\n\nIl te donne +1h offerte sur le pack 5h.`,
+        title: "🎟️ Code promo débloqué",
+        message: `
+    Ton code promo est prêt !
+
+    Merci pour ton premier avis sur EduKaraib 💚
+
+    Voici ton code :
+
+    ${code}
+
+    Il te donne +1h offerte en plus sur un pack 5h.
+        `,
         ctaText: "Utiliser mon code",
         ctaUrl: "https://edukaraib.com/recherche-prof",
       }),

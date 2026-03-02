@@ -201,10 +201,7 @@ export default function ReviewModal({ open, onClose, lesson, onSent }) {
               <div className="mt-3 font-mono text-lg tracking-wider bg-white rounded-xl px-4 py-3 border">
                 {promo.code}
               </div>
-
-              <div className="mt-2 text-xs text-emerald-700">
-                {promo.emailSent ? "✅ Envoyé aussi par email." : "ℹ️ Email en cours / non confirmé (vérifie Resend)."}
-              </div>
+              
             </div>
           )}
 
