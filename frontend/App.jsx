@@ -40,7 +40,6 @@ import BookLessonEleve from './pages/BookLessonEleve';
 import VisioRoom from './pages/VisioRoom.jsx';
 import TeacherRoute from './components/TeacherRoute';
 import ParentRoute from './components/ParentRoute';
-import ReviewForm from './components/ReviewForm';
 import PrivateRoute from './components/PrivateRoute';
 import StudentRoute from './components/StudentRoute';
 import RequireRole from './routes/RequireRole';
@@ -166,7 +165,6 @@ function App() {
             {/* 🎓 Élève */}
             <Route path="/dashboard-eleve" element={<StudentRoute><StudentDashboard /></StudentRoute>} />
             <Route path="/my-courses" element={<StudentRoute><MyCourses /></StudentRoute>} />
-            <Route path="/reviewform" element={<StudentRoute><ReviewForm /></StudentRoute>} />
             <Route path="/dashboard-eleve/planning" element={<StudentRoute><StudentCalendar /></StudentRoute>} />
             <Route path="/student/payments" element={<RequireRole roles={['student']}><StudentPayments /></RequireRole>} />
             <Route path="/book-lesson-eleve" element={<StudentRoute><BookLessonEleve teacherId="TEACHER_ID" subjectId="SUBJECT_ID" /></StudentRoute>} />
