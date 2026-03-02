@@ -50,11 +50,12 @@ export default function ReviewModal({ open, onClose, lesson, onSent }) {
 
       const data = await resp.json().catch(() => ({}));
 
-      if (data?.ok && data?.code) {
+      if (data?.ok && data?.code && data?.already === false) {
+        // ✅ Afficher seulement si c’est la 1ère fois
         setPromo({ status: "success", code: data.code, emailSent: !!data.emailSent });
       } else {
-        setPromo({ status: "error", code: "", emailSent: null });
-        console.warn("Promo API:", resp.status, data);
+        // ✅ Si already=true => ne rien montrer (évite confusion)
+        setPromo({ status: "idle", code: "", emailSent: null });
       }
     } catch (e) {
       console.warn("Promo call failed:", e);
@@ -201,7 +202,7 @@ export default function ReviewModal({ open, onClose, lesson, onSent }) {
               <div className="mt-3 font-mono text-lg tracking-wider bg-white rounded-xl px-4 py-3 border">
                 {promo.code}
               </div>
-              
+
             </div>
           )}
 
