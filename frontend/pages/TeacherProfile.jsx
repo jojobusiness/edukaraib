@@ -588,13 +588,21 @@ export default function TeacherProfile() {
     const slots = Array.isArray(selected) ? selected : [selected];
 
     const isPack = packChoice === 5 || packChoice === 10;
-    const paidHours = packChoice;                 // 5 ou 10
-    const totalPackHours = isPack ? (paidHours + bonusHours) : 0;
-    const packType = paidHours === 5 ? "pack5" : paidHours === 10 ? "pack10" : null;
+    const paidHours = packChoice; // 5 ou 10
 
+    // ✅ bonus pack existant
     const baseBonusHours = packChoice === 5 ? 1 : packChoice === 10 ? 2 : 0;
+
+    // ✅ bonus promo (UNIQUEMENT pack 5h + promoOk)
     const promoBonusHours = (packChoice === 5 && promoOk) ? 1 : 0;
+
+    // ✅ total bonus
     const bonusHours = baseBonusHours + promoBonusHours;
+
+    // ✅ total créneaux pack à réserver
+    const totalPackHours = isPack ? (paidHours + bonusHours) : 0;
+
+    const packType = paidHours === 5 ? "pack5" : paidHours === 10 ? "pack10" : null;
 
     const isFree = isPack && i < bonusHours;
     const freeReason = isFree ? (i < baseBonusHours ? "pack_bonus" : "first_review_promo") : null;
@@ -657,7 +665,8 @@ export default function TeacherProfile() {
       const results = [];
       for (let i = 0; i < slots.length; i++) {
         const slot = slots[i];
-        const isFree = isPack && i < bonusHours; // pack5 => 1 offerte, pack10 => 2 offertes
+        const isFree = isPack && i < bonusHours;
+        const freeReason = isFree ? (i < baseBonusHours ? "pack_bonus" : "promo_code") : null; // pack5 => 1 offerte, pack10 => 2 offertes
 
         try {
           // Vérifier doublons + réactiver si précédemment "rejected"
