@@ -87,7 +87,7 @@ export default function ReviewModal({ open, onClose, lesson, onSent }) {
       await addDoc(collection(db, "notifications"), {
         user_id: lesson.teacher_id,
         type: "review_left",
-        with_id: lesson.student_id,
+        with_id: auth.currentUser?.uid || lesson.student_id,
         lesson_id: lesson.id,
         message: `Un nouvel avis a été laissé pour le cours (${lesson.subject_id || "Cours"}).`,
         created_at: serverTimestamp(),

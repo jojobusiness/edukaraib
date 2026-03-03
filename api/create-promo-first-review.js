@@ -101,7 +101,7 @@ export default async function handler(req, res) {
     Il te donne +1h offerte en plus sur un pack 5h.
         `,
         ctaText: "Utiliser mon code",
-        ctaUrl: "https://edukaraib.com/recherche-prof",
+        ctaUrl: "https://edukaraib.com/search",
       }),
     });
 
