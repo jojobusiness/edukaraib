@@ -123,9 +123,11 @@ export default function Home() {
           .map((d) => ({ id: d.id, ...d.data() }))
           .filter((r) => (r.comment?.trim()?.length ?? 0) > 0 && Number(r.rating) > 0);
 
-        // Enrichir avec users/{user_id} si nom/avatar manquent
+        // Enrichir avec users/{user_id} si nom/avatar manquent (reviewer)
+        // + enrichir avec users/{teacher_id} pour le nom/matière du prof
         list = await Promise.all(
           list.map(async (r) => {
+            // 1) Données du reviewer
             if (!(r.fullName || r.userName || r.reviewerName || r.userAvatar || r.photoURL)) {
               const reviewerId = r.user_id || r.student_id || r.parent_id;
               if (reviewerId) {
@@ -144,6 +146,23 @@ export default function Home() {
                 } catch {}
               }
             }
+
+            // 2) Données du prof (toujours récupérées depuis users/{teacher_id})
+            if (r.teacher_id && !(r._teacherFullName || r._teacherSubjects)) {
+              try {
+                const ts = await getDoc(doc(db, 'users', r.teacher_id));
+                if (ts.exists()) {
+                  const t = ts.data();
+                  r._teacherFullName =
+                    t.fullName ||
+                    t.name ||
+                    [t.firstName, t.lastName].filter(Boolean).join(' ') ||
+                    'Professeur';
+                  r._teacherSubjects = t.subjects ?? t.subject ?? t.main_subject ?? '';
+                }
+              } catch {}
+            }
+
             return r;
           })
         );
@@ -700,10 +719,16 @@ export default function Home() {
                     '/avatar-default.png';
 
                   const profName =
-                    (t?.fullName || t?.name || [t?.firstName, t?.lastName].filter(Boolean).join(' ')).trim() ||
+                    r._teacherFullName ||
+                    (t?.fullName || t?.name || [t?.firstName, t?.lastName].filter(Boolean).join(' ') || '').trim() ||
                     'Professeur';
 
-                  const profSubject = getSubjectLabel(t || {});
+                  const profSubject =
+                    (typeof r._teacherSubjects === 'string' && r._teacherSubjects.trim()
+                      ? r._teacherSubjects.trim()
+                      : Array.isArray(r._teacherSubjects) && r._teacherSubjects.length
+                        ? r._teacherSubjects.filter(Boolean).join(', ')
+                        : null) || getSubjectLabel(t || {});
                   const starsCount = Math.max(0, Math.min(5, Math.round(Number(r.rating) || 0)));
                   const stars = '★★★★★'.slice(0, starsCount);
 
@@ -767,10 +792,16 @@ export default function Home() {
                   '/avatar-default.png';
 
                 const profName =
-                  (t?.fullName || t?.name || [t?.firstName, t?.lastName].filter(Boolean).join(' ')).trim() ||
+                  r._teacherFullName ||
+                  (t?.fullName || t?.name || [t?.firstName, t?.lastName].filter(Boolean).join(' ') || '').trim() ||
                   'Professeur';
 
-                const profSubject = getSubjectLabel(t || {});
+                const profSubject =
+                  (typeof r._teacherSubjects === 'string' && r._teacherSubjects.trim()
+                    ? r._teacherSubjects.trim()
+                    : Array.isArray(r._teacherSubjects) && r._teacherSubjects.length
+                      ? r._teacherSubjects.filter(Boolean).join(', ')
+                      : null) || getSubjectLabel(t || {});
                 const starsCount = Math.max(0, Math.min(5, Math.round(Number(r.rating) || 0)));
                 const stars = '★★★★★'.slice(0, starsCount);
 
