@@ -27,7 +27,7 @@ export default async function handler(req, res) {
     const lessonSnap = await lessonRef.get();
 
     // ✅ Fix: exists() est une fonction dans Admin SDK
-    if (!lessonSnap.exists()) {
+    if (!lessonSnap.exists) {
       return res.status(404).json({ ok: false, error: "LESSON_NOT_FOUND" });
     }
 
