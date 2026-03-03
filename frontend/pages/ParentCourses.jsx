@@ -743,7 +743,7 @@ export default function ParentCourses() {
             </span>
             {(() => {
               const lab = packLabelForChild(c, sid);
-              const free = isFreeHourFor(uid, c);
+              const free = isFreeHourFor(sid, c);
               return lab ? (
                 <span className="text-[11px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded ml-1">
                   {free ? "🎁 " : ""}{lab}
