@@ -678,8 +678,10 @@ export default function ParentCourses() {
     for (const { lesson: c, sid } of rows) {
       if (c.status !== 'completed') continue;
       if (isGroupLesson(c)) {
+        // On accepte aussi les statuts "intermédiaires" — le cours est terminé donc on affiche
         const st = c?.participantsMap?.[sid]?.status;
-        if (st === 'accepted' || st === 'confirmed') {
+        const notExcluded = st !== 'rejected' && st !== 'removed' && st !== 'deleted';
+        if (notExcluded) {
           out.push({ c, sid });
         }
       } else {
