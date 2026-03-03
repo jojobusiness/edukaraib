@@ -94,7 +94,7 @@ export default async function handler(req, res) {
       }),
     });
 
-    return res.json({ ok: true, code });
+    return res.json({ ok: true, code, already: false });
 
   } catch (e) {
     console.error(e);

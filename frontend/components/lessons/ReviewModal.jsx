@@ -53,21 +53,17 @@ export default function ReviewModal({ open, onClose, lesson, onSent }) {
       const data = await resp.json().catch(() => ({}));
 
       if (data?.ok && data?.code && data?.already === false) {
-        // ✅ Afficher le code uniquement la 1ère fois
+        // 1ère fois : afficher le code 4s puis fermer
         setPromo({ status: "success", code: data.code, emailSent: !!data.emailSent });
-
-        // ✅ Auto-close (laisse 1.2s pour lire)
-        setAutoCloseAfterPromo(true);
-        setTimeout(() => {
-          onClose?.();
-        }, 1200);
+        setTimeout(() => onClose?.(), 4000);
       } else {
-        // ✅ Si already=true => ne rien afficher (évite malentendu)
-        setPromo({ status: "idle", code: "", emailSent: null });
+        // already=true ou pas de code : fermer directement
+        setTimeout(() => onClose?.(), 800);
       }
     } catch (e) {
       console.warn("Promo call failed:", e);
       setPromo({ status: "error", code: "", emailSent: null });
+      setTimeout(() => onClose?.(), 1500);
     }
   };
 
