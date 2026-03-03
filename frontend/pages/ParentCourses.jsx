@@ -196,7 +196,7 @@ const PENDING_LESSON_STATUSES = new Set([
 ]);
 
 /* ---------- helpers “confirmé pour l’enfant” ---------- */
-function isGroupLesson(l) { return !!l?.is_group || Array.isArray(l?.participant_ids); }
+function isGroupLesson(l) { return !!l?.is_group || (Array.isArray(l?.participant_ids) && Number(l?.capacity ?? 1) > 1); }
 const isVisio = (l) => String(l?.mode || '').toLowerCase() === 'visio' || l?.is_visio === true;
 const hasVisioLink = (l) => !!l?.visio?.joinUrl;
 
@@ -678,7 +678,6 @@ export default function ParentCourses() {
     for (const { lesson: c, sid } of rows) {
       if (c.status !== 'completed') continue;
       if (isGroupLesson(c)) {
-        // On accepte aussi les statuts "intermédiaires" — le cours est terminé donc on affiche
         const st = c?.participantsMap?.[sid]?.status;
         const notExcluded = st !== 'rejected' && st !== 'removed' && st !== 'deleted';
         if (notExcluded) {
