@@ -25,16 +25,28 @@ export default async function handler(req, res) {
 
     const lessonRef = adminDb.collection("lessons").doc(lessonId);
     const lessonSnap = await lessonRef.get();
-    if (!lessonSnap.exists) {
+
+    // ✅ Fix: exists() est une fonction dans Admin SDK
+    if (!lessonSnap.exists()) {
       return res.status(404).json({ ok: false, error: "LESSON_NOT_FOUND" });
     }
 
     const lesson = lessonSnap.data();
+
     if (lesson.status !== "completed") {
       return res.status(403).json({ ok: false, error: "LESSON_NOT_COMPLETED" });
     }
 
-    if (lesson.student_id !== uid) {
+    // ✅ Fix: accepter parent OU élève
+    const isStudent = lesson.student_id === uid;
+    const isParent =
+      lesson.parent_id === uid ||
+      (lesson.participantsMap &&
+        Object.values(lesson.participantsMap).some(
+          (p) => p.parent_id === uid || p.booked_by === uid
+        ));
+
+    if (!isStudent && !isParent) {
       return res.status(403).json({ ok: false, error: "NOT_LINKED_TO_LESSON" });
     }
 
@@ -63,7 +75,6 @@ export default async function handler(req, res) {
       { merge: true }
     );
 
-    // 🔥 Appel simple à l'API email existante
     const proto = req.headers["x-forwarded-proto"] || "https";
     const host = req.headers["x-forwarded-host"] || req.headers.host;
     const origin = `${proto}://${host}`;
