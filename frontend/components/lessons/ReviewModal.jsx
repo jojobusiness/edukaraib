@@ -39,7 +39,7 @@ export default function ReviewModal({ open, onClose, lesson, onSent }) {
   const callPromoApi = async () => {
     try {
       const token = await auth.currentUser?.getIdToken?.();
-      if (!token) return;
+      if (!token) { onClose?.(); return; }
 
       const resp = await fetch("/api/create-promo-first-review", {
         method: "POST",
@@ -53,17 +53,17 @@ export default function ReviewModal({ open, onClose, lesson, onSent }) {
       const data = await resp.json().catch(() => ({}));
 
       if (data?.ok && data?.code && data?.already === false) {
-        // 1ère fois : afficher le code 4s puis fermer
+        // 1ère fois : afficher le code, laisser l'utilisateur le copier, puis fermer
         setPromo({ status: "success", code: data.code, emailSent: !!data.emailSent });
-        setTimeout(() => onClose?.(), 4000);
+        // NE PAS fermer automatiquement — l'utilisateur ferme manuellement après avoir copié
       } else {
         // already=true ou pas de code : fermer directement
-        setTimeout(() => onClose?.(), 800);
+        onClose?.();
       }
     } catch (e) {
       console.warn("Promo call failed:", e);
       setPromo({ status: "error", code: "", emailSent: null });
-      setTimeout(() => onClose?.(), 1500);
+      setTimeout(() => onClose?.(), 2000);
     }
   };
 
@@ -72,7 +72,7 @@ export default function ReviewModal({ open, onClose, lesson, onSent }) {
     setSending(true);
 
     try {
-      // 1) Créer l’avis
+      // 1) Créer l'avis
       await addDoc(collection(db, "reviews"), {
         lesson_id: lesson.id,
         student_id: lesson.student_id,
@@ -94,17 +94,17 @@ export default function ReviewModal({ open, onClose, lesson, onSent }) {
         read: false,
       });
 
-      // 3) Promo + email (on affiche le résultat dans le modal)
-      await callPromoApi();
-
-      // callback
       onSent?.();
     } catch (e) {
       console.error(e);
       setPromo({ status: "error", code: "", emailSent: null });
-    } finally {
       setSending(false);
+      return;
     }
+
+    // 3) Promo APRÈS setSending(false) pour éviter conflit de state
+    setSending(false);
+    await callPromoApi();
   };
 
   const copyCode = async () => {
