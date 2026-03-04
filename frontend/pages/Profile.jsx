@@ -256,12 +256,6 @@ export default function Profile() {
     if (!NAME_MIN2_REGEX.test(profile.lastName || '')) {
       return alert('Nom invalide (2 caractères minimum).');
     }
-    if (profile.phone) {
-      const phoneClean = profile.phone.replace(/\D/g, '');
-      if (!/^0[1-9]\d{8}$/.test(phoneClean)) {
-        return alert("Le numéro doit commencer par 0 et contenir 10 chiffres.");
-      }
-    }
     if (profile.city && !existsCity(profile.city)) {
       return alert('Ville inconnue : indique une commune de Guyane.');
     }
