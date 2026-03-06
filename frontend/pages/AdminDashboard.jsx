@@ -208,6 +208,8 @@ export default function AdminDashboard() {
 
   // 🔹 Liste des conversations compactes (onglet Discussions)
   const [convs, setConvs] = useState([]);
+  const [lessons, setLessons] = useState([]);
+  const [lessonsLoading, setLessonsLoading] = useState(false);
 
   /* ----- Load current user & role ----- */
   useEffect(() => {
@@ -276,6 +278,17 @@ export default function AdminDashboard() {
       setPayLoading(false);
     })();
   }, [tab, dateFrom, dateTo]);
+
+  useEffect(() => {
+    if (tab !== 'stats') return;
+    setLessonsLoading(true);
+    getDocs(query(collection(db, 'lessons'), orderBy('created_at', 'desc'), limit(1000)))
+      .then(snap => {
+        setLessons(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setLessonsLoading(false);
+      })
+      .catch(() => setLessonsLoading(false));
+  }, [tab]);
 
   // Charger les conversations (compact, sans layout) quand l’onglet Discussions est actif
   useEffect(() => {
@@ -549,6 +562,12 @@ export default function AdminDashboard() {
             onClick={() => setTab('discussions')}
           >
             Discussions
+          </button>
+          <button
+            className={`px-4 py-2 rounded-lg border ${tab === 'stats' ? 'bg-primary text-white border-primary' : 'bg-white'}`}
+            onClick={() => setTab('stats')}
+          >
+            📊 Stats
           </button>
         </div>
 
@@ -979,6 +998,16 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* === STATS TAB === */}
+        {tab === 'stats' && (
+          <StatsTab
+            users={users}
+            payments={payments}
+            lessons={lessons}
+            lessonsLoading={lessonsLoading || payLoading || usersLoading}
+          />
+        )}
+
         {/* === MESSAGES (broadcast) TAB === */}
         {tab === 'messages' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1204,6 +1233,234 @@ export default function AdminDashboard() {
         </>
         )}
       </main>
+    </div>
+  );
+}
+/* ===========================
+   StatsTab — Statistiques complètes
+=========================== */
+function StatsTab({ users, payments, lessons, lessonsLoading }) {
+
+  // ── Helpers date ──
+  const toDate = (ts) => {
+    if (!ts) return null;
+    if (ts?.toDate) return ts.toDate();
+    if (typeof ts === 'string' || typeof ts === 'number') return new Date(ts);
+    return null;
+  };
+  const monthKey = (d) => d ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` : null;
+  const monthLabel = (k) => {
+    const [y, m] = k.split('-');
+    return new Date(Number(y), Number(m)-1, 1).toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
+  };
+
+  // ── 6 derniers mois ──
+  const last6 = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - (5 - i));
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  });
+
+  // ── Inscrits par mois ──
+  const signupsByMonth = useMemo(() => {
+    const counts = {};
+    users.forEach(u => {
+      const d = toDate(u.createdAt);
+      const k = monthKey(d);
+      if (k) counts[k] = (counts[k] || 0) + 1;
+    });
+    return last6.map(k => ({ label: monthLabel(k), value: counts[k] || 0 }));
+  }, [users]);
+
+  // ── Cours par mois ──
+  const lessonsByMonth = useMemo(() => {
+    const counts = {};
+    lessons.forEach(l => {
+      const d = toDate(l.created_at || l.start_datetime);
+      const k = monthKey(d);
+      if (k) counts[k] = (counts[k] || 0) + 1;
+    });
+    return last6.map(k => ({ label: monthLabel(k), value: counts[k] || 0 }));
+  }, [lessons]);
+
+  // ── Revenus par mois ──
+  const revenueByMonth = useMemo(() => {
+    const sums = {};
+    payments.filter(p => p.status === 'held' || p.status === 'released').forEach(p => {
+      const d = toDate(p.created_at);
+      const k = monthKey(d);
+      if (k) sums[k] = (sums[k] || 0) + Number(p.gross_eur || 0);
+    });
+    return last6.map(k => ({ label: monthLabel(k), value: Math.round(sums[k] || 0) }));
+  }, [payments]);
+
+  // ── KPIs globaux ──
+  const totalUsers     = users.length;
+  const totalTeachers  = users.filter(u => u.role === 'teacher').length;
+  const totalStudents  = users.filter(u => u.role === 'student').length;
+  const totalParents   = users.filter(u => u.role === 'parent').length;
+  const totalLessons   = lessons.length;
+  const completedLessons = lessons.filter(l => l.status === 'completed').length;
+  const paidLessons    = lessons.filter(l => l.is_paid).length;
+  const totalRevenue   = payments
+    .filter(p => p.status === 'held' || p.status === 'released')
+    .reduce((a, p) => a + Number(p.gross_eur || 0), 0);
+  const totalFees      = payments
+    .filter(p => p.status === 'held' || p.status === 'released')
+    .reduce((a, p) => a + Number(p.fee_eur || 0), 0);
+
+  // Nouveaux inscrits ce mois
+  const thisMonth = monthKey(new Date());
+  const newThisMonth = users.filter(u => monthKey(toDate(u.createdAt)) === thisMonth).length;
+
+  // ── Mini bar chart SVG ──
+  const BarChart = ({ data, color = '#00804B', unit = '' }) => {
+    const max = Math.max(...data.map(d => d.value), 1);
+    const W = 400, H = 120, pad = 30, barW = Math.floor((W - pad * 2) / data.length) - 4;
+    return (
+      <svg viewBox={`0 0 ${W} ${H + 30}`} className="w-full">
+        {data.map((d, i) => {
+          const x = pad + i * ((W - pad * 2) / data.length) + 2;
+          const barH = Math.max(4, Math.round((d.value / max) * H));
+          return (
+            <g key={i}>
+              <rect x={x} y={H - barH} width={barW} height={barH} rx={3} fill={color} opacity={0.85} />
+              <text x={x + barW / 2} y={H + 14} textAnchor="middle" fontSize={9} fill="#6b7280">{d.label}</text>
+              {d.value > 0 && (
+                <text x={x + barW / 2} y={H - barH - 4} textAnchor="middle" fontSize={9} fill={color} fontWeight="bold">
+                  {d.value}{unit}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    );
+  };
+
+  if (lessonsLoading) {
+    return <div className="text-gray-500 py-10 text-center">Chargement des stats…</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: 'Utilisateurs', value: totalUsers, sub: `+${newThisMonth} ce mois`, color: 'text-blue-600' },
+          { label: 'Profs', value: totalTeachers, sub: `${totalStudents} élèves · ${totalParents} parents`, color: 'text-emerald-600' },
+          { label: 'Cours créés', value: totalLessons, sub: `${completedLessons} terminés · ${paidLessons} payés`, color: 'text-purple-600' },
+          { label: 'Revenu plateforme', value: `${totalFees.toFixed(0)} €`, sub: `Brut total ${totalRevenue.toFixed(0)} €`, color: 'text-green-700' },
+        ].map(k => (
+          <div key={k.label} className="bg-white border rounded-xl p-4">
+            <div className="text-xs text-gray-500">{k.label}</div>
+            <div className={`text-2xl font-bold ${k.color}`}>{k.value}</div>
+            <div className="text-xs text-gray-400 mt-1">{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Répartition rôles */}
+      <div className="bg-white border rounded-xl p-4">
+        <div className="font-semibold mb-3">Répartition des comptes</div>
+        <div className="flex gap-4 flex-wrap">
+          {[
+            { label: 'Profs', count: totalTeachers, color: 'bg-emerald-500' },
+            { label: 'Élèves', count: totalStudents, color: 'bg-blue-500' },
+            { label: 'Parents', count: totalParents, color: 'bg-purple-500' },
+          ].map(r => (
+            <div key={r.label} className="flex items-center gap-2">
+              <div className={`w-3 h-3 rounded-full ${r.color}`} />
+              <span className="text-sm font-medium">{r.label}</span>
+              <span className="text-sm text-gray-500">{r.count}</span>
+              <span className="text-xs text-gray-400">
+                ({totalUsers > 0 ? Math.round(r.count / totalUsers * 100) : 0}%)
+              </span>
+            </div>
+          ))}
+        </div>
+        {/* barre proportionnelle */}
+        <div className="mt-3 flex rounded-full overflow-hidden h-3">
+          {totalTeachers > 0 && <div className="bg-emerald-500" style={{ width: `${totalTeachers/totalUsers*100}%` }} />}
+          {totalStudents > 0 && <div className="bg-blue-500"    style={{ width: `${totalStudents/totalUsers*100}%` }} />}
+          {totalParents  > 0 && <div className="bg-purple-500"  style={{ width: `${totalParents/totalUsers*100}%` }} />}
+        </div>
+      </div>
+
+      {/* Graphiques */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white border rounded-xl p-4">
+          <div className="font-semibold text-sm mb-2 text-blue-700">📈 Nouveaux inscrits / mois</div>
+          <BarChart data={signupsByMonth} color="#3b82f6" />
+        </div>
+        <div className="bg-white border rounded-xl p-4">
+          <div className="font-semibold text-sm mb-2 text-purple-700">📚 Cours créés / mois</div>
+          <BarChart data={lessonsByMonth} color="#8b5cf6" />
+        </div>
+        <div className="bg-white border rounded-xl p-4">
+          <div className="font-semibold text-sm mb-2 text-emerald-700">💶 Revenus bruts / mois (€)</div>
+          <BarChart data={revenueByMonth} color="#00804B" unit="€" />
+        </div>
+      </div>
+
+      {/* Visites Google Analytics */}
+      <div className="bg-white border rounded-xl p-4">
+        <div className="font-semibold mb-2">🌐 Visites du site</div>
+        <p className="text-sm text-gray-600 mb-3">
+          Les visites sont suivies via <strong>Google Analytics</strong> (déjà intégré dans ton <code>index.html</code> avec le tag <code>G-32EG21Z538</code>).
+        </p>
+        <a
+          href="https://analytics.google.com/analytics/web/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+        >
+          Ouvrir Google Analytics →
+        </a>
+        <p className="text-xs text-gray-400 mt-2">
+          Pour intégrer les visites directement ici, il faudrait connecter l'API Google Analytics (GA4 Data API) — c'est possible si tu veux.
+        </p>
+      </div>
+
+      {/* Derniers inscrits */}
+      <div className="bg-white border rounded-xl overflow-hidden">
+        <div className="p-3 border-b font-semibold">🆕 Derniers inscrits</div>
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="p-2 text-left">Nom</th>
+              <th className="p-2 text-left">Rôle</th>
+              <th className="p-2 text-left">Ville</th>
+              <th className="p-2 text-left">Inscrit le</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...users]
+              .sort((a, b) => {
+                const da = toDate(a.createdAt)?.getTime() || 0;
+                const db_ = toDate(b.createdAt)?.getTime() || 0;
+                return db_ - da;
+              })
+              .slice(0, 10)
+              .map(u => (
+                <tr key={u.id} className="border-t">
+                  <td className="p-2 font-medium">{nameOf(u)}</td>
+                  <td className="p-2">
+                    <span className={`px-2 py-0.5 rounded text-xs ${
+                      u.role === 'teacher' ? 'bg-emerald-100 text-emerald-700' :
+                      u.role === 'parent'  ? 'bg-purple-100 text-purple-700' :
+                      'bg-blue-100 text-blue-700'
+                    }`}>{u.role}</span>
+                  </td>
+                  <td className="p-2 text-gray-500">{u.city || '—'}</td>
+                  <td className="p-2 text-gray-500">{toDateStr(u.createdAt)}</td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+
     </div>
   );
 }
