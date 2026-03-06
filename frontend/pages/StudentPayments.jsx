@@ -396,6 +396,7 @@ export default function StudentPayments() {
   };
 
   const handleRefund = async (lesson) => {
+    if (!window.confirm('Confirmer la demande de remboursement ?')) return;
     try {
       setRefundingId(lesson.id);
       const paymentId = await resolvePaymentId(lesson.id);
@@ -454,7 +455,6 @@ export default function StudentPayments() {
                     {isPackForMe(l, uid) ? (
                       l.__slots?.length > 0 && (
                         <div className="text-xs text-gray-600 mt-1">
-                          <div className="text-xs text-gray-600 mt-1">
                             Horaires du pack :
                             <ul className="ml-2 mt-1 space-y-1">
                               {(l.__slots || []).map((x) => (
@@ -463,7 +463,6 @@ export default function StudentPayments() {
                                 </li>
                               ))}
                             </ul>
-                          </div>
                         </div>
                       )
                     ) : (

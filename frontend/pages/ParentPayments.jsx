@@ -276,6 +276,12 @@ export default function ParentPayments() {
       let combined = new Map();
       const parentUid = user.uid;
 
+      let rebuildTimer = null;
+      const debouncedRebuild = () => {
+        clearTimeout(rebuildTimer);
+        rebuildTimer = setTimeout(rebuildRows, 80);
+      };
+
       const rebuildRows = async () => {
         const lessons = Array.from(combined.values());
         const rows = [];
@@ -360,7 +366,7 @@ export default function ParentPayments() {
         const qLegacy = query(collection(db, 'lessons'), where('student_id', 'in', c));
         const unsub = onSnapshot(qLegacy, (snap) => {
           snap.docs.forEach((d) => combined.set(d.id, { id: d.id, ...d.data() }));
-          rebuildRows();
+          debouncedRebuild();
         }, (e) => { console.error(e); setLoading(false); });
         unsubscribers.push(unsub);
       }
@@ -369,7 +375,7 @@ export default function ParentPayments() {
         const qGroup = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', cid));
         const unsub = onSnapshot(qGroup, (snap) => {
           snap.docs.forEach((d) => combined.set(d.id, { id: d.id, ...d.data() }));
-          rebuildRows();
+          debouncedRebuild();
         }, (e) => { console.error(e); setLoading(false); });
         unsubscribers.push(unsub);
       });
@@ -443,6 +449,7 @@ export default function ParentPayments() {
   };
 
   const handleRefund = async (row) => {
+    if (!window.confirm('Confirmer la demande de remboursement ?')) return;
     const key = `${row.lesson.id}:${row.forStudent}`;
     try {
       setRefundingKey(key);
@@ -511,7 +518,6 @@ export default function ParentPayments() {
                       {isPackForChild(r.lesson, r.forStudent) ? (
                         r.__slots?.length > 0 && (
                           <div className="text-xs text-gray-600 mt-1">
-                            <div className="text-xs text-gray-600 mt-1">
                               Horaires du pack :
                               <ul className="ml-2 mt-1 space-y-1">
                                 {(r.__slots || []).map((x) => (
@@ -520,7 +526,6 @@ export default function ParentPayments() {
                                   </li>
                                 ))}
                               </ul>
-                            </div>
                           </div>
                         )
                       ) : (
