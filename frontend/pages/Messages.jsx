@@ -18,7 +18,6 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import Pusher from "pusher-js";
-import { io } from "socket.io-client";
 
 // --- EMAIL HELPERS (Messages.jsx) ---
 
@@ -213,9 +212,6 @@ export default function Messages(props) {
   const unsubRefs = useRef({ msgs: null });
   const pusherRef = useRef(null);
   const channelRef = useRef(null);
-
-  // socket ref (évite connexions multiples)
-  const socketRef = useRef(null);
 
   // 1) Résoudre/choisir la conversation (existante > serveur > fallback client)
   useEffect(() => {
