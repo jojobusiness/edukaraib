@@ -34,9 +34,27 @@ export default async function handler(req, res) {
         email: user.email || undefined,
         capabilities: { transfers: { requested: true }, card_payments: { requested: true } },
         business_type: 'individual',
+        business_profile: {
+          support_email: user.email || undefined,
+          support_phone: user.phone || undefined,
+        },
       });
       accountId = account.id;
       await userRef.update({ stripeAccountId: accountId });
+    }
+
+    // Si le compte existe déjà, mettre à jour les infos manquantes
+    if (accountId) {
+      try {
+        await stripe.accounts.update(accountId, {
+          business_profile: {
+            support_email: user.email || undefined,
+            support_phone: user.phone || undefined,
+          },
+        });
+      } catch (e) {
+        console.warn('stripe.accounts.update warning:', e?.message);
+      }
     }
 
     const mode = req.query.mode === 'update' ? 'account_update' : 'account_onboarding';
