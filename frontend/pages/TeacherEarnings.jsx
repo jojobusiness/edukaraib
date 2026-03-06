@@ -420,7 +420,7 @@ export default function TeacherEarnings() {
 }
 
 /** Sous-composant : Paiements retenus à venir (inchangé sauf extraction) */
-function UpcomingHeldSection({ loadingLessons, loadingPayments, payments, lessonById, studentNames }) {
+function UpcomingHeldSection({ loadingLessons, loadingPayments, loading, payments, lessonById, studentNames }) {
   const now = new Date();
 
   const allHeld = useMemo(() => {
