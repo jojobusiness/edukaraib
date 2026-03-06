@@ -6,6 +6,7 @@ import {
   serverTimestamp, arrayUnion, onSnapshot, deleteField, runTransaction
 } from 'firebase/firestore';
 import BookingModal from '../components/BookingModal';
+import { useSEO } from '../hooks/useSEO';
 
 const DAYS_ORDER = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
@@ -163,6 +164,34 @@ export default function TeacherProfile() {
 
     return () => { cancelled = true; };
   }, [teacher, teacherId]);
+
+  const teacherName = teacher
+    ? (teacher.fullName || [teacher.firstName, teacher.lastName].filter(Boolean).join(' '))
+    : 'Professeur';
+
+  const subjects = Array.isArray(teacher?.subjects)
+    ? teacher.subjects.join(', ')
+    : teacher?.subjects || '';
+
+  useSEO({
+    title: teacher ? `${teacherName} — Prof particulier en Guyane` : 'Profil professeur',
+    description: teacher
+      ? `${teacherName} donne des cours particuliers de ${subjects} en Guyane. ${teacher.bio || ''}`
+      : 'Profil professeur sur EduKaraib.',
+    url: `/prof/${teacherId}`,
+    image: teacher?.avatarUrl || undefined,
+    jsonLd: teacher ? {
+      '@context': 'https://schema.org',
+      '@type': 'Person',
+      name: teacherName,
+      jobTitle: 'Professeur particulier',
+      image: teacher.avatarUrl || undefined,
+      url: `https://edukaraib.com/prof/${teacherId}`,
+      description: teacher.bio || '',
+      knowsAbout: subjects,
+      areaServed: teacher.city || 'Guyane',
+    } : undefined,
+  });
 
   // Avis
   useEffect(() => {

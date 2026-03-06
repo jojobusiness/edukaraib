@@ -1,4 +1,12 @@
+import { useSEO } from '../hooks/useSEO';
+
 export default function CGU() {
+  useSEO({
+    title: "Conditions Générales d'Utilisation",
+    description: "Consultez les Conditions Générales d'Utilisation de la plateforme EduKaraib.",
+    url: '/cgu',
+  });
+
   return (
     <main className="min-h-screen bg-white">
       {/* Header / Hero */}

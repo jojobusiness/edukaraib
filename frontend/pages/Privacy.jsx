@@ -1,6 +1,12 @@
 import React from 'react';
+import { useSEO } from '../hooks/useSEO';
 
 export default function Privacy() {
+  useSEO({
+    title: 'Politique de Confidentialité',
+    description: 'Politique de confidentialité et gestion des données personnelles sur EduKaraib.',
+    url: '/privacy',
+  });
   return (
     <div className="max-w-3xl mx-auto py-12 px-4">
       <h2 className="text-2xl font-bold mb-4 text-primary">Politique de Confidentialité</h2>

@@ -9,31 +9,82 @@
       gtag('js', new Date());
       gtag('config', 'G-32EG21Z538');
     </script>
+
     <meta charset="UTF-8" />
-    <!-- Logo pour les moteurs de recherche -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#00804B">
+
+    <!-- SEO de base -->
+    <title>EduKaraib — Cours particuliers en Guyane</title>
+    <meta name="description" content="Trouvez un professeur particulier en Guyane pour vos enfants ou pour vous-même. Maths, Français, Anglais, Physique et plus. Réservez en ligne sur EduKaraib." />
+    <meta name="keywords" content="cours particuliers Guyane, professeur particulier Cayenne, soutien scolaire Guyane, EduKaraib" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://edukaraib.com/" />
+
+    <!-- Open Graph (Facebook, WhatsApp, LinkedIn) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://edukaraib.com/" />
+    <meta property="og:title" content="EduKaraib — Cours particuliers en Guyane" />
+    <meta property="og:description" content="Trouvez un professeur particulier en Guyane. Réservez en ligne, payez en sécurité." />
+    <meta property="og:image" content="https://edukaraib.com/og-image.png" />
+    <meta property="og:locale" content="fr_FR" />
+    <meta property="og:site_name" content="EduKaraib" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="EduKaraib — Cours particuliers en Guyane" />
+    <meta name="twitter:description" content="Trouvez un professeur particulier en Guyane. Réservez en ligne, payez en sécurité." />
+    <meta name="twitter:image" content="https://edukaraib.com/og-image.png" />
+
+    <!-- Icônes -->
     <link rel="icon" href="/edukaraib_logo.png" />
     <link rel="apple-touch-icon" href="/edukaraib_logo.png" />
 
-    <!-- Données structurées Organization -->
+    <!-- Données structurées JSON-LD -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
-      "@type": "Organization",
+      "@type": "EducationalOrganization",
       "name": "EduKaraib",
       "url": "https://edukaraib.com",
       "logo": "https://edukaraib.com/edukaraib_logo.png",
+      "description": "Plateforme de mise en relation entre élèves et professeurs particuliers en Guyane française.",
+      "areaServed": {
+        "@type": "State",
+        "name": "Guyane",
+        "containedInPlace": {
+          "@type": "Country",
+          "name": "France"
+        }
+      },
       "contactPoint": {
         "@type": "ContactPoint",
         "email": "contact@edukaraib.com",
-        "contactType": "support",
+        "contactType": "customer support",
         "areaServed": "GF",
         "availableLanguage": ["fr"]
+      },
+      "sameAs": []
+    }
+    </script>
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "EduKaraib",
+      "url": "https://edukaraib.com",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://edukaraib.com/recherche-prof?q={search_term_string}"
+        },
+        "query-input": "required name=search_term_string"
       }
     }
     </script>
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#00804B">
-    <title>EduKaraib</title>
+
   </head>
   <body>
     <div id="root"></div>

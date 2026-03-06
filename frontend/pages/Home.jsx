@@ -4,6 +4,7 @@ import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { db, auth } from '../lib/firebase';
 import { collection, getDocs, doc, getDoc, query, orderBy, limit, where } from 'firebase/firestore';
+import { useSEO } from '../hooks/useSEO';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -340,6 +341,12 @@ export default function Home() {
     for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
     return colors[hash % colors.length];
   };
+
+  useSEO({
+    title: 'Cours particuliers en Guyane',
+    description: 'Trouvez un professeur particulier en Guyane pour vos enfants ou vous-même. Maths, Français, Anglais et plus. Réservez en ligne sur EduKaraib.',
+    url: '/',
+  });
 
   return (
     <div className="min-h-screen flex flex-col bg-white">

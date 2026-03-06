@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { Link, useNavigate } from 'react-router-dom';
+import { useSEO } from '../hooks/useSEO';
 
 export default function Search() {
   const [teachers, setTeachers] = useState([]);
@@ -154,6 +155,12 @@ export default function Search() {
   const subjectLabel = q ? search.trim() : 'Professeurs particuliers';
 
   const toggleMode = (target) => setMode(prev => (prev === target ? '' : target));
+
+  useSEO({
+    title: 'Rechercher un professeur en Guyane',
+    description: 'Comparez les professeurs particuliers en Guyane par matière, ville, tarif et niveau. Trouvez le prof idéal sur EduKaraib.',
+    url: '/recherche-prof',
+  });
 
   return (
     <div className="min-h-screen bg-gray-50">
