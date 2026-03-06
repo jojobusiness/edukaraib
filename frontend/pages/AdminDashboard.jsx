@@ -871,6 +871,64 @@ export default function AdminDashboard() {
                   </tbody>
                 </table>
               </div>
+              
+              {/* Virements en attente (RIB manquant) */}
+              <div className="bg-white border rounded-xl overflow-hidden lg:col-span-2">
+                <div className="p-3 border-b font-semibold flex items-center gap-2">
+                  <span>⚠️ Virements en attente (RIB manquant)</span>
+                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">
+                    {payments.filter(p => p.status === 'payout_pending_rib').length}
+                  </span>
+                </div>
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="p-2 text-left">Prof</th>
+                      <th className="p-2 text-left">Leçon</th>
+                      <th className="p-2 text-right">Net à verser</th>
+                      <th className="p-2 text-left">Depuis</th>
+                      <th className="p-2 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payments.filter(p => p.status === 'payout_pending_rib').length === 0 && (
+                      <tr><td colSpan={5} className="p-4 text-center text-gray-400">Aucun virement en attente ✅</td></tr>
+                    )}
+                    {payments.filter(p => p.status === 'payout_pending_rib').map((p) => {
+                      const t = teacherMap.get(p.teacher_uid || p.teacher_id);
+                      return (
+                        <tr key={p.id} className="border-t bg-amber-50">
+                          <td className="p-2 font-semibold">{t ? nameOf(t) : p.teacher_uid}</td>
+                          <td className="p-2 text-xs text-gray-500">{p.pack_id ? `Pack ${p.pack_id}` : p.lesson_id}</td>
+                          <td className="p-2 text-right font-bold text-green-700">{Number(p.net_to_teacher_eur || 0).toFixed(2)} €</td>
+                          <td className="p-2 text-xs">{toDateStr(p.payout_pending_since || p.created_at)}</td>
+                          <td className="p-2 text-right">
+                            <button
+                              className="px-3 py-1 rounded text-sm bg-green-600 text-white hover:bg-green-700"
+                              onClick={async () => {
+                                if (!window.confirm(`Marquer le virement de ${Number(p.net_to_teacher_eur||0).toFixed(2)}€ à ${t ? nameOf(t) : p.teacher_uid} comme effectué ?`)) return;
+                                try {
+                                  await updateDoc(doc(db, 'payments', p.id), {
+                                    status: 'released',
+                                    released_at: new Date(),
+                                    payout_method: 'manual_rib',
+                                  });
+                                  alert('Virement marqué comme effectué.');
+                                  setPayments(prev => prev.map(x => x.id === p.id ? { ...x, status: 'released' } : x));
+                                } catch (e) {
+                                  alert('Erreur : ' + e.message);
+                                }
+                              }}
+                            >
+                              ✅ Marquer viré
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
 
               <div className="bg-white border rounded-xl overflow-hidden lg:col-span-2">
                 <div className="p-3 border-b font-semibold">Payouts (virements aux profs)</div>

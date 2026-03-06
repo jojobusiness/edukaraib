@@ -14,7 +14,7 @@ import {
   getDocs,
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
-
+import fetchWithAuth from '../utils/fetchWithAuth';
 import DocumentsModal from '../components/lessons/DocumentsModal';
 import GroupSettingsModal from '../components/lessons/GroupSettingsModal';
 import { createPaymentDueNotificationsForLesson } from '../lib/paymentNotifications';
@@ -993,6 +993,17 @@ export default function TeacherLessons() {
 
       await updateDoc(ref, baseUpdate);
 
+      if (status === 'completed') {
+        try {
+          await fetchWithAuth('/api/trigger-payout', {
+            method: 'POST',
+            body: JSON.stringify({ lessonId: lesson.id }),
+          });
+        } catch (e) {
+          console.warn('trigger-payout failed (non-bloquant):', e);
+        }
+      }
+
       // —— PACK propagation (unchanged)
       try {
         if (lesson.pack_id && (status === 'confirmed' || status === 'rejected' || status === 'completed')) {
@@ -1016,9 +1027,6 @@ export default function TeacherLessons() {
               }
               newData.participantsMap = pm;
               newData.participant_ids = Object.keys(pm);
-            }
-            if (status === 'completed') {
-              newData.completed_at = serverTimestamp();
             }
             await updateDoc(refDoc, newData);
           }
@@ -1528,6 +1536,10 @@ export default function TeacherLessons() {
                   status: 'completed',
                   completed_at: serverTimestamp(),
                 });
+                fetchWithAuth('/api/trigger-payout', {
+                  method: 'POST',
+                  body: JSON.stringify({ lessonId: l.id }),
+                }).catch(e => console.warn('trigger-payout auto indiv:', e));
               }
             } else {
               // 🔹 Cas GROUPE : tous les participants confirmés payés → completed
@@ -1536,6 +1548,10 @@ export default function TeacherLessons() {
                   status: 'completed',
                   completed_at: serverTimestamp(),
                 });
+                fetchWithAuth('/api/trigger-payout', {
+                  method: 'POST',
+                  body: JSON.stringify({ lessonId: l.id }),
+                }).catch(e => console.warn('trigger-payout auto group:', e));
               }
             }
           } catch (e) {

@@ -211,11 +211,11 @@ export default function Register() {
 
     setLoading(true);
     try {
-      await reload(pendingUser);
+      await reload(auth.currentUser);
 
-      if (!pendingUser.emailVerified) {
+      if (!auth.currentUser?.emailVerified) {
         // ✅ On laisse continuer, mais on avertit
-        alert("Ton email n’est pas encore vérifié. Tu peux continuer, mais certaines actions pourront être limitées tant que tu n’as pas validé ton email.");
+        console.info("Email non encore vérifié, on continue quand même.");
       }
 
       // Upload avatar si présent
