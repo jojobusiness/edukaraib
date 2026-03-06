@@ -282,12 +282,20 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (tab !== 'stats') return;
     setLessonsLoading(true);
-    getDocs(query(collection(db, 'lessons'), orderBy('created_at', 'desc'), limit(1000)))
-      .then(snap => {
-        setLessons(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        setLessonsLoading(false);
-      })
-      .catch(() => setLessonsLoading(false));
+    setPayLoading(true);
+
+    Promise.all([
+      getDocs(query(collection(db, 'lessons'), orderBy('created_at', 'desc'), limit(1000))),
+      getDocs(query(collection(db, 'payments'), orderBy('created_at', 'desc'), limit(500))),
+    ]).then(([lessonsSnap, paymentsSnap]) => {
+      setLessons(lessonsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setPayments(paymentsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLessonsLoading(false);
+      setPayLoading(false);
+    }).catch(() => {
+      setLessonsLoading(false);
+      setPayLoading(false);
+    });
   }, [tab]);
 
   // Charger les conversations (compact, sans layout) quand l’onglet Discussions est actif
