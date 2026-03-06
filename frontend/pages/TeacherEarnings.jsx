@@ -267,7 +267,7 @@ export default function TeacherEarnings() {
 
       const src = detectSource(l);
       const amount = getPaidAmount(l);
-      const fee = Math.min(billedHours(l) * 10, amount);;
+      const fee = Math.min(billedHours(l) * 10, amount);
       const net = Math.max(0, amount - fee);
       const bucket = acc[src] || acc.presentiel;
 
@@ -421,11 +421,9 @@ export default function TeacherEarnings() {
 
 /** Sous-composant : Paiements retenus à venir (inchangé sauf extraction) */
 function UpcomingHeldSection({ loadingLessons, loadingPayments, payments, lessonById, studentNames }) {
-  const loading = loadingLessons || loadingPayments;
+  const now = new Date();
 
-  const upcomingHeld = useMemo(() => {
-    const now = new Date();
-
+  const allHeld = useMemo(() => {
     const getPaidAmount = (l) =>
       toNumber(l?.total_amount) ||
       toNumber(l?.total_price) ||
@@ -433,7 +431,7 @@ function UpcomingHeldSection({ loadingLessons, loadingPayments, payments, lesson
       toNumber(l?.amount) ||
       toNumber(l?.price_per_hour);
 
-    const rows = payments
+    return payments
       .filter((p) => String(p.status) === 'held')
       .map((p) => {
         const lesson = lessonById.get(String(p.lesson_id));
@@ -443,10 +441,10 @@ function UpcomingHeldSection({ loadingLessons, loadingPayments, payments, lesson
         const netTeacher = Number(p.net_to_teacher_eur ?? NaN);
         const hasAllFromPayment = Number.isFinite(gross) && Number.isFinite(netTeacher);
 
-        let amountGross = hasAllFromPayment
+        const amountGross = hasAllFromPayment
           ? gross
           : Math.max(0, getPaidAmount(lesson)) + SITE_FEE_EUR;
-        let amountNet = hasAllFromPayment ? netTeacher : Math.max(0, getPaidAmount(lesson));
+        const amountNet = hasAllFromPayment ? netTeacher : Math.max(0, getPaidAmount(lesson));
 
         const studentId = p.for_student || lesson?.student_id || null;
         const studentDisplay = (studentId && studentNames[studentId]) || studentId || '—';
@@ -461,44 +459,90 @@ function UpcomingHeldSection({ loadingLessons, loadingPayments, payments, lesson
           net: amountNet,
         };
       })
-      .filter((r) => r.start && r.start.getTime() > now.getTime())
-      .sort((a, b) => a.start - b.start);
-
-    return rows;
+      .filter((r) => r.start);
   }, [payments, lessonById, studentNames]);
 
+  // Cours à venir (date future) — paiement reçu, cours pas encore eu lieu
+  const upcomingHeld = allHeld
+    .filter((r) => r.start.getTime() > now.getTime())
+    .sort((a, b) => a.start - b.start);
+
+  // Cours passés (date dépassée) — paiement reçu mais pas encore versé au prof
+  const pendingPayout = allHeld
+    .filter((r) => r.start.getTime() <= now.getTime())
+    .sort((a, b) => a.start - b.start);
+
+  const HeldRow = ({ r }) => (
+    <div key={`${r.paymentId}:${r.lessonId}`} className="border rounded-lg px-4 py-3 bg-gray-50 flex flex-col md:flex-row md:items-center gap-2">
+      <div className="font-semibold text-primary">{r.subject}</div>
+      <div className="text-xs text-gray-600">Élève : {r.studentName}</div>
+      <div className="text-xs text-gray-600">
+        📅 {r.start.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
+      </div>
+      <div className="md:ml-auto flex items-center gap-3">
+        <span className="text-xs text-gray-700">Brut&nbsp;: {fmtEUR(r.gross)}</span>
+        <span className="text-xs text-green-700 font-semibold">Net&nbsp;: {fmtEUR(r.net)}</span>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="bg-white rounded-xl shadow p-6 mb-8 border">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-bold text-primary">Paiements à venir (retenus)</h3>
-        {!loading && (
-          <span className="text-xs text-gray-500">
-            {upcomingHeld.length} paiement{upcomingHeld.length > 1 ? 's' : ''} programmé{upcomingHeld.length > 1 ? 's' : ''} à verser
-          </span>
+    <div className="space-y-6 mb-8">
+
+      {/* Cours à venir — paiement déjà reçu */}
+      <div className="bg-white rounded-xl shadow p-6 border">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-primary">📅 Paiements reçus — cours à venir</h3>
+          {!loading && (
+            <span className="text-xs text-gray-500">
+              {upcomingHeld.length} cours programmé{upcomingHeld.length > 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+        {loading ? (
+          <div className="text-gray-500">Chargement…</div>
+        ) : upcomingHeld.length === 0 ? (
+          <div className="text-gray-500 text-sm">Aucun cours à venir avec paiement reçu.</div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {upcomingHeld.map((r) => <HeldRow key={r.paymentId} r={r} />)}
+          </div>
         )}
       </div>
 
-      {loading ? (
-        <div className="text-gray-500">Chargement…</div>
-      ) : upcomingHeld.length === 0 ? (
-        <div className="text-gray-500 text-sm">Aucun paiement à venir.</div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {upcomingHeld.map((r) => (
-            <div key={`${r.paymentId}:${r.lessonId}`} className="border rounded-lg px-4 py-3 bg-gray-50 flex flex-col md:flex-row md:items-center gap-2">
-              <div className="font-semibold text-primary">{r.subject}</div>
-              <div className="text-xs text-gray-600">Élève : {r.studentName}</div>
-              <div className="text-xs text-gray-600">
-                📅 {r.start.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
-              </div>
-              <div className="md:ml-auto flex items-center gap-3">
-                <span className="text-xs text-gray-700">Brut&nbsp;: {fmtEUR(r.gross)}</span>
-                <span className="text-xs text-green-700 font-semibold">Net&nbsp;: {fmtEUR(r.net)}</span>
-              </div>
-            </div>
-          ))}
+      {/* Cours passés — versement en attente */}
+      <div className="bg-white rounded-xl shadow p-6 border">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-primary">⏳ Versements en attente</h3>
+          {!loading && (
+            <span className="text-xs text-gray-500">
+              {pendingPayout.length} versement{pendingPayout.length > 1 ? 's' : ''} en cours de traitement
+            </span>
+          )}
         </div>
-      )}
+        {loading ? (
+          <div className="text-gray-500">Chargement…</div>
+        ) : pendingPayout.length === 0 ? (
+          <div className="text-gray-500 text-sm">Aucun versement en attente. ✅</div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {pendingPayout.map((r) => (
+              <div key={r.paymentId} className="border rounded-lg px-4 py-3 bg-amber-50 flex flex-col md:flex-row md:items-center gap-2">
+                <div className="font-semibold text-primary">{r.subject}</div>
+                <div className="text-xs text-gray-600">Élève : {r.studentName}</div>
+                <div className="text-xs text-gray-600">
+                  📅 {r.start.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}
+                </div>
+                <div className="md:ml-auto flex items-center gap-3">
+                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">En cours de virement</span>
+                  <span className="text-xs text-green-700 font-semibold">Net&nbsp;: {fmtEUR(r.net)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }
