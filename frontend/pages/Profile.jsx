@@ -32,6 +32,7 @@ const SCHOOL_LEVELS = [
   'Formation professionnelle','Remise à niveau','Autre',
 ];
 
+const TEACHING_LEVELS = ['Primaire', 'Collège', 'Lycée', 'Supérieur', 'Adulte'];
 const NAME_CHARS_REGEX = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]*$/;
 const NAME_MIN2_REGEX  = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]{2,}$/;
 
@@ -64,6 +65,7 @@ export default function Profile() {
     bio: '',
     avatarUrl: '',
     level: '',
+    teaching_levels: [],
     birth: '',
     subjects: '',
     diploma: '',
@@ -123,6 +125,7 @@ export default function Profile() {
             group_enabled: typeof data.group_enabled === 'boolean' ? data.group_enabled : false,
             group_capacity: typeof data.group_capacity === 'number' ? data.group_capacity : 1,
 
+            teaching_levels: data.teaching_levels ?? [],
             // valeurs par défaut si absentes
             pack5_price: data.pack5_price ?? '',
             pack10_price: data.pack10_price ?? '',
@@ -379,6 +382,7 @@ export default function Profile() {
         // about
         about_me: (profile.about_me || '').trim(),
         about_course: (profile.about_course || '').trim(),
+        teaching_levels: profile.teaching_levels || [],
       };
       delete toSave.uid;
 
@@ -556,6 +560,36 @@ export default function Profile() {
                 <label className="block mb-1 text-sm font-medium text-gray-700">Matières enseignées</label>
                 <input type="text" name="subjects" className="w-full border border-gray-300 rounded-lg px-3 py-2"
                   value={profile.subjects || ''} onChange={handleChange} placeholder="ex : Maths, Physique" />
+              </div>
+              <div>
+                <label className="block mb-1 text-sm font-medium text-gray-700">Niveaux enseignés</label>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {['Primaire', 'Collège', 'Lycée', 'Supérieur', 'Adulte'].map((lvl) => {
+                    const selected = (profile.teaching_levels || []).includes(lvl);
+                    return (
+                      <button
+                        key={lvl}
+                        type="button"
+                        onClick={() => {
+                          const current = profile.teaching_levels || [];
+                          setProfile(p => ({
+                            ...p,
+                            teaching_levels: selected
+                              ? current.filter(l => l !== lvl)
+                              : [...current, lvl],
+                          }));
+                        }}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium border transition ${
+                          selected
+                            ? 'bg-primary text-white border-primary'
+                            : 'bg-white text-gray-700 border-gray-300 hover:border-primary'
+                        }`}
+                      >
+                        {lvl}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <div>
                 <label className="block mb-1 text-sm font-medium text-gray-700">Diplômes</label>

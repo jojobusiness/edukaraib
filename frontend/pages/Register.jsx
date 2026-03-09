@@ -53,6 +53,7 @@ export default function Register() {
     phone: '', city: '',
     level: '', birth: '',
     subjects: '', diploma: '', bio: '',
+    teaching_levels: [],
 
     // Présentiel
     presentiel_enabled: true,
@@ -261,6 +262,7 @@ export default function Register() {
 
         Object.assign(baseData, {
           subjects: form.subjects || '',
+          teaching_levels: form.teaching_levels || [],
           diploma: form.diploma || '',
           bio: form.bio || '',
           about_me: form.about_me || '',
@@ -558,6 +560,36 @@ export default function Register() {
                     onChange={handleChange}
                   />
                 </div>
+                <div>
+                  <label className="block mb-1 text-sm font-medium text-gray-700">Niveaux enseignés</label>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {['Primaire', 'Collège', 'Lycée', 'Supérieur', 'Adulte'].map((lvl) => {
+                      const selected = (form.teaching_levels || []).includes(lvl);
+                      return (
+                        <button
+                          key={lvl}
+                          type="button"
+                          onClick={() => {
+                            const current = form.teaching_levels || [];
+                            setForm(f => ({
+                              ...f,
+                              teaching_levels: selected
+                                ? current.filter(l => l !== lvl)
+                                : [...current, lvl],
+                            }));
+                          }}
+                          className={`px-3 py-1.5 rounded-full text-sm font-medium border transition ${
+                            selected
+                              ? 'bg-primary text-white border-primary'
+                              : 'bg-white text-gray-700 border-gray-300 hover:border-primary'
+                          }`}
+                        >
+                          {lvl}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>                
                 <div>
                   <label className="block mb-1 text-sm font-medium text-gray-700">Diplômes</label>
                   <input
