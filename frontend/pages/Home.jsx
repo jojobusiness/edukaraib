@@ -565,7 +565,7 @@ export default function Home() {
 
               {/* DESKTOP : grid */}
               <div className="hidden sm:grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-5">
-                {teachers.map((prof) => {
+                {teachers.slice(0, 5).map((prof) => {
                   const { first, last } = getDisplayNameParts(prof);
                   const modes = getModesLabel(prof);
                   const rating = getRating(prof);

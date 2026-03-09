@@ -1411,54 +1411,90 @@ export default function TeacherProfile() {
               <div className="mt-4 text-sm text-slate-500">Aucun professeur similaire trouvé pour le moment.</div>
             )}
 
-            {/* Mobile: slider horizontal / Desktop: grid */}
+            {/* Mobile: slider / Desktop: grid 4 colonnes */}
             <div className="mt-5">
-              <div className="flex lg:grid lg:grid-cols-2 gap-4 overflow-x-auto lg:overflow-visible pb-2 snap-x snap-mandatory">
-                {similarTeachers.map((t) => {
-                  const first = t.firstName || '';
-                  const last = t.lastName || (t.fullName ? String(t.fullName).split(' ').slice(-1).join(' ') : '');
-                  const displayName = `${first} ${last}`.trim() || t.fullName || 'Professeur';
-                  const avatar = t.avatarUrl || t.avatar_url || t.photoURL || '/avatar-default.png';
+              {/* MOBILE — slider horizontal */}
+              <div className="lg:hidden -mx-2 px-2 overflow-x-auto pb-2">
+                <div className="flex gap-3 snap-x snap-mandatory">
+                  {similarTeachers.map((t) => {
+                    const displayName = t.fullName || `${t.firstName || ''} ${t.lastName || ''}`.trim() || 'Professeur';
+                    const avatar = t.avatarUrl || t.avatar_url || t.photoURL || '/avatar-default.png';
+                    const modeLabelSmall = t.presentiel_enabled && t.visio_enabled ? 'Présentiel + Visio'
+                      : t.visio_enabled ? 'Visio' : t.presentiel_enabled ? 'Présentiel' : '—';
 
-                  const modeLabelSmall =
-                    t.presentiel_enabled && t.visio_enabled
-                      ? 'Présentiel + Visio'
-                      : t.visio_enabled
-                        ? 'Visio'
-                        : t.presentiel_enabled
-                          ? 'Présentiel'
-                          : '—';
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => navigate(`/profils/${t.id}`)}
+                        className="snap-start shrink-0 w-[220px] text-left border rounded-2xl overflow-hidden hover:shadow-md transition bg-white"
+                        type="button"
+                      >
+                        <div className="relative">
+                          <img src={avatar} alt={displayName} className="w-full h-36 object-cover object-top" />
+                          <div className="absolute bottom-2 left-2 px-2 py-1 rounded-full text-[10px] font-bold bg-black/65 text-white">
+                            {modeLabelSmall}
+                          </div>
+                        </div>
+                        <div className="p-3">
+                          <div className="font-extrabold text-slate-900 text-sm truncate">{displayName}</div>
+                          <div className="mt-1 flex items-center gap-1 text-xs">
+                            <span className="text-yellow-500">{"★".repeat(Math.round(t.avgRating || 0)).padEnd(5, "☆")}</span>
+                            <span className="text-slate-700 font-semibold">{(t.avgRating || 0).toFixed(1)}</span>
+                            <span className="text-slate-500">({t.reviewsCount || 0})</span>
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500 line-clamp-2">
+                            {t.subjects || '—'}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* DESKTOP — grid 4 colonnes, max 4 profs */}
+              <div className="hidden lg:grid grid-cols-4 gap-4">
+                {similarTeachers.slice(0, 4).map((t) => {
+                  const displayName = t.fullName || `${t.firstName || ''} ${t.lastName || ''}`.trim() || 'Professeur';
+                  const avatar = t.avatarUrl || t.avatar_url || t.photoURL || '/avatar-default.png';
+                  const modeLabelSmall = t.presentiel_enabled && t.visio_enabled ? 'Présentiel + Visio'
+                    : t.visio_enabled ? 'Visio' : t.presentiel_enabled ? 'Présentiel' : '—';
 
                   return (
                     <button
                       key={t.id}
-                      onClick={() => navigate(`/teacher/${t.id}`)}
-                      className="min-w-[260px] lg:min-w-0 snap-start text-left border rounded-2xl overflow-hidden hover:shadow-md transition bg-white"
+                      onClick={() => navigate(`/profils/${t.id}`)}
+                      className="text-left border rounded-2xl overflow-hidden hover:shadow-md transition bg-white"
                       type="button"
                     >
-                      <div className="relative">
-                        <img src={avatar} alt={displayName} className="w-full h-40 object-cover" />
-                        <div className="absolute bottom-2 left-2 px-2 py-1 rounded-full text-[11px] font-bold bg-black/65 text-white">
+                      {/* Photo fixe, visage bien cadré */}
+                      <div className="relative h-44 bg-gray-100">
+                        <img
+                          src={avatar}
+                          alt={displayName}
+                          className="absolute inset-0 w-full h-full object-cover object-top"
+                        />
+                        <div className="absolute bottom-2 left-2 px-2 py-1 rounded-full text-[10px] font-bold bg-black/65 text-white">
                           {modeLabelSmall}
                         </div>
                       </div>
 
-                      <div className="p-4">
-                        <div className="font-extrabold text-slate-900">{displayName}</div>
+                      {/* Contenu — hauteur uniforme grâce à line-clamp */}
+                      <div className="p-3 flex flex-col gap-1">
+                        <div className="font-extrabold text-slate-900 text-sm truncate">{displayName}</div>
 
-                        <div className="mt-2 flex items-center gap-2 text-sm">
-                          <span className="text-yellow-500">
-                            {"★".repeat(Math.round(t.avgRating || 0)).padEnd(5, "☆")}
-                          </span>
-                          <span className="text-slate-700 font-semibold">
-                            {(t.avgRating || 0).toFixed(1)}
-                          </span>
+                        <div className="flex items-center gap-1 text-xs">
+                          <span className="text-yellow-500">{"★".repeat(Math.round(t.avgRating || 0)).padEnd(5, "☆")}</span>
+                          <span className="text-slate-700 font-semibold">{(t.avgRating || 0).toFixed(1)}</span>
                           <span className="text-slate-500">({t.reviewsCount || 0})</span>
                         </div>
 
-                        <div className="mt-2 text-sm text-slate-600">
-                          {t.subjects || '—'} — {t.bio || t.about_me || 'Voir le profil'}
-                        </div>
+                        <div className="text-xs font-semibold text-primary">{t.subjects || '—'}</div>
+
+                        {/* Bio limitée à 2 lignes max → hauteur uniforme */}
+                        <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">
+                          {t.bio || t.about_me || 'Voir le profil'}
+                        </p>
                       </div>
                     </button>
                   );
