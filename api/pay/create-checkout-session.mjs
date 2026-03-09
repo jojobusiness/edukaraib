@@ -204,7 +204,28 @@ export default async function handler(req, res) {
 
   // Calcul montant total
   const rateEuro = computeBaseRateEuroFor(lesson, participantId);
-  const teacherAmountCents = Math.round(rateEuro * billedHours * (packMode ? 0.9 : 1) * 100);
+  let teacherAmountCents;
+  
+  if (packMode) {
+    // Utilise le pack_price défini par le prof si disponible
+    const packPriceField = billedHours === 10
+      ? (lesson.visio_pack10_price ?? lesson.pack10_price)
+      : (lesson.visio_pack5_price  ?? lesson.pack5_price);
+    const packPriceEuro = toNum(packPriceField);
+    
+    // Détermine si c'est visio pour choisir le bon champ
+    const isVisio = String(lesson.mode) === 'visio' || lesson.is_visio === true;
+    const packPrice = isVisio
+      ? toNum(billedHours === 10 ? lesson.visio_pack10_price : lesson.visio_pack5_price)
+      : toNum(billedHours === 10 ? lesson.pack10_price : lesson.pack5_price);
+
+    teacherAmountCents = packPrice > 0
+      ? Math.round(packPrice * 100)                        // prix pack défini par le prof
+      : Math.round(rateEuro * billedHours * 0.9 * 100);    // fallback -10% si non renseigné
+  } else {
+    teacherAmountCents = Math.round(rateEuro * billedHours * 100);
+  }
+
   const siteFeeCents = billedHours * 1000; // 10€ / h
   const totalCents = teacherAmountCents + siteFeeCents;
   if (!(totalCents > 0)) return res.status(400).json({ error: 'INVALID_AMOUNT' });

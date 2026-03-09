@@ -191,12 +191,43 @@ export default async function handler(req, res) {
     }
   }
 
-  // 9) Montant OK ?
-  const pricePerHour = toNum(lesson.price_per_hour);
-  const hours = toNum(lesson.duration_hours) || 1;
-  const grossCents = Math.round(pricePerHour * hours * 100);
-  if (!(grossCents > 0)) {
-    return res.json({ ok: false, error: 'Montant invalide' });
+  // 9) Montant OK ? — tient compte des packs et des cours gratuits
+  if (!lesson.is_free_hour) {
+    const isVisio = String(lesson.mode) === 'visio' || lesson.is_visio === true;
+
+    // Détecte si c'est un pack pour ce participant
+    const pm = lesson?.participantsMap?.[participantId] || {};
+    const packHours =
+      Number(pm.pack_hours) ||
+      (String(pm.pack_type || '').toLowerCase() === 'pack5' ? 5 :
+       String(pm.pack_type || '').toLowerCase() === 'pack10' ? 10 : 0);
+    const isPack = packHours > 0;
+
+    let grossCents = 0;
+    if (isPack) {
+      // Utilise le pack_price du prof si défini, sinon fallback -10%
+      const packPrice = isVisio
+        ? toNum(packHours === 10 ? lesson.visio_pack10_price : lesson.visio_pack5_price)
+        : toNum(packHours === 10 ? lesson.pack10_price : lesson.pack5_price);
+      const rateEuro = isVisio && lesson.visio_same_rate === false
+        ? toNum(lesson.visio_price_per_hour) : toNum(lesson.price_per_hour);
+      grossCents = packPrice > 0
+        ? Math.round(packPrice * 100)
+        : Math.round(rateEuro * packHours * 0.9 * 100);
+    } else {
+      const rateEuro = isVisio && lesson.visio_same_rate === false
+        ? toNum(lesson.visio_price_per_hour) : toNum(lesson.price_per_hour);
+      const hours = toNum(lesson.duration_hours) || 1;
+      grossCents = Math.round(rateEuro * hours * 100);
+    }
+
+    // Ajoute les frais plateforme (10€/h)
+    const billedHours = isPack ? packHours : (toNum(lesson.duration_hours) || 1);
+    const totalCents = grossCents + (billedHours * 1000);
+
+    if (!(totalCents > 0)) {
+      return res.json({ ok: false, error: 'Montant invalide' });
+    }
   }
 
   // Tout est bon
