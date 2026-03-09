@@ -142,22 +142,14 @@ export default function Register() {
         if (Number.isNaN(base) || base < 0 || base > 1000) {
           return alert("Le prix présentiel (€/h) doit être compris entre 0 et 1000 €.");
         }
-        const maxPack5 = 5 * base * 0.9;
-        const maxPack10 = 10 * base * 0.9;
-
+        // Validation basique uniquement (nombre ≥ 0)
         if (form.pack5_price !== '') {
           const p5 = Number(form.pack5_price);
           if (Number.isNaN(p5) || p5 < 0) return alert("Pack 5h (présentiel) invalide (nombre ≥ 0).");
-          if (base > 0 && p5 > maxPack5) {
-            return alert(`Le pack 5h (présentiel) ne doit pas dépasser ${maxPack5.toFixed(2)} € (10% de remise max).`);
-          }
         }
         if (form.pack10_price !== '') {
           const p10 = Number(form.pack10_price);
           if (Number.isNaN(p10) || p10 < 0) return alert("Pack 10h (présentiel) invalide (nombre ≥ 0).");
-          if (base > 0 && p10 > maxPack10) {
-            return alert(`Le pack 10h (présentiel) ne doit pas dépasser ${maxPack10.toFixed(2)} € (10% de remise max).`);
-          }
         }
       }
 
@@ -173,21 +165,14 @@ export default function Register() {
           }
         }
 
-        const vmax5 = 5 * visioRate * 0.9;
-        const vmax10 = 10 * visioRate * 0.9;
+        // Validation basique uniquement (nombre ≥ 0)
         if (form.visio_pack5_price !== '') {
           const v5 = Number(form.visio_pack5_price);
           if (Number.isNaN(v5) || v5 < 0) return alert("Pack 5h (visio) invalide (nombre ≥ 0).");
-          if (visioRate > 0 && v5 > vmax5) {
-            return alert(`Le pack 5h (visio) ne doit pas dépasser ${vmax5.toFixed(2)} € (10% de remise max).`);
-          }
         }
         if (form.visio_pack10_price !== '') {
           const v10 = Number(form.visio_pack10_price);
           if (Number.isNaN(v10) || v10 < 0) return alert("Pack 10h (visio) invalide (nombre ≥ 0).");
-          if (visioRate > 0 && v10 > vmax10) {
-            return alert(`Le pack 10h (visio) ne doit pas dépasser ${vmax10.toFixed(2)} € (10% de remise max).`);
-          }
         }
       }
     }

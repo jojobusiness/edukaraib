@@ -286,10 +286,8 @@ export default function Profile() {
       }
     }
 
-    // Packs présentiel (≤ -10%)
+    // Packs présentiel — validation basique uniquement (nombre ≥ 0)
     const p = Number.isFinite(priceNum) ? priceNum : 0;
-    const maxPack5 = 5 * p * 0.9;
-    const maxPack10 = 10 * p * 0.9;
 
     const pack5 = profile.pack5_price === '' ? '' : Number(profile.pack5_price);
     const pack10 = profile.pack10_price === '' ? '' : Number(profile.pack10_price);
@@ -301,17 +299,9 @@ export default function Profile() {
       if (pack10 !== '' && (Number.isNaN(pack10) || pack10 < 0)) {
         return alert('Pack 10h (présentiel) invalide (nombre ≥ 0).');
       }
-      if (p > 0) {
-        if (pack5 !== '' && pack5 > maxPack5) {
-          return alert(`Le pack 5h (présentiel) ne doit pas dépasser ${maxPack5.toFixed(2)} € (10% de remise max).`);
-        }
-        if (pack10 !== '' && pack10 > maxPack10) {
-          return alert(`Le pack 10h (présentiel) ne doit pas dépasser ${maxPack10.toFixed(2)} € (10% de remise max).`);
-        }
-      }
     }
 
-    // Visio : tarif + packs visio (≤ -10% du tarif visio utilisé)
+    // Visio : tarif + packs visio — validation basique uniquement (nombre ≥ 0)
     let visioRateNum = null;
     if (profile.visio_enabled) {
       if (!profile.visio_same_rate) {
@@ -320,7 +310,7 @@ export default function Profile() {
           return alert("Tarif visio invalide (0 → 1000 €).");
         }
       } else {
-        visioRateNum = p || 0; // même tarif que présentiel
+        visioRateNum = p || 0;
       }
 
       const v5 = profile.visio_pack5_price === '' ? '' : Number(profile.visio_pack5_price);
@@ -331,16 +321,6 @@ export default function Profile() {
       }
       if (v10 !== '' && (Number.isNaN(v10) || v10 < 0)) {
         return alert('Pack 10h (visio) invalide (nombre ≥ 0).');
-      }
-      const vmax5 = 5 * (visioRateNum || 0) * 0.9;
-      const vmax10 = 10 * (visioRateNum || 0) * 0.9;
-      if (visioRateNum > 0) {
-        if (v5 !== '' && v5 > vmax5) {
-          return alert(`Le pack 5h (visio) ne doit pas dépasser ${vmax5.toFixed(2)} € (10% de remise max).`);
-        }
-        if (v10 !== '' && v10 > vmax10) {
-          return alert(`Le pack 10h (visio) ne doit pas dépasser ${vmax10.toFixed(2)} € (10% de remise max).`);
-        }
       }
     }
 
