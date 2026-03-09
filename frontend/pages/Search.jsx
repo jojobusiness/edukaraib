@@ -253,9 +253,9 @@ export default function Search() {
                 <button
                   onClick={() => toggleMode('presentiel')}
                   className={`px-3 py-1.5 rounded-full text-sm border transition ${
-                      mode==='présentiel'
+                      mode==='presentiel'
                         ? 'bg-primary text-white border-primary text-white border-indigo-400 shadow-sm'
-                        : 'bbg-white hover:bg-gray-100 border-gray-300 text-gray-700'
+                        : 'bg-white hover:bg-gray-100 border-gray-300 text-gray-700'
                     }`}
                 >
                   Présentiel
@@ -447,7 +447,7 @@ function TeacherCard({ teacher, navigate }) {
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {isVisio && <span className="px-2 py-1 rounded-full text-xs border border-gray-300 bg-gray-50">Visio</span>}
           {isPres  && <span className="px-2 py-1 rounded-full text-xs border border-gray-300 bg-gray-50">Présentiel</span>}
-          {Array.isArray(teacher.levels) && teacher.levels.slice(0,3).map((lv) => (
+          {Array.isArray(teacher.teaching_levels) && teacher.teaching_levels.slice(0,3).map((lv) => (
             <span key={lv} className="px-2 py-1 rounded-full text-xs bg-primary/10 text-primary border border-primary/20">
               {lv}
             </span>
