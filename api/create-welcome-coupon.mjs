@@ -1,4 +1,4 @@
-import { adminDb } from '../_firebaseAdmin.mjs';
+import { adminDb } from './_firebaseAdmin.mjs';
 
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
 
