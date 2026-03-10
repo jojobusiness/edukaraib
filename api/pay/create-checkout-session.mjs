@@ -227,6 +227,8 @@ export default async function handler(req, res) {
   }
 
   const siteFeeCents = billedHours * 1000; // 10€ / h
+  // Le coupon réduit uniquement la commission plateforme, pas le tarif du prof
+  let effectiveSiteFeeCents = siteFeeCents;
   let totalCents = teacherAmountCents + siteFeeCents;
   if (!(totalCents > 0)) return res.status(400).json({ error: 'INVALID_AMOUNT' });
 
@@ -258,7 +260,10 @@ export default async function handler(req, res) {
 
     couponDiscountCents = Math.round((coupon.discount_eur || 0) * 100);
     couponDocId = couponDoc.id;
-    totalCents = Math.max(50, totalCents - couponDiscountCents); // minimum 0.50€ pour Stripe
+    // On déduit uniquement de la commission plateforme (jamais du tarif prof)
+    effectiveSiteFeeCents = Math.max(0, siteFeeCents - couponDiscountCents);
+    totalCents = teacherAmountCents + effectiveSiteFeeCents;
+    if (totalCents < 50) totalCents = 50; // minimum Stripe 0.50€
   }
   // ────────────────────────────────────────────────────────────────────
 
@@ -283,7 +288,7 @@ export default async function handler(req, res) {
     for_student: String(participantId),
     teacher_uid: String(lesson.teacher_id || ''),
     teacher_amount_cents: String(teacherAmountCents),
-    site_fee_cents: String(siteFeeCents),
+    site_fee_cents: String(effectiveSiteFeeCents),
     is_group: String(!!(Array.isArray(lesson?.participant_ids) && lesson.participant_ids.length > 0)),
     payer_uid: String(payerUid || ''),
     lesson_source: source,
@@ -334,7 +339,7 @@ export default async function handler(req, res) {
     teacher_uid: String(lesson.teacher_id || ''),
     lesson_source: source,
     gross_eur: totalCents / 100,
-    fee_eur: siteFeeCents / 100,
+    fee_eur: effectiveSiteFeeCents / 100,
     net_to_teacher_eur: teacherAmountCents / 100,
     status: 'pending',
     created_at: new Date(),

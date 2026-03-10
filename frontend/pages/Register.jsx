@@ -300,7 +300,7 @@ export default function Register() {
       // 🎟️ Coupon de bienvenue -5€ uniquement pour parents et élèves
       // fetch simple (pas de token requis), sans await pour ne pas bloquer la navigation
       if (form.role === 'parent' || form.role === 'student') {
-        fetch('/api/coupons/create-welcome-coupon', {
+        fetch('/api/create-welcome-coupon', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
