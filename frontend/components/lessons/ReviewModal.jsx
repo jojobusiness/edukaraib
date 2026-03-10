@@ -191,7 +191,7 @@ export default function ReviewModal({ open, onClose, lesson, onSent }) {
                 <div>
                   <div className="font-semibold text-emerald-900">🎟️ Code promo débloqué</div>
                   <div className="text-sm text-emerald-800 mt-1">
-                    +1h offerte en plus sur le pack 5h
+                    -5 € sur ton prochain cours
                   </div>
                 </div>
                 <button
