@@ -182,6 +182,7 @@ export default function StudentPayments() {
   const [refundingId, setRefundingId] = useState(null);
   const [couponCode, setCouponCode] = useState('');
   const [couponError, setCouponError] = useState('');
+  const [couponValid, setCouponValid] = useState(false);
   const teacherCacheRef = useRef(new Map());
   const [uid, setUid] = useState(auth.currentUser?.uid || null);
 
@@ -374,8 +375,10 @@ export default function StudentPayments() {
     } catch (e) {
     if (e.message?.includes('COUPON_INVALID_OR_USED')) {
       setCouponError('Code invalide ou déjà utilisé');
+      setCouponValid(false);
     } else if (e.message?.includes('COUPON_EXPIRED')) {
       setCouponError('Code expiré');
+      setCouponValid(false);
     } else {
       alert(e.message || 'Impossible de démarrer le paiement.');
     }
@@ -436,7 +439,19 @@ export default function StudentPayments() {
           <div className="flex items-center justify-between mb-1">
             <h3 className="font-bold text-secondary">Paiements à effectuer</h3>
             {!loading && (
-              <span className="text-xs text-gray-600">Total à régler : {totals.due.toFixed(2)} €</span>
+              <span className="text-xs text-gray-600">
+                Total à régler :{' '}
+                {couponValid ? (
+                  <>
+                    <span className="line-through text-gray-400 mr-1">{totals.due.toFixed(2)} €</span>
+                    <span className="text-green-600 font-semibold">
+                      {Math.max(0, totals.due - 5).toFixed(2)} €
+                    </span>
+                  </>
+                ) : (
+                  <span>{totals.due.toFixed(2)} €</span>
+                )}
+              </span>
             )}
           </div>
 
@@ -482,16 +497,55 @@ export default function StudentPayments() {
 
                   {/* Champ coupon — affiché sur la première carte uniquement */}
                   {toPay.indexOf(l) === 0 && (
-                    <div className="flex items-center gap-2 mt-2">
-                      <input
-                        type="text"
-                        placeholder="Code promo"
-                        value={couponCode}
-                        onChange={e => { setCouponCode(e.target.value.toUpperCase()); setCouponError(''); }}
-                        className="border rounded px-2 py-1 text-sm w-36 uppercase"
-                        maxLength={20}
-                      />
-                      {couponError && <span className="text-xs text-red-500">{couponError}</span>}
+                    <div className="flex flex-col gap-1 mt-1">
+                      <div className="flex items-center gap-2">
+                        <div className="relative">
+                          <input
+                            type="text"
+                            placeholder="Code promo"
+                            value={couponCode}
+                            onChange={e => {
+                              setCouponCode(e.target.value.toUpperCase());
+                              setCouponError('');
+                              setCouponValid(false);
+                            }}
+                            className={`border rounded-lg px-3 py-1.5 text-sm w-40 uppercase tracking-wider transition-all
+                              ${couponValid ? 'border-green-400 bg-green-50 text-green-700' : ''}
+                              ${couponError ? 'border-red-400 bg-red-50' : ''}
+                              ${!couponValid && !couponError ? 'border-gray-300' : ''}
+                            `}
+                            maxLength={20}
+                          />
+                          {couponValid && (
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500 text-sm">✓</span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const code = couponCode.trim();
+                            if (!code) return;
+                            if (code.startsWith('BIENVENUE-') || code.startsWith('AVIS-')) {
+                              setCouponValid(true);
+                              setCouponError('');
+                            } else {
+                              setCouponError('Format invalide');
+                              setCouponValid(false);
+                            }
+                          }}
+                          className="text-xs px-2 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 border border-gray-300 transition"
+                        >
+                          Appliquer
+                        </button>
+                      </div>
+                      {couponValid && (
+                        <div className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                          <span>🎟️</span> -5 € sur la commission appliqués
+                        </div>
+                      )}
+                      {couponError && (
+                        <span className="text-xs text-red-500">{couponError}</span>
+                      )}
                     </div>
                   )}
                   

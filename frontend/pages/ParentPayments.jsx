@@ -211,6 +211,7 @@ export default function ParentPayments() {
   const [refundingKey, setRefundingKey] = useState(null);
   const [couponCodes, setCouponCodes] = useState({}); // { "lessonId:studentId": "CODE" }
   const [couponErrors, setCouponErrors] = useState({});
+  const [couponValid, setCouponValid] = useState({}); // { rowKey: true } quand appliqué
 
   const teacherCacheRef = useRef(new Map());
   const childNameCacheRef = useRef(new Map());
@@ -424,8 +425,10 @@ export default function ParentPayments() {
     } catch (e) {
       if (e.message?.includes('COUPON_INVALID_OR_USED')) {
         setCouponErrors(prev => ({ ...prev, [key]: 'Code invalide ou déjà utilisé' }));
+        setCouponValid(prev => ({ ...prev, [key]: false }));
       } else if (e.message?.includes('COUPON_EXPIRED')) {
         setCouponErrors(prev => ({ ...prev, [key]: 'Code expiré' }));
+        setCouponValid(prev => ({ ...prev, [key]: false }));
       } else {
         alert(e.message || 'Impossible de démarrer le paiement.');
       }
@@ -490,7 +493,27 @@ export default function ParentPayments() {
         <div className="mb-8">
           <div className="flex items-center justify-between mb-1">
             <h3 className="font-bold text-secondary">Paiements à effectuer</h3>
-            {!loading && <span className="text-xs text-gray-600">Total à régler : {totals.due.toFixed(2)} €</span>}
+            {!loading && (
+              <span className="text-xs text-gray-600">
+                Total à régler :{' '}
+                {Object.keys(couponValid).some(k => couponValid[k]) ? (
+                  <>
+                    <span className="line-through text-gray-400 mr-1">
+                      {toPay.reduce((acc, r) => acc + getDisplayAmountForChild(r.lesson, r.forStudent), 0).toFixed(2)} €
+                    </span>
+                    <span className="text-green-600 font-semibold">
+                      {toPay.reduce((acc, r) => {
+                        const rk = `${r.lesson.id}:${r.forStudent}`;
+                        const base = getDisplayAmountForChild(r.lesson, r.forStudent);
+                        return acc + Math.max(0, base - (couponValid[rk] && couponCodes[rk] ? 5 : 0));
+                      }, 0).toFixed(2)} €
+                    </span>
+                  </>
+                ) : (
+                  <span>{totals.due.toFixed(2)} €</span>
+                )}
+              </span>
+            )}
           </div>
 
           {loading ? (
@@ -507,13 +530,25 @@ export default function ParentPayments() {
                     className="bg-white p-5 rounded-xl shadow border flex flex-col md:flex-row md:items-center gap-4 justify-between"
                   >
                     <div>
-                      <div className="font-bold text-primary">
-                        {r.lesson.subject_id || 'Matière'}{' '}
-                        <span className="text-gray-600 text-xs ml-2">
-                          {getDisplayAmountForChild(r.lesson, r.forStudent)
-                            ? `${getDisplayAmountForChild(r.lesson, r.forStudent).toFixed(2)} €`
-                            : ''}
-                        </span>
+                      <div className="font-bold text-primary flex items-center flex-wrap gap-2">
+                        {r.lesson.subject_id || 'Matière'}
+                        {getDisplayAmountForChild(r.lesson, r.forStudent) ? (
+                          couponValid[rowKey] && couponCodes[rowKey] ? (
+                            <span className="flex items-center gap-1">
+                              <span className="text-gray-400 line-through text-xs font-normal">
+                                {getDisplayAmountForChild(r.lesson, r.forStudent).toFixed(2)} €
+                              </span>
+                              <span className="text-green-600 text-sm font-bold animate-pulse">
+                                {Math.max(0, getDisplayAmountForChild(r.lesson, r.forStudent) - 5).toFixed(2)} €
+                              </span>
+                              <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-semibold">-5€</span>
+                            </span>
+                          ) : (
+                            <span className="text-gray-600 text-xs font-normal">
+                              {getDisplayAmountForChild(r.lesson, r.forStudent).toFixed(2)} €
+                            </span>
+                          )
+                        ) : null}
                       </div>
                       <div className="text-xs text-gray-500">Professeur : {r.teacherName || r.lesson.teacher_id}</div>
                       <div className="text-xs text-gray-500">
@@ -542,15 +577,54 @@ export default function ParentPayments() {
                     </div>
 
                     {/* Champ coupon */}
-                    <div className="flex items-center gap-2 mt-2">
-                      <input
-                        type="text"
-                        placeholder="Code promo"
-                        value={couponCodes[rowKey] || ''}
-                        onChange={e => setCouponCodes(prev => ({ ...prev, [rowKey]: e.target.value.toUpperCase() }))}
-                        className="border rounded px-2 py-1 text-sm w-36 uppercase"
-                        maxLength={20}
-                      />
+                    <div className="flex flex-col gap-1 mt-1">
+                      <div className="flex items-center gap-2">
+                        <div className="relative">
+                          <input
+                            type="text"
+                            placeholder="Code promo"
+                            value={couponCodes[rowKey] || ''}
+                            onChange={e => {
+                              const val = e.target.value.toUpperCase();
+                              setCouponCodes(prev => ({ ...prev, [rowKey]: val }));
+                              setCouponErrors(prev => ({ ...prev, [rowKey]: '' }));
+                              setCouponValid(prev => ({ ...prev, [rowKey]: false }));
+                            }}
+                            className={`border rounded-lg px-3 py-1.5 text-sm w-40 uppercase tracking-wider transition-all
+                              ${couponValid[rowKey] ? 'border-green-400 bg-green-50 text-green-700' : ''}
+                              ${couponErrors[rowKey] ? 'border-red-400 bg-red-50' : ''}
+                              ${!couponValid[rowKey] && !couponErrors[rowKey] ? 'border-gray-300' : ''}
+                            `}
+                            maxLength={20}
+                          />
+                          {couponValid[rowKey] && (
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500 text-sm">✓</span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const code = couponCodes[rowKey]?.trim();
+                            if (!code) return;
+                            // Validation légère côté front : format BIENVENUE- ou AVIS-
+                            if (code.startsWith('BIENVENUE-') || code.startsWith('AVIS-')) {
+                              setCouponValid(prev => ({ ...prev, [rowKey]: true }));
+                              setCouponErrors(prev => ({ ...prev, [rowKey]: '' }));
+                            } else {
+                              setCouponErrors(prev => ({ ...prev, [rowKey]: 'Format invalide' }));
+                              setCouponValid(prev => ({ ...prev, [rowKey]: false }));
+                            }
+                          }}
+                          className="text-xs px-2 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 border border-gray-300 transition"
+                        >
+                          Appliquer
+                        </button>
+                      </div>
+                      {couponValid[rowKey] && (
+                        <div className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                          <span>🎟️</span> -5 € sur la commission appliqués
+                        </div>
+                      )}
                       {couponErrors[rowKey] && (
                         <span className="text-xs text-red-500">{couponErrors[rowKey]}</span>
                       )}
