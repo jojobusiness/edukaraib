@@ -82,7 +82,7 @@ export default async function handler(req, res) {
     const firstName = (fullName || '').split(' ')[0] || 'là';
 
     const mailResult = await resendClient.emails.send({
-      from: 'EduKaraib <onboarding@resend.dev>',
+      from: 'EduKaraib <notifications@edukaraib.com>',
       to: [email],
       subject: `Bienvenue sur EduKaraib, ${firstName} ! 🎉`,
       html: `
