@@ -403,6 +403,21 @@ export default function Home() {
           </div>
         </div>
 
+        {/* 🎟️ BANDEROLE INSCRIPTION - MOBILE, entre hero image et formulaire */}
+        <div className="lg:hidden mx-0 -mx-4 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white flex items-center gap-3 mb-4">
+          <span className="text-2xl shrink-0">🎁</span>
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-sm leading-tight">-5 € sur votre premier cours</div>
+            <div className="text-xs text-white/80">Offert automatiquement dès l'inscription</div>
+          </div>
+          <a
+            href="/register"
+            className="shrink-0 bg-white text-emerald-700 font-bold text-[11px] px-3 py-1.5 rounded-full hover:bg-emerald-50 whitespace-nowrap"
+          >
+            S'inscrire →
+          </a>
+        </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
             <div className="hidden lg:block">
               <span className="inline-block mb-4 px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold">
@@ -469,6 +484,22 @@ export default function Home() {
           </div>
         </div>
       </header>
+
+      {/* 🎟️ BANDEROLE INSCRIPTION - DESKTOP */}
+      <div className="hidden lg:block bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 text-white py-3 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 flex items-center justify-center gap-4">
+          <span className="flex items-center gap-2 font-semibold text-sm">
+            <span className="text-xl">🎁</span>
+            <span>Inscrivez-vous et obtenez <strong>-5 € sur votre premier cours</strong> — automatiquement après inscription !</span>
+          </span>
+          <a
+            href="/register"
+            className="shrink-0 bg-white text-emerald-700 font-bold text-xs px-4 py-1.5 rounded-full hover:bg-emerald-50 transition shadow"
+          >
+            S'inscrire gratuitement →
+          </a>
+        </div>
+      </div>
 
       {/* PROFESSEURS */}
       <section className="py-12 bg-white">

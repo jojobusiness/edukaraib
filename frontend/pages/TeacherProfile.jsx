@@ -1418,33 +1418,45 @@ export default function TeacherProfile() {
                 <div className="flex gap-3 snap-x snap-mandatory">
                   {similarTeachers.map((t) => {
                     const displayName = t.fullName || `${t.firstName || ''} ${t.lastName || ''}`.trim() || 'Professeur';
+                    const firstName = displayName.split(' ')[0];
                     const avatar = t.avatarUrl || t.avatar_url || t.photoURL || '/avatar-default.png';
-                    const modeLabelSmall = t.presentiel_enabled && t.visio_enabled ? 'Présentiel + Visio'
-                      : t.visio_enabled ? 'Visio' : t.presentiel_enabled ? 'Présentiel' : '—';
+                    const city = t.city || t.location || 'Guyane';
+                    const modeLabel = t.presentiel_enabled && t.visio_enabled ? `${city} & webcam`
+                      : t.visio_enabled ? 'Webcam' : city;
+                    const price = t.price_per_hour || t.visio_price_per_hour;
+                    const rating = Number(t.avgRating || 0);
+                    const reviews = Number(t.reviewsCount || 0);
 
                     return (
                       <button
                         key={t.id}
-                        onClick={() => navigate(`/profils/${t.id}`)}
-                        className="snap-start shrink-0 w-[220px] text-left border rounded-2xl overflow-hidden hover:shadow-md transition bg-white"
+                        onClick={() => { window.location.href = `/profils/${t.id}`; }}
+                        className="snap-start shrink-0 w-[200px] text-left rounded-2xl overflow-hidden hover:shadow-lg transition-shadow bg-white border border-gray-100 shadow-sm"
                         type="button"
                       >
-                        <div className="relative">
-                          <img src={avatar} alt={displayName} className="w-full h-36 object-cover object-top" />
-                          <div className="absolute bottom-2 left-2 px-2 py-1 rounded-full text-[10px] font-bold bg-black/65 text-white">
-                            {modeLabelSmall}
+                        {/* Photo avec nom + ville superposés */}
+                        <div className="relative h-44">
+                          <img src={avatar} alt={firstName} className="absolute inset-0 w-full h-full object-cover object-top" />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+                          <div className="absolute bottom-0 left-0 right-0 p-3">
+                            <div className="font-extrabold text-white text-base leading-tight">{firstName}</div>
+                            <div className="text-white/80 text-xs mt-0.5">{modeLabel}</div>
                           </div>
                         </div>
-                        <div className="p-3">
-                          <div className="font-extrabold text-slate-900 text-sm truncate">{displayName}</div>
-                          <div className="mt-1 flex items-center gap-1 text-xs">
-                            <span className="text-yellow-500">{"★".repeat(Math.round(t.avgRating || 0)).padEnd(5, "☆")}</span>
-                            <span className="text-slate-700 font-semibold">{(t.avgRating || 0).toFixed(1)}</span>
-                            <span className="text-slate-500">({t.reviewsCount || 0})</span>
-                          </div>
-                          <div className="mt-1 text-xs text-slate-500 line-clamp-2">
-                            {t.subjects || '—'}
-                          </div>
+                        {/* Infos */}
+                        <div className="px-3 py-2.5 space-y-1.5">
+                          {rating > 0 && (
+                            <div className="flex items-center gap-1 text-xs">
+                              <span className="text-yellow-400">★</span>
+                              <span className="font-bold text-slate-800">{rating.toFixed(1)}</span>
+                              <span className="text-slate-400">({reviews})</span>
+                            </div>
+                          )}
+                          {price > 0 && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold text-slate-900">{Number(price) + 10} €/h</span>
+                            </div>
+                          )}
                         </div>
                       </button>
                     );
@@ -1456,45 +1468,55 @@ export default function TeacherProfile() {
               <div className="hidden lg:grid grid-cols-4 gap-4">
                 {similarTeachers.slice(0, 4).map((t) => {
                   const displayName = t.fullName || `${t.firstName || ''} ${t.lastName || ''}`.trim() || 'Professeur';
+                  const firstName = displayName.split(' ')[0];
                   const avatar = t.avatarUrl || t.avatar_url || t.photoURL || '/avatar-default.png';
-                  const modeLabelSmall = t.presentiel_enabled && t.visio_enabled ? 'Présentiel + Visio'
-                    : t.visio_enabled ? 'Visio' : t.presentiel_enabled ? 'Présentiel' : '—';
+                  const city = t.city || t.location || 'Guyane';
+                  const modeLabel = t.presentiel_enabled && t.visio_enabled ? `${city} & webcam`
+                    : t.visio_enabled ? 'Webcam' : city;
+                  const price = t.price_per_hour || t.visio_price_per_hour;
+                  const rating = Number(t.avgRating || 0);
+                  const reviews = Number(t.reviewsCount || 0);
 
                   return (
                     <button
                       key={t.id}
-                      onClick={() => navigate(`/profils/${t.id}`)}
-                      className="text-left border rounded-2xl overflow-hidden hover:shadow-md transition bg-white"
+                      onClick={() => { window.location.href = `/profils/${t.id}`; }}
+                      className="text-left rounded-2xl overflow-hidden hover:shadow-xl transition-all duration-200 bg-white border border-gray-100 shadow-sm group"
                       type="button"
                     >
-                      {/* Photo fixe, visage bien cadré */}
-                      <div className="relative h-44 bg-gray-100">
+                      {/* Grande photo avec overlay gradient + nom superposé comme Superprof */}
+                      <div className="relative h-52 bg-gray-100 overflow-hidden">
                         <img
                           src={avatar}
-                          alt={displayName}
-                          className="absolute inset-0 w-full h-full object-cover object-top"
+                          alt={firstName}
+                          className="absolute inset-0 w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300"
                         />
-                        <div className="absolute bottom-2 left-2 px-2 py-1 rounded-full text-[10px] font-bold bg-black/65 text-white">
-                          {modeLabelSmall}
+                        {/* Gradient sombre en bas */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
+                        {/* Nom + ville sur la photo */}
+                        <div className="absolute bottom-0 left-0 right-0 p-3">
+                          <div className="font-extrabold text-white text-lg leading-tight">{firstName}</div>
+                          <div className="text-white/75 text-xs mt-0.5">{modeLabel}</div>
                         </div>
                       </div>
 
-                      {/* Contenu — hauteur uniforme grâce à line-clamp */}
-                      <div className="p-3 flex flex-col gap-1">
-                        <div className="font-extrabold text-slate-900 text-sm truncate">{displayName}</div>
+                      {/* Infos sous la photo */}
+                      <div className="px-3 pt-2.5 pb-3 space-y-2">
+                        {/* Étoiles + avis */}
+                        {rating > 0 && (
+                          <div className="flex items-center gap-1.5 text-sm">
+                            <span className="text-yellow-400 font-bold">★</span>
+                            <span className="font-bold text-slate-800">{rating.toFixed(1)}</span>
+                            <span className="text-slate-400 text-xs">({reviews} avis)</span>
+                          </div>
+                        )}
 
-                        <div className="flex items-center gap-1 text-xs">
-                          <span className="text-yellow-500">{"★".repeat(Math.round(t.avgRating || 0)).padEnd(5, "☆")}</span>
-                          <span className="text-slate-700 font-semibold">{(t.avgRating || 0).toFixed(1)}</span>
-                          <span className="text-slate-500">({t.reviewsCount || 0})</span>
-                        </div>
-
-                        <div className="text-xs font-semibold text-primary">{t.subjects || '—'}</div>
-
-                        {/* Bio limitée à 2 lignes max → hauteur uniforme */}
-                        <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">
-                          {t.bio || t.about_me || 'Voir le profil'}
-                        </p>
+                        {/* Prix */}
+                        {price > 0 && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-base font-extrabold text-slate-900">{Number(price) + 10} €/h</span>
+                          </div>
+                        )}
                       </div>
                     </button>
                   );
