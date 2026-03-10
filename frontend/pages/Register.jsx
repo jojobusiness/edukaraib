@@ -298,19 +298,17 @@ export default function Register() {
       await setDoc(doc(db, 'users', pendingUser.uid), baseData);
 
       // 🎟️ Coupon de bienvenue -5€ uniquement pour parents et élèves
+      // fetch simple (pas de token requis), sans await pour ne pas bloquer la navigation
       if (form.role === 'parent' || form.role === 'student') {
-        try {
-          await fetchWithAuth('/api/coupons/create-welcome-coupon', {
-            method: 'POST',
-            body: JSON.stringify({
-              uid: pendingUser.uid,
-              email: pendingUser.email,
-              fullName,
-            }),
-          });
-        } catch (e) {
-          console.warn('Coupon bienvenue non envoyé:', e?.message);
-        }
+        fetch('/api/coupons/create-welcome-coupon', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uid: pendingUser.uid,
+            email: pendingUser.email,
+            fullName,
+          }),
+        }).catch(e => console.warn('[coupon-bienvenue] échec:', e?.message));
       }
 
       setWaitingEmailVerify(false);

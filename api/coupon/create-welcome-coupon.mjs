@@ -73,30 +73,51 @@ export default async function handler(req, res) {
       expires_at: expiresAt,
     });
 
-    // 5) Envoie le mail de bienvenue via /api/notify-email
-    const origin =
-      req.headers?.origin ||
-      `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}`;
 
+    // 5) Envoie le mail de bienvenue via /api/notify-email
+    // Sur Vercel, req.headers.origin est absent pour les appels serveur→serveur
+    // On utilise Resend directement avec APP_BASE_URL plutôt que de re-fetcher /api/notify-email
+    const { Resend } = await import('resend');
+    const resendClient = new Resend(process.env.RESEND_API_KEY);
     const firstName = (fullName || '').split(' ')[0] || 'là';
 
-    await fetch(`${origin}/api/notify-email`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        to: email,
-        title: `Bienvenue sur EduKaraib, ${firstName} ! 🎉`,
-        message:
-          `Merci de nous avoir rejoints !\n\n` +
-          `Pour fêter ça, voici ton bon de bienvenue :\n\n` +
-          `🎟️ Code : ${code}\n` +
-          `💶 Valeur : -5 € sur ton premier cours\n` +
-          `📅 Valable 60 jours\n\n` +
-          `Saisis ce code au moment du paiement de ton premier cours pour en bénéficier.`,
-        ctaText: 'Trouver un professeur',
-        ctaUrl: `${APP_BASE_URL}/search`,
-      }),
+    const mailResult = await resendClient.emails.send({
+      from: 'EduKaraib <onboarding@resend.dev>',
+      to: [email],
+      subject: `Bienvenue sur EduKaraib, ${firstName} ! 🎉`,
+      html: `
+        <div style="font-family:Inter,system-ui,sans-serif;background:#f5f7fb;padding:24px;">
+          <table width="100%" cellspacing="0" cellpadding="0" style="max-width:680px;margin:auto;background:#fff;border-radius:18px;overflow:hidden;border:1px solid #eef0f4;">
+            <tr><td style="background:#0ea5e9;padding:18px 20px;">
+              <span style="color:#fff;font-weight:700;font-size:16px;">EduKaraib</span>
+            </td></tr>
+            <tr><td style="padding:26px;">
+              <h1 style="margin:0 0 10px;font-size:20px;color:#0f172a;">Bienvenue sur EduKaraib, ${firstName} ! 🎉</h1>
+              <p style="color:#334155;font-size:15px;line-height:1.65;">
+                Merci de nous avoir rejoints !<br><br>
+                Pour fêter ça, voici ton bon de bienvenue :
+              </p>
+              <div style="background:#f0fdf4;border:2px dashed #22c55e;border-radius:12px;padding:16px;margin:16px 0;text-align:center;">
+                <div style="font-size:24px;font-weight:800;letter-spacing:3px;color:#15803d;">${code}</div>
+                <div style="color:#166534;font-size:14px;margin-top:6px;">💶 -5 € sur ton premier cours · 📅 Valable 60 jours</div>
+              </div>
+              <p style="color:#334155;font-size:14px;">Saisis ce code au moment du paiement de ton premier cours pour en bénéficier.</p>
+              <div style="margin-top:18px;">
+                <a href="${APP_BASE_URL}/search" style="background:#facc15;color:#111827;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:12px;display:inline-block;">Trouver un professeur</a>
+              </div>
+            </td></tr>
+            <tr><td style="padding:12px 26px 24px;color:#64748b;font-size:12px;">
+              L'équipe EduKaraib · <a href="mailto:contact@edukaraib.com" style="color:#0ea5e9;">contact@edukaraib.com</a>
+            </td></tr>
+          </table>
+        </div>
+      `,
     });
+
+    if (!mailResult?.id) {
+      console.error('[create-welcome-coupon] mail non envoyé:', mailResult);
+    }
+
 
     return res.json({ ok: true, code });
   } catch (e) {
