@@ -131,7 +131,7 @@ export default async function handler(req, res) {
   if (!auth) return;
   const payerUid = auth.uid;
 
-  const { lessonId, forStudent, packKey } = readBody(req);
+  const { lessonId, forStudent, packKey, couponCode } = readBody(req);
   if (!lessonId) return res.status(400).json({ error: 'MISSING_LESSON_ID' });
 
   // Leçon pivot
@@ -227,8 +227,40 @@ export default async function handler(req, res) {
   }
 
   const siteFeeCents = billedHours * 1000; // 10€ / h
-  const totalCents = teacherAmountCents + siteFeeCents;
+  let totalCents = teacherAmountCents + siteFeeCents;
   if (!(totalCents > 0)) return res.status(400).json({ error: 'INVALID_AMOUNT' });
+
+  // ── Coupon de réduction ──────────────────────────────────────────────
+  let couponDiscountCents = 0;
+  let couponDocId = null;
+
+  if (couponCode && typeof couponCode === 'string') {
+    const couponSnap = await adminDb
+      .collection('coupons')
+      .where('code', '==', couponCode.trim().toUpperCase())
+      .where('user_uid', '==', payerUid)
+      .where('used', '==', false)
+      .limit(1)
+      .get();
+
+    if (couponSnap.empty) {
+      return res.status(400).json({ error: 'COUPON_INVALID_OR_USED' });
+    }
+
+    const couponDoc = couponSnap.docs[0];
+    const coupon = couponDoc.data();
+
+    // Vérifie expiration
+    const expiresAt = coupon.expires_at?.toDate?.() || new Date(coupon.expires_at);
+    if (expiresAt && expiresAt < new Date()) {
+      return res.status(400).json({ error: 'COUPON_EXPIRED' });
+    }
+
+    couponDiscountCents = Math.round((coupon.discount_eur || 0) * 100);
+    couponDocId = couponDoc.id;
+    totalCents = Math.max(50, totalCents - couponDiscountCents); // minimum 0.50€ pour Stripe
+  }
+  // ────────────────────────────────────────────────────────────────────
 
   const source = packMode ? (billedHours === 10 ? 'pack10' : 'pack5') : detectSourceFor(lesson, participantId);
   const lessonIds = lessonsToBill.map(L => String(L.id));
@@ -238,11 +270,12 @@ export default async function handler(req, res) {
     `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}`;
 
   const productName = lesson.subject_id ? `Cours de ${lesson.subject_id}` : 'Cours particulier';
+  const couponSuffix = couponDiscountCents > 0 ? ` · Code promo -${couponDiscountCents / 100}€ appliqué` : '';
   const productDesc =
-    source === 'pack5' ? 'Pack 5h · (prof 90% du total horaire) + 10€ / h site'
+    (source === 'pack5' ? 'Pack 5h · (prof 90% du total horaire) + 10€ / h site'
     : source === 'pack10' ? 'Pack 10h · (prof 90% du total horaire) + 10€ / h site'
     : source === 'visio' ? 'Visio · (prof 100% horaire) + 10€ site'
-    : 'Présentiel · (prof 100% horaire) + 10€ site';
+    : 'Présentiel · (prof 100% horaire) + 10€ site') + couponSuffix;
 
   const metadata = {
     lesson_id: String(lesson.id),
@@ -257,7 +290,10 @@ export default async function handler(req, res) {
     billed_hours: String(billedHours),
     per_hour_site_fee_cents: '1000',
     is_pack: String(packMode ? 1 : 0),
-    pack_hours: String(packMode ? billedHours : '')
+    pack_hours: String(packMode ? billedHours : ''),
+    coupon_code: couponCode ? couponCode.trim().toUpperCase() : '',
+    coupon_doc_id: couponDocId || '',
+    coupon_discount_cents: String(couponDiscountCents),
   };
 
   let session;

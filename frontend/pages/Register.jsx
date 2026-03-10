@@ -11,6 +11,7 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import StripeConnectButtons from '../components/stripe/StripeConnectButtons';
 import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
+import fetchWithAuth from '../utils/fetchWithAuth';
 
 // ————————————————————————————————
 // Communes officielles de Guyane (22)
@@ -295,6 +296,22 @@ export default function Register() {
       }
       
       await setDoc(doc(db, 'users', pendingUser.uid), baseData);
+
+      // 🎟️ Coupon de bienvenue -5€ uniquement pour parents et élèves
+      if (form.role === 'parent' || form.role === 'student') {
+        try {
+          await fetchWithAuth('/api/coupons/create-welcome-coupon', {
+            method: 'POST',
+            body: JSON.stringify({
+              uid: pendingUser.uid,
+              email: pendingUser.email,
+              fullName,
+            }),
+          });
+        } catch (e) {
+          console.warn('Coupon bienvenue non envoyé:', e?.message);
+        }
+      }
 
       setWaitingEmailVerify(false);
 

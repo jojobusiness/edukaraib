@@ -209,6 +209,8 @@ export default function ParentPayments() {
 
   const [payingKey, setPayingKey] = useState(null);
   const [refundingKey, setRefundingKey] = useState(null);
+  const [couponCodes, setCouponCodes] = useState({}); // { "lessonId:studentId": "CODE" }
+  const [couponErrors, setCouponErrors] = useState({});
 
   const teacherCacheRef = useRef(new Map());
   const childNameCacheRef = useRef(new Map());
@@ -412,17 +414,21 @@ export default function ParentPayments() {
         body: JSON.stringify({
           lessonId: row.lesson.id,
           forStudent: row.forStudent,
-          packKey: isPackForChild(row.lesson, row.forStudent)
-            ? packKeyForChild(row.lesson, row.forStudent)
-            : null,
+          packKey: isPackForChild(row.lesson, row.forStudent) ? packKeyForChild(row.lesson, row.forStudent) : null,
+          couponCode: couponCodes[`${row.lesson.id}:${row.forStudent}`] || undefined,
         }),
       });
 
       if (!data?.url) throw new Error('Lien de paiement introuvable.');
       window.location.href = data.url;
     } catch (e) {
-      console.error(e);
-      alert(e.message || 'Impossible de démarrer le paiement.');
+      if (e.message?.includes('COUPON_INVALID_OR_USED')) {
+        setCouponErrors(prev => ({ ...prev, [key]: 'Code invalide ou déjà utilisé' }));
+      } else if (e.message?.includes('COUPON_EXPIRED')) {
+        setCouponErrors(prev => ({ ...prev, [key]: 'Code expiré' }));
+      } else {
+        alert(e.message || 'Impossible de démarrer le paiement.');
+      }
     } finally {
       setPayingKey(null);
     }
@@ -532,6 +538,21 @@ export default function ParentPayments() {
                         <div className="text-xs text-gray-500">
                           {formatFullDate(r.lesson)}
                         </div>
+                      )}
+                    </div>
+
+                    {/* Champ coupon */}
+                    <div className="flex items-center gap-2 mt-2">
+                      <input
+                        type="text"
+                        placeholder="Code promo"
+                        value={couponCodes[rowKey] || ''}
+                        onChange={e => setCouponCodes(prev => ({ ...prev, [rowKey]: e.target.value.toUpperCase() }))}
+                        className="border rounded px-2 py-1 text-sm w-36 uppercase"
+                        maxLength={20}
+                      />
+                      {couponErrors[rowKey] && (
+                        <span className="text-xs text-red-500">{couponErrors[rowKey]}</span>
                       )}
                     </div>
 

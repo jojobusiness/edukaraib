@@ -180,6 +180,8 @@ export default function StudentPayments() {
   const [loading, setLoading] = useState(true);
   const [payingId, setPayingId] = useState(null);
   const [refundingId, setRefundingId] = useState(null);
+  const [couponCode, setCouponCode] = useState('');
+  const [couponError, setCouponError] = useState('');
   const teacherCacheRef = useRef(new Map());
   const [uid, setUid] = useState(auth.currentUser?.uid || null);
 
@@ -363,15 +365,21 @@ export default function StudentPayments() {
           lessonId: lesson.id,
           forStudent: uid,
           packKey: isPackForMe(lesson, uid) ? packKeyForMe(lesson, uid) : null,
+          couponCode: couponCode || undefined,
         }),
       });
 
       if (!data?.url) throw new Error('Lien de paiement introuvable.');
       window.location.href = data.url;
     } catch (e) {
-      console.error(e);
+    if (e.message?.includes('COUPON_INVALID_OR_USED')) {
+      setCouponError('Code invalide ou déjà utilisé');
+    } else if (e.message?.includes('COUPON_EXPIRED')) {
+      setCouponError('Code expiré');
+    } else {
       alert(e.message || 'Impossible de démarrer le paiement.');
-    } finally {
+    }
+  }finally {
       setPayingId(null);
     }
   };
@@ -472,6 +480,21 @@ export default function StudentPayments() {
                     )}
                   </div>
 
+                  {/* Champ coupon — affiché sur la première carte uniquement */}
+                  {toPay.indexOf(l) === 0 && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <input
+                        type="text"
+                        placeholder="Code promo"
+                        value={couponCode}
+                        onChange={e => { setCouponCode(e.target.value.toUpperCase()); setCouponError(''); }}
+                        className="border rounded px-2 py-1 text-sm w-36 uppercase"
+                        maxLength={20}
+                      />
+                      {couponError && <span className="text-xs text-red-500">{couponError}</span>}
+                    </div>
+                  )}
+                  
                   <button
                     className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded font-semibold shadow disabled:opacity-60"
                     onClick={() => handlePay(l)}

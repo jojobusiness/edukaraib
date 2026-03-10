@@ -143,20 +143,20 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
       stripe_charge_id: charge?.id || null,
       // Tu pourras plus tard compléter lors du “release” avec transfer_id, released_at, etc.
     }, { merge: true });
-  } else {
-    // fallback: ajouter un record si pas de sessionId
-    await adminDb.collection('payments').add({
-      status: 'held',
-      created_at: new Date(),
-      updated_at: new Date(),
-      lesson_id: String(lessonId),
-      for_student: forStudent ? String(forStudent) : null,
-      teacher_uid: teacherUid || null,
-      gross_eur: (grossCents || 0) / 100,
-      fee_eur: (siteFeeCents || 0) / 100,
-      net_to_teacher_eur: Math.max(0, teacherAmountCents) / 100,
-      payment_intent_id: pi?.id || null,
-      stripe_charge_id: charge?.id || null,
-    });
+  }
+
+  // 3) Marquer le coupon comme utilisé si présent
+  const couponDocId = md.coupon_doc_id;
+  if (couponDocId) {
+    try {
+      await adminDb.collection('coupons').doc(couponDocId).update({
+        used: true,
+        used_at: new Date(),
+        used_for_lesson: String(lessonId),
+        used_by: payerUid || null,
+      });
+    } catch (e) {
+      console.warn('[webhook] coupon update failed:', e?.message);
+    }
   }
 }
