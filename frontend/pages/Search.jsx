@@ -37,10 +37,41 @@ export default function Search() {
 
   useEffect(() => {
     const fetchTeachers = async () => {
+      // 1) Charger les profs
       const qy = query(collection(db, 'users'), where('role', '==', 'teacher'));
       const querySnapshot = await getDocs(qy);
       const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setTeachers(data);
+
+      // 2) Calculer reviewsCount + avgRating depuis la collection reviews
+      //    (par chunks de 10 pour respecter la limite Firestore "in")
+      const ids = data.map(t => t.id).filter(Boolean);
+      const stats = {}; // id => { sum, count }
+
+      for (let i = 0; i < ids.length; i += 10) {
+        const chunk = ids.slice(i, i + 10);
+        try {
+          const snap = await getDocs(query(collection(db, 'reviews'), where('teacher_id', 'in', chunk)));
+          snap.docs.forEach(d => {
+            const r = d.data();
+            const tid = r.teacher_id;
+            const rating = Number(r.rating || 0);
+            if (!tid || rating <= 0) return;
+            if (!stats[tid]) stats[tid] = { sum: 0, count: 0 };
+            stats[tid].sum += rating;
+            stats[tid].count += 1;
+          });
+        } catch (_) {}
+      }
+
+      // 3) Injecter les stats dans chaque prof
+      const enriched = data.map(t => {
+        const s = stats[t.id];
+        return s
+          ? { ...t, reviewsCount: s.count, avgRating: s.sum / s.count }
+          : { ...t, reviewsCount: t.reviewsCount ?? 0, avgRating: t.avgRating ?? 0 };
+      });
+
+      setTeachers(enriched);
     };
     fetchTeachers();
   }, []);
