@@ -168,9 +168,6 @@ export default function Search() {
 
   const toggleMode = (target) => setMode(prev => (prev === target ? '' : target));
 
-  // Accordéon filtres mobile
-  const [filtersOpen, setFiltersOpen] = useState(false);
-
   useSEO({
     title: 'Rechercher un professeur en Guyane',
     description: 'Comparez les professeurs particuliers en Guyane par matière, ville, tarif et niveau. Trouvez le prof idéal sur EduKaraib.',
@@ -237,22 +234,39 @@ export default function Search() {
         <p className="text-gray-600 mt-1">{resultsCount} prof(s) disponible(s)</p>
       </div>
 
-      {/* Grille : sidebar filtres + résultats */}
-      {/* 🔴 MOBILE: bouton accordéon filtres */}
-      <div className="md:hidden max-w-6xl mx-auto px-4 pb-2">
-        <button
-          onClick={() => setFiltersOpen(o => !o)}
-          className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-gray-300 bg-white shadow-sm text-sm font-semibold"
-        >
-          <span>🎚 Filtres {filtersOpen ? '' : '(Mode, Niveau, Ville, Tarif)'}</span>
-          <span>{filtersOpen ? '▲ Masquer' : '▼ Afficher'}</span>
-        </button>
+      {/* MOBILE: Barre de filtres rapides (toujours visible, au dessus des résultats) */}
+      <div className="md:hidden max-w-6xl mx-auto px-4 pb-3 pt-1">
+        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+          <button onClick={() => setMode('')} className={`shrink-0 px-3 py-1.5 rounded-full text-sm border font-medium transition ${mode==='' ? 'bg-primary text-white border-primary' : 'bg-white border-gray-300 text-gray-700'}`}>Tous</button>
+          <button onClick={() => toggleMode('visio')} className={`shrink-0 px-3 py-1.5 rounded-full text-sm border font-medium transition ${mode==='visio' ? 'bg-primary text-white border-primary' : 'bg-white border-gray-300 text-gray-700'}`}>📹 Visio</button>
+          <button onClick={() => toggleMode('presentiel')} className={`shrink-0 px-3 py-1.5 rounded-full text-sm border font-medium transition ${mode==='presentiel' ? 'bg-primary text-white border-primary' : 'bg-white border-gray-300 text-gray-700'}`}>📍 Présentiel</button>
+          <select value={level} onChange={e => setLevel(e.target.value)} className="shrink-0 border border-gray-300 rounded-full px-3 py-1.5 text-sm bg-white">
+            <option value="">Tous niveaux</option>
+            <option value="Primaire">Primaire</option>
+            <option value="Collège">Collège</option>
+            <option value="Lycée">Lycée</option>
+            <option value="Supérieur">Supérieur</option>
+            <option value="Adulte">Adulte</option>
+          </select>
+          <select value={city} onChange={e => setCity(e.target.value)} className="shrink-0 border border-gray-300 rounded-full px-3 py-1.5 text-sm bg-white">
+            <option value="">Toute la Guyane</option>
+            {Array.from(new Set(teachers.map(t => (t.city || t.location || '').trim()).filter(Boolean))).sort().map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+          <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="shrink-0 border border-gray-300 rounded-full px-3 py-1.5 text-sm bg-white">
+            <option value="">Trier par</option>
+            <option value="ratingDesc">⭐ Meilleure note</option>
+            <option value="priceAsc">Prix ↑</option>
+            <option value="priceDesc">Prix ↓</option>
+          </select>
+        </div>
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-3 grid grid-cols-1 md:grid-cols-12 gap-6">
-        {/* Sidebar filtres — desktop toujours visible, mobile accordéon */}
-        <aside className="md:col-span-4 lg:col-span-3 order-2 md:order-1">
-          <div className={`md:sticky md:top-20 space-y-4 ${filtersOpen ? 'block' : 'hidden'} md:block`}>
+        {/* Sidebar filtres — desktop uniquement */}
+        <aside className="hidden md:block md:col-span-4 lg:col-span-3">
+          <div className="md:sticky md:top-20 space-y-4">
             <section className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
               <h3 className="font-semibold mb-3">Mode</h3>
               <div className="flex flex-wrap gap-2">
@@ -359,7 +373,7 @@ export default function Search() {
         </aside>
 
         {/* Résultats */}
-        <main className="md:col-span-8 lg:col-span-9 order-1 md:order-2">
+        <main className="md:col-span-8 lg:col-span-9">
           {/* Si recherche saisie : montrer “Résultats” d’abord */}
           {q && (
             <section className="mb-6">
@@ -401,9 +415,6 @@ export default function Search() {
 // ───────────────────────── Carte professeur ─────────────────────────
 function TeacherCard({ teacher, navigate }) {
   const [showContactModal, setShowContactModal] = useState(false);
-  const [contactEmail, setContactEmail] = useState('');
-  const [contactMsg, setContactMsg] = useState('');
-  const [contactSent, setContactSent] = useState(false);
 
   // prix final = prix prof + 10 €
   const parseLocal = (raw) => {
@@ -443,67 +454,44 @@ function TeacherCard({ teacher, navigate }) {
       if (!receiverUid) { alert("Profil professeur invalide."); return; }
       navigate(`/chat/${receiverUid}`);
     } else {
-      // Pas connecté : ouvrir mini formulaire email
+      // Pas connecté : afficher modal d'invitation à créer un compte
       setShowContactModal(true);
     }
   };
 
-  const handleSendContactEmail = (e) => {
-    e.preventDefault();
-    // On redirige vers /register avec pré-remplissage ou on envoie un mailto simple
-    const subject = encodeURIComponent(`Message pour ${teacher.fullName || 'un professeur'} - EduKaraib`);
-    const body = encodeURIComponent(`Bonjour,
-
-Je souhaite contacter ${teacher.fullName || 'ce professeur'}.
-
-${contactMsg}
-
-Mon email : ${contactEmail}`);
-    window.location.href = `mailto:contact@edukaraib.com?subject=${subject}&body=${body}`;
-    setContactSent(true);
-  };
-
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition p-4 flex gap-4 relative">
-      {/* Modal contact sans compte */}
+      {/* Modal : invitation à créer un compte pour contacter */}
       {showContactModal && (
-        <div className="absolute inset-0 z-20 bg-white/95 backdrop-blur rounded-2xl flex flex-col p-5 shadow-xl border border-primary/30">
-          <button onClick={() => { setShowContactModal(false); setContactSent(false); }} className="self-end text-gray-400 hover:text-gray-700 text-xl font-bold">✕</button>
-          {contactSent ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-center gap-3">
-              <div className="text-4xl">✅</div>
-              <p className="font-semibold text-gray-800">Message envoyé !</p>
-              <p className="text-sm text-gray-500">Vous pouvez aussi créer un compte pour discuter directement.</p>
-              <button onClick={() => navigate('/register')} className="mt-2 bg-primary text-white font-semibold px-5 py-2 rounded-xl text-sm">Créer mon compte gratuitement</button>
-            </div>
-          ) : (
-            <>
-              <h4 className="font-bold text-gray-900 mb-1">Contacter {teacher.fullName || 'ce professeur'}</h4>
-              <p className="text-xs text-gray-500 mb-3">Pas besoin de compte pour envoyer un message.</p>
-              <form onSubmit={handleSendContactEmail} className="flex flex-col gap-3">
-                <input
-                  type="email"
-                  required
-                  placeholder="Votre email"
-                  value={contactEmail}
-                  onChange={e => setContactEmail(e.target.value)}
-                  className="border rounded-xl px-3 py-2 text-sm"
-                />
-                <textarea
-                  required
-                  rows={3}
-                  placeholder="Votre message (matière, disponibilités…)"
-                  value={contactMsg}
-                  onChange={e => setContactMsg(e.target.value)}
-                  className="border rounded-xl px-3 py-2 text-sm resize-none"
-                />
-                <button type="submit" className="bg-primary text-white font-semibold px-4 py-2 rounded-xl text-sm hover:bg-primary/90">Envoyer →</button>
-              </form>
-              <p className="mt-3 text-center text-xs text-gray-400">
-                Ou <button className="text-primary underline font-semibold" onClick={() => navigate('/login')}>connectez-vous</button> pour discuter en direct
-              </p>
-            </>
-          )}
+        <div className="absolute inset-0 z-20 bg-white rounded-2xl flex flex-col items-center justify-center p-6 shadow-xl border border-primary/20 text-center gap-4">
+          <button
+            onClick={() => setShowContactModal(false)}
+            className="absolute top-3 right-4 text-gray-400 hover:text-gray-700 text-xl font-bold"
+          >✕</button>
+
+          <div className="text-4xl">💬</div>
+          <h4 className="font-extrabold text-gray-900 text-lg leading-snug">
+            Contactez {teacher.fullName?.split(' ')[0] || 'ce professeur'} gratuitement
+          </h4>
+          <p className="text-sm text-gray-600 max-w-[260px]">
+            Créez un compte en 30 secondes pour envoyer un message directement au professeur.
+          </p>
+
+          <button
+            onClick={() => navigate(`/register?next=/chat/${teacher.id || teacher.uid}`)}
+            className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-xl text-base transition shadow"
+          >
+            Créer mon compte gratuitement →
+          </button>
+
+          <button
+            onClick={() => navigate(`/login?next=/chat/${teacher.id || teacher.uid}`)}
+            className="w-full border border-gray-300 text-gray-700 font-semibold py-2.5 rounded-xl text-sm hover:bg-gray-50 transition"
+          >
+            J'ai déjà un compte — Se connecter
+          </button>
+
+          <p className="text-xs text-gray-400">✓ Gratuit  ✓ Sans engagement  ✓ En 30 secondes</p>
         </div>
       )}
       <div className="shrink-0">
