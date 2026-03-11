@@ -8,6 +8,8 @@ import {
   sendPasswordResetEmail,
   EmailAuthProvider,
   reauthenticateWithCredential,
+  sendEmailVerification,
+  reload,
 } from 'firebase/auth';
 import TeacherAvailabilityEditor from '../components/TeacherAvailabilityEditor';
 import PaymentStatusCard from '../components/stripe/PaymentStatusCard';
@@ -52,6 +54,8 @@ const TODAY = new Date().toISOString().split('T')[0];
 
 export default function Profile() {
   const [userLoaded, setUserLoaded] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(true);
+  const [resendStatus, setResendStatus] = useState('');
   const [showAvailDrawer, setShowAvailDrawer] = useState(false);
   const [profile, setProfile] = useState({
     uid: '',
@@ -107,6 +111,7 @@ export default function Profile() {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       if (!u) { setUserLoaded(true); return; }
+      setEmailVerified(u.emailVerified);
       try {
         const ref = doc(db, 'users', u.uid);
         const snap = await getDoc(ref);
@@ -157,6 +162,26 @@ export default function Profile() {
     });
     return () => unsub();
   }, []);
+
+  const resendVerificationEmail = async () => {
+    const u = auth.currentUser;
+    if (!u) return;
+    setResendStatus('sending');
+    try {
+      await reload(u);
+      if (u.emailVerified) {
+        setEmailVerified(true);
+        setResendStatus('');
+        return;
+      }
+      await sendEmailVerification(u);
+      setResendStatus('sent');
+      setTimeout(() => setResendStatus(''), 5000);
+    } catch (e) {
+      setResendStatus('error');
+      setTimeout(() => setResendStatus(''), 4000);
+    }
+  };
 
   const handlePhoto = (e) => {
     const f = e.target.files?.[0];
@@ -481,6 +506,30 @@ export default function Profile() {
 
   return (
     <DashboardLayout role={profile.role || 'student'}>
+
+      {/* ── Bannière vérification email ── */}
+      {!emailVerified && (
+        <div className="max-w-xl mx-auto mt-4 px-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-amber-50 border border-amber-300 rounded-2xl px-5 py-4 shadow-sm">
+            <span className="text-2xl shrink-0">📧</span>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-amber-900 text-sm leading-snug">Confirmez votre adresse email</p>
+              <p className="text-amber-800/80 text-xs mt-0.5">Un email de confirmation vous a été envoyé. Vérifiez aussi vos spams.</p>
+            </div>
+            <button
+              onClick={resendVerificationEmail}
+              disabled={resendStatus === "sending"}
+              className="shrink-0 text-xs font-semibold px-4 py-2 rounded-xl border border-amber-400 bg-white text-amber-800 hover:bg-amber-100 transition disabled:opacity-50 whitespace-nowrap"
+            >
+              {resendStatus === "sending" ? "Envoi…"
+                : resendStatus === "sent" ? "✅ Email envoyé !"
+                : resendStatus === "error" ? "❌ Erreur, réessayez"
+                : "Renvoyer l'email"}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="w-full max-w-xl mx-auto bg-white rounded-2xl shadow-lg p-8 border border-gray-100 mt-6">
         {/* Avatar */}
         <div className="flex flex-col items-center mb-6">

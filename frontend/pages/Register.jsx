@@ -182,9 +182,11 @@ export default function Register() {
     setLoading(true);
     try {
       const cred = await createUserWithEmailAndPassword(auth, form.email, form.password);
-      await sendEmailVerification(cred.user, actionCodeSettings);
+      // Envoi de l'email de vérification en arrière-plan (silencieux)
+      sendEmailVerification(cred.user, actionCodeSettings).catch(() => {});
       setPendingUser(cred.user);
-      setWaitingEmailVerify(true);
+      // On finalise directement sans bloquer sur la vérification email
+      await finalizeWithUser(cred.user);
     } catch (err) {
       alert('Erreur: ' + (err?.message || 'Création de compte impossible'));
     } finally {
@@ -192,19 +194,14 @@ export default function Register() {
     }
   };
 
-  // — Étape B : vérifier que l’email est confirmé puis finaliser (avatar + Firestore)
-  const finalizeAfterVerified = async () => {
-    if (!pendingUser) return;
+  // — Finalisation du compte (avatar + Firestore)
+  const finalizeWithUser = async (userOverride) => {
+    const activeUser = userOverride || pendingUser;
+    if (!activeUser) return;
+    if (userOverride && !pendingUser) setPendingUser(userOverride);
 
     setLoading(true);
     try {
-      await reload(auth.currentUser);
-
-      if (!auth.currentUser?.emailVerified) {
-        // ✅ On laisse continuer, mais on avertit
-        console.info("Email non encore vérifié, on continue quand même.");
-      }
-
       // Upload avatar si présent
       let avatarUrl = '';
       if (photo) {
@@ -381,37 +378,7 @@ export default function Register() {
               </Link>
             </div>
           </div>
-        ) : waitingEmailVerify ? (
-          // Étape B : écran attente vérification email
-          <div className="space-y-4">
-            <div className="rounded-xl border border-amber-200 p-4 bg-amber-50">
-              <h3 className="text-lg font-bold text-amber-800 mb-1">Vérifie ton email</h3>
-              <p className="text-sm text-amber-800/90">
-                Nous avons envoyé un lien de confirmation à <b>{pendingUser?.email}</b>.<br />
-                Clique sur le lien, puis reviens ici et appuie sur <b>“J’ai vérifié mon email”</b> pour continuer.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={finalizeAfterVerified}
-                className="w-full bg-primary text-white font-semibold py-2 rounded-lg shadow hover:bg-primary-dark transition disabled:opacity-60"
-                disabled={loading}
-              >
-                J’ai vérifié mon email
-              </button>
-              <button
-                onClick={resendVerification}
-                type="button"
-                className="w-full bg-white border border-gray-300 text-gray-800 font-semibold py-2 rounded-lg shadow hover:bg-gray-50 transition disabled:opacity-60"
-                disabled={loading}
-              >
-                Renvoyer l’email
-              </button>
-            </div>
-            <p className="text-xs text-gray-500">
-              Astuce : si tu ne vois rien, vérifie les dossiers <i>spams</i> / <i>promotions</i>.
-            </p>
-          </div>
+       
         ) : (
           // Étape A : formulaire
           <form className="space-y-4" onSubmit={startRegister}>
