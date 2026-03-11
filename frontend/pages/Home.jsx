@@ -6,6 +6,133 @@ import { db, auth } from '../lib/firebase';
 import { collection, getDocs, doc, getDoc, query, orderBy, limit, where } from 'firebase/firestore';
 import { useSEO } from '../hooks/useSEO';
 
+// ── Pastille "Prof certifié" (≥ 5 avis) ─────────────────────────────────
+function CertifiedBadge({ className = '' }) {
+  return (
+    <span
+      title="Prof certifié EduKaraib — plus de 5 avis vérifiés"
+      className={"inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400 text-white text-[10px] font-bold shadow-sm shrink-0 " + className}
+    >
+      🏅 Certifié
+    </span>
+  );
+}
+
+
+
+// ── Carrousel avis auto-défilant (jusqu'à 10 avis, mobile + desktop) ──────
+function ReviewCarousel({ reviews, teacherMap, getSubjectLabel, reviewBgClass }) {
+  const [current, setCurrent] = React.useState(0);
+  const total = Math.min(10, reviews.length);
+  const timerRef = React.useRef(null);
+
+  const go = React.useCallback((idx) => {
+    setCurrent(((idx % total) + total) % total);
+  }, [total]);
+
+  // Auto-scroll toutes les 4s
+  React.useEffect(() => {
+    if (total <= 1) return;
+    timerRef.current = setInterval(() => setCurrent(c => (c + 1) % total), 4000);
+    return () => clearInterval(timerRef.current);
+  }, [total]);
+
+  const resetTimer = () => {
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => setCurrent(c => (c + 1) % total), 4000);
+  };
+
+  const prev = () => { go(current - 1); resetTimer(); };
+  const next = () => { go(current + 1); resetTimer(); };
+
+  if (total === 0) return null;
+
+  const reviewItems = reviews.slice(0, total).map((r) => {
+    const t = r.teacher_id ? teacherMap.get(r.teacher_id) : null;
+    const parentName = (r.fullName || r.userName || r.reviewerName || '').trim() || 'Parent';
+    const avatar = r.userAvatar || r.avatarUrl || r.photoURL || '/avatar-default.png';
+    const profName = r._teacherFullName ||
+      (t?.fullName || t?.name || [t?.firstName, t?.lastName].filter(Boolean).join(' ') || '').trim() ||
+      'Professeur';
+    const profSubject = (typeof r._teacherSubjects === 'string' && r._teacherSubjects.trim()
+      ? r._teacherSubjects.trim()
+      : Array.isArray(r._teacherSubjects) && r._teacherSubjects.length
+        ? r._teacherSubjects.filter(Boolean).join(', ')
+        : null) || getSubjectLabel(t || {});
+    const starsCount = Math.max(0, Math.min(5, Math.round(Number(r.rating) || 0)));
+    const stars = '★'.repeat(starsCount) + '☆'.repeat(5 - starsCount);
+    return { r, parentName, avatar, profName, profSubject, stars };
+  });
+
+  return (
+    <div className="relative">
+      {/* MOBILE : slider natif horizontal */}
+      <div className="md:hidden -mx-4 px-4 overflow-x-auto pb-3 snap-x snap-mandatory flex gap-4">
+        {reviewItems.map(({ r, parentName, avatar, profName, profSubject, stars }) => (
+          <div key={r.id} className={`snap-start shrink-0 w-[86%] max-w-[340px] rounded-3xl p-5 ${reviewBgClass(r.id)}`}>
+            <div className="flex items-start gap-3">
+              <img src={avatar} alt={parentName} className="h-12 w-12 rounded-full object-cover border border-white/60 shrink-0" />
+              <div className="min-w-0">
+                <div className="font-extrabold text-gray-900 leading-tight truncate">{parentName}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{profName} <span className="font-normal">(Prof {profSubject})</span></div>
+              </div>
+            </div>
+            <p className="mt-3 text-gray-900/90 text-sm leading-relaxed line-clamp-4">{r.comment}</p>
+            <div className="mt-3 flex items-center gap-1.5">
+              <span className="text-amber-500 text-sm">{stars}</span>
+              <span className="text-gray-500 text-xs">{Number(r.rating || 0).toFixed(0)}/5</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* DESKTOP : 3 cartes en ligne + flèches + points de navigation */}
+      <div className="hidden md:block">
+        {/* 3 cartes visibles en même temps */}
+        <div className="grid grid-cols-3 gap-6">
+          {[0, 1, 2].map((offset) => {
+            const idx = (current + offset) % total;
+            const { r, parentName, avatar, profName, profSubject, stars } = reviewItems[idx];
+            return (
+              <div key={r.id + '-' + idx} className={`rounded-3xl p-6 transition-all duration-500 ${reviewBgClass(r.id)}`}>
+                <div className="flex items-start gap-3">
+                  <img src={avatar} alt={parentName} className="h-12 w-12 rounded-full object-cover border border-white/60 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="font-extrabold text-gray-900 leading-tight truncate">{parentName}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{profName} <span className="font-normal">(Prof {profSubject})</span></div>
+                  </div>
+                </div>
+                <p className="mt-3 text-gray-900/90 text-sm leading-relaxed line-clamp-4">{r.comment}</p>
+                <div className="mt-4 flex items-center gap-1.5">
+                  <span className="text-amber-500 text-sm font-semibold">{stars}</span>
+                  <span className="text-gray-500 text-xs">{Number(r.rating || 0).toFixed(0)}/5</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Flèches + points */}
+        {total > 3 && (
+          <div className="mt-6 flex items-center justify-center gap-4">
+            <button onClick={prev} className="w-9 h-9 rounded-full border border-gray-300 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-600 shadow-sm transition">‹</button>
+            <div className="flex gap-2">
+              {Array.from({ length: total }).map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => { go(i); resetTimer(); }}
+                  className={"w-2 h-2 rounded-full transition " + (i === current ? 'bg-primary w-5' : 'bg-gray-300 hover:bg-gray-400')}
+                />
+              ))}
+            </div>
+            <button onClick={next} className="w-9 h-9 rounded-full border border-gray-300 bg-white hover:bg-gray-50 flex items-center justify-center text-gray-600 shadow-sm transition">›</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const navigate = useNavigate();
 
@@ -568,8 +695,13 @@ export default function Home() {
                       <Link
                         key={prof.id}
                         to={`/profils/${prof.id}`}
-                        className="snap-start shrink-0 w-[78%] max-w-[320px]"
+                        className="snap-start shrink-0 w-[78%] max-w-[320px] relative"
                       >
+                        {reviewsCount >= 5 && (
+                          <div className="absolute top-2 left-2 z-10">
+                            <CertifiedBadge />
+                          </div>
+                        )}
                         {/* IMAGE + NOM SUR IMAGE */}
                         <div className="relative h-60 bg-gray-100 rounded-3xl overflow-hidden">
                           <img
@@ -646,8 +778,13 @@ export default function Home() {
                     <Link
                       key={prof.id}
                       to={`/profils/${prof.id}`}
-                      className="group"
+                      className="group relative"
                     >
+                      {reviewsCount >= 5 && (
+                        <div className="absolute top-2 left-2 z-10">
+                          <CertifiedBadge />
+                        </div>
+                      )}
                       {/* IMAGE + NOM SUR IMAGE */}
                       <div className="relative h-56 bg-gray-100 rounded-3xl overflow-hidden">
                         <img
@@ -775,151 +912,12 @@ export default function Home() {
 
       {/* COMMENTAIRES réels seulement */}
       {hasRealReviews && (
-        <section className="py-12 bg-white">
+        <section className="py-12 bg-white overflow-hidden">
           <div className="max-w-7xl mx-auto px-4">
             <h2 className="text-2xl font-bold mb-6">Ils nous font confiance</h2>
 
-            {/* Mobile: slider horizontal | Desktop: grid */}
-            <div className="md:hidden -mx-4 px-4 overflow-x-auto pb-2">
-              <div className="flex gap-4 snap-x snap-mandatory">
-                {reviews.slice(0, 10).map((r) => {
-                  const t = r.teacher_id ? teacherMap.get(r.teacher_id) : null;
-
-                  const parentName =
-                    (r.fullName || r.userName || r.reviewerName || '').trim() || 'Parent';
-
-                  const avatar =
-                    r.userAvatar ||
-                    r.avatarUrl ||
-                    r.photoURL ||
-                    '/avatar-default.png';
-
-                  const profName =
-                    r._teacherFullName ||
-                    (t?.fullName || t?.name || [t?.firstName, t?.lastName].filter(Boolean).join(' ') || '').trim() ||
-                    'Professeur';
-
-                  const profSubject =
-                    (typeof r._teacherSubjects === 'string' && r._teacherSubjects.trim()
-                      ? r._teacherSubjects.trim()
-                      : Array.isArray(r._teacherSubjects) && r._teacherSubjects.length
-                        ? r._teacherSubjects.filter(Boolean).join(', ')
-                        : null) || getSubjectLabel(t || {});
-                  const starsCount = Math.max(0, Math.min(5, Math.round(Number(r.rating) || 0)));
-                  const stars = '★★★★★'.slice(0, starsCount);
-
-                  return (
-                    <div
-                      key={r.id}
-                      className={`snap-start shrink-0 w-[86%] max-w-[340px] rounded-3xl p-5 ${reviewBgClass(r.id)}`}
-                    >
-                      {/* header: avatar + prénom */}
-                      <div className="flex items-start gap-3">
-                        <img
-                          src={avatar}
-                          alt={parentName}
-                          className="h-12 w-12 rounded-full object-cover border border-white/60"
-                        />
-                        <div className="min-w-0">
-                          <div className="font-extrabold text-gray-900 leading-tight truncate">
-                            {parentName}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* nom prof + matière */}
-                      <div className="mt-4 text-sm text-gray-900 font-semibold">
-                        {profName}{' '}
-                        <span className="font-normal text-gray-700">
-                          (Prof {profSubject})
-                        </span>
-                      </div>
-
-                      {/* commentaire */}
-                      <p className="mt-3 text-gray-900/90 text-sm leading-relaxed">
-                        {r.comment}
-                      </p>
-
-                      {/* étoiles */}
-                      <div className="mt-4 flex items-center gap-2">
-                        <span className="text-amber-600 text-sm font-semibold">{stars}</span>
-                        <span className="text-gray-700 text-sm">
-                          {Number(r.rating || 0).toFixed(0)}/5
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Desktop */}
-            <div className="hidden md:grid grid-cols-3 gap-6">
-              {reviews.slice(0, 6).map((r) => {
-                const t = r.teacher_id ? teacherMap.get(r.teacher_id) : null;
-
-                const parentName =
-                  (r.fullName || r.userName || r.reviewerName || '').trim() || 'Parent';
-
-                const avatar =
-                  r.userAvatar ||
-                  r.avatarUrl ||
-                  r.photoURL ||
-                  '/avatar-default.png';
-
-                const profName =
-                  r._teacherFullName ||
-                  (t?.fullName || t?.name || [t?.firstName, t?.lastName].filter(Boolean).join(' ') || '').trim() ||
-                  'Professeur';
-
-                const profSubject =
-                  (typeof r._teacherSubjects === 'string' && r._teacherSubjects.trim()
-                    ? r._teacherSubjects.trim()
-                    : Array.isArray(r._teacherSubjects) && r._teacherSubjects.length
-                      ? r._teacherSubjects.filter(Boolean).join(', ')
-                      : null) || getSubjectLabel(t || {});
-                const starsCount = Math.max(0, Math.min(5, Math.round(Number(r.rating) || 0)));
-                const stars = '★★★★★'.slice(0, starsCount);
-
-                return (
-                  <div
-                    key={r.id}
-                    className={`rounded-3xl p-6 ${reviewBgClass(r.id)}`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <img
-                        src={avatar}
-                        alt={parentName}
-                        className="h-12 w-12 rounded-full object-cover border border-white/60"
-                      />
-                      <div className="min-w-0">
-                        <div className="font-extrabold text-gray-900 leading-tight truncate">
-                          {parentName}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 text-sm text-gray-900 font-semibold">
-                      {profName}{' '}
-                      <span className="font-normal text-gray-700">
-                        (Prof {profSubject})
-                      </span>
-                    </div>
-
-                    <p className="mt-3 text-gray-900/90 text-sm leading-relaxed">
-                      {r.comment}
-                    </p>
-
-                    <div className="mt-4 flex items-center gap-2">
-                      <span className="text-amber-600 text-sm font-semibold">{stars}</span>
-                      <span className="text-gray-700 text-sm">
-                        {Number(r.rating || 0).toFixed(0)}/5
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            {/* Carrousel auto-scroll — mobile ET desktop */}
+            <ReviewCarousel reviews={reviews} teacherMap={teacherMap} getSubjectLabel={getSubjectLabel} reviewBgClass={reviewBgClass} />
           </div>
         </section>
       )}

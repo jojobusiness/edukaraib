@@ -42,6 +42,103 @@ const formatLocalDate = (d) => {
   return `${y}-${m}-${day}`;
 };
 
+// ── Pastille "Prof certifié" (≥ 5 avis) ─────────────────────────────────
+function CertifiedBadge({ className = '' }) {
+  return (
+    <span
+      title="Prof certifié EduKaraib — plus de 5 avis vérifiés"
+      className={"inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400 text-white text-[10px] font-bold shadow-sm shrink-0 " + className}
+    >
+      🏅 Certifié
+    </span>
+  );
+}
+
+
+
+// ── Bloc avis : mobile = slider horizontal, desktop = 4 max + "Voir plus" ──
+function ReviewsBlock({ reviews, reviewerInfo, getReviewerId }) {
+  const [showAll, setShowAll] = React.useState(false);
+  const DESKTOP_LIMIT = 4;
+
+  if (reviews.length === 0) {
+    return (
+      <>
+        <h2 className="text-xl md:text-2xl font-extrabold text-slate-900 mb-4">Avis</h2>
+        <div className="text-gray-400 text-sm">Aucun avis pour ce professeur.</div>
+      </>
+    );
+  }
+
+  const visibleDesktop = showAll ? reviews : reviews.slice(0, DESKTOP_LIMIT);
+
+  const ReviewCard = ({ r }) => {
+    const rid = getReviewerId(r);
+    const info = (rid && reviewerInfo[rid]) || {};
+    const name = info.name || "Utilisateur";
+    const avatar = info.avatar || "/avatar-default.png";
+    const rating = r.rating || 0;
+    const stars = "★".repeat(Math.min(5, Math.max(0, Math.round(rating))));
+
+    return (
+      <div className="bg-gray-50 border rounded-xl px-4 py-3 shrink-0">
+        <div className="flex items-center gap-3 mb-2">
+          <img src={avatar} alt={name} className="w-9 h-9 rounded-full object-cover border shrink-0" />
+          <div className="flex flex-col min-w-0">
+            <span className="text-sm font-semibold text-gray-800 truncate">{name}</span>
+            {r.created_at?.toDate && (
+              <span className="text-xs text-gray-400">
+                {r.created_at.toDate().toLocaleDateString("fr-FR")}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-start gap-2">
+          <span className="text-yellow-500 shrink-0">{stars}</span>
+          <span className="italic text-gray-700 text-sm">{r.comment}</span>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <h2 className="text-xl md:text-2xl font-extrabold text-slate-900 mb-4">
+        Avis <span className="text-base font-normal text-slate-400">({reviews.length})</span>
+      </h2>
+
+      {/* MOBILE : slider horizontal */}
+      <div className="md:hidden -mx-6 px-6 overflow-x-auto pb-3 snap-x snap-mandatory flex gap-3">
+        {reviews.map((r) => (
+          <div key={r.id} className="snap-start w-[82vw] max-w-[320px]">
+            <ReviewCard r={r} />
+          </div>
+        ))}
+      </div>
+
+      {/* DESKTOP : grille 2 colonnes, 4 max + "Voir plus" */}
+      <div className="hidden md:block">
+        <div className="grid grid-cols-2 gap-3">
+          {visibleDesktop.map((r) => (
+            <ReviewCard key={r.id} r={r} />
+          ))}
+        </div>
+
+        {reviews.length > DESKTOP_LIMIT && (
+          <button
+            onClick={() => setShowAll(s => !s)}
+            className="mt-4 w-full py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-slate-600 hover:bg-gray-50 transition"
+          >
+            {showAll
+              ? "▲ Voir moins"
+              : `Voir les ${reviews.length - DESKTOP_LIMIT} autres avis ▼`}
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
 export default function TeacherProfile() {
   const { teacherId } = useParams();
   const navigate = useNavigate();
@@ -1087,8 +1184,8 @@ export default function TeacherProfile() {
                   {teacher.firstName || ""} {teacher.lastName || teacher.fullName || "Professeur"}
                 </div>
 
-                {/* étoiles + avis */}
-                <div className="mt-2 flex items-center gap-2 text-sm">
+                {/* étoiles + avis + badge certifié */}
+                <div className="mt-2 flex items-center flex-wrap gap-2 text-sm">
                   <span className="text-yellow-500">
                     {"★".repeat(Math.round(avgRating || 0)).padEnd(5, "☆")}
                   </span>
@@ -1096,6 +1193,7 @@ export default function TeacherProfile() {
                     {avgRating ? avgRating.toFixed(1) : "0.0"}
                   </span>
                   <span className="text-slate-500">({reviewsCount} avis)</span>
+                  {reviewsCount >= 5 && <CertifiedBadge />}
                 </div>
 
                 {/* Tarifs à l’heure (visio/presentiel) */}
@@ -1118,10 +1216,10 @@ export default function TeacherProfile() {
                   )}
                 </div>
 
-                {/* nb élèves */}
-                <div className="mt-2 text-sm text-slate-600">
+                {/* nb élèves — désactivé temporairement */}
+                {/* <div className="mt-2 text-sm text-slate-600">
                   {uniqueStudentsCount} élève{uniqueStudentsCount > 1 ? "s" : ""} a déjà pris un cours avec ce professeur
-                </div>
+                </div> */}
 
                 {/* Bouton contacter */}
                 {!isOwnProfile && (
@@ -1352,46 +1450,9 @@ export default function TeacherProfile() {
             </div>
           </section>
 
-          {/* Avis (tu peux garder ton bloc existant, je ne le casse pas) */}
+          {/* Avis */}
           <section className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
-            <h2 className="text-xl md:text-2xl font-extrabold text-slate-900 mb-4">Avis</h2>
-
-            <div className="flex flex-col gap-3">
-              {reviews.length === 0 && (
-                <div className="text-gray-400 text-sm">Aucun avis pour ce professeur.</div>
-              )}
-
-              {reviews.map((r) => {
-                const rid = getReviewerId(r);
-                const info = (rid && reviewerInfo[rid]) || {};
-                const name = info.name || "Utilisateur";
-                const avatar = info.avatar || "/avatar-default.png";
-                const rating = r.rating || 0;
-
-                return (
-                  <div key={r.id} className="bg-gray-50 border rounded-xl px-4 py-3">
-                    <div className="flex items-center gap-3 mb-2">
-                      <img src={avatar} alt={name} className="w-9 h-9 rounded-full object-cover border" />
-                      <div className="flex flex-col">
-                        <span className="text-sm font-semibold text-gray-800">{name}</span>
-                        {r.created_at?.toDate && (
-                          <span className="text-xs text-gray-400">
-                            {r.created_at.toDate().toLocaleDateString("fr-FR")}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-2">
-                      <span className="text-yellow-500">
-                        {"★".repeat(Math.min(5, Math.max(0, Math.round(rating))))}
-                      </span>
-                      <span className="italic text-gray-700">{r.comment}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <ReviewsBlock reviews={reviews} reviewerInfo={reviewerInfo} getReviewerId={getReviewerId} />
           </section>
 
           {/* PROFS SIMILAIRES (STOPPER) */}
@@ -1426,14 +1487,21 @@ export default function TeacherProfile() {
                     const price = t.price_per_hour || t.visio_price_per_hour;
                     const rating = Number(t.avgRating || 0);
                     const reviews = Number(t.reviewsCount || 0);
+                    const isCertified = reviews >= 5;
 
                     return (
                       <button
                         key={t.id}
                         onClick={() => { window.location.href = `/profils/${t.id}`; }}
-                        className="snap-start shrink-0 w-[200px] text-left rounded-2xl overflow-hidden hover:shadow-lg transition-shadow bg-white border border-gray-100 shadow-sm"
+                        className="snap-start shrink-0 w-[200px] text-left rounded-2xl overflow-hidden hover:shadow-lg transition-shadow bg-white border border-gray-100 shadow-sm relative"
                         type="button"
                       >
+                        {/* Badge certifié */}
+                        {isCertified && (
+                          <div className="absolute top-2 left-2 z-10">
+                            <CertifiedBadge />
+                          </div>
+                        )}
                         {/* Photo avec nom + ville superposés */}
                         <div className="relative h-44">
                           <img src={avatar} alt={firstName} className="absolute inset-0 w-full h-full object-cover object-top" />
@@ -1476,14 +1544,18 @@ export default function TeacherProfile() {
                   const price = t.price_per_hour || t.visio_price_per_hour;
                   const rating = Number(t.avgRating || 0);
                   const reviews = Number(t.reviewsCount || 0);
+                    const isCertified = reviews >= 5;
 
                   return (
                     <button
                       key={t.id}
                       onClick={() => { window.location.href = `/profils/${t.id}`; }}
-                      className="text-left rounded-2xl overflow-hidden hover:shadow-xl transition-all duration-200 bg-white border border-gray-100 shadow-sm group"
+                      className="text-left rounded-2xl overflow-hidden hover:shadow-xl transition-all duration-200 bg-white border border-gray-100 shadow-sm group relative"
                       type="button"
                     >
+                      {isCertified && (
+                        <div className="absolute top-2 left-2 z-10"><CertifiedBadge /></div>
+                      )}
                       {/* Grande photo avec overlay gradient + nom superposé comme Superprof */}
                       <div className="relative h-52 bg-gray-100 overflow-hidden">
                         <img
@@ -1558,13 +1630,14 @@ export default function TeacherProfile() {
                   {teacher.firstName || ""} {teacher.lastName || teacher.fullName || "Professeur"}
                 </div>
 
-                {/* étoiles + nb avis */}
-                <div className="mt-2 flex items-center gap-2 text-sm">
+                {/* étoiles + nb avis + badge certifié */}
+                <div className="mt-2 flex items-center flex-wrap gap-2 text-sm">
                   <span className="text-yellow-500">
                     {"★".repeat(Math.round(avgRating || 0)).padEnd(5, "☆")}
                   </span>
                   <span className="text-slate-700 font-semibold">{avgRating ? avgRating.toFixed(1) : "0.0"}</span>
                   <span className="text-slate-500">({reviewsCount} avis)</span>
+                  {reviewsCount >= 5 && <CertifiedBadge />}
                 </div>
 
                 {/* Tarifs à l'heure (visio / présentiel) */}
@@ -1581,11 +1654,11 @@ export default function TeacherProfile() {
                   )}
                 </div>
 
-                {/* nb d’élèves */}
+                {/* nb d'élèves — désactivé temporairement
                 <div className="mt-2 text-sm text-slate-600">
-                  {uniqueStudentsCount} élève{uniqueStudentsCount > 1 ? "s" : ""} a déjà pris un cours avec ce professeur
-                </div>
-
+                {uniqueStudentsCount} élève{uniqueStudentsCount > 1 ? "s" : ""} a déjà pris un cours avec ce professeur
+                </div> */
+                }
                 {/* Bouton contacter */}
                 {!isOwnProfile && (
                   <button

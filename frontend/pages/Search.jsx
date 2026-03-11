@@ -412,6 +412,19 @@ export default function Search() {
   );
 }
 
+
+// ── Pastille "Prof certifié" (≥ 5 avis) ─────────────────────────────────
+function CertifiedBadge({ className = '' }) {
+  return (
+    <span
+      title="Prof certifié EduKaraib — plus de 5 avis vérifiés"
+      className={"inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-400 text-white text-[10px] font-bold shadow-sm shrink-0 " + className}
+    >
+      🏅 Certifié
+    </span>
+  );
+}
+
 // ───────────────────────── Carte professeur ─────────────────────────
 function TeacherCard({ teacher, navigate }) {
   const [showContactModal, setShowContactModal] = useState(false);
@@ -505,6 +518,7 @@ function TeacherCard({ teacher, navigate }) {
       <div className="flex-1 min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="font-semibold text-lg md:text-xl text-gray-900">{teacher.fullName || 'Professeur'}</h3>
+          {reviewsCount >= 5 && <CertifiedBadge />}
           {rating > 0 && (
             <span className="inline-flex items-center gap-1 text-sm text-amber-600 font-semibold">
               ★ {rating.toFixed(1)} <span className="text-gray-400 font-normal">({reviewsCount})</span>
