@@ -334,6 +334,30 @@ export default function Home() {
     return 'Matière non spécifiée';
   };
 
+  // Compte le nb de profs par matière (slug → count)
+  const subjectCount = useMemo(() => {
+    const map = {};
+    (teachers || []).forEach((t) => {
+      const s = t.subjects ?? t.subject ?? t.main_subject;
+      const arr = Array.isArray(s) ? s : (typeof s === 'string' && s ? [s] : []);
+      arr.forEach((sub) => {
+        const norm = sub.trim().toLowerCase();
+        map[norm] = (map[norm] || 0) + 1;
+      });
+    });
+    return map;
+  }, [teachers]);
+
+  const getSubjectCount = (label) => {
+    const norm = label.trim().toLowerCase();
+    // cherche une correspondance partielle
+    let total = 0;
+    Object.entries(subjectCount).forEach(([k, v]) => {
+      if (k.includes(norm) || norm.includes(k)) total += v;
+    });
+    return total;
+  };
+
   const reviewBgClass = (id) => {
     const colors = ['bg-yellow-100', 'bg-green-100', 'bg-blue-100'];
     let hash = 0;
@@ -399,6 +423,12 @@ export default function Home() {
                 <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Présentiel ou visio</li>
                 <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Packs économiques pour l’année</li>
               </ul>
+              {/* 🔴 CTA MOBILE */}
+              <div className="mt-6">
+                <Link to="/search" className="inline-block bg-green-500 hover:bg-green-600 text-white font-bold text-lg px-8 py-4 rounded-2xl shadow-lg transition">
+                  🔎 Trouver un prof →
+                </Link>
+              </div>
             </div>
           </div>
         </div>
@@ -439,6 +469,12 @@ export default function Home() {
                 <li>✔ Présentiel ou visio</li>
                 <li>✔ Packs économiques pour l’année</li>
               </ul>
+              {/* 🔴 CTA DESKTOP */}
+              <div className="mt-8">
+                <Link to="/search" className="inline-block bg-green-500 hover:bg-green-600 text-white font-bold text-xl px-10 py-5 rounded-2xl shadow-xl transition">
+                  🔎 Trouver un prof →
+                </Link>
+              </div>
             </div>
 
             <div className="bg-white/95 backdrop-blur rounded-3xl shadow-xl border border-gray-100 p-4 md:p-6 mt-6 lg:mt-12">
@@ -691,7 +727,9 @@ export default function Home() {
               >
                 <div className="text-2xl mb-2">{c.emoji}</div>
                 <div className="font-semibold group-hover:text-primary">{c.label}</div>
-                <div className="text-xs text-gray-500">Professeurs disponibles</div>
+                <div className="text-xs text-gray-500">
+                  {(() => { const n = getSubjectCount(c.label); return n > 0 ? `${n} professeur${n > 1 ? 's' : ''} disponible${n > 1 ? 's' : ''}` : 'Professeurs disponibles'; })()}
+                </div>
               </button>
             ))}
           </div>
@@ -895,7 +933,6 @@ export default function Home() {
           </div>
           <div className="flex gap-3 md:justify-end">
             <Link to="/search" className="bg-white text-primary font-semibold px-5 py-3 rounded-xl hover:bg-white/90">Trouver un prof</Link>
-            <Link to="/register" className="bg-yellow-300 text-black font-semibold px-5 py-3 rounded-xl hover:bg-yellow-400 transition">S'inscrire</Link>
           </div>
         </div>
       </section>

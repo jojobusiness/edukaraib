@@ -1,13 +1,25 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSEO } from '../hooks/useSEO';
 
 export default function Search() {
   const [teachers, setTeachers] = useState([]);
   const [search, setSearch] = useState('');
   const navigate = useNavigate();
+
+  const [searchParams] = useSearchParams();
+
+  // Initialiser filtres depuis URL params (depuis homepage)
+  useEffect(() => {
+    const subj = searchParams.get('subject');
+    const cityParam = searchParams.get('city');
+    const lvl = searchParams.get('level');
+    if (subj) setSearch(subj);
+    if (cityParam) setCity(cityParam);
+    if (lvl) setLevel(lvl);
+  }, []);
 
   // ── Filtres ─────────────────────────────────────────
   const [level, setLevel] = useState('');       // Primaire/Collège/Lycée/Supérieur/Adulte
@@ -156,6 +168,9 @@ export default function Search() {
 
   const toggleMode = (target) => setMode(prev => (prev === target ? '' : target));
 
+  // Accordéon filtres mobile
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
   useSEO({
     title: 'Rechercher un professeur en Guyane',
     description: 'Comparez les professeurs particuliers en Guyane par matière, ville, tarif et niveau. Trouvez le prof idéal sur EduKaraib.',
@@ -223,10 +238,21 @@ export default function Search() {
       </div>
 
       {/* Grille : sidebar filtres + résultats */}
-      <div className="max-w-6xl mx-auto px-4 py-6 grid grid-cols-1 md:grid-cols-12 gap-6">
-        {/* Sidebar filtres */}
-        <aside className="md:col-span-4 lg:col-span-3">
-          <div className="md:sticky md:top-20 space-y-4">
+      {/* 🔴 MOBILE: bouton accordéon filtres */}
+      <div className="md:hidden max-w-6xl mx-auto px-4 pb-2">
+        <button
+          onClick={() => setFiltersOpen(o => !o)}
+          className="w-full flex items-center justify-between px-4 py-3 rounded-xl border border-gray-300 bg-white shadow-sm text-sm font-semibold"
+        >
+          <span>🎚 Filtres {filtersOpen ? '' : '(Mode, Niveau, Ville, Tarif)'}</span>
+          <span>{filtersOpen ? '▲ Masquer' : '▼ Afficher'}</span>
+        </button>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-4 py-3 grid grid-cols-1 md:grid-cols-12 gap-6">
+        {/* Sidebar filtres — desktop toujours visible, mobile accordéon */}
+        <aside className="md:col-span-4 lg:col-span-3 order-2 md:order-1">
+          <div className={`md:sticky md:top-20 space-y-4 ${filtersOpen ? 'block' : 'hidden'} md:block`}>
             <section className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
               <h3 className="font-semibold mb-3">Mode</h3>
               <div className="flex flex-wrap gap-2">
@@ -333,7 +359,7 @@ export default function Search() {
         </aside>
 
         {/* Résultats */}
-        <main className="md:col-span-8 lg:col-span-9">
+        <main className="md:col-span-8 lg:col-span-9 order-1 md:order-2">
           {/* Si recherche saisie : montrer “Résultats” d’abord */}
           {q && (
             <section className="mb-6">
@@ -353,7 +379,7 @@ export default function Search() {
 
           {/* Liste générale */}
           <section>
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">Autres professeurs</h2>
+            <h2 className="text-lg font-semibold text-gray-900 mb-3">{q ? "Autres professeurs" : `${others.length} professeur${others.length > 1 ? "s" : ""} disponible${others.length > 1 ? "s" : ""}`}</h2>
             {others.length === 0 ? (
               <div className="bg-white border rounded-2xl p-8 text-center text-gray-500">
                 Aucun professeur disponible.
@@ -374,6 +400,11 @@ export default function Search() {
 
 // ───────────────────────── Carte professeur ─────────────────────────
 function TeacherCard({ teacher, navigate }) {
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactMsg, setContactMsg] = useState('');
+  const [contactSent, setContactSent] = useState(false);
+
   // prix final = prix prof + 10 €
   const parseLocal = (raw) => {
     const n = typeof raw === 'string' ? Number(raw.replace(',', '.')) : Number(raw);
@@ -407,20 +438,74 @@ function TeacherCard({ teacher, navigate }) {
   const reviewsCount = Number(teacher.reviewsCount ?? teacher.totalReviews ?? 0);
 
   const handleContact = async () => {
-    if (!auth.currentUser) {
-      navigate('/login');
-      return;
+    if (auth.currentUser) {
+      const receiverUid = teacher.id || teacher.uid;
+      if (!receiverUid) { alert("Profil professeur invalide."); return; }
+      navigate(`/chat/${receiverUid}`);
+    } else {
+      // Pas connecté : ouvrir mini formulaire email
+      setShowContactModal(true);
     }
-    const receiverUid = teacher.id || teacher.uid;
-    if (!receiverUid) {
-      alert("Profil professeur invalide.");
-      return;
-    }
-    navigate(`/chat/${receiverUid}`);
+  };
+
+  const handleSendContactEmail = (e) => {
+    e.preventDefault();
+    // On redirige vers /register avec pré-remplissage ou on envoie un mailto simple
+    const subject = encodeURIComponent(`Message pour ${teacher.fullName || 'un professeur'} - EduKaraib`);
+    const body = encodeURIComponent(`Bonjour,
+
+Je souhaite contacter ${teacher.fullName || 'ce professeur'}.
+
+${contactMsg}
+
+Mon email : ${contactEmail}`);
+    window.location.href = `mailto:contact@edukaraib.com?subject=${subject}&body=${body}`;
+    setContactSent(true);
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition p-4 flex gap-4">
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition p-4 flex gap-4 relative">
+      {/* Modal contact sans compte */}
+      {showContactModal && (
+        <div className="absolute inset-0 z-20 bg-white/95 backdrop-blur rounded-2xl flex flex-col p-5 shadow-xl border border-primary/30">
+          <button onClick={() => { setShowContactModal(false); setContactSent(false); }} className="self-end text-gray-400 hover:text-gray-700 text-xl font-bold">✕</button>
+          {contactSent ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-center gap-3">
+              <div className="text-4xl">✅</div>
+              <p className="font-semibold text-gray-800">Message envoyé !</p>
+              <p className="text-sm text-gray-500">Vous pouvez aussi créer un compte pour discuter directement.</p>
+              <button onClick={() => navigate('/register')} className="mt-2 bg-primary text-white font-semibold px-5 py-2 rounded-xl text-sm">Créer mon compte gratuitement</button>
+            </div>
+          ) : (
+            <>
+              <h4 className="font-bold text-gray-900 mb-1">Contacter {teacher.fullName || 'ce professeur'}</h4>
+              <p className="text-xs text-gray-500 mb-3">Pas besoin de compte pour envoyer un message.</p>
+              <form onSubmit={handleSendContactEmail} className="flex flex-col gap-3">
+                <input
+                  type="email"
+                  required
+                  placeholder="Votre email"
+                  value={contactEmail}
+                  onChange={e => setContactEmail(e.target.value)}
+                  className="border rounded-xl px-3 py-2 text-sm"
+                />
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="Votre message (matière, disponibilités…)"
+                  value={contactMsg}
+                  onChange={e => setContactMsg(e.target.value)}
+                  className="border rounded-xl px-3 py-2 text-sm resize-none"
+                />
+                <button type="submit" className="bg-primary text-white font-semibold px-4 py-2 rounded-xl text-sm hover:bg-primary/90">Envoyer →</button>
+              </form>
+              <p className="mt-3 text-center text-xs text-gray-400">
+                Ou <button className="text-primary underline font-semibold" onClick={() => navigate('/login')}>connectez-vous</button> pour discuter en direct
+              </p>
+            </>
+          )}
+        </div>
+      )}
       <div className="shrink-0">
         <img
           src={teacher.avatarUrl || "/avatar-default.png"}
