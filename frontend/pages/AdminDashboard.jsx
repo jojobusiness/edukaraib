@@ -172,7 +172,7 @@ async function notifyByEmail(uid, title, message, ctaUrl, ctaText = "Ouvrir le t
    AdminDashboard (sans layout)
 =========================== */
 export default function AdminDashboard() {
-  const [tab, setTab] = useState('accounts'); // accounts | payments | messages | discussions
+  const [tab, setTab] = useState('stats'); // stats | accounts | payments | messages | discussions
   const [meRole, setMeRole] = useState(null);
   const [meId, setMeId] = useState(null);
 
@@ -545,7 +545,13 @@ export default function AdminDashboard() {
         <h1 className="text-2xl font-bold text-primary mb-4">Tableau de bord Administrateur</h1>
 
         {/* Tabs */}
-        <div className="flex gap-2 mb-6">
+        <div className="flex gap-2 mb-6 flex-wrap">
+          <button
+            className={`px-4 py-2 rounded-lg border ${tab === 'stats' ? 'bg-primary text-white border-primary' : 'bg-white'}`}
+            onClick={() => setTab('stats')}
+          >
+            📊 Stats
+          </button>
           <button
             className={`px-4 py-2 rounded-lg border ${tab === 'accounts' ? 'bg-primary text-white border-primary' : 'bg-white'}`}
             onClick={() => setTab('accounts')}
@@ -564,18 +570,11 @@ export default function AdminDashboard() {
           >
             Messages
           </button>
-          {/* 👇 NOUVEL onglet, même design que “Messages” */}
           <button
             className={`px-4 py-2 rounded-lg border ${tab === 'discussions' ? 'bg-primary text-white border-primary' : 'bg-white'}`}
             onClick={() => setTab('discussions')}
           >
             Discussions
-          </button>
-          <button
-            className={`px-4 py-2 rounded-lg border ${tab === 'stats' ? 'bg-primary text-white border-primary' : 'bg-white'}`}
-            onClick={() => setTab('stats')}
-          >
-            📊 Stats
           </button>
         </div>
 
@@ -1245,6 +1244,404 @@ export default function AdminDashboard() {
   );
 }
 /* ===========================
+   SiteVisitsSection — sous-composants (hors fonction)
+=========================== */
+
+function VisitBarChart({ data, showEvery }) {
+  if (!data || data.length === 0) return null;
+  var maxPV = 1;
+  data.forEach(function(d) {
+    if ((Number(d.pageviews) || 0) > maxPV) maxPV = Number(d.pageviews) || 0;
+  });
+  var W = 600;
+  var H = 100;
+  var padL = 8;
+  var padR = 8;
+  var barW = Math.max(2, Math.floor((W - padL - padR) / data.length) - 1);
+  return (
+    <svg viewBox={"0 0 " + W + " " + (H + 24)} className="w-full">
+      {data.map(function(d, i) {
+        var pvH  = Math.max(2, Math.round((Number(d.pageviews)  || 0) / maxPV * H));
+        var visH = Math.max(2, Math.round((Number(d.visitors) || 0) / maxPV * H));
+        var x = padL + i * ((W - padL - padR) / data.length);
+        var showLabel = data.length <= 12 || i % showEvery === 0;
+        return (
+          <g key={i}>
+            <rect x={x} y={H - pvH}  width={barW} height={pvH}  rx={1} fill="#3b82f6" opacity={0.8} />
+            <rect x={x} y={H - visH} width={Math.max(1, barW - 2)} height={visH} rx={1} fill="#10b981" opacity={0.7} />
+            {showLabel && (
+              <text x={x + barW / 2} y={H + 14} textAnchor="middle" fontSize={7} fill="#9ca3af">
+                {String(d.day || d.month || '').slice(-5)}
+              </text>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function DonutChart({ data, colors }) {
+  var COLORS = colors || ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16'];
+  var total = 0;
+  data.forEach(function(d) { total += d.value; });
+  if (!total) return <div className="text-xs text-gray-400 py-4 text-center">Aucune donnée</div>;
+  var offset = 0;
+  var R = 40;
+  var CX = 55;
+  var CY = 55;
+  var slices = data.slice(0, 8).map(function(d, i) {
+    var pct = d.value / total;
+    var startA = offset * 2 * Math.PI - Math.PI / 2;
+    offset += pct;
+    var endA = offset * 2 * Math.PI - Math.PI / 2;
+    var x1 = CX + R * Math.cos(startA);
+    var y1 = CY + R * Math.sin(startA);
+    var x2 = CX + R * Math.cos(endA);
+    var y2 = CY + R * Math.sin(endA);
+    var large = pct > 0.5 ? 1 : 0;
+    var pathD = "M " + CX + " " + CY + " L " + x1 + " " + y1 + " A " + R + " " + R + " 0 " + large + " 1 " + x2 + " " + y2 + " Z";
+    return { pathD: pathD, color: COLORS[i], label: d.label, value: d.value, pct: Math.round(pct * 100) };
+  });
+  return (
+    <div className="flex items-center gap-4">
+      <svg viewBox="0 0 110 110" className="w-24 h-24 flex-shrink-0">
+        {slices.map(function(s, i) {
+          return <path key={i} d={s.pathD} fill={s.color} opacity={0.85} />;
+        })}
+        <circle cx={CX} cy={CY} r={22} fill="white" />
+        <text x={CX} y={CY} textAnchor="middle" dominantBaseline="middle" fontSize={9} fill="#374151" fontWeight="bold">{total}</text>
+      </svg>
+      <div className="flex flex-col gap-1 text-xs min-w-0">
+        {slices.map(function(s, i) {
+          return (
+            <div key={i} className="flex items-center gap-1.5 truncate">
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
+              <span className="truncate text-gray-600">{s.label}</span>
+              <span className="text-gray-400 flex-shrink-0">{s.pct}%</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function HBar({ label, value, max, color }) {
+  var barColor = color || '#3b82f6';
+  var width = Math.round(value / max * 100) + '%';
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <div className="w-28 truncate text-gray-600 flex-shrink-0">{label}</div>
+      <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
+        <div className="h-2 rounded-full" style={{ width: width, background: barColor }} />
+      </div>
+      <div className="w-10 text-right text-gray-500 flex-shrink-0">{value.toLocaleString('fr-FR')}</div>
+    </div>
+  );
+}
+
+/* ===========================
+   SiteVisitsSection — Vercel Analytics via Firestore
+=========================== */
+function SiteVisitsSection() {
+  var PERIOD_DAYS = { '7d': 7, '30d': 30, '90d': 90, '1y': 365 };
+
+  const [period,       setPeriod]       = useState('30d');
+  const [loading,      setLoading]      = useState(true);
+  const [daily,        setDaily]        = useState([]);
+  const [monthly,      setMonthly]      = useState([]);
+  const [topPages,     setTopPages]     = useState([]);
+  const [topCountries, setTopCountries] = useState([]);
+  const [topDevices,   setTopDevices]   = useState([]);
+  const [topBrowsers,  setTopBrowsers]  = useState([]);
+  const [topReferrers, setTopReferrers] = useState([]);
+  const [noData,       setNoData]       = useState(false);
+
+  useEffect(function() {
+    setLoading(true);
+    setNoData(false);
+
+    var now = new Date();
+    var daysBack = PERIOD_DAYS[period] || 30;
+
+    var dateKeys = [];
+    for (var i = 0; i < daysBack; i++) {
+      var d = new Date(now);
+      d.setDate(d.getDate() - (daysBack - 1 - i));
+      var y = d.getFullYear();
+      var m = String(d.getMonth() + 1).padStart(2, '0');
+      var day = String(d.getDate()).padStart(2, '0');
+      dateKeys.push(y + '-' + m + '-' + day);
+    }
+
+    var seenMonths = {};
+    var monthKeys = [];
+    dateKeys.forEach(function(k) {
+      var mk = k.slice(0, 7);
+      if (!seenMonths[mk]) { seenMonths[mk] = true; monthKeys.push(mk); }
+    });
+
+    var dailyPromises = dateKeys.map(function(k) {
+      return getDoc(doc(db, 'analytics_daily', k))
+        .then(function(s) { return { day: k, pageviews: s.exists() ? (s.data().pageviews || 0) : 0, visitors: s.exists() ? (s.data().visitors || 0) : 0 }; })
+        .catch(function() { return { day: k, pageviews: 0, visitors: 0 }; });
+    });
+
+    var monthlyPromises = monthKeys.map(function(k) {
+      return getDoc(doc(db, 'analytics_monthly', k))
+        .then(function(s) { return { month: k, pageviews: s.exists() ? (s.data().pageviews || 0) : 0, visitors: s.exists() ? (s.data().visitors || 0) : 0 }; })
+        .catch(function() { return { month: k, pageviews: 0, visitors: 0 }; });
+    });
+
+    function toSortedList(snap) {
+      if (!snap || !snap.exists()) return [];
+      return Object.entries(snap.data())
+        .map(function(entry) {
+          return { label: entry[0].replace(/__SLASH__/g, '/').replace(/__DOT__/g, '.'), value: entry[1] };
+        })
+        .sort(function(a, b) { return b.value - a.value; })
+        .slice(0, 10);
+    }
+
+    Promise.all([
+      Promise.all(dailyPromises),
+      Promise.all(monthlyPromises),
+      getDoc(doc(db, 'analytics_top', 'pages')).catch(function() { return null; }),
+      getDoc(doc(db, 'analytics_top', 'countries')).catch(function() { return null; }),
+      getDoc(doc(db, 'analytics_top', 'devices')).catch(function() { return null; }),
+      getDoc(doc(db, 'analytics_top', 'browsers')).catch(function() { return null; }),
+      getDoc(doc(db, 'analytics_top', 'referrers')).catch(function() { return null; }),
+    ]).then(function(results) {
+      var dailyData    = results[0];
+      var monthlyData  = results[1];
+      var pagesSnap    = results[2];
+      var countriesSnap = results[3];
+      var devicesSnap  = results[4];
+      var browsersSnap = results[5];
+      var referrersSnap = results[6];
+
+      setDaily(dailyData);
+      setMonthly(monthlyData);
+      setTopPages(toSortedList(pagesSnap));
+      setTopCountries(toSortedList(countriesSnap));
+      setTopDevices(toSortedList(devicesSnap));
+      setTopBrowsers(toSortedList(browsersSnap));
+      setTopReferrers(toSortedList(referrersSnap));
+
+      var totalPV = dailyData.reduce(function(a, d) { return a + (Number(d.pageviews) || 0); }, 0);
+      setNoData(totalPV === 0);
+      setLoading(false);
+    }).catch(function(e) {
+      console.error('analytics fetch error', e);
+      setLoading(false);
+    });
+  }, [period]);
+
+  var totalPV  = daily.reduce(function(a, d) { return a + (Number(d.pageviews) || 0); }, 0);
+  var totalVis = daily.reduce(function(a, d) { return a + (Number(d.visitors)  || 0); }, 0);
+  var avgDaily = daily.length > 0 ? Math.round(totalPV / daily.length) : 0;
+  var bounceRate = totalPV > 0 && totalVis > 0 ? Math.round(((totalPV - totalVis) / totalPV) * 100) : 0;
+  var showEvery = daily.length > 14 ? 7 : 1;
+
+  var PERIOD_BTNS = [['7d','7 jours'],['30d','30 jours'],['90d','90 jours'],['1y','1 an']];
+
+  return (
+    <div className="space-y-4">
+
+      {/* Header + sélecteur de période */}
+      <div className="bg-white border rounded-xl p-4">
+        <div className="flex items-center justify-between mb-4" style={{ flexWrap: 'wrap', gap: '8px' }}>
+          <div className="font-semibold text-lg">🌐 Visites du site</div>
+          <div className="flex gap-1">
+            {PERIOD_BTNS.map(function(btn) {
+              var k = btn[0];
+              var lbl = btn[1];
+              var active = period === k;
+              return (
+                <button
+                  key={k}
+                  onClick={function() { setPeriod(k); }}
+                  className={active ? "px-3 py-1 rounded-lg text-xs border bg-primary text-white border-primary" : "px-3 py-1 rounded-lg text-xs border bg-white text-gray-600"}
+                >
+                  {lbl}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="text-gray-400 text-sm text-center py-8">Chargement des visites…</div>
+        ) : (
+          <div>
+            {/* KPIs */}
+            <div className="grid grid-cols-2 gap-3 mb-4" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+              <div className="bg-gray-50 rounded-xl p-3 border">
+                <div className="text-xs text-gray-500">👁️ Pages vues</div>
+                <div className="text-2xl font-bold text-blue-600">{totalPV.toLocaleString('fr-FR')}</div>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 border">
+                <div className="text-xs text-gray-500">👤 Visiteurs uniques</div>
+                <div className="text-2xl font-bold text-emerald-600">{totalVis.toLocaleString('fr-FR')}</div>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 border">
+                <div className="text-xs text-gray-500">📅 Moy. pages/jour</div>
+                <div className="text-2xl font-bold text-purple-600">{avgDaily.toLocaleString('fr-FR')}</div>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3 border">
+                <div className="text-xs text-gray-500">↩️ Taux rebond (estimé)</div>
+                <div className="text-2xl font-bold text-orange-600">{bounceRate}%</div>
+              </div>
+            </div>
+
+            {/* Légende */}
+            <div className="flex items-center gap-4 text-xs text-gray-500 mb-1">
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-3 h-2 rounded bg-blue-400" />
+                Pages vues
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-3 h-2 rounded bg-emerald-400" />
+                Visiteurs
+              </span>
+            </div>
+
+            {/* Graphique temporel */}
+            {noData ? (
+              <div className="bg-orange-50 border border-orange-200 text-orange-700 rounded-lg p-3 text-sm">
+                Aucune donnée pour cette période. Le Log Drain est-il configuré sur Vercel ?
+              </div>
+            ) : (
+              <VisitBarChart data={daily} showEvery={showEvery} />
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Tableau mensuel */}
+      {!loading && !noData && (
+        <div className="bg-white border rounded-xl p-4">
+          <div className="font-semibold text-sm mb-3 text-blue-700">📆 Évolution mensuelle</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-gray-500 border-b">
+                  <th className="p-2 text-left">Mois</th>
+                  <th className="p-2 text-right">Pages vues</th>
+                  <th className="p-2 text-right">Visiteurs</th>
+                  <th className="p-2 text-right">PV / Vis</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthly.slice().reverse().map(function(m) {
+                  var pv  = Number(m.pageviews) || 0;
+                  var vis = Number(m.visitors)  || 0;
+                  return (
+                    <tr key={m.month} className="border-t hover:bg-gray-50">
+                      <td className="p-2 font-medium">{m.month}</td>
+                      <td className="p-2 text-right text-blue-600">{pv.toLocaleString('fr-FR')}</td>
+                      <td className="p-2 text-right text-emerald-600">{vis.toLocaleString('fr-FR')}</td>
+                      <td className="p-2 text-right text-gray-500">{vis > 0 ? (pv / vis).toFixed(1) : '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Top pages + Pays */}
+      {!loading && (topPages.length > 0 || topCountries.length > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-white border rounded-xl p-4">
+            <div className="font-semibold text-sm mb-3">📄 Pages les plus visitées</div>
+            <div className="space-y-2">
+              {topPages.map(function(p, i) {
+                return (
+                  <HBar
+                    key={i}
+                    label={p.label || '/'}
+                    value={p.value}
+                    max={topPages[0] ? topPages[0].value : 1}
+                    color="#3b82f6"
+                  />
+                );
+              })}
+              {topPages.length === 0 && <div className="text-xs text-gray-400">Aucune donnée</div>}
+            </div>
+          </div>
+          <div className="bg-white border rounded-xl p-4">
+            <div className="font-semibold text-sm mb-3">🌍 Pays</div>
+            {topCountries.length > 0 ? (
+              <DonutChart data={topCountries} colors={['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16']} />
+            ) : (
+              <div className="text-xs text-gray-400">Aucune donnée</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Appareils + Navigateurs + Sources */}
+      {!loading && (topDevices.length > 0 || topBrowsers.length > 0 || topReferrers.length > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white border rounded-xl p-4">
+            <div className="font-semibold text-sm mb-3">📱 Appareils</div>
+            {topDevices.length > 0 ? (
+              <DonutChart data={topDevices} colors={['#6366f1','#f59e0b','#10b981','#ef4444']} />
+            ) : (
+              <div className="text-xs text-gray-400">Aucune donnée</div>
+            )}
+          </div>
+          <div className="bg-white border rounded-xl p-4">
+            <div className="font-semibold text-sm mb-3">🌐 Navigateurs</div>
+            {topBrowsers.length > 0 ? (
+              <DonutChart data={topBrowsers} colors={['#f59e0b','#3b82f6','#10b981','#ef4444','#8b5cf6','#ec4899']} />
+            ) : (
+              <div className="text-xs text-gray-400">Aucune donnée</div>
+            )}
+          </div>
+          <div className="bg-white border rounded-xl p-4">
+            <div className="font-semibold text-sm mb-3">🔗 Sources de trafic</div>
+            <div className="space-y-2">
+              {topReferrers.map(function(r, i) {
+                return (
+                  <HBar
+                    key={i}
+                    label={r.label || 'direct'}
+                    value={r.value}
+                    max={topReferrers[0] ? topReferrers[0].value : 1}
+                    color="#8b5cf6"
+                  />
+                );
+              })}
+              {topReferrers.length === 0 && <div className="text-xs text-gray-400">Aucune donnée</div>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Instructions setup si pas de données */}
+      {!loading && noData && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+          <div className="font-semibold mb-2">⚙️ Comment activer les visites en temps réel ?</div>
+          <ol className="list-decimal list-inside space-y-1 text-xs">
+            <li>Va sur <b>vercel.com</b> → ton projet → <b>Settings → Log Drains</b></li>
+            <li>Clique <b>Add Drain</b></li>
+            <li>Delivery URL : <code className="bg-blue-100 px-1 rounded">https://edukaraib.com/api/analytics-drain</code></li>
+            <li>Sources : coche <b>Web Analytics</b></li>
+            <li>Format : <b>JSON</b></li>
+            <li>Sauvegarde — les pageviews arrivent en temps réel ici</li>
+          </ol>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+/* ===========================
    StatsTab — Statistiques complètes
 =========================== */
 function StatsTab({ users, payments, lessons, lessonsLoading }) {
@@ -1412,24 +1809,10 @@ function StatsTab({ users, payments, lessons, lessonsLoading }) {
         </div>
       </div>
 
-      {/* Visites Google Analytics */}
-      <div className="bg-white border rounded-xl p-4">
-        <div className="font-semibold mb-2">🌐 Visites du site</div>
-        <p className="text-sm text-gray-600 mb-3">
-          Les visites sont suivies via <strong>Google Analytics</strong> (déjà intégré dans ton <code>index.html</code> avec le tag <code>G-32EG21Z538</code>).
-        </p>
-        <a
-          href="https://analytics.google.com/analytics/web/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
-        >
-          Ouvrir Google Analytics →
-        </a>
-        <p className="text-xs text-gray-400 mt-2">
-          Pour intégrer les visites directement ici, il faudrait connecter l'API Google Analytics (GA4 Data API) — c'est possible si tu veux.
-        </p>
-      </div>
+      {/* ═══════════════════════════════════════════
+           🌐 VISITES DU SITE — Vercel Web Analytics
+      ═══════════════════════════════════════════ */}
+      <SiteVisitsSection />
 
       {/* Derniers inscrits */}
       <div className="bg-white border rounded-xl overflow-hidden">
