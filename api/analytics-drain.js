@@ -10,7 +10,7 @@
  * 1. Va sur https://vercel.com/dashboard → Settings → Log Drains
  * 2. Clique "Add Drain"
  * 3. Remplis :
- *    - Delivery URL  : https://TON-DOMAINE.vercel.app/api/analytics-drain
+ *    - Delivery URL  : https://edukaraib.com/api/analytics-drain
  *    - Sources       : coche "Web Analytics"
  *    - Format        : JSON
  *    - Secret (optionnel) : génère une chaîne aléatoire, mets-la dans
