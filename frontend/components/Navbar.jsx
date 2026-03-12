@@ -69,14 +69,6 @@ export default function Navbar() {
       <Link to="/" className="text-xl font-bold text-primary">EduKaraib</Link>
       <div className="flex gap-2 sm:gap-4 items-center">
 
-        {/* Donner des cours — compact sur mobile, normal sur desktop */}
-        <Link
-          to="/register?role=teacher"
-          className="inline-flex items-center gap-1 bg-green-500 hover:bg-green-600 text-white font-bold px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-lg shadow transition text-xs sm:text-sm whitespace-nowrap"
-        >
-          <span className="hidden sm:inline">🎓 Donner des cours</span><span className="sm:hidden">🎓</span>
-        </Link>
-
         {user ? (
           <button
             onClick={goAccount}
@@ -89,11 +81,12 @@ export default function Navbar() {
         ) : (
           <>
             <Link to="/login" className="text-gray-700 hover:text-primary text-sm">Connexion</Link>
-            <Link to="/register" className="bg-primary text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg hover:bg-primary-dark text-sm">
-              Inscription
+            <Link to="/register?role=teacher" className="bg-green-500 hover:bg-green-600 text-white font-bold px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg shadow transition text-sm">
+              🎓 Donner des cours
             </Link>
           </>
         )}
+        
       </div>
     </nav>
   );
