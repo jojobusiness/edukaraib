@@ -68,8 +68,7 @@ export default function Navbar() {
     <nav className="bg-white shadow-md py-4 px-6 flex justify-between items-center">
       <Link to="/" className="text-xl font-bold text-primary">EduKaraib</Link>
       <div className="flex gap-4 items-center">
-        <Link to="/search" className="text-gray-700 hover:text-primary">Trouver un prof</Link>
-
+        
         {/* Bouton "Donner des cours" — visible connecté ou non */}
         <Link
           to="/register?role=teacher"
