@@ -567,12 +567,14 @@ export default function Home() {
             <div className="font-bold text-sm leading-tight">-5 € sur votre premier cours</div>
             <div className="text-xs text-white/80">Offert automatiquement dès l'inscription</div>
           </div>
-          <a
-            href="/register?role=teacher"
-            className="shrink-0 bg-white text-emerald-700 font-bold text-[11px] px-3 py-1.5 rounded-full hover:bg-emerald-50 whitespace-nowrap"
-          >
-            🎓 Donner des cours →
-          </a>
+          <div className="flex items-center gap-2 shrink-0">
+            <a
+              href="/register"
+              className="bg-white text-emerald-700 font-bold text-[11px] px-3 py-1.5 rounded-full hover:bg-emerald-50 whitespace-nowrap"
+            >
+              S'inscrire →
+            </a>
+          </div>
         </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
@@ -652,15 +654,17 @@ export default function Home() {
       <div className="hidden lg:block bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 text-white py-3 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 flex items-center justify-center gap-4">
           <span className="flex items-center gap-2 font-semibold text-sm">
-            <span className="text-xl">🎓</span>
-            <span>Vous êtes professeur ? <strong>Rejoignez EduKaraib</strong> et trouvez des élèves en Guyane !</span>
+            <span className="text-xl">🎁</span>
+            <span>Inscrivez-vous et obtenez <strong>-5 € sur votre premier cours</strong> — automatiquement après inscription !</span>
           </span>
-          <a
-            href="/register?role=teacher"
-            className="shrink-0 bg-white text-emerald-700 font-bold text-xs px-4 py-1.5 rounded-full hover:bg-emerald-50 transition shadow"
-          >
-            Donner des cours →
-          </a>
+          <div className="flex items-center gap-3">
+            <a
+              href="/register"
+              className="bg-white text-emerald-700 font-bold text-xs px-4 py-1.5 rounded-full hover:bg-emerald-50 transition shadow"
+            >
+              S'inscrire gratuitement →
+            </a>
+          </div>
         </div>
       </div>
 
