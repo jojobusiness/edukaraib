@@ -67,29 +67,29 @@ export default function Navbar() {
   return (
     <nav className="bg-white shadow-md py-4 px-6 flex justify-between items-center">
       <Link to="/" className="text-xl font-bold text-primary">EduKaraib</Link>
-      <div className="flex gap-4 items-center">
-        
-        {/* Bouton "Donner des cours" — visible connecté ou non */}
+      <div className="flex gap-2 sm:gap-4 items-center">
+
+        {/* Donner des cours — compact sur mobile, normal sur desktop */}
         <Link
           to="/register?role=teacher"
-          className="inline-flex items-center gap-1.5 bg-green-500 hover:bg-green-600 text-white font-bold px-4 py-2 rounded-xl shadow transition text-sm"
+          className="inline-flex items-center gap-1 bg-green-500 hover:bg-green-600 text-white font-bold px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-lg shadow transition text-xs sm:text-sm whitespace-nowrap"
         >
-          🎓 Donner des cours
+          <span className="hidden sm:inline">🎓 Donner des cours</span><span className="sm:hidden">🎓</span>
         </Link>
 
         {user ? (
           <button
             onClick={goAccount}
             disabled={resolving}
-            className="text-gray-700 hover:text-primary disabled:opacity-50"
+            className="text-gray-700 hover:text-primary disabled:opacity-50 text-sm"
             aria-busy={resolving ? 'true' : 'false'}
           >
             {resolving ? '…' : 'Mon compte'}
           </button>
         ) : (
           <>
-            <Link to="/login" className="text-gray-700 hover:text-primary">Connexion</Link>
-            <Link to="/register" className="bg-primary text-white px-4 py-2 rounded hover:bg-primary-dark">
+            <Link to="/login" className="text-gray-700 hover:text-primary text-sm">Connexion</Link>
+            <Link to="/register" className="bg-primary text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg hover:bg-primary-dark text-sm">
               Inscription
             </Link>
           </>
