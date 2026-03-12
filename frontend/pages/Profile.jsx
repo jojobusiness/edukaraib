@@ -112,6 +112,11 @@ export default function Profile() {
     const unsub = onAuthStateChanged(auth, async (u) => {
       if (!u) { setUserLoaded(true); return; }
       setEmailVerified(u.emailVerified);
+      // Sync email_verified dans Firestore pour visibilité admin
+      try {
+        const { updateDoc: _upd, doc: _doc } = await import("firebase/firestore");
+        await updateDoc(doc(db, "users", u.uid), { email_verified: u.emailVerified });
+      } catch (_) {}
       try {
         const ref = doc(db, 'users', u.uid);
         const snap = await getDoc(ref);
@@ -172,12 +177,13 @@ export default function Profile() {
       if (u.emailVerified) {
         setEmailVerified(true);
         setResendStatus('');
+        await updateDoc(doc(db, "users", u.uid), { email_verified: true });
         return;
       }
       await sendEmailVerification(u);
       setResendStatus('sent');
       setTimeout(() => setResendStatus(''), 5000);
-    } catch (e) {
+    } catch (_) {
       setResendStatus('error');
       setTimeout(() => setResendStatus(''), 4000);
     }
@@ -506,30 +512,6 @@ export default function Profile() {
 
   return (
     <DashboardLayout role={profile.role || 'student'}>
-
-      {/* ── Bannière vérification email ── */}
-      {!emailVerified && (
-        <div className="max-w-xl mx-auto mt-4 px-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-amber-50 border border-amber-300 rounded-2xl px-5 py-4 shadow-sm">
-            <span className="text-2xl shrink-0">📧</span>
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-amber-900 text-sm leading-snug">Confirmez votre adresse email</p>
-              <p className="text-amber-800/80 text-xs mt-0.5">Un email de confirmation vous a été envoyé. Vérifiez aussi vos spams.</p>
-            </div>
-            <button
-              onClick={resendVerificationEmail}
-              disabled={resendStatus === "sending"}
-              className="shrink-0 text-xs font-semibold px-4 py-2 rounded-xl border border-amber-400 bg-white text-amber-800 hover:bg-amber-100 transition disabled:opacity-50 whitespace-nowrap"
-            >
-              {resendStatus === "sending" ? "Envoi…"
-                : resendStatus === "sent" ? "✅ Email envoyé !"
-                : resendStatus === "error" ? "❌ Erreur, réessayez"
-                : "Renvoyer l'email"}
-            </button>
-          </div>
-        </div>
-      )}
-
       <div className="w-full max-w-xl mx-auto bg-white rounded-2xl shadow-lg p-8 border border-gray-100 mt-6">
         {/* Avatar */}
         <div className="flex flex-col items-center mb-6">
@@ -558,6 +540,33 @@ export default function Profile() {
               <label className="block mb-1 text-sm font-medium text-gray-700">Nom</label>
               <input type="text" name="lastName" className="w-full border border-gray-300 rounded-lg px-3 py-2"
                 value={profile.lastName || ''} onChange={handleChange} required placeholder="ex : Dupont" />
+            </div>
+          </div>
+
+          {/* Email + statut vérification */}
+          <div>
+            <label className="block mb-1 text-sm font-medium text-gray-700">Adresse email</label>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 text-sm text-gray-700 truncate">
+                {profile.email || auth.currentUser?.email || '—'}
+              </div>
+              {emailVerified ? (
+                <span className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-green-100 text-green-700 text-xs font-semibold border border-green-200">
+                  ✅ Vérifié
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={resendVerificationEmail}
+                  disabled={resendStatus === "sending"}
+                  className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-amber-100 text-amber-700 text-xs font-semibold border border-amber-300 hover:bg-amber-200 transition disabled:opacity-50"
+                >
+                  {resendStatus === "sending" ? "Envoi…"
+                    : resendStatus === "sent" ? "✅ Envoyé !"
+                    : resendStatus === "error" ? "❌ Erreur"
+                    : "⚠️ Non vérifié — Renvoyer"}
+                </button>
+              )}
             </div>
           </div>
 
