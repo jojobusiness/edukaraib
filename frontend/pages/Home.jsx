@@ -550,13 +550,10 @@ export default function Home() {
                 <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Présentiel ou visio</li>
                 <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Packs économiques pour l’année</li>
               </ul>
-              {/* 🔴 CTAs MOBILE */}
-              <div className="mt-6 flex flex-col gap-3">
-                <Link to="/search" className="inline-flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white font-bold text-lg px-8 py-4 rounded-2xl shadow-lg transition">
+              {/* 🔴 CTA MOBILE */}
+              <div className="mt-6">
+                <Link to="/search" className="inline-block bg-green-500 hover:bg-green-600 text-white font-bold text-lg px-8 py-4 rounded-2xl shadow-lg transition">
                   🔎 Trouver un prof →
-                </Link>
-                <Link to="/register?role=teacher" className="inline-flex items-center justify-center gap-2 bg-white hover:bg-gray-50 text-primary font-bold text-lg px-8 py-4 rounded-2xl shadow-lg border-2 border-primary transition">
-                  🎓 Donner des cours →
                 </Link>
               </div>
             </div>
@@ -571,10 +568,10 @@ export default function Home() {
             <div className="text-xs text-white/80">Offert automatiquement dès l'inscription</div>
           </div>
           <a
-            href="/register"
+            href="/register?role=teacher"
             className="shrink-0 bg-white text-emerald-700 font-bold text-[11px] px-3 py-1.5 rounded-full hover:bg-emerald-50 whitespace-nowrap"
           >
-            S'inscrire →
+            🎓 Donner des cours →
           </a>
         </div>
 
@@ -599,13 +596,10 @@ export default function Home() {
                 <li>✔ Présentiel ou visio</li>
                 <li>✔ Packs économiques pour l’année</li>
               </ul>
-              {/* 🔴 CTAs DESKTOP */}
-              <div className="mt-8 flex flex-wrap gap-4">
-                <Link to="/search" className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white font-bold text-xl px-10 py-5 rounded-2xl shadow-xl transition">
+              {/* 🔴 CTA DESKTOP */}
+              <div className="mt-8">
+                <Link to="/search" className="inline-block bg-green-500 hover:bg-green-600 text-white font-bold text-xl px-10 py-5 rounded-2xl shadow-xl transition">
                   🔎 Trouver un prof →
-                </Link>
-                <Link to="/register?role=teacher" className="inline-flex items-center gap-2 bg-white hover:bg-gray-50 text-primary font-bold text-xl px-10 py-5 rounded-2xl shadow-xl border-2 border-primary transition">
-                  🎓 Donner des cours →
                 </Link>
               </div>
             </div>
@@ -658,14 +652,14 @@ export default function Home() {
       <div className="hidden lg:block bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 text-white py-3 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 flex items-center justify-center gap-4">
           <span className="flex items-center gap-2 font-semibold text-sm">
-            <span className="text-xl">🎁</span>
-            <span>Inscrivez-vous et obtenez <strong>-5 € sur votre premier cours</strong> — automatiquement après inscription !</span>
+            <span className="text-xl">🎓</span>
+            <span>Vous êtes professeur ? <strong>Rejoignez EduKaraib</strong> et trouvez des élèves en Guyane !</span>
           </span>
           <a
-            href="/register"
+            href="/register?role=teacher"
             className="shrink-0 bg-white text-emerald-700 font-bold text-xs px-4 py-1.5 rounded-full hover:bg-emerald-50 transition shadow"
           >
-            S'inscrire gratuitement →
+            Donner des cours →
           </a>
         </div>
       </div>
@@ -929,41 +923,14 @@ export default function Home() {
       )}
 
       {/* CTA */}
-      <section className="py-14 bg-primary text-white">
-        <div className="max-w-4xl mx-auto px-4">
-          <h3 className="text-2xl md:text-3xl font-extrabold text-center mb-10">Rejoignez EduKaraib dès aujourd'hui</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-            {/* Carte élève / parent */}
-            <div className="bg-white/10 border border-white/20 rounded-2xl p-7 flex flex-col gap-4 hover:bg-white/15 transition">
-              <span className="text-4xl">🔎</span>
-              <div>
-                <h4 className="text-xl font-extrabold">Vous cherchez un prof ?</h4>
-                <p className="text-white/75 text-sm mt-1">Parcourez les profils et réservez en quelques clics.</p>
-              </div>
-              <Link
-                to="/search"
-                className="mt-auto inline-flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-3 rounded-xl transition shadow-md"
-              >
-                🔎 Trouver un prof →
-              </Link>
-            </div>
-
-            {/* Carte professeur */}
-            <div className="bg-white/10 border border-white/20 rounded-2xl p-7 flex flex-col gap-4 hover:bg-white/15 transition">
-              <span className="text-4xl">🎓</span>
-              <div>
-                <h4 className="text-xl font-extrabold">Vous voulez enseigner ?</h4>
-                <p className="text-white/75 text-sm mt-1">Créez votre profil et trouvez des élèves en Guyane.</p>
-              </div>
-              <Link
-                to="/register?role=teacher"
-                className="mt-auto inline-flex items-center justify-center gap-2 bg-white hover:bg-white/90 text-primary font-bold px-6 py-3 rounded-xl transition shadow-md"
-              >
-                🎓 Donner des cours →
-              </Link>
-            </div>
-
+      <section className="py-12 bg-primary text-white">
+        <div className="max-w-7xl mx-auto px-4 grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+          <div className="space-y-2">
+            <h3 className="text-2xl font-bold">Vous cherchez un professeur ?</h3>
+            <p className="text-white/90">Parcourez les profils et réservez en quelques clics.</p>
+          </div>
+          <div className="flex gap-3 md:justify-end">
+            <Link to="/search" className="bg-white text-primary font-semibold px-5 py-3 rounded-xl hover:bg-white/90">Trouver un prof</Link>
           </div>
         </div>
       </section>
