@@ -198,7 +198,8 @@ export default function Register() {
   const finalizeWithUser = async (userOverride) => {
     const activeUser = userOverride || pendingUser;
     if (!activeUser) return;
-    if (userOverride && !pendingUser) setPendingUser(userOverride);
+    // On stocke dans une variable locale stable — le state React peut être null en async
+    if (userOverride) setPendingUser(userOverride);
 
     setLoading(true);
     try {
@@ -206,15 +207,15 @@ export default function Register() {
       let avatarUrl = '';
       if (photo) {
         const storage = getStorage();
-        const storageRef = ref(storage, `avatars/${pendingUser.uid}`);
+        const storageRef = ref(storage, `avatars/${activeUser.uid}`);
         await uploadBytes(storageRef, photo);
         avatarUrl = await getDownloadURL(storageRef);
       }
 
       const fullName = `${form.firstName} ${form.lastName}`.trim();
       const baseData = {
-        uid: pendingUser.uid,
-        email: pendingUser.email,
+        uid: activeUser.uid,
+        email: activeUser.email,
         role: form.role,
         firstName: form.firstName,
         lastName: form.lastName,
@@ -292,7 +293,7 @@ export default function Register() {
         });
       }
       
-      await setDoc(doc(db, 'users', pendingUser.uid), baseData);
+      await setDoc(doc(db, 'users', activeUser.uid), baseData);
 
       // 🎟️ Coupon de bienvenue -5€ uniquement pour parents et élèves
       // fetch simple (pas de token requis), sans await pour ne pas bloquer la navigation
@@ -301,8 +302,8 @@ export default function Register() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            uid: pendingUser.uid,
-            email: pendingUser.email,
+            uid: activeUser.uid,
+            email: activeUser.email,
             fullName,
           }),
         }).catch(e => console.warn('[coupon-bienvenue] échec:', e?.message));
