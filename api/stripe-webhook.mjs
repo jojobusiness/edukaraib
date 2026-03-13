@@ -159,4 +159,30 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
       console.warn('[webhook] coupon update failed:', e?.message);
     }
   }
+
+  // 4) Déclencher les primes de parrainage si le prof est un filleul
+  if (teacherUid) {
+    try {
+      const source = md.lesson_source || '';
+      // paymentType : 'course' pour cours unitaire, 'pack5' ou 'pack10' pour packs
+      const paymentType =
+        source === 'pack5'  ? 'pack5'  :
+        source === 'pack10' ? 'pack10' :
+        'course';
+
+      const BASE_URL = process.env.APP_BASE_URL || 'https://www.edukaraib.com';
+      await fetch(`${BASE_URL}/api/trigger-referral-bonus`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          teacherUid,
+          paymentType,
+          lessonId: lessonId || null,
+          amount: (Number(md.teacher_amount_cents || 0) / 100),
+        }),
+      }).catch(e => console.warn('[webhook] trigger-referral-bonus failed:', e?.message));
+    } catch (e) {
+      console.warn('[webhook] referral bonus error:', e?.message);
+    }
+  }
 }

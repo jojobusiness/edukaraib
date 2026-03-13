@@ -72,6 +72,9 @@ export default function Register() {
     // À propos
     about_me: '',
     about_course: '',
+
+    // Parrainage (optionnel, profs uniquement)
+    referralCode: '',
   });
   const [photo, setPhoto] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -312,6 +315,27 @@ export default function Register() {
       setWaitingEmailVerify(false);
 
       if (form.role === 'teacher') {
+        // Générer le code parrain unique pour ce nouveau prof
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        let suffix = '';
+        for (let i = 0; i < 6; i++) suffix += chars[Math.floor(Math.random() * chars.length)];
+        const myReferralCode = 'PARRAIN-' + suffix;
+        await setDoc(doc(db, 'users', activeUser.uid), { referralCode: myReferralCode }, { merge: true });
+
+        // Appliquer le code parrain saisi si présent
+        if (form.referralCode?.trim()) {
+          fetch('/api/apply-referral', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              referralCode: form.referralCode.trim().toUpperCase(),
+              newTeacherUid: activeUser.uid,
+              newTeacherEmail: activeUser.email,
+              newTeacherName: fullName,
+            }),
+          }).catch(e => console.warn('[apply-referral] échec:', e?.message));
+        }
+
         setAfterSignupTeacher(true);
       } else if (form.role === 'parent') {
         navigate('/parent/dashboard');
@@ -753,6 +777,23 @@ export default function Register() {
                   </div>
                 )}
               </>
+            )}
+
+            {/* Code parrain (optionnel, profs uniquement) */}
+            {form.role === 'teacher' && (
+              <div className="rounded-xl border border-dashed border-green-300 bg-green-50 p-4">
+                <label className="block mb-1 text-sm font-semibold text-green-800">🤝 Code de parrainage <span className="font-normal text-green-700">(optionnel)</span></label>
+                <p className="text-xs text-green-700 mb-2">Un collègue vous a invité ? Saisissez son code et recevez <strong>20 € de prime</strong> sur votre premier pack 5h vendu.</p>
+                <input
+                  type="text"
+                  name="referralCode"
+                  className="w-full border border-green-300 rounded-lg px-3 py-2 text-sm uppercase tracking-widest placeholder:normal-case placeholder:tracking-normal"
+                  value={form.referralCode}
+                  onChange={handleChange}
+                  placeholder="ex : PARRAIN-AB3XY2"
+                  maxLength={15}
+                />
+              </div>
             )}
 
             {/* CGU obligatoires */}

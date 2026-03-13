@@ -86,6 +86,7 @@ export default function TeacherEarnings() {
   const [loadingPayments, setLoadingPayments] = useState(true);
 
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [referralData, setReferralData] = useState(null);
 
   // caches noms
   const [userNames, setUserNames] = useState({});       // userId -> nom (payer)
@@ -319,6 +320,27 @@ export default function TeacherEarnings() {
 
   const loading = loadingLessons || loadingPayments;
 
+  // Charger les données de parrainage
+  useEffect(() => {
+    if (!uid) return;
+    const loadReferral = async () => {
+      try {
+        const { doc: fsDoc, getDoc } = await import("firebase/firestore");
+        const snap = await getDoc(fsDoc(db, "users", uid));
+        if (snap.exists()) {
+          const d = snap.data();
+          setReferralData({
+            code: d.referralCode || null,
+            filleuls: d.referralFilleuls || [],
+            pending: Number(d.referralEarnings?.pending || 0),
+            total: Number(d.referralEarnings?.total || 0),
+          });
+        }
+      } catch (e) { console.warn("referral load:", e); }
+    };
+    loadReferral();
+  }, [uid]);
+
   return (
     <DashboardLayout role="teacher">
       <div className="max-w-4xl mx-auto">
@@ -539,6 +561,74 @@ function UpcomingHeldSection({ loadingLessons, loadingPayments, loading, payment
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Section Parrainage ── */}
+      <div className="bg-white rounded-xl shadow p-6 border mb-8">
+        <h3 className="font-bold text-primary mb-4">🤝 Parrainage</h3>
+        {!referralData ? (
+          <p className="text-sm text-gray-400">Chargement…</p>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-lg border p-4 bg-green-50">
+                <div className="text-xs text-green-700">En attente de versement</div>
+                <div className="text-2xl font-extrabold text-green-800">{referralData.pending.toFixed(2)} €</div>
+              </div>
+              <div className="rounded-lg border p-4 bg-gray-50">
+                <div className="text-xs text-gray-500">Total gagné (parrainage)</div>
+                <div className="text-2xl font-extrabold">{referralData.total.toFixed(2)} €</div>
+              </div>
+              <div className="rounded-lg border p-4 bg-gray-50">
+                <div className="text-xs text-gray-500">Filleuls actifs</div>
+                <div className="text-2xl font-extrabold">{referralData.filleuls.length}</div>
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-green-50 border border-dashed border-green-300 rounded-xl p-4">
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-green-800 mb-1">Votre code de parrainage</p>
+                <p className="font-mono text-xl font-extrabold tracking-widest text-green-900">{referralData.code || '—'}</p>
+                <p className="text-xs text-green-700 mt-1">Partagez ce code : vous recevez <strong>10 €</strong> dès le 1er cours de chaque filleul.</p>
+              </div>
+              {referralData.code && (
+                <button type="button"
+                  onClick={() => { navigator.clipboard.writeText(referralData.code); alert('Code copié !'); }}
+                  className="shrink-0 bg-white border border-green-300 text-green-700 font-bold text-sm px-4 py-2 rounded-xl hover:bg-green-100 transition">
+                  📋 Copier
+                </button>
+              )}
+            </div>
+            {referralData.filleuls.length > 0 && (
+              <div>
+                <p className="text-sm font-semibold text-gray-700 mb-2">Historique filleuls</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border rounded-xl overflow-hidden">
+                    <thead className="bg-gray-50 text-gray-500 text-xs">
+                      <tr>
+                        <th className="px-4 py-2 text-left">Filleul</th>
+                        <th className="px-4 py-2 text-left">Inscrit le</th>
+                        <th className="px-4 py-2 text-center">1er cours</th>
+                        <th className="px-4 py-2 text-center">1er pack 5h</th>
+                        <th className="px-4 py-2 text-right">Prime reçue</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {referralData.filleuls.map((f, i) => (
+                        <tr key={i} className="border-t">
+                          <td className="px-4 py-2 font-medium">{f.name || f.email || '—'}</td>
+                          <td className="px-4 py-2 text-gray-500">{f.joinedAt?.toDate ? f.joinedAt.toDate().toLocaleDateString('fr-FR') : '—'}</td>
+                          <td className="px-4 py-2 text-center">{f.firstCoursePaid ? '✅' : '⏳'}</td>
+                          <td className="px-4 py-2 text-center">{f.firstPackPaid ? '✅' : '⏳'}</td>
+                          <td className="px-4 py-2 text-right font-semibold text-green-700">+{(f.firstCoursePaid ? 10 : 0).toFixed(2)} €</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

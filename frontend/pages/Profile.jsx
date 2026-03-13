@@ -570,6 +570,40 @@ export default function Profile() {
             </div>
           </div>
 
+          {/* Code de parrainage — profs uniquement */}
+          {profile.role === 'teacher' && (
+            <div className="rounded-xl border border-dashed border-green-300 bg-green-50 p-4">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-semibold text-green-800">🤝 Votre code de parrainage</span>
+                {profile.referralCode && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(profile.referralCode);
+                      alert('Code copié !');
+                    }}
+                    className="text-xs font-bold text-green-700 bg-white border border-green-300 px-3 py-1 rounded-lg hover:bg-green-100 transition"
+                  >
+                    📋 Copier
+                  </button>
+                )}
+              </div>
+              {profile.referralCode ? (
+                <div className="font-mono text-lg font-extrabold tracking-widest text-green-900 bg-white border border-green-200 rounded-lg px-4 py-2 text-center mt-2">
+                  {profile.referralCode}
+                </div>
+              ) : (
+                <p className="text-xs text-green-700 italic">Code généré automatiquement à votre prochaine connexion.</p>
+              )}
+              <p className="text-xs text-green-700 mt-2">Partagez ce code à vos collègues. Vous recevrez <strong>10 €</strong> dès leur 1er cours donné.</p>
+              {(profile.referralFilleuls?.length > 0) && (
+                <p className="text-xs text-green-800 font-semibold mt-1">
+                  👥 {profile.referralFilleuls.length} filleul{profile.referralFilleuls.length > 1 ? 's' : ''} parrainé{profile.referralFilleuls.length > 1 ? 's' : ''}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Téléphone */}
           <div>
             <label className="block mb-1 text-sm font-medium text-gray-700">Téléphone</label>
