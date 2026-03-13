@@ -322,6 +322,17 @@ export default function Register() {
         const myReferralCode = 'PARRAIN-' + suffix;
         await setDoc(doc(db, 'users', activeUser.uid), { referralCode: myReferralCode }, { merge: true });
 
+        // Email de bienvenue (tous les profs, avec ou sans parrain)
+        fetch('/api/send-welcome-teacher', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: activeUser.email,
+            firstName: form.firstName,
+            referralCode: myReferralCode,
+          }),
+        }).catch(e => console.warn('[send-welcome-teacher] échec:', e?.message));
+
         // Appliquer le code parrain saisi si présent
         if (form.referralCode?.trim()) {
           fetch('/api/apply-referral', {
