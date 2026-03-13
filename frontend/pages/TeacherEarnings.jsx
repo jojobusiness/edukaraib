@@ -400,6 +400,7 @@ export default function TeacherEarnings() {
           payments={payments}
           lessonById={lessonById}
           studentNames={studentNames}
+          referralData={referralData}
         />
 
         {/* Résumé (brut/net sur l'année) */}
@@ -442,7 +443,8 @@ export default function TeacherEarnings() {
 }
 
 /** Sous-composant : Paiements retenus à venir (inchangé sauf extraction) */
-function UpcomingHeldSection({ loadingLessons, loadingPayments, loading, payments, lessonById, studentNames }) {
+function UpcomingHeldSection({ loadingLessons, loadingPayments, payments, lessonById, studentNames, referralData }) {
+  const loading = loadingLessons || loadingPayments;
   const now = new Date();
 
   const allHeld = useMemo(() => {
