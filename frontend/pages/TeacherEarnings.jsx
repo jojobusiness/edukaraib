@@ -617,15 +617,42 @@ function UpcomingHeldSection({ loadingLessons, loadingPayments, payments, lesson
                       </tr>
                     </thead>
                     <tbody>
-                      {referralData.filleuls.map((f, i) => (
-                        <tr key={i} className="border-t">
-                          <td className="px-4 py-2 font-medium">{f.name || f.email || '—'}</td>
-                          <td className="px-4 py-2 text-gray-500">{f.joinedAt?.toDate ? f.joinedAt.toDate().toLocaleDateString('fr-FR') : '—'}</td>
-                          <td className="px-4 py-2 text-center">{f.firstCoursePaid ? '✅' : '⏳'}</td>
-                          <td className="px-4 py-2 text-center">{f.firstPackPaid ? '✅' : '⏳'}</td>
-                          <td className="px-4 py-2 text-right font-semibold text-green-700">+{(f.firstCoursePaid ? 10 : 0).toFixed(2)} €</td>
-                        </tr>
-                      ))}
+                      {referralData.filleuls.map((f, i) => {
+                        const deleted = !!f.deletedAt;
+                        return (
+                          <tr key={i} className={`border-t ${deleted ? 'bg-red-50' : ''}`}>
+                            <td className="px-4 py-2">
+                              <div className="flex items-center gap-2">
+                                {deleted && (
+                                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-500 bg-red-100 px-2 py-0.5 rounded-full shrink-0">
+                                    🗑 Compte supprimé
+                                  </span>
+                                )}
+                                <span className={`font-medium ${deleted ? 'line-through text-gray-400' : ''}`}>
+                                  {f.name || f.email || '—'}
+                                </span>
+                              </div>
+                              {deleted && (
+                                <div className="text-xs text-red-400 mt-0.5">
+                                  Supprimé le {f.deletedAt?.toDate ? f.deletedAt.toDate().toLocaleDateString('fr-FR') : '—'}
+                                </div>
+                              )}
+                            </td>
+                            <td className={`px-4 py-2 ${deleted ? 'text-gray-400' : 'text-gray-500'}`}>
+                              {f.joinedAt?.toDate ? f.joinedAt.toDate().toLocaleDateString('fr-FR') : '—'}
+                            </td>
+                            <td className="px-4 py-2 text-center">
+                              {deleted && !f.firstCoursePaid ? <span className="text-gray-300">—</span> : f.firstCoursePaid ? '✅' : '⏳'}
+                            </td>
+                            <td className="px-4 py-2 text-center">
+                              {deleted && !f.firstPackPaid ? <span className="text-gray-300">—</span> : f.firstPackPaid ? '✅' : '⏳'}
+                            </td>
+                            <td className={`px-4 py-2 text-right font-semibold ${deleted && !f.firstCoursePaid ? 'text-gray-400' : 'text-green-700'}`}>
+                              +{(f.firstCoursePaid ? 10 : 0).toFixed(2)} €
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
