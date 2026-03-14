@@ -329,9 +329,24 @@ export default function TeacherEarnings() {
         const snap = await getDoc(fsDoc(db, "users", uid));
         if (snap.exists()) {
           const d = snap.data();
+          const filleuls = d.referralFilleuls || [];
+
+          // Vérifier en live quels filleuls existent encore dans Firestore
+          const filleulsWithStatus = await Promise.all(
+            filleuls.map(async (f) => {
+              if (!f.uid) return { ...f, deleted: false };
+              try {
+                const filleulSnap = await getDoc(fsDoc(db, "users", f.uid));
+                return { ...f, deleted: !filleulSnap.exists() };
+              } catch {
+                return { ...f, deleted: false };
+              }
+            })
+          );
+
           setReferralData({
             code: d.referralCode || null,
-            filleuls: d.referralFilleuls || [],
+            filleuls: filleulsWithStatus,
             pending: Number(d.referralEarnings?.pending || 0),
             total: Number(d.referralEarnings?.total || 0),
           });
@@ -618,7 +633,7 @@ function UpcomingHeldSection({ loadingLessons, loadingPayments, payments, lesson
                     </thead>
                     <tbody>
                       {referralData.filleuls.map((f, i) => {
-                        const deleted = !!f.deletedAt;
+                        const deleted = !!f.deleted;
                         return (
                           <tr key={i} className={`border-t ${deleted ? 'bg-red-50' : ''}`}>
                             <td className="px-4 py-2">
@@ -632,11 +647,7 @@ function UpcomingHeldSection({ loadingLessons, loadingPayments, payments, lesson
                                   {f.name || f.email || '—'}
                                 </span>
                               </div>
-                              {deleted && (
-                                <div className="text-xs text-red-400 mt-0.5">
-                                  Supprimé le {f.deletedAt?.toDate ? f.deletedAt.toDate().toLocaleDateString('fr-FR') : '—'}
-                                </div>
-                              )}
+
                             </td>
                             <td className={`px-4 py-2 ${deleted ? 'text-gray-400' : 'text-gray-500'}`}>
                               {f.joinedAt?.toDate ? f.joinedAt.toDate().toLocaleDateString('fr-FR') : '—'}
