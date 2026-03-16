@@ -30,6 +30,12 @@ const menusByRole = {
     { label: 'Mes avis', path: '/prof/reviews', icon: '🌟' },
     { label: 'Messagerie', path: '/chat-list', icon: '💬' },
     { label: 'Profil', path: '/prof/profile', icon: '👤' },
+  ],
+  influencer: [
+    { label: 'Mon dashboard', path: '/influencer/dashboard', icon: '📊' },
+    { label: 'Mon code & lien', path: '/influencer/dashboard', icon: '🔗' },
+    { label: 'Mes commissions', path: '/influencer/dashboard', icon: '💸' },
+    { label: 'Mes virements', path: '/influencer/dashboard', icon: '🏦' },
   ]
 };
 

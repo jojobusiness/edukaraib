@@ -45,7 +45,8 @@ import StudentRoute from './components/StudentRoute';
 import RequireRole from './routes/RequireRole';
 import AdminDashboard from './pages/AdminDashboard';
 import AuthAction from './pages/AuthAction';
-
+import InfluencerHome from './pages/InfluencerHome.jsx'
+import InfluencerDashboard from './pages/InfluencerDashboard.jsx'
 /* === Google Analytics PageView Tracker === */
 function PageViewTracker() {
   const location = useLocation();
@@ -184,6 +185,10 @@ function App() {
             <Route path="/prof/earnings" element={<TeacherRoute><TeacherEarnings /></TeacherRoute>} />
             <Route path="/prof/planning" element={<TeacherRoute><TeacherCalendar /></TeacherRoute>} />
             <Route path="/prof/reviews" element={<PrivateRoute role="teacher"><TeacherReviews /></PrivateRoute>} />
+            
+            {/* Influenceur */}
+            <Route path="/influencer" element={<InfluencerHome />} />
+            <Route path="/influencer/dashboard" element={<InfluencerDashboard />} />
 
             {/* 🛠️ Administrateur */}
             <Route path="/admin/dashboard" element={<RequireRole roles={['admin']}><AdminDashboard /></RequireRole>} />

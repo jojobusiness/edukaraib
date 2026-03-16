@@ -232,35 +232,121 @@ export default async function handler(req, res) {
   let totalCents = teacherAmountCents + siteFeeCents;
   if (!(totalCents > 0)) return res.status(400).json({ error: 'INVALID_AMOUNT' });
 
-  // ── Coupon de réduction ──────────────────────────────────────────────
+  // ── Coupon influenceur ───────────────────────────────────────────────
   let couponDiscountCents = 0;
-  let couponDocId = null;
+  let couponDocId = null;      // garde la compatibilité avec l'ancien système
+  let influencerUid = null;    // uid Firestore du doc influenceurs/{uid}
+  let influencerCommissionCents = 0;
 
   if (couponCode && typeof couponCode === 'string') {
-    const couponSnap = await adminDb
-      .collection('coupons')
-      .where('code', '==', couponCode.trim().toUpperCase())
-      .where('user_uid', '==', payerUid)
-      .where('used', '==', false)
+    const code = couponCode.trim().toUpperCase();
+
+    // 1) Chercher le code dans la collection influencers
+    const influSnap = await adminDb
+      .collection('influencers')
+      .where('code', '==', code)
+      .where('active', '==', true)
       .limit(1)
       .get();
 
-    if (couponSnap.empty) {
-      return res.status(400).json({ error: 'COUPON_INVALID_OR_USED' });
+    if (influSnap.empty) {
+      // Fallback : ancien système coupons (compatibilité)
+      const couponSnap = await adminDb
+        .collection('coupons')
+        .where('code', '==', code)
+        .where('user_uid', '==', payerUid)
+        .where('used', '==', false)
+        .limit(1)
+        .get();
+
+      if (couponSnap.empty) {
+        return res.status(400).json({ error: 'COUPON_INVALID_OR_USED' });
+      }
+
+      const couponDoc = couponSnap.docs[0];
+      const coupon = couponDoc.data();
+      const expiresAt = coupon.expires_at?.toDate?.() || new Date(coupon.expires_at);
+      if (expiresAt && expiresAt < new Date()) {
+        return res.status(400).json({ error: 'COUPON_EXPIRED' });
+      }
+      couponDiscountCents = Math.round((coupon.discount_eur || 0) * 100);
+      couponDocId = couponDoc.id;
+
+    } else {
+      // ── Code influenceur trouvé ──
+      const influDoc = influSnap.docs[0];
+      const influ = influDoc.data();
+      influencerUid = influDoc.id;
+
+      // 2) Expiration (6 mois depuis created_at)
+      const createdAt = influ.created_at?.toDate?.() || new Date(influ.created_at);
+      const expiresAt = new Date(createdAt.getTime() + 6 * 30 * 24 * 60 * 60 * 1000);
+      if (expiresAt < new Date()) {
+        return res.status(400).json({ error: 'COUPON_EXPIRED' });
+      }
+
+      // 3) Limite globale : 2 usages max (1 unitaire + 1 pack) par compte client
+      const usageSelf = await adminDb
+        .collection('influencer_usages')
+        .where('influencer_uid', '==', influencerUid)
+        .where('payer_uid', '==', payerUid)
+        .get();
+
+      if (usageSelf.size >= 2) {
+        return res.status(400).json({ error: 'COUPON_MAX_USAGE_REACHED' });
+      }
+
+      // 4) Limitation IP (1 usage par IP par code)
+      const clientIp =
+        req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+        req.socket?.remoteAddress ||
+        '';
+
+      if (clientIp) {
+        const usageIp = await adminDb
+          .collection('influencer_usages')
+          .where('influencer_uid', '==', influencerUid)
+          .where('client_ip', '==', clientIp)
+          .limit(1)
+          .get();
+        if (!usageIp.empty) {
+          return res.status(400).json({ error: 'COUPON_IP_LIMIT_REACHED' });
+        }
+      }
+
+      // 5) Ordre imposé : 1ère utilisation = cours unitaire, 2ème = pack
+      const isPack = packMode; // déterminé plus haut dans le fichier
+      if (usageSelf.size === 0 && isPack) {
+        return res.status(400).json({ error: 'COUPON_FIRST_USE_MUST_BE_SINGLE_LESSON' });
+      }
+      if (usageSelf.size === 1 && !isPack) {
+        return res.status(400).json({ error: 'COUPON_SECOND_USE_MUST_BE_PACK' });
+      }
+
+      // 6) Grille des réductions selon le type d'achat
+      // Cours unitaire : -5€ client / +5€ influ
+      // Pack 5h        : -10€ client / +10€ influ
+      // Pack 10h       : -30€ client / +20€ influ
+      let discountEur = 0;
+      let commissionEur = 0;
+
+      if (!isPack) {
+        discountEur    = 5;
+        commissionEur  = 5;
+      } else if (billedHours === 5) {
+        discountEur    = 10;
+        commissionEur  = 10;
+      } else if (billedHours === 10) {
+        discountEur    = 30;
+        commissionEur  = 20;
+      }
+
+      couponDiscountCents       = discountEur    * 100;
+      influencerCommissionCents = commissionEur  * 100;
+      couponDocId = influencerUid; // on réutilise ce champ pour le webhook
     }
 
-    const couponDoc = couponSnap.docs[0];
-    const coupon = couponDoc.data();
-
-    // Vérifie expiration
-    const expiresAt = coupon.expires_at?.toDate?.() || new Date(coupon.expires_at);
-    if (expiresAt && expiresAt < new Date()) {
-      return res.status(400).json({ error: 'COUPON_EXPIRED' });
-    }
-
-    couponDiscountCents = Math.round((coupon.discount_eur || 0) * 100);
-    couponDocId = couponDoc.id;
-    // On déduit uniquement de la commission plateforme (jamais du tarif prof)
+    // Déduit uniquement de la commission plateforme (jamais du tarif prof)
     effectiveSiteFeeCents = Math.max(0, siteFeeCents - couponDiscountCents);
     totalCents = teacherAmountCents + effectiveSiteFeeCents;
     if (totalCents < 50) totalCents = 50; // minimum Stripe 0.50€
@@ -299,6 +385,8 @@ export default async function handler(req, res) {
     coupon_code: couponCode ? couponCode.trim().toUpperCase() : '',
     coupon_doc_id: couponDocId || '',
     coupon_discount_cents: String(couponDiscountCents),
+    influencer_uid: influencerUid || '',
+    influencer_commission_cents: String(influencerCommissionCents),
   };
 
   let session;

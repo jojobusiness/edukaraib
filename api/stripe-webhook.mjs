@@ -145,9 +145,9 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
     }, { merge: true });
   }
 
-  // 3) Marquer le coupon comme utilisé si présent
+  // 3) Marquer le coupon comme utilisé si présent (ancien système)
   const couponDocId = md.coupon_doc_id;
-  if (couponDocId) {
+  if (couponDocId && !md.influencer_uid) {
     try {
       await adminDb.collection('coupons').doc(couponDocId).update({
         used: true,
@@ -157,6 +157,57 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
       });
     } catch (e) {
       console.warn('[webhook] coupon update failed:', e?.message);
+    }
+  }
+
+  // 4) Créditer la commission influenceur si un code influ était appliqué
+  const influencerUid = md.influencer_uid;
+  const influencerCommissionCents = Number(md.influencer_commission_cents || 0);
+  const isPack = String(md.is_pack) === '1';
+  const billedHoursWh = Number(md.billed_hours || 1);
+
+  if (influencerUid && influencerCommissionCents > 0) {
+    const influRef = adminDb.collection('influencers').doc(influencerUid);
+    try {
+      await adminDb.runTransaction(async (tx) => {
+        const influSnap = await tx.get(influRef);
+        if (!influSnap.exists) return;
+        const data = influSnap.data() || {};
+        const newPending = (data.pendingPayout || 0) + influencerCommissionCents / 100;
+        const newTotal   = (data.totalEarned  || 0) + influencerCommissionCents / 100;
+        const newCount   = (data.usageCount   || 0) + 1;
+
+        const conversionEntry = {
+          lesson_id:    lessonId || null,
+          payer_uid:    payerUid || null,
+          amount_eur:   influencerCommissionCents / 100,
+          type:         !isPack ? 'unitaire' : billedHoursWh === 10 ? 'pack10' : 'pack5',
+          paid_at:      new Date(),
+          session_id:   refs.sessionId || null,
+        };
+
+        tx.update(influRef, {
+          pendingPayout: newPending,
+          totalEarned:   newTotal,
+          usageCount:    newCount,
+          conversions:   [...(data.conversions || []), conversionEntry],
+        });
+      });
+
+      // Enregistre l'usage dans influencer_usages (pour limites IP + compte)
+      const clientIp = ''; // IP non disponible dans le webhook — déjà vérifiée au checkout
+      await adminDb.collection('influencer_usages').add({
+        influencer_uid:  influencerUid,
+        payer_uid:       payerUid || null,
+        client_ip:       clientIp,
+        is_pack:         isPack,
+        lesson_id:       lessonId || null,
+        commission_eur:  influencerCommissionCents / 100,
+        created_at:      new Date(),
+      });
+
+    } catch (e) {
+      console.warn('[webhook] influencer commission credit failed:', e?.message);
     }
   }
 

@@ -172,7 +172,7 @@ async function notifyByEmail(uid, title, message, ctaUrl, ctaText = "Ouvrir le t
    AdminDashboard (sans layout)
 =========================== */
 export default function AdminDashboard() {
-  const [tab, setTab] = useState('stats'); // stats | accounts | payments | messages | discussions
+  const [tab, setTab] = useState('stats'); // stats | accounts | payments | messages | discussions | influencers
   const [meRole, setMeRole] = useState(null);
   const [meId, setMeId] = useState(null);
 
@@ -210,6 +210,14 @@ export default function AdminDashboard() {
   const [convs, setConvs] = useState([]);
   const [lessons, setLessons] = useState([]);
   const [lessonsLoading, setLessonsLoading] = useState(false);
+
+  // --- Influenceurs state ---
+  const [influencers, setInfluencers] = useState([]);
+  const [influLoading, setInfluLoading] = useState(false);
+  const [influFilter, setInfluFilter] = useState("all"); // all | pending | inactive
+  const [influSearch, setInfluSearch] = useState("");
+  const [influPayoutLoading, setInfluPayoutLoading] = useState(null);
+  const [influToggleLoading, setInfluToggleLoading] = useState(null);
 
   /* ----- Load current user & role ----- */
   useEffect(() => {
@@ -353,6 +361,18 @@ export default function AdminDashboard() {
     });
     return () => unsub();
   }, [tab, users]);
+
+  /* ----- Influenceurs : load on tab open ----- */
+  useEffect(() => {
+    if (tab !== 'influencers') return;
+    setInfluLoading(true);
+    getDocs(query(collection(db, 'influencers'), orderBy('created_at', 'desc')))
+      .then((snap) => {
+        setInfluencers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setInfluLoading(false);
+      })
+      .catch(() => setInfluLoading(false));
+  }, [tab]);
 
   /* ----- Derived: account filters ----- */
   const filteredUsers = useMemo(() => {
@@ -575,6 +595,12 @@ export default function AdminDashboard() {
             onClick={() => setTab('discussions')}
           >
             Discussions
+          </button>
+          <button
+            className={`px-4 py-2 rounded-lg border ${tab === 'influencers' ? 'bg-primary text-white border-primary' : 'bg-white'}`}
+            onClick={() => setTab('influencers')}
+          >
+            🎤 Influenceurs
           </button>
         </div>
 
@@ -1238,6 +1264,183 @@ export default function AdminDashboard() {
             </div>
             )}
         </>
+        )}
+
+        {/* === INFLUENCEURS TAB === */}
+        {tab === 'influencers' && (
+          <div className="space-y-6">
+
+            {/* ── KPIs ── */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: 'Total influenceurs', value: influencers.length, color: 'text-blue-700' },
+                { label: 'Actifs', value: influencers.filter(i => i.active !== false).length, color: 'text-emerald-700' },
+                { label: 'En attente paiement', value: influencers.filter(i => (i.pendingPayout || 0) > 0).length, color: 'text-orange-600' },
+                { label: 'Total commissions versées', value: influencers.reduce((s, i) => s + (i.totalEarned || 0), 0).toFixed(2) + ' €', color: 'text-purple-700' },
+              ].map(k => (
+                <div key={k.label} className="bg-white border rounded-xl p-4">
+                  <div className="text-xs text-gray-500">{k.label}</div>
+                  <div className={`text-2xl font-bold mt-1 ${k.color}`}>{k.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* ── Filtres ── */}
+            <div className="flex flex-wrap gap-2 items-center">
+              <input
+                className="border rounded-lg px-3 py-2 text-sm w-56"
+                placeholder="Rechercher nom / email / code…"
+                value={influSearch}
+                onChange={e => setInfluSearch(e.target.value)}
+              />
+              {['all', 'pending', 'inactive'].map(f => (
+                <button
+                  key={f}
+                  className={`px-3 py-1.5 rounded-lg border text-sm ${influFilter === f ? 'bg-primary text-white border-primary' : 'bg-white'}`}
+                  onClick={() => setInfluFilter(f)}
+                >
+                  {f === 'all' ? 'Tous' : f === 'pending' ? '⏳ En attente' : '🔴 Inactifs'}
+                </button>
+              ))}
+            </div>
+
+            {/* ── Table ── */}
+            {influLoading ? (
+              <div className="text-center py-10 text-gray-400">Chargement…</div>
+            ) : (
+              <div className="bg-white border rounded-xl overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-left">
+                    <tr>
+                      <th className="p-3">Nom / Email</th>
+                      <th className="p-3">Code</th>
+                      <th className="p-3 text-right">Utilisations</th>
+                      <th className="p-3 text-right">Total gagné</th>
+                      <th className="p-3 text-right">En attente</th>
+                      <th className="p-3 text-center">Statut</th>
+                      <th className="p-3 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {influencers
+                      .filter(i => {
+                        if (influFilter === 'pending' && !(i.pendingPayout > 0)) return false;
+                        if (influFilter === 'inactive' && i.active !== false) return false;
+                        if (influSearch) {
+                          const q = influSearch.toLowerCase();
+                          return (
+                            (i.name || '').toLowerCase().includes(q) ||
+                            (i.email || '').toLowerCase().includes(q) ||
+                            (i.code || '').toLowerCase().includes(q)
+                          );
+                        }
+                        return true;
+                      })
+                      .map(influ => (
+                        <tr key={influ.id} className="border-t hover:bg-gray-50">
+                          <td className="p-3">
+                            <div className="font-medium">{influ.name || '—'}</div>
+                            <div className="text-xs text-gray-400">{influ.email || '—'}</div>
+                            {influ.rib && (
+                              <div className="text-xs text-gray-400 font-mono mt-0.5">IBAN: {influ.rib}</div>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-xs">{influ.code}</span>
+                              <button
+                                className="text-gray-400 hover:text-gray-700 text-xs"
+                                title="Copier"
+                                onClick={() => navigator.clipboard.writeText(influ.code)}
+                              >
+                                📋
+                              </button>
+                            </div>
+                          </td>
+                          <td className="p-3 text-right text-gray-700">{influ.usageCount || 0}</td>
+                          <td className="p-3 text-right font-medium text-emerald-700">
+                            {(influ.totalEarned || 0).toFixed(2)} €
+                          </td>
+                          <td className="p-3 text-right">
+                            <span className={`font-semibold ${(influ.pendingPayout || 0) > 0 ? 'text-orange-600' : 'text-gray-400'}`}>
+                              {(influ.pendingPayout || 0).toFixed(2)} €
+                            </span>
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${influ.active !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
+                              {influ.active !== false ? 'Actif' : 'Inactif'}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <div className="flex items-center justify-center gap-2">
+                              {/* Bouton virer */}
+                              <button
+                                disabled={!(influ.pendingPayout > 0) || !influ.rib || influPayoutLoading === influ.id}
+                                className="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg disabled:opacity-40 hover:bg-emerald-700"
+                                title={!influ.rib ? "Pas d'IBAN enregistré" : `Virer ${(influ.pendingPayout || 0).toFixed(2)} €`}
+                                onClick={async () => {
+                                  if (!window.confirm(`Virer ${(influ.pendingPayout || 0).toFixed(2)} € à ${influ.name} ?
+                                    IBAN: ${influ.rib}`)) return;
+                                  setInfluPayoutLoading(influ.id);
+                                  try {
+                                    const res = await fetchWithAuth('/api/influencer/trigger-payout', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ influencerUid: influ.id }),
+                                    });
+                                    const data = await res.json();
+                                    if (!res.ok) throw new Error(data.error || 'Erreur');
+                                    alert(`✅ Virement de ${data.amount_eur} € déclenché pour ${data.name}`);
+                                    setInfluencers(prev => prev.map(i =>
+                                      i.id === influ.id ? { ...i, pendingPayout: 0 } : i
+                                    ));
+                                  } catch (e) {
+                                    alert('❌ ' + e.message);
+                                  } finally {
+                                    setInfluPayoutLoading(null);
+                                  }
+                                }}
+                              >
+                                {influPayoutLoading === influ.id ? '…' : '💸 Virer'}
+                              </button>
+
+                              {/* Bouton activer/désactiver */}
+                              <button
+                                disabled={influToggleLoading === influ.id}
+                                className={`text-xs px-3 py-1.5 rounded-lg border ${influ.active !== false ? 'border-red-300 text-red-600 hover:bg-red-50' : 'border-emerald-300 text-emerald-700 hover:bg-emerald-50'}`}
+                                onClick={async () => {
+                                  setInfluToggleLoading(influ.id);
+                                  try {
+                                    const newActive = influ.active === false ? true : false;
+                                    await updateDoc(doc(db, 'influencers', influ.id), { active: newActive });
+                                    setInfluencers(prev => prev.map(i =>
+                                      i.id === influ.id ? { ...i, active: newActive } : i
+                                    ));
+                                  } catch (e) {
+                                    alert('Erreur: ' + e.message);
+                                  } finally {
+                                    setInfluToggleLoading(null);
+                                  }
+                                }}
+                              >
+                                {influ.active !== false ? 'Désactiver' : 'Réactiver'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    {influencers.filter(i => {
+                      if (influFilter === 'pending' && !(i.pendingPayout > 0)) return false;
+                      if (influFilter === 'inactive' && i.active !== false) return false;
+                      return true;
+                    }).length === 0 && (
+                      <tr><td colSpan={7} className="p-8 text-center text-gray-400">Aucun influenceur trouvé.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         )}
       </main>
     </div>
