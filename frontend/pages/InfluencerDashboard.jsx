@@ -69,6 +69,8 @@ export default function InfluencerDashboard() {
   const [authLoading, setAuthLoading] = useState(true);
   const [influencer, setInfluencer] = useState(null);
   const [uid, setUid] = useState(null);
+  const [userFirstName, setUserFirstName] = useState('');
+  const [userEmail, setUserEmail] = useState('');
 
   // IBAN
   const [ibanInput, setIbanInput] = useState('');
@@ -92,18 +94,8 @@ export default function InfluencerDashboard() {
       }
       const data = userSnap.data();
       const loadedFirst = data.firstName || (data.fullName ? data.fullName.split(' ')[0] : '');
-      const loadedLast  = data.lastName  || (data.fullName ? data.fullName.split(' ').slice(1).join(' ') : '');
-      setProfile({
-        firstName:    loadedFirst,
-        lastName:     loadedLast,
-        email:        data.email || firebaseUser.email || '',
-        phone:        data.phone || '',
-        city:         data.city || '',
-        network:      data.network || '',
-        profileUrl:   data.profileUrl || '',
-        audienceSize: data.audienceSize || '',
-        avatarUrl:    data.avatarUrl || '',
-      });
+      setUserFirstName(loadedFirst);
+      setUserEmail(data.email || firebaseUser.email || '');
       setUid(firebaseUser.uid);
       setAuthLoading(false);
     });
@@ -162,7 +154,7 @@ export default function InfluencerDashboard() {
   const handleLogout = async () => { await signOut(auth); window.location.href = '/'; };
 
   const handleResetPassword = async () => {
-    const email = profile.email || auth.currentUser?.email;
+    const email = userEmail || auth.currentUser?.email;
     if (!email) return alert("Pas d'adresse email trouvee.");
     await sendPasswordResetEmail(auth, email);
     alert('Un email de reinitialisation a ete envoye.');
@@ -208,7 +200,7 @@ export default function InfluencerDashboard() {
   const pending       = Number(influencer?.pendingPayout || 0);
   const total         = Number(influencer?.totalEarned   || 0);
   const shareLink     = 'https://www.edukaraib.com/ref/' + (influencer?.code || '');
-  const firstName     = (profile.firstName || '').split(' ')[0] || 'toi';
+  const firstName     = userFirstName || 'toi';
 
   return (
     <DashboardLayout role="influencer">
