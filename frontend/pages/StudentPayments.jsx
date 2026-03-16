@@ -83,15 +83,16 @@ const isPaidForStudent = (lesson, studentId) => {
   if (!lesson) return false;
   if (lesson.participantsMap && studentId) {
     const ent = lesson.participantsMap[studentId];
-    if (ent && ent.is_paid === true) return true;
+    if (ent && (ent.is_paid === true || !!ent.paid_at)) return true;
   }
-  if (lesson.student_id === studentId && lesson.is_paid === true) return true;
+  if (lesson.student_id === studentId && (lesson.is_paid === true || !!lesson.paid_at)) return true;
   return false;
 };
 
 // éligible au paiement pour moi
 const isEligibleForMePayment = (lesson, uid) => {
   if (!uid) return false;
+  if (isFreeHourForMe(lesson, uid)) return false; // ✅ heures gratuites exclues
   if (lesson?.is_group) {
     const st = lesson?.participantsMap?.[uid]?.status;
     return st === 'accepted' || st === 'confirmed';
@@ -243,6 +244,11 @@ export default function StudentPayments() {
       for (let i = 0; i < aliases.length; i += 10) chunks.push(aliases.slice(i, i + 10));
 
       let combined = new Map();
+      let renderTimer = null;
+      const debouncedRender = () => {
+        clearTimeout(renderTimer);
+        renderTimer = setTimeout(upsertAndRender, 80);
+      };
 
       const upsertAndRender = async () => {
         const rows = Array.from(combined.values());
@@ -316,7 +322,7 @@ export default function StudentPayments() {
         const qLegacy = query(collection(db, 'lessons'), where('student_id', 'in', c));
         const unsub = onSnapshot(qLegacy, (snap) => {
           snap.docs.forEach((d) => combined.set(d.id, { id: d.id, ...d.data() }));
-          upsertAndRender();
+          debouncedRender();
         }, (e) => { console.error(e); setLoading(false); });
         unsubscribers.push(unsub);
       }
@@ -326,7 +332,7 @@ export default function StudentPayments() {
         const qGroup = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', aid));
         const unsub = onSnapshot(qGroup, (snap) => {
           snap.docs.forEach((d) => combined.set(d.id, { id: d.id, ...d.data() }));
-          upsertAndRender();
+          debouncedRender();
         }, (e) => { console.error(e); setLoading(false); });
         unsubscribers.push(unsub);
       });

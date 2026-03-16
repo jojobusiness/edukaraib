@@ -71,9 +71,9 @@ const isPaidForStudent = (lesson, studentId) => {
   if (!lesson) return false;
   if (lesson.participantsMap && studentId) {
     const ent = lesson.participantsMap[studentId];
-    if (ent && ent.is_paid === true) return true;
+    if (ent && (ent.is_paid === true || !!ent.paid_at)) return true;
   }
-  if (lesson.student_id === studentId && lesson.is_paid === true) return true;
+  if (lesson.student_id === studentId && (lesson.is_paid === true || !!lesson.paid_at)) return true;
   return false;
 };
 

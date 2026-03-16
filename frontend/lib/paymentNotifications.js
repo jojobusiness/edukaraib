@@ -60,7 +60,7 @@ export async function createPaymentDueNotificationsForLesson(lesson) {
 
       const pParent = entry.parent_id || null;
 
-      // Notif au parent (si présent)
+      // Notif au parent s'il existe, sinon à l'élève directement (cohérent avec le cours individuel)
       if (pParent) {
         writes.push(
           addDoc(collection(db, 'notifications'), {
@@ -74,20 +74,20 @@ export async function createPaymentDueNotificationsForLesson(lesson) {
             created_at,
           })
         );
+      } else {
+        writes.push(
+          addDoc(collection(db, 'notifications'), {
+            type: 'payment_due',
+            user_id: sid,
+            for_student_id: sid,
+            lesson_id,
+            message: `Paiement en attente pour ${subject}.`,
+            price,
+            read: false,
+            created_at,
+          })
+        );
       }
-      // Notif au participant lui-même (si c'est un user id)
-      writes.push(
-        addDoc(collection(db, 'notifications'), {
-          type: 'payment_due',
-          user_id: sid,
-          for_student_id: sid,
-          lesson_id,
-          message: `Paiement en attente pour ${subject}.`,
-          price,
-          read: false,
-          created_at,
-        })
-      );
     }
   } else {
     // Cours individuel

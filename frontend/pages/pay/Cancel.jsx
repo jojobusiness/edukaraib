@@ -40,10 +40,13 @@ export default function PayCancel() {
     setErr('');
     setPaying(true);
     try {
-      await fetchWithAuth('/api/pay/diag', {
+      const diag = await fetchWithAuth('/api/pay/diag', {
         method: 'POST',
         body: JSON.stringify({ lessonId, forStudent: forStudent || undefined }),
       });
+      if (!diag?.ok) {
+        throw new Error(diag?.error || 'Impossible de valider le paiement (diagnostic).');
+      }
 
       const data = await fetchWithAuth('/api/pay/create-checkout-session', {
         method: 'POST',
