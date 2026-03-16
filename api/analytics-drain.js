@@ -10,10 +10,6 @@
 //   VERCEL_DRAIN_SECRET       → secret configuré dans Vercel Log Drain (pour vérifier la signature)
 // ─────────────────────────────────────────────────────
 
-// ✅ CRITIQUE : désactiver le bodyParser de Next.js pour lire le NDJSON brut
-// Sans ça, Next.js essaie de parser le body comme JSON et plante
-export const config = { api: { bodyParser: false } };
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
