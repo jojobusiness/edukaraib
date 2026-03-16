@@ -1,13 +1,11 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
-import { auth, db, storage } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
 import {
   onAuthStateChanged,
   signOut,
   sendPasswordResetEmail,
-  EmailAuthProvider,
-  reauthenticateWithCredential,
 } from 'firebase/auth';
 import {
   doc,
@@ -18,17 +16,8 @@ import {
   where,
   getDocs,
 } from 'firebase/firestore';
-import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import PhoneInput from 'react-phone-number-input';
-import 'react-phone-number-input/style.css';
 
-// ── Communes de Guyane ────────────────────────────────────────────────────────
-const GUYANE_COMMUNES = [
-  'Apatou','Awala-Yalimapo','Camopi','Cayenne','Grand-Santi','Iracoubo',
-  'Kourou','Macouria','Mana','Maripasoula','Matoury',
-  'Montsinéry-Tonnegrande','Ouanary','Papaïchton','Régina','Rémire-Montjoly',
-  'Roura','Saint-Élie','Saint-Georges','Saint-Laurent-du-Maroni','Saül','Sinnamary',
-];
+
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
 function fmtDate(ts) {
@@ -80,14 +69,6 @@ export default function InfluencerDashboard() {
   const [authLoading, setAuthLoading] = useState(true);
   const [influencer, setInfluencer] = useState(null);
   const [uid, setUid] = useState(null);
-
-  // Profil fields
-  const [profile, setProfile] = useState({
-    firstName: '', lastName: '', email: '', phone: '', city: '',
-    network: '', profileUrl: '', audienceSize: '', avatarUrl: '',
-  });
-  const [avatarFile, setAvatarFile] = useState(null);
-  const [saving, setSaving] = useState(false);
 
   // IBAN
   const [ibanInput, setIbanInput] = useState('');
@@ -147,43 +128,7 @@ export default function InfluencerDashboard() {
 
   useEffect(() => { if (uid) loadInfluencer(uid); }, [uid, loadInfluencer]);
 
-  // ── Save profil ─────────────────────────────────────────────────────────
-  const handleSave = async (e) => {
-    e.preventDefault();
-    if (!uid) return;
-    setSaving(true);
-    try {
-      let avatarUrl = profile.avatarUrl || '';
-      if (avatarFile) {
-        const r = sRef(storage, 'avatars/' + uid);
-        await uploadBytes(r, avatarFile);
-        avatarUrl = await getDownloadURL(r);
-      }
-      const fullName = ((profile.firstName || '').trim() + ' ' + (profile.lastName || '').trim()).trim();
-      await updateDoc(doc(db, 'users', uid), {
-        firstName:    (profile.firstName || '').trim(),
-        lastName:     (profile.lastName || '').trim(),
-        fullName,
-        phone:        (profile.phone || '').trim(),
-        city:         (profile.city || '').trim(),
-        network:      (profile.network || '').trim(),
-        profileUrl:   (profile.profileUrl || '').trim(),
-        audienceSize: (profile.audienceSize || '').trim(),
-        avatarUrl,
-      });
-      // Sync nom dans le doc influencers aussi
-      if (influencer?.id) {
-        await updateDoc(doc(db, 'influencers', influencer.id), { name: fullName });
-      }
-      setProfile(p => ({ ...p, avatarUrl, fullName }));
-      alert('Profil mis a jour !');
-    } catch (err) {
-      console.error(err);
-      alert("Erreur pendant l'enregistrement.");
-    } finally {
-      setSaving(false);
-    }
-  };
+  
 
   // ── Save IBAN ───────────────────────────────────────────────────────────
   const saveIban = async () => {
@@ -361,137 +306,6 @@ export default function InfluencerDashboard() {
             Ton code est en cours de generation. Rafraichis la page dans quelques instants.
           </div>
         )}
-      </Section>
-
-      {/* ── Profil ── */}
-      <Section title="Mon profil">
-        <form onSubmit={handleSave} className="space-y-5">
-
-          {/* Avatar */}
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-gray-100 overflow-hidden border-2 border-primary shadow shrink-0">
-              <img
-                src={avatarFile ? URL.createObjectURL(avatarFile) : (profile.avatarUrl || '/avatar-default.png')}
-                alt="Avatar"
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Photo de profil</label>
-              <input type="file" accept="image/*" onChange={e => setAvatarFile(e.target.files?.[0] || null)} className="text-xs text-gray-500" />
-            </div>
-          </div>
-
-          {/* Prenom / Nom */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block mb-1 text-sm font-medium text-gray-700">Prenom</label>
-              <input
-                type="text" className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                value={profile.firstName} onChange={e => setProfile(p => ({ ...p, firstName: e.target.value }))}
-                required placeholder="ex : Marie"
-              />
-            </div>
-            <div>
-              <label className="block mb-1 text-sm font-medium text-gray-700">Nom</label>
-              <input
-                type="text" className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                value={profile.lastName} onChange={e => setProfile(p => ({ ...p, lastName: e.target.value }))}
-                required placeholder="ex : Dupont"
-              />
-            </div>
-          </div>
-
-          {/* Email (lecture seule) */}
-          <div>
-            <label className="block mb-1 text-sm font-medium text-gray-700">Adresse email</label>
-            <div className="border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 text-sm text-gray-500">
-              {profile.email || '—'}
-            </div>
-          </div>
-
-          {/* Telephone */}
-          <div>
-            <label className="block mb-1 text-sm font-medium text-gray-700">Telephone</label>
-            <PhoneInput
-              international defaultCountry="GF"
-              value={profile.phone}
-              onChange={value => setProfile(p => ({ ...p, phone: value || '' }))}
-            />
-          </div>
-
-          {/* Ville */}
-          <div>
-            <label className="block mb-1 text-sm font-medium text-gray-700">Ville (commune)</label>
-            <select
-              className="w-full border border-gray-300 rounded-lg px-3 py-2"
-              value={profile.city} onChange={e => setProfile(p => ({ ...p, city: e.target.value }))}
-            >
-              <option value="">Selectionner...</option>
-              {GUYANE_COMMUNES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-
-          {/* Separateur */}
-          <div className="flex items-center gap-3 py-1">
-            <div className="flex-1 h-px bg-gray-100" />
-            <span className="text-xs text-gray-400 font-semibold uppercase tracking-wider">Profil partenaire</span>
-            <div className="flex-1 h-px bg-gray-100" />
-          </div>
-
-          {/* Reseau */}
-          <div>
-            <label className="block mb-1 text-sm font-medium text-gray-700">Reseau principal</label>
-            <input
-              type="text" className="w-full border border-gray-300 rounded-lg px-3 py-2"
-              value={profile.network} onChange={e => setProfile(p => ({ ...p, network: e.target.value }))}
-              placeholder="Instagram, TikTok, Facebook..."
-            />
-          </div>
-
-          {/* Lien */}
-          <div>
-            <label className="block mb-1 text-sm font-medium text-gray-700">Lien profil / page</label>
-            <input
-              type="text" className="w-full border border-gray-300 rounded-lg px-3 py-2"
-              value={profile.profileUrl} onChange={e => setProfile(p => ({ ...p, profileUrl: e.target.value }))}
-              placeholder="https://instagram.com/monprofil"
-            />
-          </div>
-
-          {/* Audience */}
-          <div>
-            <label className="block mb-1 text-sm font-medium text-gray-700">Taille d'audience</label>
-            <input
-              type="text" className="w-full border border-gray-300 rounded-lg px-3 py-2"
-              value={profile.audienceSize} onChange={e => setProfile(p => ({ ...p, audienceSize: e.target.value }))}
-              placeholder="ex : 5 000 abonnes"
-            />
-          </div>
-
-          <button
-            type="submit" disabled={saving}
-            className="w-full bg-primary text-white font-semibold py-2.5 rounded-lg shadow hover:bg-primary-dark transition disabled:opacity-60"
-          >
-            {saving ? 'Enregistrement...' : 'Enregistrer le profil'}
-          </button>
-        </form>
-
-        {/* Actions compte */}
-        <div className="mt-6 flex flex-col gap-2">
-          <button onClick={handleLogout}
-            className="w-full bg-gray-200 text-gray-700 font-semibold py-2 rounded-lg hover:bg-gray-300 transition">
-            Se deconnecter
-          </button>
-          <button onClick={handleResetPassword}
-            className="w-full bg-yellow-100 text-yellow-800 font-semibold py-2 rounded-lg hover:bg-yellow-200 transition">
-            Changer de mot de passe
-          </button>
-          <button onClick={handleDeleteAccount} disabled={saving}
-            className="w-full bg-red-100 text-red-800 font-semibold py-2 rounded-lg hover:bg-red-200 transition disabled:opacity-60">
-            Supprimer mon compte
-          </button>
-        </div>
       </Section>
 
       {/* ── IBAN ── */}

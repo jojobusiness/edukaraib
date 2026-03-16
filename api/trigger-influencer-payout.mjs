@@ -1,4 +1,4 @@
-import { adminDb, verifyAuth } from '../_firebaseAdmin.mjs';
+import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {

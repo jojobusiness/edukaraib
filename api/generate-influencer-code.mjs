@@ -1,4 +1,4 @@
-import { adminDb, verifyAuth } from '../_firebaseAdmin.mjs';
+import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
 
 // Génère un code unique format INFLU-XXXXXX (sans I, O, 0, 1 pour éviter confusion)
 function generateCode() {
