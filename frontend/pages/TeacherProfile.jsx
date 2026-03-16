@@ -327,7 +327,7 @@ export default function TeacherProfile() {
 
         // status global de la leçon
         const globalStatus = String(l.status || '').toLowerCase();
-        if (['removed', 'deleted'].includes(globalStatus)) return;
+        if (['removed', 'deleted', 'rejected'].includes(globalStatus)) return;
 
         // date locale du cours
         let dateStr = l.date || null;
@@ -1042,7 +1042,7 @@ export default function TeacherProfile() {
             },
 
             mode: bookMode,
-            ...(!createAsGroup && isPack ? putPackRoot(forcedPackId) : {}),
+            ...(isPack ? putPackRoot(forcedPackId) : {}), // ✅ fix: s'applique aussi aux cours groupés
           });
 
           // Pose/Nettoie le pack APRES création (pour ne pas polluer la leçon)
@@ -1114,6 +1114,8 @@ export default function TeacherProfile() {
       if (isPack && results.some(r => r.status === 'revived_individual' || r.status === 'revived_group')) {
         setPackChoice(0);  // plus d'étiquette Pack dans la confirmation
       }
+
+
       setShowBooking(false);
 
       const onlyOk = results.filter(r => r.status !== 'error');

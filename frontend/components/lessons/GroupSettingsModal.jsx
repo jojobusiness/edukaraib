@@ -482,17 +482,16 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
       [`participantsMap.${id}`]: invitedPayload,
     };
 
-    // garder l’élève d’origine confirmé s’il existe
+    // ✅ Garder l’élève d’origine confirmé s’il existe
+    // Ne réécrit QUE le statut pour ne pas écraser is_paid ou d’autres
+    // champs mis à jour depuis l’ouverture du modal (prop 'lesson' peut être stale)
     if (singleStudentId) {
-      patch[`participantsMap.${singleStudentId}`] = {
-        parent_id: lesson.parent_id || null,
-        booked_by: lesson.booked_by || null,
-        is_paid: !!lesson.is_paid,
-        paid_by: null,
-        paid_at: null,
-        status: 'confirmed',
-        added_at: serverTimestamp(),
-      };
+      const existingEntry = participantsMap?.[singleStudentId] || {};
+      if (existingEntry.status !== 'confirmed') {
+        patch[`participantsMap.${singleStudentId}.status`] = 'confirmed';
+      }
+      // S’assurer qu’il est dans participant_ids
+      patch.participant_ids = arrayUnion(id, singleStudentId);
     }
 
     try {
@@ -533,8 +532,9 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     const ref = doc(db, 'lessons', lesson.id);
 
     try {
-      // ✅ Pour non-pack : on met rejected
+      // ✅ Pour non-pack : on met rejected + on retire de participant_ids
       await updateDoc(ref, {
+        participant_ids: arrayRemove(id),
         [`participantsMap.${id}.status`]: 'rejected',
         [`participantsMap.${id}.removed_at`]: serverTimestamp(),
       });

@@ -12,7 +12,8 @@ import {
   getDoc,
   updateDoc,
   limit,
-  onSnapshot
+  onSnapshot,
+  deleteField,
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -278,7 +279,13 @@ function isRejectedForMe(l, uid) {
 function isConfirmedForUser(l, uid) { return isConfirmedForMe(l, uid); }
 
 /* ---------- helpers auto-règles (globaux) ---------- */
-const isIndividualPaid = (l) => l && !l.is_group && (l.is_paid === true);
+const isIndividualPaid = (l) => {
+  if (!l || l.is_group) return false;
+  if (l.is_paid === true) return true;
+  // Cas où le paiement est stocké dans participantsMap
+  const pm = l.participantsMap || {};
+  return Object.values(pm).some(entry => entry?.is_paid === true);
+};
 const hasAnyConfirmedParticipant = (l) => {
   if (!Array.isArray(l?.participant_ids)) return false;
   const pm = l?.participantsMap || {};
@@ -345,12 +352,28 @@ function getJoinState(l) {
   }
 
   // 2) fallback B : pas de date absolue → on estime via slot_day/slot_hour
-  const start = nextOccurrence(l.slot_day, l.slot_hour, new Date());
+  // ✅ On vérifie d'abord l'occurrence de CETTE semaine (pas uniquement la prochaine)
+  const nowDate = new Date();
+  const thisPast = nextOccurrence(l.slot_day, l.slot_hour, new Date(nowDate.getTime() - 7 * 24 * 60 * 60 * 1000));
+  const startThisWeek = thisPast ? thisPast.getTime() : null;
+  if (startThisWeek) {
+    const nowMs = Date.now();
+    const windowStartTW = startThisWeek - 15 * 60 * 1000;
+    const windowEndTW   = startThisWeek + 2 * 60 * 60 * 1000; // T+2h (aligne avec visio)
+    if (nowMs >= windowStartTW && nowMs <= windowEndTW) {
+      return 'open';
+    }
+    if (nowMs > windowEndTW && nowMs < startThisWeek + 7 * 24 * 60 * 60 * 1000) {
+      // Le cours de cette semaine est terminé, et la prochaine occurrence n'est pas encore ouverte
+      return 'expired';
+    }
+  }
+  const start = nextOccurrence(l.slot_day, l.slot_hour, nowDate);
   if (!start) return 'open'; // si pas de slot exploitable, on n'empêche pas
   const startMs = start.getTime();
   const now = Date.now();
   const windowStart = startMs - 15 * 60 * 1000;   // 15 min avant
-  const windowEnd   = startMs + 60 * 60 * 1000;   // +1h après (obsolète passé 1h)
+  const windowEnd   = startMs + 2 * 60 * 60 * 1000; // T+2h (aligné avec expiration visio)
   if (now < windowStart) return 'before';
   if (now > windowEnd)   return 'expired';
   return 'open';
@@ -464,20 +487,24 @@ export default function MyCourses() {
         if (!startMs) return; // pas de date absolue → on ne force rien
 
         // 1) Si pas accepté avant l'heure prévue → rejeté
+        // Note: ce tick côté client est un filet de sécurité UI.
+        // La logique principale doit vivre dans un Cloud Function pour éviter
+        // les écritures concurrentes si plusieurs onglets sont ouverts.
         if (now >= startMs) {
           const statusStr = String(l.status || '');
+          // Ne jamais re-traiter un cours déjà terminé ou refusé
+          if (statusStr === 'completed' || statusStr === 'rejected') return;
           const isAccepted =
             statusStr === 'confirmed' ||
-            statusStr === 'completed' ||
             (l.is_group && hasAnyConfirmedParticipant(l));
 
-          if (!isAccepted && statusStr !== 'rejected') {
+          if (!isAccepted) {
             try { await updateDoc(doc(db, 'lessons', l.id), { status: 'rejected' }); } catch {}
             return;
           }
         }
 
-        // 2) Individuel accepté mais non payé à l'heure → rejeté
+        // 2) Individuel confirmé mais non payé à l'heure → rejeté
         if (!l.is_group && String(l.status || '') === 'confirmed') {
             if (now >= startMs && !isIndividualPaid(l)) {
               try { await updateDoc(doc(db, 'lessons', l.id), { status: 'rejected' }); } catch {}
@@ -615,7 +642,7 @@ export default function MyCourses() {
     try {
       await updateDoc(doc(db, 'lessons', lesson.id), {
         participant_ids: (lesson.participant_ids || []).filter(x => x !== uid),
-        [`participantsMap.${uid}`]: null,
+        [`participantsMap.${uid}`]: deleteField(),
       });
       setCourses(prev => prev.filter(c => !(c.id === lesson.id && (c.participant_ids||[]).includes(uid))));
       // 🔔 Email au professeur

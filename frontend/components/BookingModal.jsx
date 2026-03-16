@@ -151,9 +151,15 @@ export default function BookingModal({
   }, [weekAnchor]);
 
   // -------- Verrous temporels (+1h) --------
-  const now = new Date();
+  // On recalcule chaque minute pour que les créneaux se verrouillent dynamiquement
+  const [nowTick, setNowTick] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const now = new Date(nowTick);
   const nowHour = now.getHours();
-  const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
+  const todayMidnight = new Date(nowTick); todayMidnight.setHours(0,0,0,0);
   const isSlotLockedByDate = (dayDate, hour) => {
     const d = new Date(dayDate); d.setHours(0,0,0,0);
     if (d.getTime() < todayMidnight.getTime()) return true;
@@ -431,7 +437,7 @@ export default function BookingModal({
     if (!canBook) return;
     if (!selected.length) return;
     if (requiredN && selected.length !== requiredN) return; // impose exact
-    if (multiSelect) onBook(selected); else onBook(selected[0]);
+    if (multiSelect) onBook(sortedSelected); else onBook(sortedSelected[0]);
   };
 
   const need = requiredN ? (requiredN - selected.length) : null;

@@ -988,7 +988,8 @@ export default function TeacherLessons() {
         baseUpdate[`participantsMap.${ownerSid}.status`] =
           status === 'confirmed' ? 'confirmed' :
           status === 'rejected'  ? 'rejected'  :
-          status; // (completed stays completed on the lesson; participant can remain confirmed)
+          status === 'completed' ? 'confirmed' : // ✅ leçon terminée mais participant reste confirmed
+          status;
       }
 
       await updateDoc(ref, baseUpdate);
@@ -1023,7 +1024,9 @@ export default function TeacherLessons() {
             if (data.is_group || Array.isArray(data.participant_ids)) {
               const pm = { ...(data.participantsMap || {}) };
               for (const sid of data.participant_ids || []) {
-                pm[sid] = { ...(pm[sid] || {}), status: status === 'rejected' ? 'rejected' : 'accepted' };
+                // completed: préserver le statut participant existant ; rejected: rejeter ; sinon: accepted
+                const pSt = status === 'rejected' ? 'rejected' : status === 'completed' ? (pm[sid]?.status || 'confirmed') : 'accepted';
+                pm[sid] = { ...(pm[sid] || {}), status: pSt };
               }
               newData.participantsMap = pm;
               newData.participant_ids = Object.keys(pm);
@@ -1044,7 +1047,8 @@ export default function TeacherLessons() {
                 : Object.keys(l.participantsMap || {});
               const pm = { ...(l.participantsMap || {}) };
               ids.forEach(sid => {
-                pm[sid] = { ...(pm[sid] || {}), status: status === 'rejected' ? 'rejected' : 'accepted' };
+                const pSt = status === 'rejected' ? 'rejected' : status === 'completed' ? (pm[sid]?.status || 'confirmed') : 'accepted';
+                pm[sid] = { ...(pm[sid] || {}), status: pSt };
               });
               next.participantsMap = pm;
               next.participant_ids = ids;
@@ -1523,8 +1527,9 @@ export default function TeacherLessons() {
 
         // 3) 30 minutes après la fin : passer automatiquement en "completed" si payé
         // On considère 1h de cours par slot (tu peux ajuster si tu ajoutes un champ de durée)
-        const durationMs = 60 * 60 * 1000;           // 1 heure
-        const completeAfterMs = 30 * 60 * 1000;      // +30 minutes
+        // ✅ Lire duration_minutes si disponible, sinon fallback 60 min
+        const durationMs = l.duration_minutes ? l.duration_minutes * 60 * 1000 : 60 * 60 * 1000;
+        const completeAfterMs = 60 * 60 * 1000;      // ✅ +60 min (aligné avec expiration lien visio T+2h)
         const completeAtMs = startMs + durationMs + completeAfterMs;
 
         if (now >= completeAtMs && String(l.status || '') === 'confirmed') {
@@ -1598,9 +1603,10 @@ export default function TeacherLessons() {
       // fenêtre d’ouverture/expiration
       const { opensAt, expiresAt } = computeVisioWindow(lesson);
 
-      const roomSuffix = `jk_${lesson.id}_${token(8)}`; // partie aléatoire
+      const linkToken = token(16); // un seul token, partagé entre joinUrl et room
+      const roomSuffix = `jk_${lesson.id}_${linkToken}`;
       const payload = {
-        joinUrl: `${window.location.origin}/visio/${lesson.id}?k=${token(16)}`,
+        joinUrl: `${window.location.origin}/visio/${lesson.id}?k=${linkToken}`,
         created_at: new Date().toISOString(),
         opens_at: opensAt?.toISOString?.() || null,
         expires_at: expiresAt?.toISOString?.() || null,
