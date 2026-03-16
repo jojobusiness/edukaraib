@@ -10,7 +10,6 @@ import {
   reauthenticateWithCredential,
 } from 'firebase/auth';
 import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
-import { ref as sRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
 

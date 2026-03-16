@@ -48,6 +48,7 @@ import AuthAction from './pages/AuthAction';
 import InfluencerHome from './pages/InfluencerHome.jsx'
 import InfluencerDashboard from './pages/InfluencerDashboard.jsx'
 import InfluencerProfile from './pages/InfluencerProfile'
+import InfluencerCommissions from './pages/InfluencerCommissions'
 
 /* === Google Analytics PageView Tracker === */
 function PageViewTracker() {
@@ -192,6 +193,7 @@ function App() {
             <Route path="/influencer" element={<InfluencerHome />} />
             <Route path="/influencer/dashboard" element={<InfluencerDashboard />} />
             <Route path="/influencer/profile" element={<InfluencerProfile />} />
+            <Route path="/influencer/commissions" element={<InfluencerCommissions />} />
 
             {/* 🛠️ Administrateur */}
             <Route path="/admin/dashboard" element={<RequireRole roles={['admin']}><AdminDashboard /></RequireRole>} />
