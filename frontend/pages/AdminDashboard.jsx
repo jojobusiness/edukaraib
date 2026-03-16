@@ -1383,7 +1383,7 @@ export default function AdminDashboard() {
                                     IBAN: ${influ.rib}`)) return;
                                   setInfluPayoutLoading(influ.id);
                                   try {
-                                    const res = await fetchWithAuth('/api/influencer/trigger-payout', {
+                                    const res = await fetchWithAuth('/api/trigger-influencer-payout', {
                                       method: 'POST',
                                       headers: { 'Content-Type': 'application/json' },
                                       body: JSON.stringify({ influencerUid: influ.id }),

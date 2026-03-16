@@ -137,7 +137,7 @@ export default function InfluencerHome() {
         createdAt: serverTimestamp(),
       });
 
-      await fetchWithAuth('/api/influencer/generate-code', {
+      await fetchWithAuth('/api/generate-influencer-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
