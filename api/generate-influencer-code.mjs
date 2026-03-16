@@ -1,13 +1,14 @@
 import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
 
 // Génère un code unique format INFLU-XXXXXX (sans I, O, 0, 1 pour éviter confusion)
-function generateCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = 'INFLU-';
-  for (let i = 0; i < 6; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return code;
+function generateCode(name = '') {
+  // Prend le prénom (premier mot), majuscules, retire les accents et caractères spéciaux
+  const base = (name.trim().split(' ')[0] || 'INFLU')
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+    .toUpperCase().replace(/[^A-Z]/g, '')
+    .slice(0, 12); // max 12 chars pour éviter les codes trop longs
+  const digits = String(Math.floor(Math.random() * 90) + 10); // 10-99
+  return base + digits;
 }
 
 export default async function handler(req, res) {
@@ -59,7 +60,7 @@ export default async function handler(req, res) {
   let code;
   let attempts = 0;
   while (attempts < 5) {
-    const candidate = generateCode();
+    const candidate = generateCode(name);
     const codeCheck = await adminDb
       .collection('influencers')
       .where('code', '==', candidate)
