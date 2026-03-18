@@ -76,6 +76,14 @@ export default function InfluencerDashboard() {
     if (!influencer?.id) return;
     const cleaned = ibanInput.trim().replace(/\s/g, '').toUpperCase();
     if (!cleaned) { setIbanMsg({ type: 'err', text: 'IBAN vide.' }); return; }
+
+    // ✅ Validation format IBAN minimal (2 lettres pays + 2 chiffres contrôle + jusqu'à 30 car.)
+    const ibanRegex = /^[A-Z]{2}[0-9]{2}[A-Z0-9]{4,30}$/;
+    if (!ibanRegex.test(cleaned) || cleaned.length < 15 || cleaned.length > 34) {
+      setIbanMsg({ type: 'err', text: 'Format IBAN invalide. Ex : FR7630001007941234567890185' });
+      return;
+    }
+
     setIbanSaving(true); setIbanMsg(null);
     try {
       await updateDoc(doc(db, 'influencers', influencer.id), { rib: cleaned });

@@ -20,7 +20,7 @@ export default async function handler(req, res) {
   if (!auth) return;
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-  const { name, email, uid: bodyUid } = body;
+  const { name, email, uid: bodyUid, createUserDoc, network, audienceSize, profileUrl } = body;
 
   if (!name || !email) {
     return res.status(400).json({ error: 'MISSING_NAME_OR_EMAIL' });
@@ -88,6 +88,25 @@ export default async function handler(req, res) {
     payoutHistory: [],
     created_at: new Date(),
   });
+
+  // ✅ Si createUserDoc=true, créer users/{uid} côté serveur (adminDb) avec role='influencer'
+  // Cela évite que le client s'auto-attribue ce rôle via un setDoc direct depuis le navigateur
+  if (createUserDoc === true) {
+    // Sanitize profileUrl : accepter uniquement http(s) ou chaîne vide
+    const rawUrl = String(profileUrl || '').trim();
+    const safeUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : '';
+
+    await adminDb.collection('users').doc(targetUid).set({
+      uid: targetUid,
+      fullName: name.trim(),
+      email: email.trim().toLowerCase(),
+      role: 'influencer', // ← attribué par adminDb, pas par le client
+      network: String(network || '').trim(),
+      profileUrl: safeUrl,
+      audienceSize: String(audienceSize || '').trim(),
+      createdAt: new Date(),
+    });
+  }
 
   // ── Email de bienvenue ───────────────────────────────────────────────────
   try {

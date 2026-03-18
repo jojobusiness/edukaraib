@@ -6,7 +6,7 @@ import {
   signInWithEmailAndPassword,
   onAuthStateChanged,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import fetchWithAuth from '../utils/fetchWithAuth';
 
 // ── Champ de formulaire réutilisable ─────────────────────────────────────────
@@ -126,26 +126,23 @@ export default function InfluencerHome() {
       const cred = await createUserWithEmailAndPassword(auth, regEmail, regPassword);
       const uid = cred.user.uid;
 
-      await setDoc(doc(db, 'users', uid), {
-        uid,
-        fullName: regName.trim(),
-        email: regEmail.trim().toLowerCase(),
-        role: 'influencer',
-        network: regNetwork.trim(),
-        profileUrl: regUrl.trim(),
-        audienceSize: regAudience.trim(),
-        createdAt: serverTimestamp(),
-      });
-
+      // ✅ La création du doc users/{uid} avec role='influencer' est déléguée
+      // à l'API /api/generate-influencer-code (adminDb côté serveur)
+      // Cela empêche n'importe quel utilisateur de s'auto-attribuer le rôle influencer
+      // depuis le client via un setDoc direct.
       await fetchWithAuth('/api/generate-influencer-code', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: regName.trim(),
           email: regEmail.trim().toLowerCase(),
           uid,
+          network: regNetwork.trim(),
+          profileUrl: regUrl.trim(),
+          audienceSize: regAudience.trim(),
+          createUserDoc: true, // ← demande à l'API de créer aussi users/{uid}
         }),
-      }).catch(err => console.warn('[InfluencerHome] generate-code:', err));
+      });
+
 
       navigate('/influencer/dashboard', { replace: true });
     } catch (err) {

@@ -141,8 +141,11 @@ export default function InfluencerCommissions() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {[...conversions].reverse().map((c, i) => (
-                  <tr key={i} className="hover:bg-gray-50">
+                {[...conversions].reverse().map((c, i) => {
+                  // ✅ clé stable : session_id si dispo, sinon combinaison date+montant+index
+                  const rowKey = c.session_id || `${c.paid_at}-${c.amount_eur}-${i}`;
+                  return (
+                  <tr key={rowKey} className="hover:bg-gray-50">
                     <td className="py-3 text-gray-500 whitespace-nowrap">{fmtDate(c.paid_at)}</td>
                     <td className="py-3">
                       <span className={'text-xs font-bold px-2.5 py-1 rounded-full ' + typeBadge(c.type)}>
@@ -161,7 +164,8 @@ export default function InfluencerCommissions() {
                       {c.lesson_id ? c.lesson_id.slice(0, 12) + '...' : '—'}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-gray-200">
@@ -195,8 +199,10 @@ export default function InfluencerCommissions() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {[...payoutHistory].reverse().map((p, i) => (
-                  <tr key={i} className="hover:bg-gray-50">
+                {[...payoutHistory].reverse().map((p, i) => {
+                  const rowKey = `${p.triggered_at}-${p.amount_eur}-${i}`;
+                  return (
+                  <tr key={rowKey} className="hover:bg-gray-50">
                     <td className="py-3 text-gray-500 whitespace-nowrap">{fmtDate(p.triggered_at)}</td>
                     <td className="py-3 font-extrabold text-gray-800">{fmtEur(p.amount_eur)}</td>
                     <td className="py-3 text-xs text-gray-400 font-mono hidden sm:table-cell">
@@ -210,7 +216,8 @@ export default function InfluencerCommissions() {
                       </span>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

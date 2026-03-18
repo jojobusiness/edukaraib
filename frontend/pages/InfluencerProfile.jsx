@@ -78,6 +78,9 @@ export default function InfluencerProfile() {
     setSaving(true);
     try {
       const fullName = ((profile.firstName || '').trim() + ' ' + (profile.lastName || '').trim()).trim();
+      // ✅ Sanitize profileUrl : n'accepter que http(s) pour éviter javascript: en href
+      const rawUrl = (profile.profileUrl || '').trim();
+      const safeProfileUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : '';
       await updateDoc(doc(db, 'users', uid), {
         firstName:    (profile.firstName || '').trim(),
         lastName:     (profile.lastName || '').trim(),
@@ -85,7 +88,7 @@ export default function InfluencerProfile() {
         phone:        (profile.phone || '').trim(),
         city:         (profile.city || '').trim(),
         network:      (profile.network || '').trim(),
-        profileUrl:   (profile.profileUrl || '').trim(),
+        profileUrl:   safeProfileUrl,
         audienceSize: (profile.audienceSize || '').trim(),
       });
       // Sync nom dans influencers
