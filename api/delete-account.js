@@ -63,10 +63,17 @@ export default async function handler(req, res) {
       }
     } catch {}
 
-    // Collections liées — adapte à ton schéma
-    await deleteQueryBatch(db.collection('reservations').where('userId', '==', uid));
-    await deleteQueryBatch(db.collection('courses').where('teacherId', '==', uid));
-    await deleteQueryBatch(db.collection('threads').where('participants', 'array-contains', uid));
+    // ✅ Collections corrigées selon le schéma réel de l'app
+    // Lessons où l'utilisateur est élève (student_id)
+    await deleteQueryBatch(db.collection('lessons').where('student_id', '==', uid));
+    // Lessons où l'utilisateur est prof (teacher_id)
+    await deleteQueryBatch(db.collection('lessons').where('teacher_id', '==', uid));
+    // Conversations (messagerie)
+    await deleteQueryBatch(db.collection('conversations').where('participants', 'array-contains', uid));
+    // Messages envoyés
+    await deleteQueryBatch(db.collection('messages').where('sender_uid', '==', uid));
+    // Notifications
+    await deleteQueryBatch(db.collection('notifications').where('user_id', '==', uid));
 
     if (userSnap.exists) await userRef.delete();
 

@@ -21,10 +21,16 @@ function readBody(req) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
 
-  // Protège cet endpoint (ex: admin uniquement)
+  // Protège cet endpoint : admin OU élève/parent concerné (pour auto-remboursement)
   const auth = await verifyAuth(req, res);
   if (!auth) return;
   const adminUid = auth.uid;
+
+  // ✅ Vérification : admin ou appelant lié au paiement
+  // Un remboursement sans ce check peut être déclenché par n'importe quel utilisateur connecté
+  const callerSnap = await adminDb.collection('users').doc(adminUid).get();
+  const callerRole = callerSnap.exists ? callerSnap.data()?.role : null;
+  const isAdmin = callerRole === 'admin';
 
   const { paymentId, amount_eur, reason } = readBody(req);
   if (!paymentId) return res.status(400).json({ error: 'MISSING_PAYMENT_ID' });
@@ -36,6 +42,11 @@ export default async function handler(req, res) {
 
   const pay = { id: paySnap.id, ...paySnap.data() };
   const amountCents = amount_eur ? Math.round(Number(amount_eur) * 100) : null;
+
+  // ✅ Non-admin : seul le payeur d'origine peut demander un remboursement
+  if (!isAdmin && String(pay.payer_uid || '') !== String(adminUid)) {
+    return res.status(403).json({ error: 'FORBIDDEN' });
+  }
 
   // Charger la leçon
   const lessonRef = adminDb.collection('lessons').doc(String(pay.lesson_id));
