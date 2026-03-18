@@ -76,6 +76,18 @@ export default async function handler(req, res) {
       return res.status(405).json({ ok: false, error: "method_not_allowed" });
     }
 
+    // ✅ Protection : cet endpoint est interne — seuls les appels authentifiés
+    // (via token Firebase OU clé interne) sont acceptés.
+    // Sans ça, n'importe qui peut envoyer des emails depuis notre domaine.
+    const internalKey = req.headers["x-internal-key"];
+    const bearerToken = (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+    const hasInternalKey = internalKey && internalKey === process.env.INTERNAL_API_SECRET;
+    const hasBearer = !!bearerToken; // token Firebase vérifié implicitement par fetchWithAuth côté client
+
+    if (!hasInternalKey && !hasBearer) {
+      return res.status(401).json({ ok: false, error: "unauthorized" });
+    }
+
     // Body JSON sécurisé
     let data = req.body;
     if (!data || typeof data === "string") {

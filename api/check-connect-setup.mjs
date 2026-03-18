@@ -1,6 +1,25 @@
-import { getFirestore } from './_firebaseAdmin.mjs';
+import { getFirestore, getAuthAdmin } from './_firebaseAdmin.mjs';
 
 export default async function handler(req, res) {
+  // ✅ Endpoint de diagnostic réservé aux admins
+  // Sans protection, n'importe qui peut découvrir quelles env vars sont configurées
+  try {
+    const idToken = (req.headers.authorization || '').split('Bearer ')[1];
+    if (!idToken) return res.status(401).json({ error: 'NO_TOKEN' });
+
+    const authAdmin = getAuthAdmin();
+    const decoded = await authAdmin.verifyIdToken(idToken).catch(() => null);
+    if (!decoded) return res.status(401).json({ error: 'INVALID_TOKEN' });
+
+    const db = getFirestore();
+    const userSnap = await db.collection('users').doc(decoded.uid).get();
+    if (!userSnap.exists || userSnap.data()?.role !== 'admin') {
+      return res.status(403).json({ error: 'FORBIDDEN' });
+    }
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+
   try {
     const env = {
       STRIPE_SECRET_KEY: !!process.env.STRIPE_SECRET_KEY,

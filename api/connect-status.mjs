@@ -1,5 +1,3 @@
-export const config = { runtime: 'nodejs' };
-
 import { stripe } from './_stripe.mjs';
 import { getFirestore, getAuthAdmin } from './_firebaseAdmin.mjs';
 
