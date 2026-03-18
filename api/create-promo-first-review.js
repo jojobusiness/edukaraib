@@ -40,6 +40,12 @@ export default async function handler(req, res) {
 
     // Vérifie que c'est bien le parent ou l'élève lié à ce cours
     const isStudent = lesson.student_id === uid;
+
+    // ✅ Pour les cours groupés : vérifier que uid est dans participant_ids
+    const isGroupParticipant =
+      Array.isArray(lesson.participant_ids) &&
+      lesson.participant_ids.map(String).includes(String(uid));
+
     const isParent =
       lesson.parent_id === uid ||
       (lesson.participantsMap &&
@@ -47,7 +53,7 @@ export default async function handler(req, res) {
           (p) => p.parent_id === uid || p.booked_by === uid
         ));
 
-    if (!isStudent && !isParent) {
+    if (!isStudent && !isParent && !isGroupParticipant) {
       return res.status(403).json({ ok: false, error: "NOT_LINKED_TO_LESSON" });
     }
 

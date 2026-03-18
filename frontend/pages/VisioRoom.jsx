@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useLocation } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
+import fetchWithAuth from '../utils/fetchWithAuth';
 
 const JAAS_TENANT = 'vpaas-magic-cookie-651cb7a83ef74ca1981d7fdeee7f91ca';
 const JAAS_DOMAIN = '8x8.vc';
@@ -170,9 +171,9 @@ export default function VisioRoom() {
         // 1️⃣ récupérer un JWT auprès de notre backend
         let jwtToken = null;
         try {
-          const res = await fetch('/api/jaas-token', {
+          // ✅ fetchWithAuth (avec token Firebase) pour que /api/jaas-token puisse vérifier l'identité
+          const data = await fetchWithAuth('/api/jaas-token', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               roomName,
               isModerator,
@@ -181,8 +182,7 @@ export default function VisioRoom() {
               userEmail,
             }),
           });
-          const data = await res.json();
-          if (res.ok && data?.token) {
+          if (data?.token) {
             jwtToken = data.token;
           } else {
             console.warn('jaas-token error', data);

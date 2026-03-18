@@ -21,6 +21,16 @@ export default async function handler(req, res) {
   const teacherUid = lesson.teacher_id;
   if (!teacherUid) return res.status(400).json({ error: 'NO_TEACHER' });
 
+  // ✅ Seul le prof concerné ou un admin peut déclencher le virement
+  // Sans ce check, n'importe quel utilisateur connecté peut forcer un payout
+  if (auth.uid !== teacherUid) {
+    const callerSnap = await adminDb.collection('users').doc(auth.uid).get();
+    const isAdmin = callerSnap.exists && callerSnap.data()?.role === 'admin';
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'FORBIDDEN' });
+    }
+  }
+
   // Récupérer le prof
   const teacherSnap = await adminDb.collection('users').doc(teacherUid).get();
   const teacher = teacherSnap.exists ? teacherSnap.data() : null;

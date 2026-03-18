@@ -156,11 +156,12 @@ async function getUserEmail(uid) {
 async function notifyByEmail(uid, title, message, ctaUrl, ctaText = "Ouvrir le tableau de bord") {
   try {
     const to = await getUserEmail(uid);
-    if (!to) return; // pas d'email, on ne tente pas
-    await fetch("/api/notify-email", {
+    if (!to) return;
+    // ✅ fetchWithAuth (avec token Firebase) au lieu de fetch nu
+    // fetch nu echouait silencieusement si /api/notify-email verifie l'auth
+    await fetchWithAuth("/api/notify-email", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to, title, message, ctaUrl, ctaText }), // 👈 envoie 'to' (email)
+      body: JSON.stringify({ to, title, message, ctaUrl, ctaText }),
     });
   } catch (e) {
     console.warn("notify-email error:", e);
@@ -518,7 +519,15 @@ export default function AdminDashboard() {
   /* ===========================
      Guards
   =========================== */
-  if (meRole && meRole !== 'admin') {
+  // ✅ meRole=null = encore en chargement, meRole!='admin' = acces interdit
+  // Sans ce split, pendant le chargement Firestore (meRole=null) le dashboard
+  // s'affiche entierement a n'importe quel utilisateur connecte
+  if (meRole === null) {
+    return <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-gray-500">Chargement…</div>
+    </div>;
+  }
+  if (meRole !== 'admin') {
     return (
       <div className="min-h-screen bg-gray-50">
         <header className="w-full bg-white border-b">
@@ -1068,9 +1077,10 @@ export default function AdminDashboard() {
                   onClick={async () => {
                     try {
                       setMessageSending(true);
+                      // ✅ Batches de 20 pour eviter throttling Firestore/Resend
                       const ids = Array.from(selectedIds);
-                      await Promise.all(
-                        ids.map(async (uid) => {
+                      for (let _i = 0; _i < ids.length; _i += 20) {
+                        await Promise.all(ids.slice(_i, _i + 20).map(async (uid) => {
                           await addDoc(collection(db, 'notifications'), {
                             user_id: uid,
                             title: messageTitle.trim(),
@@ -1079,16 +1089,9 @@ export default function AdminDashboard() {
                             created_at: serverTimestamp(),
                             from_admin: auth.currentUser?.uid || null,
                           });
-                          // ✉️ email pro pour chaque uid
-                          await notifyByEmail(
-                            uid,
-                            messageTitle.trim(),
-                            messageBody.trim(),
-                            "https://edukaraib.com/smart-dashboard",
-                            "Ouvrir le tableau de bord"
-                          );
-                        })
-                      );
+                          await notifyByEmail(uid, messageTitle.trim(), messageBody.trim(), "https://edukaraib.com/smart-dashboard", "Ouvrir le tableau de bord");
+                        }));
+                      }
                       alert('Message envoyé aux comptes sélectionnés.');
                       setMessageTitle('');
                       setMessageBody('');
@@ -1107,8 +1110,9 @@ export default function AdminDashboard() {
                   onClick={async () => {
                     try {
                       setMessageSending(true);
-                      await Promise.all(
-                        filteredUsers.map(async (u) => {
+                      // ✅ Batches de 20
+                      for (let _i = 0; _i < filteredUsers.length; _i += 20) {
+                        await Promise.all(filteredUsers.slice(_i, _i + 20).map(async (u) => {
                           await addDoc(collection(db, 'notifications'), {
                             user_id: u.id,
                             title: messageTitle.trim(),
@@ -1117,16 +1121,9 @@ export default function AdminDashboard() {
                             created_at: serverTimestamp(),
                             from_admin: auth.currentUser?.uid || null,
                           });
-                          // ✉️ email pro pour chaque u.id
-                          await notifyByEmail(
-                            u.id,
-                            messageTitle.trim(),
-                            messageBody.trim(),
-                            "https://edukaraib.com/dashboard",
-                            "Ouvrir le tableau de bord"
-                          );
-                        })
-                      );
+                          await notifyByEmail(u.id, messageTitle.trim(), messageBody.trim(), "https://edukaraib.com/dashboard", "Ouvrir le tableau de bord");
+                        }));
+                      }
                       alert('Message envoyé à la liste filtrée.');
                       setMessageTitle('');
                       setMessageBody('');
@@ -1145,9 +1142,10 @@ export default function AdminDashboard() {
                   onClick={async () => {
                     try {
                       setMessageSending(true);
+                      // ✅ Batches de 20
                       const nonAdmins = users.filter(u => u.role !== 'admin');
-                      await Promise.all(
-                        nonAdmins.map(async (u) => {
+                      for (let _i = 0; _i < nonAdmins.length; _i += 20) {
+                        await Promise.all(nonAdmins.slice(_i, _i + 20).map(async (u) => {
                           await addDoc(collection(db, 'notifications'), {
                             user_id: u.id,
                             title: messageTitle.trim(),
@@ -1156,16 +1154,9 @@ export default function AdminDashboard() {
                             created_at: serverTimestamp(),
                             from_admin: auth.currentUser?.uid || null,
                           });
-                          // ✉️ email pro pour chaque u.id
-                          await notifyByEmail(
-                            u.id,
-                            messageTitle.trim(),
-                            messageBody.trim(),
-                            "https://edukaraib.com/dashboard",
-                            "Ouvrir le tableau de bord"
-                          );
-                        })
-                      );
+                          await notifyByEmail(u.id, messageTitle.trim(), messageBody.trim(), "https://edukaraib.com/dashboard", "Ouvrir le tableau de bord");
+                        }));
+                      }
                       alert('Message envoyé à tous (hors admins).');
                       setMessageTitle('');
                       setMessageBody('');
@@ -1342,7 +1333,7 @@ export default function AdminDashboard() {
                             <div className="font-medium">{influ.name || '—'}</div>
                             <div className="text-xs text-gray-400">{influ.email || '—'}</div>
                             {influ.rib && (
-                              <div className="text-xs text-gray-400 font-mono mt-0.5">IBAN: {influ.rib}</div>
+                              <div className="text-xs text-gray-400 font-mono mt-0.5">IBAN: {influ.rib?.slice(0,4)}••••{influ.rib?.slice(-4)}</div>
                             )}
                           </td>
                           <td className="p-3">
@@ -1379,17 +1370,17 @@ export default function AdminDashboard() {
                                 className="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg disabled:opacity-40 hover:bg-emerald-700"
                                 title={!influ.rib ? "Pas d'IBAN enregistré" : `Virer ${(influ.pendingPayout || 0).toFixed(2)} €`}
                                 onClick={async () => {
+                                  const _maskedRib = influ.rib ? influ.rib.slice(0,4) + '••••' + influ.rib.slice(-4) : 'N/A';
                                   if (!window.confirm(`Virer ${(influ.pendingPayout || 0).toFixed(2)} € à ${influ.name} ?
-                                    IBAN: ${influ.rib}`)) return;
+                                    IBAN: ${_maskedRib}`)) return;
                                   setInfluPayoutLoading(influ.id);
                                   try {
-                                    const res = await fetchWithAuth('/api/trigger-influencer-payout', {
+                                    // ✅ fetchWithAuth retourne déjà l'objet JSON parsé, pas une Response
+                                    const data = await fetchWithAuth('/api/trigger-influencer-payout', {
                                       method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
                                       body: JSON.stringify({ influencerUid: influ.id }),
                                     });
-                                    const data = await res.json();
-                                    if (!res.ok) throw new Error(data.error || 'Erreur');
+                                    if (!data?.success) throw new Error(data?.error || 'Erreur');
                                     alert(`✅ Virement de ${data.amount_eur} € déclenché pour ${data.name}`);
                                     setInfluencers(prev => prev.map(i =>
                                       i.id === influ.id ? { ...i, pendingPayout: 0 } : i
@@ -1585,7 +1576,9 @@ function SiteVisitsSection() {
       if (!seenMonths[mk]) { seenMonths[mk] = true; monthKeys.push(mk); }
     });
 
-    var dailyPromises = dateKeys.map(function(k) {
+    // ✅ Pour 1 an : on saute les 365 getDoc individuels (couteux et lents)
+    // et on utilise uniquement les 12 docs mensuels deja calcules
+    var dailyPromises = period === '1y' ? [] : dateKeys.map(function(k) {
       return getDoc(doc(db, 'analytics_daily', k))
         .then(function(s) { return { day: k, pageviews: s.exists() ? (s.data().pageviews || 0) : 0, visitors: s.exists() ? (s.data().visitors || 0) : 0 }; })
         .catch(function() { return { day: k, pageviews: 0, visitors: 0 }; });
@@ -1632,7 +1625,10 @@ function SiteVisitsSection() {
       setTopBrowsers(toSortedList(browsersSnap));
       setTopReferrers(toSortedList(referrersSnap));
 
-      var totalPV = dailyData.reduce(function(a, d) { return a + (Number(d.pageviews) || 0); }, 0);
+      // Pour 1y : totalPV base sur les mensuels (les daily sont vides intentionnellement)
+      var totalPV = period === '1y'
+        ? monthlyData.reduce(function(a, d) { return a + (Number(d.pageviews) || 0); }, 0)
+        : dailyData.reduce(function(a, d) { return a + (Number(d.pageviews) || 0); }, 0);
       setNoData(totalPV === 0);
       setLoading(false);
     }).catch(function(e) {
@@ -1644,6 +1640,8 @@ function SiteVisitsSection() {
   var totalPV  = daily.reduce(function(a, d) { return a + (Number(d.pageviews) || 0); }, 0);
   var totalVis = daily.reduce(function(a, d) { return a + (Number(d.visitors)  || 0); }, 0);
   var avgDaily = daily.length > 0 ? Math.round(totalPV / daily.length) : 0;
+  // bounceRate : approx (pages sup / total pages), pas un vrai taux de rebond
+  // Un vrai rebond = sessions avec 1 seule page vue, non calculable sans donnee de session
   var bounceRate = totalPV > 0 && totalVis > 0 ? Math.round(((totalPV - totalVis) / totalPV) * 100) : 0;
   var showEvery = daily.length > 14 ? 7 : 1;
 
@@ -1693,7 +1691,7 @@ function SiteVisitsSection() {
                 <div className="text-2xl font-bold text-purple-600">{avgDaily.toLocaleString('fr-FR')}</div>
               </div>
               <div className="bg-gray-50 rounded-xl p-3 border">
-                <div className="text-xs text-gray-500">↩️ Taux rebond (estimé)</div>
+                <div className="text-xs text-gray-500" title="Approximation : pages sup. / total pages vues">↩️ Pages/visite (approx.)</div>
                 <div className="text-2xl font-bold text-orange-600">{bounceRate}%</div>
               </div>
             </div>
