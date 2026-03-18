@@ -62,7 +62,11 @@ export default async function handler(req, res) {
   // TODO : brancher ici un virement SEPA réel (ex: API GoCardless, Stripe Payouts, etc.)
   // Pour l'instant : log admin + confirmation manuelle
 
-  console.log(`[payout] Virement déclenché pour ${influ.name} (${influ.email}) — ${pendingEur} € → IBAN ${influ.rib}`);
+  // ✅ IBAN masqué dans les logs (RGPD — ne jamais logger de données bancaires en clair)
+  const maskedIban = influ.rib
+    ? influ.rib.slice(0, 4) + '****' + influ.rib.slice(-4)
+    : 'N/A';
+  console.log(`[payout] Virement déclenché pour ${influ.name} (${influ.email}) — ${pendingEur} € → ${maskedIban}`);
 
   return res.json({
     success: true,

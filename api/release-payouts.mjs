@@ -1,12 +1,18 @@
 import { releaseDuePayouts } from '../release-payouts-cron.mjs';
 
 export default async function handler(req, res) {
-  // protection (optionnelle) par clé secrète
+  // ✅ CRON_SECRET obligatoire — si non configuré on bloque tout
+  // (évite le cas où secret=undefined → condition entière = false → accès ouvert)
   const secret = process.env.CRON_SECRET;
-  const headerKey = req.headers['x-cron-key'];
-  const qsKey = req.query?.key || req.query?.cron_key; // fallback pour test navigateur
+  if (!secret) {
+    console.error('[release-payouts] CRON_SECRET env var not set');
+    return res.status(500).json({ error: 'SERVER_MISCONFIGURED' });
+  }
 
-  if (secret && headerKey !== secret && qsKey !== secret) {
+  const headerKey = req.headers['x-cron-key'];
+  const qsKey = req.query?.key || req.query?.cron_key;
+
+  if (headerKey !== secret && qsKey !== secret) {
     return res.status(403).json({ error: 'FORBIDDEN' });
   }
 

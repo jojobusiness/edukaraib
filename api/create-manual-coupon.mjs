@@ -17,8 +17,14 @@ export default async function handler(req, res) {
 
   const { adminSecret, userEmail } = readBody(req);
 
-  // Sécurité minimale
-  if (adminSecret !== ADMIN_SECRET) {
+  // ✅ Si la variable d'env n'est pas configurée, on bloque tout
+  // (évite le cas où undefined !== undefined = false → accès ouvert)
+  if (!ADMIN_SECRET) {
+    console.error('[create-manual-coupon] ADMIN_COUPON_SECRET env var not set');
+    return res.status(500).json({ ok: false, error: 'SERVER_MISCONFIGURED' });
+  }
+
+  if (!adminSecret || adminSecret !== ADMIN_SECRET) {
     return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
   }
   if (!userEmail) return res.status(400).json({ ok: false, error: 'MISSING_EMAIL' });
