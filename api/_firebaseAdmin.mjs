@@ -1,6 +1,8 @@
 import { initializeApp, getApps, cert, applicationDefault } from 'firebase-admin/app';
 import { getAuth as _getAuth } from 'firebase-admin/auth';
 import { getFirestore as _getFirestore } from 'firebase-admin/firestore';
+import { getStorage } from 'firebase-admin/storage';
+import Stripe from 'stripe';
 
 // ---- Lecture variables d'environnement (Vercel) ----
 const projectId = process.env.FIREBASE_PROJECT_ID;
@@ -28,12 +30,14 @@ function getAdminApp() {
         clientEmail,
         privateKey,
       }),
+      storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
     });
   } else {
     // Fallback (si ADC disponible, ex. local avec gcloud auth application-default login)
     console.warn('[firebase-admin] Missing service account env vars — using applicationDefault() if available.');
     app = initializeApp({
       credential: applicationDefault(),
+      storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
     });
   }
 
@@ -91,3 +95,21 @@ export function rawBody(req) {
     }
   });
 }
+
+// ── Exports de confort pour remplacer _admin.js ───────────────────────────────
+// Permet à delete-account.js (et autres) d'importer depuis un seul fichier
+
+/** Alias de getAuthAdmin() pour rétro-compatibilité avec _admin.js */
+export const authAdmin = _getAuth(getAdminApp());
+
+/** Bucket Firebase Storage (nécessite FIREBASE_STORAGE_BUCKET dans les env vars) */
+export function getBucket() {
+  return getStorage(getAdminApp()).bucket();
+}
+// Export direct (compatible avec import { bucket } from './_firebaseAdmin.mjs')
+export const bucket = getStorage(getAdminApp()).bucket();
+
+/** Instance Stripe partagée */
+export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: '2024-06-20',
+});

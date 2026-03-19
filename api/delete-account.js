@@ -1,4 +1,6 @@
-import { db, authAdmin, bucket, stripe } from './_admin.js';
+// ✅ Migration : import depuis _firebaseAdmin.mjs (singleton unifié)
+// _admin.js était un doublon — toute la logique est maintenant dans _firebaseAdmin.mjs
+import { adminDb as db, authAdmin, bucket, stripe } from './_firebaseAdmin.mjs';
 
 async function deleteQueryBatch(q, batchSize = 400) {
   const snap = await q.limit(batchSize).get();

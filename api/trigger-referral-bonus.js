@@ -18,6 +18,13 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false, error: 'METHOD_NOT_ALLOWED' });
   }
 
+  // ✅ Cet endpoint est réservé aux appels internes (depuis stripe-webhook)
+  // Il ne doit jamais être appelable publiquement car il crédite des primes
+  const internalKey = req.headers['x-internal-key'];
+  if (!internalKey || internalKey !== process.env.INTERNAL_API_SECRET) {
+    return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+  }
+
   const { teacherUid, paymentType, lessonId, amount } = req.body || {};
   // paymentType : 'course' | 'pack5' | 'pack10'
 
