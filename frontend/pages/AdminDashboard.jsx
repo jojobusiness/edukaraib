@@ -1380,8 +1380,11 @@ export default function AdminDashboard() {
                                       method: 'POST',
                                       body: JSON.stringify({ influencerUid: influ.id }),
                                     });
-                                    if (!data?.success) throw new Error(data?.error || 'Erreur');
-                                    alert(`✅ Virement de ${data.amount_eur} € déclenché pour ${data.name}`);
+                                    if (!data?.success) {
+                                      const detail = data?.detail ? '\n\nDétail Stripe : ' + data.detail : '';
+                                      throw new Error((data?.error || 'Erreur') + detail);
+                                    }
+                                    alert(`✅ Virement de ${data.amount_eur} € déclenché pour ${data.name}\nStripe ID : ${data.stripe_payout_id}`);
                                     setInfluencers(prev => prev.map(i =>
                                       i.id === influ.id ? { ...i, pendingPayout: 0 } : i
                                     ));

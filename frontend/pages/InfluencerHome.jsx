@@ -126,11 +126,13 @@ export default function InfluencerHome() {
       const cred = await createUserWithEmailAndPassword(auth, regEmail, regPassword);
       const uid = cred.user.uid;
 
-      // ✅ La création du doc users/{uid} avec role='influencer' est déléguée
-      // à l'API /api/generate-influencer-code (adminDb côté serveur)
-      // Cela empêche n'importe quel utilisateur de s'auto-attribuer le rôle influencer
-      // depuis le client via un setDoc direct.
-      await fetchWithAuth('/api/generate-influencer-code', {
+      // Force le refresh du token Firebase pour s'assurer que fetchWithAuth
+      // dispose d'un token valide immédiatement apres la creation du compte
+      await cred.user.getIdToken(true);
+
+      // La creation du doc users/{uid} avec role='influencer' est deleguee
+      // a l'API (adminDb cote serveur) — empeche l'auto-attribution de role cote client
+      const apiRes = await fetchWithAuth('/api/generate-influencer-code', {
         method: 'POST',
         body: JSON.stringify({
           name: regName.trim(),
@@ -139,9 +141,13 @@ export default function InfluencerHome() {
           network: regNetwork.trim(),
           profileUrl: regUrl.trim(),
           audienceSize: regAudience.trim(),
-          createUserDoc: true, // ← demande à l'API de créer aussi users/{uid}
+          createUserDoc: true,
         }),
       });
+
+      if (apiRes && !apiRes.uid && !apiRes.code) {
+        throw new Error(apiRes.error || 'Erreur lors de la creation du compte partenaire.');
+      }
 
 
       navigate('/influencer/dashboard', { replace: true });

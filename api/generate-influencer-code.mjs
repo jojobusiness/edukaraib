@@ -20,7 +20,7 @@ export default async function handler(req, res) {
   if (!auth) return;
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-  const { name, email, uid: bodyUid, createUserDoc, network, audienceSize, profileUrl } = body;
+  const { name, email, uid: bodyUid, createUserDoc, network, profileUrl, audienceSize } = body;
 
   if (!name || !email) {
     return res.status(400).json({ error: 'MISSING_NAME_OR_EMAIL' });
@@ -89,23 +89,26 @@ export default async function handler(req, res) {
     created_at: new Date(),
   });
 
-  // ✅ Si createUserDoc=true, créer users/{uid} côté serveur (adminDb) avec role='influencer'
-  // Cela évite que le client s'auto-attribue ce rôle via un setDoc direct depuis le navigateur
-  if (createUserDoc === true) {
-    // Sanitize profileUrl : accepter uniquement http(s) ou chaîne vide
-    const rawUrl = String(profileUrl || '').trim();
-    const safeUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : '';
-
-    await adminDb.collection('users').doc(targetUid).set({
-      uid: targetUid,
-      fullName: name.trim(),
-      email: email.trim().toLowerCase(),
-      role: 'influencer', // ← attribué par adminDb, pas par le client
-      network: String(network || '').trim(),
-      profileUrl: safeUrl,
-      audienceSize: String(audienceSize || '').trim(),
-      createdAt: new Date(),
-    });
+  // ── Crée users/{uid} avec role='influencer' si demandé (inscription) ──────
+  // Nécessaire car le client ne peut pas s'auto-attribuer un rôle via setDoc
+  if (createUserDoc) {
+    const userRef = adminDb.collection('users').doc(targetUid);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) {
+      const nameParts = name.trim().split(' ');
+      await userRef.set({
+        uid:          targetUid,
+        email:        email.trim().toLowerCase(),
+        fullName:     name.trim(),
+        firstName:    nameParts[0] || '',
+        lastName:     nameParts.slice(1).join(' ') || '',
+        role:         'influencer',
+        network:      (network  || '').trim(),
+        profileUrl:   (profileUrl || '').trim(),
+        audienceSize: (audienceSize || '').trim(),
+        createdAt:    new Date(),
+      });
+    }
   }
 
   // ── Email de bienvenue ───────────────────────────────────────────────────
