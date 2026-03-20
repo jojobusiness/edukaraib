@@ -95,9 +95,37 @@ function formatDate(date) {
   return date.toLocaleDateString();
 }
 
+// Récupère l'UID du premier admin trouvé dans users
+async function fetchAdminUid(myUid) {
+  try {
+    const q = query(collection(db, "users"), where("role", "==", "admin"), limit(1));
+    const snap = await getDocs(q);
+    if (!snap.empty && snap.docs[0].id !== myUid) {
+      return { uid: snap.docs[0].id, data: snap.docs[0].data() };
+    }
+  } catch {}
+  return null;
+}
+
 export default function ChatList({ onSelectChat }) {
   const [items, setItems] = useState([]);
+  const [adminEntry, setAdminEntry] = useState(null);
   const { role: currentRole, loading } = useUserRole();
+
+  // Charge l'entrée admin (message de bienvenue fixe en tête)
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const myUid = auth.currentUser.uid;
+    (async () => {
+      const admin = await fetchAdminUid(myUid);
+      if (!admin) return;
+      setAdminEntry({
+        uid: admin.uid,
+        name: "Administrateur EduKaraib",
+        avatar: admin.data.avatarUrl || admin.data.photoURL || "/edukaraib_logo.png",
+      });
+    })();
+  }, []);
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -165,11 +193,53 @@ export default function ChatList({ onSelectChat }) {
         <h2 className="text-2xl font-bold text-primary mb-6">💬 Mes conversations</h2>
 
         <div className="bg-white p-6 rounded-xl shadow border">
-          {items.length === 0 ? (
-            <div className="text-gray-500 text-center">Aucune conversation récente.</div>
-          ) : (
-            <ul className="divide-y divide-gray-100">
-              {items.map((c) => (
+          <ul className="divide-y divide-gray-100">
+            {/* ── Entrée admin fixe en tête ── */}
+            {adminEntry && (
+              <li className="flex items-center gap-4 py-4">
+                <div className="relative">
+                  <img
+                    src={adminEntry.avatar}
+                    alt="Admin"
+                    className="w-12 h-12 rounded-full object-cover border-2 border-primary"
+                  />
+                  {/* Admin toujours "disponible" */}
+                  <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-primary truncate">Administrateur EduKaraib</div>
+                  <div className="text-xs text-gray-500">Support &amp; assistance</div>
+                  <div className="text-sm text-emerald-600 truncate mt-1 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full inline-block" />
+                    Disponible — envoyez-nous un message !
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {onSelectChat ? (
+                    <button
+                      onClick={() => onSelectChat(adminEntry.uid)}
+                      className="bg-primary text-white px-4 py-2 rounded shadow font-semibold hover:bg-primary-dark transition"
+                    >
+                      Discuter
+                    </button>
+                  ) : (
+                    <Link
+                      to={`/chat/${adminEntry.uid}`}
+                      className="bg-primary text-white px-4 py-2 rounded shadow font-semibold hover:bg-primary-dark transition"
+                    >
+                      Discuter
+                    </Link>
+                  )}
+                </div>
+              </li>
+            )}
+            {/* ── Conversations existantes ── */}
+            {items.length === 0 && !adminEntry ? (
+              <li className="text-gray-500 text-center py-6">Aucune conversation récente.</li>
+            ) : (
+              items
+                .filter(c => adminEntry ? c.otherUid !== adminEntry.uid : true)
+                .map((c) => (
                 <li key={c.cid} className="flex items-center gap-4 py-4">
                   <div className="relative">
                     <img
@@ -222,9 +292,9 @@ export default function ChatList({ onSelectChat }) {
                     )}
                   </div>
                 </li>
-              ))}
-            </ul>
-          )}
+              ))
+            )}
+          </ul>
         </div>
       </div>
     </DashboardLayout>

@@ -88,6 +88,35 @@ function pairKey(a, b) {
   return [a, b].sort().join("_");
 }
 
+// ── Helpers affichage style WhatsApp ──────────────────────────────────────────
+function formatTime(ts) {
+  if (!ts?.toDate) return "";
+  return ts.toDate().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+}
+
+function dateSeparatorLabel(date) {
+  if (!date) return null;
+  const d = date?.toDate ? date.toDate() : new Date(date);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+
+  const sameDay = (a, b) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+
+  if (sameDay(d, today)) return "Aujourd'hui";
+  if (sameDay(d, yesterday)) return "Hier";
+  return d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+}
+
+function getDayKey(ts) {
+  if (!ts?.toDate) return null;
+  const d = ts.toDate();
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
 async function fetchFromColById(col, uid) {
   try {
     const d = await getDoc(doc(db, col, uid));
@@ -595,35 +624,49 @@ export default function Messages(props) {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.map((m) => {
+      <div className="flex-1 overflow-y-auto p-4 space-y-1">
+        {(() => {
           const myUid = auth.currentUser?.uid;
-          const isMine = m.sender_uid === myUid;
-          return (
-            <div
-              key={m.id}
-              className={`flex flex-col max-w-xs ${
-                isMine ? "ml-auto items-end" : "mr-auto items-start"
-              }`}
-            >
-              <div
-                className={`px-4 py-2 rounded-2xl shadow ${
-                  isMine
-                    ? "bg-primary text-white rounded-br-none"
-                    : "bg-gray-200 text-gray-900 rounded-bl-none"
-                }`}
-              >
-                {m.message}
-              </div>
-              <span className="text-xs text-gray-500 mt-1">
-                {isMine ? "Moi" : receiverName || "Utilisateur"} •{" "}
-                {m.sent_at?.toDate
-                  ? m.sent_at.toDate().toLocaleTimeString()
-                  : ""}
-              </span>
-            </div>
-          );
-        })}
+          let lastDayKey = null;
+          return messages.map((m) => {
+            const isMine = m.sender_uid === myUid;
+            const dayKey = getDayKey(m.sent_at);
+            const showSeparator = dayKey && dayKey !== lastDayKey;
+            if (showSeparator) lastDayKey = dayKey;
+            const label = showSeparator ? dateSeparatorLabel(m.sent_at) : null;
+            return (
+              <React.Fragment key={m.id}>
+                {/* ── Séparateur de date style WhatsApp ── */}
+                {label && (
+                  <div className="flex justify-center my-3">
+                    <span className="bg-gray-200 text-gray-500 text-xs font-medium px-3 py-1 rounded-full shadow-sm">
+                      {label}
+                    </span>
+                  </div>
+                )}
+                <div
+                  className={`flex flex-col max-w-xs mb-1 ${
+                    isMine ? "ml-auto items-end" : "mr-auto items-start"
+                  }`}
+                >
+                  <div
+                    className={`px-4 py-2 rounded-2xl shadow-sm ${
+                      isMine
+                        ? "bg-primary text-white rounded-br-none"
+                        : "bg-white text-gray-900 rounded-bl-none border border-gray-100"
+                    }`}
+                  >
+                    {m.message}
+                  </div>
+                  {/* Heure uniquement — pas de nom */}
+                  <span className="text-xs text-gray-400 mt-0.5 px-1">
+                    {formatTime(m.sent_at)}
+                  </span>
+                </div>
+              </React.Fragment>
+            );
+          });
+        })()}
         <div ref={messagesEndRef} />
       </div>
 
