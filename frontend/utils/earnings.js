@@ -1,5 +1,3 @@
-export const COMMISSION_RATE = 0.05; // 5%
-
 export const fmtEUR = (n) =>
   new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' })
     .format(Number(n || 0));
