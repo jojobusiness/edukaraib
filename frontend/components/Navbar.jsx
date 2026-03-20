@@ -6,9 +6,11 @@ import { doc, getDoc, collection, query, where, limit, getDocs } from 'firebase/
 
 // 👉 MAPPING vers tes routes réelles (depuis ton DashboardLayout)
 const ROLE_PATH = {
-  student: '/dashboard-eleve',
-  parent:  '/parent/dashboard',
-  teacher: '/prof/dashboard',      
+  student:    '/dashboard-eleve',
+  parent:     '/parent/dashboard',
+  teacher:    '/prof/dashboard',
+  admin:      '/admin/dashboard',
+  influencer: '/influencer/dashboard',
 };
 
 async function getUserRole(uid) {
