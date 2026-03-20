@@ -21,14 +21,13 @@ import StudentPayments from './pages/StudentPayments';
 import TeacherCalendar from './pages/TeacherCalendar';
 import TeacherReviews from './pages/TeacherReviews';
 import MessagesWrapper from './pages/MessagesWrapper';
-import Messages from './pages/Messages';
 import ChatList from './pages/ChatList';
+import Messages from './pages/Messages';
 import NotFound from './pages/NotFound';
 import SmartDashboard from './pages/SmartDashboard';
 import Unauthorized from './pages/Unauthorized';
 import ParentPayments from './pages/ParentPayments';
 import ParentCalendar from './pages/ParentCalendar';
-import Settings from './pages/Settings';
 import Contact from './pages/Contact';
 import CGU from './pages/CGU';
 import Privacy from './pages/Privacy';
@@ -36,7 +35,6 @@ import ChildDetails from './pages/ChildDetails';
 import TeacherProfile from './pages/TeacherProfile';
 import PaySuccess from './pages/pay/Success.jsx';
 import PayCancel from './pages/pay/Cancel.jsx';
-import BookLessonEleve from './pages/BookLessonEleve';
 import VisioRoom from './pages/VisioRoom.jsx';
 import TeacherRoute from './components/TeacherRoute';
 import ParentRoute from './components/ParentRoute';
@@ -126,7 +124,6 @@ function App() {
 
             {/* Protégées génériques */}
             <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
-            <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
 
             {/* 💬 Messagerie */}
             <Route
@@ -161,6 +158,7 @@ function App() {
                 </RequireRole>
               }
             />
+
             <Route path="/chat-list" element={<PrivateRoute><ChatList /></PrivateRoute>} />
 
             {/* 🔍 Recherche */}
@@ -171,7 +169,6 @@ function App() {
             <Route path="/my-courses" element={<StudentRoute><MyCourses /></StudentRoute>} />
             <Route path="/dashboard-eleve/planning" element={<StudentRoute><StudentCalendar /></StudentRoute>} />
             <Route path="/student/payments" element={<RequireRole roles={['student']}><StudentPayments /></RequireRole>} />
-            <Route path="/book-lesson-eleve" element={<StudentRoute><BookLessonEleve teacherId="TEACHER_ID" subjectId="SUBJECT_ID" /></StudentRoute>} />
 
             {/* 👨‍👩‍👧 Parent */}
             <Route path="/parent/dashboard" element={<ParentRoute><ParentDashboard /></ParentRoute>} />
