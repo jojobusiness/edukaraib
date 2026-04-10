@@ -14,9 +14,68 @@ import 'react-phone-number-input/style.css';
 import fetchWithAuth from '../utils/fetchWithAuth';
 
 // ————————————————————————————————
-// Communes officielles de au Caraïbe (22)
-const au Caraïbe_COMMUNES = [
-  'Apatou','Awala-Yalimapo','Camopi','Cayenne','Grand-Santi','Iracoubo','Kourou','Macouria','Mana','Maripasoula','Matoury','Montsinéry-Tonnegrande','Ouanary','Papaïchton','Régina','Rémire-Montjoly','Roura','Saint-Élie','Saint-Georges','Saint-Laurent-du-Maroni','Saül','Sinnamary',
+// Villes des Caraïbes et au-delà (pour profs en visio du monde entier)
+const CARAIBES_VILLES = [
+  // Guadeloupe
+  'Pointe-à-Pitre','Basse-Terre','Les Abymes','Baie-Mahault','Le Gosier','Sainte-Anne','Saint-François','Le Moule','Capesterre-Belle-Eau','Pointe-Noire','Lamentin','Sainte-Rose','Petit-Bourg','Morne-à-l\'Eau','Port-Louis','Gourbeyre','Trois-Rivières','Vieux-Habitants','Bouillante','Deshaies',
+  // Marie-Galante & dépendances
+  'Grand-Bourg','Capesterre-de-Marie-Galante','Saint-Louis',
+  // Martinique
+  'Fort-de-France','Le Lamentin','Le Robert','Schoelcher','Le François','Sainte-Marie','Le Marin','La Trinité','Les Trois-Îlets','Le Vauclin','Le Diamant','Rivière-Pilote','Rivière-Salée','Sainte-Luce','Ducos','Le Carbet','Saint-Pierre','Le Prêcheur','Case-Pilote','Bellefontaine','Macouba','Basse-Pointe','Ajoupa-Bouillon','Fonds-Saint-Denis','Saint-Joseph','Gros-Morne','Lorrain','Sainte-Anne','Saint-Esprit','Le Saint-Esprit',
+  // Guyane française
+  'Cayenne','Kourou','Matoury','Rémire-Montjoly','Saint-Laurent-du-Maroni','Mana','Maripasoula','Macouria','Iracoubo','Sinnamary','Apatou','Grand-Santi','Papaïchton','Régina','Roura','Saint-Élie','Camopi','Awala-Yalimapo','Montsinéry-Tonnegrande','Saül','Ouanary','Saint-Georges',
+  // Saint-Martin
+  'Marigot','Grand-Case','Orient Bay',
+  // Sint Maarten
+  'Philipsburg','Simpson Bay','Cole Bay',
+  // Saint-Barthélemy
+  'Gustavia','Lorient','Saint-Jean','Flamands','Corossol',
+  // Haïti
+  'Port-au-Prince','Pétionville','Carrefour','Delmas','Tabarre','Cité Soleil','Cap-Haïtien','Gonaïves','Saint-Marc','Jacmel','Les Cayes','Jérémie','Miragoâne','Hinche',
+  // République Dominicaine
+  'Saint-Domingue','Santiago de los Caballeros','La Romana','San Pedro de Macorís','San Cristóbal','Puerto Plata','La Vega','Moca','Higüey','Barahona',
+  // Cuba
+  'La Havane','Santiago de Cuba','Holguín','Camagüey','Guantánamo','Santa Clara','Bayamo','Trinidad','Cienfuegos','Matanzas','Pinar del Río','Las Tunas',
+  // Jamaïque
+  'Kingston','Spanish Town','Montego Bay','Portmore','Mandeville','May Pen',
+  // Trinidad-et-Tobago
+  'Port of Spain','San Fernando','Chaguanas','Arima','Point Fortin','Scarborough',
+  // Barbade
+  'Bridgetown','Speightstown','Oistins','Bathsheba',
+  // Sainte-Lucie
+  'Castries','Vieux Fort','Micoud','Soufrière',
+  // Saint-Vincent-et-les-Grenadines
+  'Kingstown','Georgetown','Layou',
+  // Grenade
+  'Saint-Georges','Grenville','Gouyave',
+  // Antigua-et-Barbuda
+  'Saint John\'s','Codrington',
+  // Saint-Christophe-et-Niévès
+  'Basseterre','Charlestown',
+  // Porto Rico (USA)
+  'San Juan','Bayamón','Carolina','Ponce','Caguas','Mayagüez','Guaynabo','Trujillo Alto','Arecibo',
+  // Îles Vierges américaines
+  'Charlotte Amalie','Christiansted','Cruz Bay',
+  // Îles Vierges britanniques
+  'Road Town',
+  // Aruba / Curaçao / Bonaire
+  'Oranjestad','Sint Nicolaas','Willemstad','Kralendijk',
+  // Suriname
+  'Paramaribo','Lelydorp','Nieuw Nickerie',
+  // Belize
+  'Belize City','Belmopan','San Ignacio',
+  // Bahamas
+  'Nassau','Freeport',
+  // Bermudes
+  'Hamilton',
+  // Caïmans
+  'George Town',
+  // Turks-et-Caïcos
+  'Cockburn Town',
+  // France métropolitaine & DOM-TOM (pour profs en visio)
+  'Paris','Lyon','Marseille','Bordeaux','Toulouse','Nantes','Strasbourg','Montpellier','Nice','Rennes','Lille','Reims','Saint-Étienne','Le Havre','Toulon','Grenoble','Dijon','Angers','Nîmes','Clermont-Ferrand',
+  // International
+  'En ligne',
 ];
 
 const SCHOOL_LEVELS = [
@@ -40,8 +99,9 @@ const normalize = (s) =>
     .trim();
 
 const existsCity = (city) => {
+  if (!city || !city.trim()) return false;
   const n = normalize(city);
-  return au Caraïbe_COMMUNES.some((c) => normalize(c) === n);
+  return CARAIBES_VILLES.some((c) => normalize(c) === n);
 };
 
 const TODAY = new Date().toISOString().split('T')[0];
@@ -133,7 +193,7 @@ export default function Register() {
     if (form.password !== confirmPassword) return alert("Les mots de passe ne correspondent pas.");
 
     if (!form.city) return alert("Merci d’indiquer votre ville.");
-    if (!existsCity(form.city)) return alert("Ville inconnue : choisissez une commune de au Caraïbe proposée.");
+    if (!existsCity(form.city)) return alert("Ville inconnue : choisissez une ville proposée dans la liste, ou sélectionnez 'En ligne'.");
     if (form.birth) {
       if (form.birth > TODAY) return alert("La date de naissance ne peut pas dépasser la date d’aujourd’hui.");
     }
@@ -577,7 +637,7 @@ export default function Register() {
                 required
               >
                 <option value="">Sélectionner…</option>
-                {au Caraïbe_COMMUNES.map((c) => (
+                {CARAIBES_VILLES.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>

@@ -377,13 +377,32 @@ export default function Home() {
 
   const cities = useMemo(
     () => [
-      'Cayenne',
-      'Kourou',
-      'Matoury',
-      'Rémire-Montjoly',
-      'Saint-Laurent-du-Maroni',
-      'Mana',
-      'Maripasoula',
+      // Guadeloupe
+      'Pointe-à-Pitre', 'Basse-Terre', 'Les Abymes', 'Baie-Mahault', 'Le Gosier',
+      // Martinique
+      'Fort-de-France', 'Le Lamentin', 'Le Robert', 'Schoelcher', 'Le François',
+      // Guyane
+      'Cayenne', 'Kourou', 'Matoury', 'Rémire-Montjoly', 'Saint-Laurent-du-Maroni',
+      // Haïti
+      'Port-au-Prince', 'Cap-Haïtien', 'Pétionville', 'Carrefour', 'Delmas',
+      // République Dominicaine
+      'Saint-Domingue', 'Santiago de los Caballeros', 'La Romana', 'San Pedro de Macorís',
+      // Cuba
+      'La Havane', 'Santiago de Cuba', 'Holguín', 'Camagüey',
+      // Jamaïque
+      'Kingston', 'Montego Bay', 'Spanish Town',
+      // Trinidad-et-Tobago
+      'Port of Spain', 'San Fernando', 'Chaguanas',
+      // Barbade
+      'Bridgetown',
+      // Saint-Martin / Sint Maarten
+      'Marigot', 'Philipsburg',
+      // Saint-Barthélemy
+      'Gustavia',
+      // Autres îles
+      'Roseau', 'Castries', 'Kingstown', 'Saint-Georges', 'Basseterre', 'Plymouth',
+      // En ligne / mondial
+      'En ligne',
     ],
     []
   );

@@ -200,8 +200,8 @@ export default function Search() {
   const toggleMode = (target) => setMode(prev => (prev === target ? '' : target));
 
   useSEO({
-    title: 'Rechercher un professeur en au Caraïbe',
-    description: 'Comparez les professeurs particuliers en au Caraïbe par matière, ville, tarif et niveau. Trouvez le prof idéal sur EduKaraib.',
+    title: 'Rechercher un professeur — Caraïbe & Monde',
+    description: 'Comparez les professeurs particuliers dans toute la Caraïbe et au-delà, par matière, ville, tarif et niveau. Trouvez le prof idéal sur EduKaraib.',
     url: '/recherche-prof',
   });
 
@@ -260,7 +260,7 @@ export default function Search() {
       {/* Header titre/compteur */}
       <div className="max-w-6xl mx-auto px-4 pt-6">
         <h1 className="text-2xl md:text-3xl font-semibold text-gray-900">
-          {subjectLabel} en {city || 'au Caraïbe'}
+          {subjectLabel} {city ? 'à ' + city : 'dans toute la Caraïbe'}
         </h1>
         <p className="text-gray-600 mt-1">{resultsCount} prof(s) disponible(s)</p>
       </div>
@@ -356,7 +356,7 @@ export default function Search() {
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
               >
-                <option value="">{'Toute la au Caraïbe'}</option>
+                <option value="">{'Toutes les régions'}</option>
                 {Array.from(new Set(teachers.map(t => (t.city || t.location || '').trim()).filter(Boolean))).sort().map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
