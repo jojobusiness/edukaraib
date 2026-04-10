@@ -513,8 +513,8 @@ export default function Home() {
   };
 
   useSEO({
-    title: 'Cours particuliers en au Caraïbe',
-    description: 'Trouvez un professeur particulier en au Caraïbe pour vos enfants ou vous-même. Maths, Français, Anglais et plus. Réservez en ligne sur EduKaraib.',
+    title: 'Cours particuliers aux Caraïbes',
+    description: 'Trouvez un professeur particulier aux Caraïbes pour vos enfants ou vous-même. Maths, Français, Anglais et plus. Réservez en ligne sur EduKaraib.',
     url: '/',
   });
 
@@ -551,7 +551,7 @@ export default function Home() {
             {/* Texte directement sur l’image */}
             <div className="relative px-5 pt-6 pb-6">
               <span className="inline-flex items-center gap-2 mb-4 px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold">
-                🎓 Offre nouvelle année – au Caraïbe
+                🎓 Offre nouvelle année – aux Caraïbes
               </span>
 
               <h1 className="text-4xl font-extrabold text-gray-900 leading-tight">
@@ -565,7 +565,7 @@ export default function Home() {
               </p>
 
               <ul className="mt-4 space-y-2 text-base text-gray-800">
-                <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Professeurs vérifiés en au Caraïbe</li>
+                <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Professeurs vérifiés aux Caraïbes</li>
                 <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Présentiel ou visio</li>
                 <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Packs économiques pour l’année</li>
               </ul>
@@ -599,7 +599,7 @@ export default function Home() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
             <div className="hidden lg:block">
               <span className="inline-block mb-4 px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold">
-                🎓 Offre nouvelle année – au Caraïbe
+                🎓 Offre nouvelle année – aux Caraïbes
               </span>
 
               <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-gray-900">
@@ -613,7 +613,7 @@ export default function Home() {
               </p>
 
               <ul className="mt-6 space-y-2 text-gray-700">
-                <li>✔ Professeurs vérifiés en au Caraïbe</li>
+                <li>✔ Professeurs vérifiés aux Caraïbes</li>
                 <li>✔ Présentiel ou visio</li>
                 <li>✔ Packs économiques pour l’année</li>
               </ul>
@@ -962,14 +962,14 @@ export default function Home() {
       <section className="py-12 bg-white">
         <div className="max-w-7xl mx-auto px-4 grid grid-cols-1 lg:grid-cols-3 gap-10">
           <div className="lg:col-span-2">
-            <h2 className="text-2xl font-bold mb-4">Cours particuliers en au Caraïbe : questions fréquentes</h2>
+            <h2 className="text-2xl font-bold mb-4">Cours particuliers aux Caraïbes : questions fréquentes</h2>
             <details className="border rounded-xl p-4 mb-3">
               <summary className="cursor-pointer font-semibold">Quels sont les tarifs moyens d'un cours ?</summary>
               <p className="mt-2 text-gray-600 text-sm">Les tarifs varient selon la matière, le niveau et l'expérience du professeur. Les prix sont fixés par les professeurs.</p>
             </details>
             <details className="border rounded-xl p-4 mb-3">
               <summary className="cursor-pointer font-semibold">Puis-je avoir un cours en visio ?</summary>
-              <p className="mt-2 text-gray-600 text-sm">Les visios sont officiellement disponibles ! Connectez-vous dès maintenant et profitez pleinement de la fonctionnalité.</p>
+              <p className="mt-2 text-gray-600 text-sm">Les cours en visio sont disponibles ! Connectez-vous et profitez dès maintenant de cette fonctionnalité.</p>
             </details>
             <details className="border rounded-xl p-4">
               <summary className="cursor-pointer font-semibold">Comment sont gérés les paiements et remboursements ?</summary>
@@ -980,7 +980,7 @@ export default function Home() {
           <div className="bg-gray-50 border rounded-2xl p-6">
             <h3 className="font-semibold mb-2">À propos d'EduKaraib</h3>
             <p className="text-sm text-gray-700">
-              EduKaraib est la plateforme locale de mise en relation entre élèves, parents et professeurs en au Caraïbe. Notre mission : rendre l'accompagnement pédagogique accessible à tous, avec une attention particulière aux réalités du territoire.
+              EduKaraib est la plateforme locale de mise en relation entre élèves, parents et professeurs aux Caraïbes. Notre mission : rendre l'accompagnement pédagogique accessible à tous, avec une attention particulière aux réalités du territoire.
             </p>
           </div>
         </div>
