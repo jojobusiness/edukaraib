@@ -220,7 +220,7 @@ export default function InfluencerHome() {
           <div className="inline-flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-full px-4 py-1.5">
             <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
             <span className="text-amber-700 text-xs font-bold uppercase tracking-wider">
-              Programme ouvert — Guyane
+              Programme ouvert — au Caraïbe
             </span>
           </div>
 
@@ -231,7 +231,7 @@ export default function InfluencerHome() {
               <span className="block text-primary">gagne a chaque vente.</span>
             </h1>
             <p className="mt-4 text-gray-500 text-lg leading-relaxed max-w-md">
-              Rejoins notre reseau de partenaires locaux en Guyane.
+              Rejoins notre reseau de partenaires locaux en au Caraïbe.
               Un code, un lien, des commissions directes sur chaque cours vendu.
             </p>
           </div>
@@ -280,7 +280,7 @@ export default function InfluencerHome() {
             <div className="absolute inset-0 flex items-center px-6">
               <div>
                 <div className="font-extrabold text-gray-900 text-lg leading-tight">
-                  Professeurs verifies en Guyane
+                  Professeurs verifies en au Caraïbe
                 </div>
                 <div className="text-gray-600 text-sm mt-1">
                   Presentiel et visio disponibles
@@ -501,7 +501,7 @@ export default function InfluencerHome() {
                 ))}
               </div>
               <p className="text-xs text-gray-400">
-                Rejoins nos partenaires actifs en Guyane
+                Rejoins nos partenaires actifs en au Caraïbe
               </p>
             </div>
           </div>
@@ -512,7 +512,7 @@ export default function InfluencerHome() {
       {/* ── Footer minimal ── */}
       <footer className="border-t border-gray-100 bg-white py-4 px-6 text-center">
         <p className="text-xs text-gray-400">
-          &copy; {new Date().getFullYear()} EduKaraib &mdash; Guyane &mdash;{' '}
+          &copy; {new Date().getFullYear()} EduKaraib &mdash; au Caraïbe &mdash;{' '}
           <Link to="/" className="hover:text-primary transition-colors">Retour au site</Link>
         </p>
       </footer>

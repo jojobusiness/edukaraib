@@ -19,8 +19,8 @@ import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
 
 /* ====== Contrôles & listes (alignés avec Register) ====== */
-// Communes officielles de Guyane (22)
-const GUYANE_COMMUNES = [
+// Communes officielles de au Caraïbe (22)
+const au Caraïbe_COMMUNES = [
   'Apatou','Awala-Yalimapo','Camopi','Cayenne','Grand-Santi','Iracoubo','Kourou','Macouria','Mana','Maripasoula','Matoury','Montsinéry-Tonnegrande','Ouanary','Papaïchton','Régina','Rémire-Montjoly','Roura','Saint-Élie','Saint-Georges','Saint-Laurent-du-Maroni','Saül','Sinnamary',
 ];
 
@@ -47,7 +47,7 @@ const normalize = (s) =>
 
 const existsCity = (city) => {
   const n = normalize(city);
-  return GUYANE_COMMUNES.some((c) => normalize(c) === n);
+  return au Caraïbe_COMMUNES.some((c) => normalize(c) === n);
 };
 
 const TODAY = new Date().toISOString().split('T')[0];
@@ -291,7 +291,7 @@ export default function Profile() {
       return alert('Nom invalide (2 caractères minimum).');
     }
     if (profile.city && !existsCity(profile.city)) {
-      return alert('Ville inconnue : indique une commune de Guyane.');
+      return alert('Ville inconnue : indique une commune de au Caraïbe.');
     }
     if (profile.birth && profile.birth > TODAY) {
       return alert("La date de naissance ne peut pas dépasser aujourd’hui.");
@@ -621,7 +621,7 @@ export default function Profile() {
             <select name="city" className="w-full border border-gray-300 rounded-lg px-3 py-2"
               value={profile.city || ''} onChange={handleChange} required>
               <option value="">Sélectionner…</option>
-              {GUYANE_COMMUNES.map((c) => (<option key={c} value={c}>{c}</option>))}
+              {au Caraïbe_COMMUNES.map((c) => (<option key={c} value={c}>{c}</option>))}
             </select>
           </div>
 

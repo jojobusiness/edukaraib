@@ -78,7 +78,7 @@ export default function Login() {
           <img src="/edukaraib_logo.png" alt="Logo EduKaraib" className="h-14 mb-3" />
           <h2 className="text-2xl font-bold text-primary mb-1">Connexion</h2>
           <p className="text-gray-600 text-center text-sm">
-            Connecte-toi à ta plateforme d’accompagnement scolaire en Guyane.
+            Connecte-toi à ta plateforme d’accompagnement scolaire en au Caraïbe.
           </p>
         </div>
         <form className="space-y-4" onSubmit={handleLogin}>

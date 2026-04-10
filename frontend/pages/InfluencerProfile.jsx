@@ -13,7 +13,7 @@ import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'fireb
 import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
 
-const GUYANE_COMMUNES = [
+const au Caraïbe_COMMUNES = [
   'Apatou','Awala-Yalimapo','Camopi','Cayenne','Grand-Santi','Iracoubo',
   'Kourou','Macouria','Mana','Maripasoula','Matoury',
   'Montsinéry-Tonnegrande','Ouanary','Papaïchton','Régina','Rémire-Montjoly',
@@ -198,7 +198,7 @@ export default function InfluencerProfile() {
               value={profile.city}
               onChange={e => setProfile(p => ({ ...p, city: e.target.value }))}>
               <option value="">Selectionner...</option>
-              {GUYANE_COMMUNES.map(c => <option key={c} value={c}>{c}</option>)}
+              {au Caraïbe_COMMUNES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
 

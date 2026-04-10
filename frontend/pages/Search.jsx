@@ -200,8 +200,8 @@ export default function Search() {
   const toggleMode = (target) => setMode(prev => (prev === target ? '' : target));
 
   useSEO({
-    title: 'Rechercher un professeur en Guyane',
-    description: 'Comparez les professeurs particuliers en Guyane par matière, ville, tarif et niveau. Trouvez le prof idéal sur EduKaraib.',
+    title: 'Rechercher un professeur en au Caraïbe',
+    description: 'Comparez les professeurs particuliers en au Caraïbe par matière, ville, tarif et niveau. Trouvez le prof idéal sur EduKaraib.',
     url: '/recherche-prof',
   });
 
@@ -260,7 +260,7 @@ export default function Search() {
       {/* Header titre/compteur */}
       <div className="max-w-6xl mx-auto px-4 pt-6">
         <h1 className="text-2xl md:text-3xl font-semibold text-gray-900">
-          {subjectLabel} en {city || 'Guyane'}
+          {subjectLabel} en {city || 'au Caraïbe'}
         </h1>
         <p className="text-gray-600 mt-1">{resultsCount} prof(s) disponible(s)</p>
       </div>
@@ -280,7 +280,7 @@ export default function Search() {
             <option value="Adulte">Adulte</option>
           </select>
           <select value={city} onChange={e => setCity(e.target.value)} className="shrink-0 border border-gray-300 rounded-full px-3 py-1.5 text-sm bg-white">
-            <option value="">Toute la Guyane</option>
+            <option value="">Toute la au Caraïbe</option>
             {Array.from(new Set(teachers.map(t => (t.city || t.location || '').trim()).filter(Boolean))).sort().map(c => (
               <option key={c} value={c}>{c}</option>
             ))}
@@ -356,7 +356,7 @@ export default function Search() {
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
               >
-                <option value="">{'Toute la Guyane'}</option>
+                <option value="">{'Toute la au Caraïbe'}</option>
                 {Array.from(new Set(teachers.map(t => (t.city || t.location || '').trim()).filter(Boolean))).sort().map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
@@ -559,7 +559,7 @@ function TeacherCard({ teacher, navigate }) {
 
         <div className="text-gray-700 mt-1">{subjectsText}</div>
         <div className="mt-1 text-xs text-gray-500">
-          {(teacher.city || teacher.location || 'Guyane')}
+          {(teacher.city || teacher.location || 'au Caraïbe')}
         </div>
 
         <div className="mt-2 flex flex-wrap items-center gap-2">

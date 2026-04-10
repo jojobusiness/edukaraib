@@ -2,7 +2,7 @@
   "name": "edukaraib",
   "version": "1.0.0",
   "type": "module",
-  "description": "Plateforme de cours particuliers en Guyane",
+  "description": "Plateforme de cours particuliers en au Caraïbe",
   "main": "index.js",
   "scripts": {
     "dev": "vite",

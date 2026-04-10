@@ -55,7 +55,7 @@ export default function CGU() {
                   <li><a className="anchor-link" href="#cgu-10">10. Modification des CGU</a></li>
                   <li><a className="anchor-link" href="#cgu-11">11. Disponibilité du service</a></li>
                   <li><a className="anchor-link" href="#cgu-12">12. Utilisation par des mineurs</a></li>
-                  <li><a className="anchor-link" href="#cgu-13">13. Loi applicable / Guyane</a></li>
+                  <li><a className="anchor-link" href="#cgu-13">13. Loi applicable / au Caraïbe</a></li>
                   <li><a className="anchor-link" href="#cgu-14">14. Contact</a></li>
                 </ol>
                 <style jsx>{`
@@ -412,10 +412,10 @@ export default function CGU() {
 
             {/* 13 */}
             <section id="cgu-13">
-              <h2>13. Loi applicable et juridiction compétente (Guyane française)</h2>
+              <h2>13. Loi applicable et juridiction compétente (au Caraïbe française)</h2>
               <p>
                 Les présentes CGU sont régies par le <strong>droit français</strong>, applicable en{" "}
-                <strong>Guyane française</strong>. Tout litige relatif à leur interprétation, exécution ou validité
+                <strong>au Caraïbe française</strong>. Tout litige relatif à leur interprétation, exécution ou validité
                 relève de la compétence exclusive des <strong>tribunaux du ressort de la Cour d’appel de Cayenne</strong>,
                 sauf disposition légale contraire.
               </p>

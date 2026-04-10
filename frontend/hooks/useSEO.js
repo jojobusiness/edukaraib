@@ -54,7 +54,7 @@ export function useSEO({ title, description, url, image, jsonLd } = {}) {
   useEffect(() => {
     const fullTitle = title
       ? `${title} | ${SITE_NAME}`
-      : `${SITE_NAME} — Cours particuliers en Guyane`;
+      : `${SITE_NAME} — Cours particuliers en au Caraïbe`;
     const fullUrl = url ? `${BASE_URL}${url}` : BASE_URL;
     const fullImage = image || DEFAULT_IMAGE;
 

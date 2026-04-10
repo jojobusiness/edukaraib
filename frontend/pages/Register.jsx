@@ -14,8 +14,8 @@ import 'react-phone-number-input/style.css';
 import fetchWithAuth from '../utils/fetchWithAuth';
 
 // ————————————————————————————————
-// Communes officielles de Guyane (22)
-const GUYANE_COMMUNES = [
+// Communes officielles de au Caraïbe (22)
+const au Caraïbe_COMMUNES = [
   'Apatou','Awala-Yalimapo','Camopi','Cayenne','Grand-Santi','Iracoubo','Kourou','Macouria','Mana','Maripasoula','Matoury','Montsinéry-Tonnegrande','Ouanary','Papaïchton','Régina','Rémire-Montjoly','Roura','Saint-Élie','Saint-Georges','Saint-Laurent-du-Maroni','Saül','Sinnamary',
 ];
 
@@ -41,7 +41,7 @@ const normalize = (s) =>
 
 const existsCity = (city) => {
   const n = normalize(city);
-  return GUYANE_COMMUNES.some((c) => normalize(c) === n);
+  return au Caraïbe_COMMUNES.some((c) => normalize(c) === n);
 };
 
 const TODAY = new Date().toISOString().split('T')[0];
@@ -133,7 +133,7 @@ export default function Register() {
     if (form.password !== confirmPassword) return alert("Les mots de passe ne correspondent pas.");
 
     if (!form.city) return alert("Merci d’indiquer votre ville.");
-    if (!existsCity(form.city)) return alert("Ville inconnue : choisissez une commune de Guyane proposée.");
+    if (!existsCity(form.city)) return alert("Ville inconnue : choisissez une commune de au Caraïbe proposée.");
     if (form.birth) {
       if (form.birth > TODAY) return alert("La date de naissance ne peut pas dépasser la date d’aujourd’hui.");
     }
@@ -394,7 +394,7 @@ export default function Register() {
           <img src="/edukaraib_logo.png" alt="Logo EduKaraib" className="h-14 mb-3" />
           <h2 className="text-2xl font-bold text-primary mb-1">Inscription</h2>
           <p className="text-gray-600 text-center text-sm">
-            Crée ton compte gratuitement et trouve le prof qu’il te faut en Guyane !
+            Crée ton compte gratuitement et trouve le prof qu’il te faut en au Caraïbe !
           </p>
         </div>
 
@@ -577,7 +577,7 @@ export default function Register() {
                 required
               >
                 <option value="">Sélectionner…</option>
-                {GUYANE_COMMUNES.map((c) => (
+                {au Caraïbe_COMMUNES.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>

@@ -271,9 +271,9 @@ export default function TeacherProfile() {
     : teacher?.subjects || '';
 
   useSEO({
-    title: teacher ? `${teacherName} — Prof particulier en Guyane` : 'Profil professeur',
+    title: teacher ? `${teacherName} — Prof particulier en au Caraïbe` : 'Profil professeur',
     description: teacher
-      ? `${teacherName} donne des cours particuliers de ${subjects} en Guyane. ${teacher.bio || ''}`
+      ? `${teacherName} donne des cours particuliers de ${subjects} en au Caraïbe. ${teacher.bio || ''}`
       : 'Profil professeur sur EduKaraib.',
     url: `/prof/${teacherId}`,
     image: teacher?.avatarUrl || undefined,
@@ -286,7 +286,7 @@ export default function TeacherProfile() {
       url: `https://edukaraib.com/prof/${teacherId}`,
       description: teacher.bio || '',
       knowsAbout: subjects,
-      areaServed: teacher.city || 'Guyane',
+      areaServed: teacher.city || 'au Caraïbe',
     } : undefined,
   });
 
@@ -617,7 +617,7 @@ export default function TeacherProfile() {
   }, [bookedSlots]);
 
   // 🔸 image promo (mets le chemin correct dans /public)
-  const PROMO_BANNER_SRC = "/promo/packs-guyane.png";
+  const PROMO_BANNER_SRC = "/promo/packs-au Caraïbe.png";
 
   // ✅ IMPORTANT : on ne calcule les labels/modes qu’avec safeTeacher (jamais teacher direct)
   const modeLabel =
@@ -1483,7 +1483,7 @@ export default function TeacherProfile() {
                     const displayName = t.fullName || `${t.firstName || ''} ${t.lastName || ''}`.trim() || 'Professeur';
                     const firstName = displayName.split(' ')[0];
                     const avatar = t.avatarUrl || t.avatar_url || t.photoURL || '/avatar-default.png';
-                    const city = t.city || t.location || 'Guyane';
+                    const city = t.city || t.location || 'au Caraïbe';
                     const modeLabel = t.presentiel_enabled && t.visio_enabled ? `${city} & webcam`
                       : t.visio_enabled ? 'Webcam' : city;
                     const price = t.price_per_hour || t.visio_price_per_hour;
@@ -1540,7 +1540,7 @@ export default function TeacherProfile() {
                   const displayName = t.fullName || `${t.firstName || ''} ${t.lastName || ''}`.trim() || 'Professeur';
                   const firstName = displayName.split(' ')[0];
                   const avatar = t.avatarUrl || t.avatar_url || t.photoURL || '/avatar-default.png';
-                  const city = t.city || t.location || 'Guyane';
+                  const city = t.city || t.location || 'au Caraïbe';
                   const modeLabel = t.presentiel_enabled && t.visio_enabled ? `${city} & webcam`
                     : t.visio_enabled ? 'Webcam' : city;
                   const price = t.price_per_hour || t.visio_price_per_hour;

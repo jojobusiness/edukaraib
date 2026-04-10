@@ -15,7 +15,7 @@ const VALEURS = [
   },
   {
     icon: '🌴',
-    titre: 'Ancré en Guyane',
+    titre: 'Ancré en au Caraïbe',
     texte: 'Nous connaissons les réalités locales — programmes scolaires, géographie, besoins spécifiques du territoire.',
   },
   {
@@ -35,7 +35,7 @@ const CHIFFRES = [
 export default function About() {
   useSEO({
     title: 'À propos de EduKaraib',
-    description: "Découvrez la mission, l'équipe et la vision derrière EduKaraib, la plateforme de cours particuliers en Guyane.",
+    description: "Découvrez la mission, l'équipe et la vision derrière EduKaraib, la plateforme de cours particuliers en au Caraïbe.",
     url: '/about',
   });
 
@@ -48,10 +48,10 @@ export default function About() {
           <p className="text-sm font-semibold text-sky-500 uppercase tracking-widest mb-3">Notre histoire</p>
           <h1 className="text-4xl md:text-5xl font-extrabold text-gray-900 leading-tight mb-6">
             L'éducation de qualité,<br className="hidden md:block" />
-            partout en Guyane.
+            partout en au Caraïbe.
           </h1>
           <p className="text-lg text-gray-600 max-w-2xl leading-relaxed">
-            EduKaraib est né d'un constat simple : trouver un bon professeur particulier en Guyane
+            EduKaraib est né d'un constat simple : trouver un bon professeur particulier en au Caraïbe
             relevait souvent du parcours du combattant. Nous avons voulu changer ça — en créant
             une plateforme locale, pensée pour les familles guyanaises.
           </p>
@@ -64,7 +64,7 @@ export default function About() {
           <div>
             <h2 className="text-2xl font-bold text-gray-900 mb-4">Notre mission</h2>
             <p className="text-gray-600 leading-relaxed mb-4">
-              Connecter les élèves et les familles de Guyane avec des professeurs sérieux,
+              Connecter les élèves et les familles de au Caraïbe avec des professeurs sérieux,
               vérifiés et disponibles — que ce soit en présentiel à Cayenne, Kourou, Saint-Laurent,
               ou en visio pour les zones plus éloignées.
             </p>
