@@ -94,12 +94,13 @@ export default function InfluencerProfile() {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) { navigate('/influencer', { replace: true }); return; }
-      const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
-      if (!snap.exists() || snap.data()?.role !== 'influencer') {
-        await signOut(auth);
-        navigate('/influencer', { replace: true });
-        return;
-      }
+      try {
+        const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
+        if (!snap.exists() || snap.data()?.role !== 'influencer') {
+          await signOut(auth);
+          navigate('/influencer', { replace: true });
+          return;
+        }
       const data = snap.data();
       setProfile({
         firstName:    data.firstName || (data.fullName ? data.fullName.split(' ')[0] : ''),
@@ -125,6 +126,11 @@ export default function InfluencerProfile() {
       }
 
       setAuthLoading(false);
+      } catch (e) {
+        console.error('InfluencerProfile auth error:', e);
+      } finally {
+        setAuthLoading(false);
+      }
     });
     return () => unsub();
   }, [navigate]);
@@ -153,7 +159,7 @@ export default function InfluencerProfile() {
       if (influencerId) {
         await updateDoc(doc(db, 'influencers', influencerId), { name: fullName }).catch(() => {});
       }
-      alert('Profil mis a jour !');
+      alert('Profil mis à jour !');
     } catch (err) {
       alert("Erreur : " + err.message);
     } finally {
@@ -166,31 +172,45 @@ export default function InfluencerProfile() {
 
   const handleResetPassword = async () => {
     const email = profile.email || auth.currentUser?.email;
-    if (!email) return alert("Pas d'adresse email trouvee.");
+    if (!email) return alert("Pas d'adresse email trouvée.");
     await sendPasswordResetEmail(auth, email);
-    alert('Email de reinitialisation envoye.');
+    alert('Email de réinitialisation envoyé.');
+  };
+
+  // Fonction interne : appel API sans confirm ni reauth (évite la récursion infinie)
+  const callDeleteAccount = async () => {
+    const u = auth.currentUser;
+    if (!u) throw new Error('Not signed in');
+    const idToken = await u.getIdToken(true);
+    const r = await fetch('/api/delete-account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + idToken },
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
   };
 
   const handleDeleteAccount = async () => {
-    if (!window.confirm('Supprimer definitivement votre compte ?\nCette action est irreversible.')) return;
+    if (!window.confirm('Supprimer définitivement votre compte ?\nCette action est irréversible.')) return;
     try {
-      const idToken = await auth.currentUser.getIdToken(true);
-      const r = await fetch('/api/delete-account', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + idToken },
-      });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      alert('Compte supprime. A bientot !');
+      await callDeleteAccount();
+      alert('Compte supprimé. À bientôt !');
       window.location.href = '/';
     } catch (err) {
       const msg = String(err?.message || '');
       if (msg.includes('requires-recent-login')) {
         const email = auth.currentUser?.email || '';
-        const pwd = window.prompt('Par securite, entrez votre mot de passe (' + email + ') :');
+        const pwd = window.prompt('Par sécurité, entrez votre mot de passe (' + email + ') :');
         if (!pwd) return;
         const cred = EmailAuthProvider.credential(email, pwd);
         await reauthenticateWithCredential(auth.currentUser, cred);
-        await handleDeleteAccount();
+        // Appel direct sans re-confirm ni récursion
+        try {
+          await callDeleteAccount();
+          alert('Compte supprimé. À bientôt !');
+          window.location.href = '/';
+        } catch (err2) {
+          alert('Erreur : ' + String(err2?.message || err2));
+        }
       } else {
         alert('Erreur : ' + msg);
       }
@@ -216,7 +236,7 @@ export default function InfluencerProfile() {
           {/* Prenom / Nom */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block mb-1 text-sm font-medium text-gray-700">Prenom</label>
+              <label className="block mb-1 text-sm font-medium text-gray-700">Prénom</label>
               <input type="text" className="w-full border border-gray-300 rounded-lg px-3 py-2"
                 value={profile.firstName}
                 onChange={e => setProfile(p => ({ ...p, firstName: e.target.value }))}
@@ -241,7 +261,7 @@ export default function InfluencerProfile() {
 
           {/* Telephone */}
           <div>
-            <label className="block mb-1 text-sm font-medium text-gray-700">Telephone</label>
+            <label className="block mb-1 text-sm font-medium text-gray-700">Téléphone</label>
             <PhoneInput
               international defaultCountry="GF"
               value={profile.phone}
@@ -255,7 +275,7 @@ export default function InfluencerProfile() {
             <select className="w-full border border-gray-300 rounded-lg px-3 py-2"
               value={profile.city}
               onChange={e => setProfile(p => ({ ...p, city: e.target.value }))}>
-              <option value="">Selectionner...</option>
+              <option value="">Sélectionner…</option>
               {CARAIBES_VILLES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
@@ -269,7 +289,7 @@ export default function InfluencerProfile() {
 
           {/* Reseau */}
           <div>
-            <label className="block mb-1 text-sm font-medium text-gray-700">Reseau principal</label>
+            <label className="block mb-1 text-sm font-medium text-gray-700">Réseau principal</label>
             <input type="text" className="w-full border border-gray-300 rounded-lg px-3 py-2"
               value={profile.network}
               onChange={e => setProfile(p => ({ ...p, network: e.target.value }))}
@@ -291,7 +311,7 @@ export default function InfluencerProfile() {
             <input type="text" className="w-full border border-gray-300 rounded-lg px-3 py-2"
               value={profile.audienceSize}
               onChange={e => setProfile(p => ({ ...p, audienceSize: e.target.value }))}
-              placeholder="ex : 5 000 abonnes" />
+              placeholder="ex : 5 000 abonnés" />
           </div>
 
           <button type="submit" disabled={saving}
@@ -304,7 +324,7 @@ export default function InfluencerProfile() {
         <div className="mt-8 flex flex-col gap-2">
           <button onClick={handleLogout}
             className="w-full bg-gray-200 text-gray-700 font-semibold py-2 rounded-lg hover:bg-gray-300 transition">
-            Se deconnecter
+            Se déconnecter
           </button>
           <button onClick={handleResetPassword}
             className="w-full bg-yellow-100 text-yellow-800 font-semibold py-2 rounded-lg hover:bg-yellow-200 transition">
