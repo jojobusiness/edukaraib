@@ -41,6 +41,7 @@
   html { -webkit-text-size-adjust: 100%; }
   body {
     background: #f8fafc; /* très léger gris */
+    font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
     font-size: clamp(14px, 1.8vw, 16px);
     line-height: 1.5;
   }
