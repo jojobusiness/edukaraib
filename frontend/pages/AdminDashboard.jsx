@@ -19,7 +19,7 @@ import { sendPasswordResetEmail, signOut } from 'firebase/auth';
 import { Link } from 'react-router-dom';
 import fetchWithAuth from '../utils/fetchWithAuth';
 
-// 👇 imports messagerie (utilisés dans l’onglet "Discussions")
+// 👇 imports messagerie (utilisés dans l'onglet "Discussions")
 import Messages from './Messages';
 
 /* ===========================
@@ -120,8 +120,8 @@ function RefundModal({ open, onClose, onConfirm, payment, teacher }) {
           </div>
 
           <div className="text-xs text-gray-500">
-            • Si le paiement n’a pas encore été reversé au prof, un <b>refund</b> simple est créé. <br />
-            • S’il a déjà été reversé, on fait un <b>reverse transfer</b> côté Stripe, puis un refund côté client si nécessaire.
+            • Si le paiement n'a pas encore été reversé au prof, un <b>refund</b> simple est créé. <br />
+            • S'il a déjà été reversé, on fait un <b>reverse transfer</b> côté Stripe, puis un refund côté client si nécessaire.
           </div>
         </div>
 
@@ -157,8 +157,6 @@ async function notifyByEmail(uid, title, message, ctaUrl, ctaText = "Ouvrir le t
   try {
     const to = await getUserEmail(uid);
     if (!to) return;
-    // ✅ fetchWithAuth (avec token Firebase) au lieu de fetch nu
-    // fetch nu echouait silencieusement si /api/notify-email verifie l'auth
     await fetchWithAuth("/api/notify-email", {
       method: "POST",
       body: JSON.stringify({ to, title, message, ctaUrl, ctaText }),
@@ -205,8 +203,6 @@ export default function AdminDashboard() {
   // --- Discussions (inline, sans navigation) ---
   const [selectedChatId, setSelectedChatId] = useState(null);
 
-  // Discussions (liste compacte si rien n'est sélectionné)
-
   // 🔹 Liste des conversations compactes (onglet Discussions)
   const [convs, setConvs] = useState([]);
   const [lessons, setLessons] = useState([]);
@@ -219,6 +215,11 @@ export default function AdminDashboard() {
   const [influSearch, setInfluSearch] = useState("");
   const [influPayoutLoading, setInfluPayoutLoading] = useState(null);
   const [influToggleLoading, setInfluToggleLoading] = useState(null);
+
+  // --- Modification code promo influenceur ---
+  const [influCodeEdit, setInfluCodeEdit] = useState(null);   // id de la ligne en cours d'édition
+  const [influCodeInput, setInfluCodeInput] = useState('');   // valeur saisie
+  const [influCodeSaving, setInfluCodeSaving] = useState(false);
 
   /* ----- Load current user & role ----- */
   useEffect(() => {
@@ -307,7 +308,7 @@ export default function AdminDashboard() {
     });
   }, [tab]);
 
-  // Charger les conversations (compact, sans layout) quand l’onglet Discussions est actif
+  // Charger les conversations (compact, sans layout) quand l'onglet Discussions est actif
   useEffect(() => {
     if (tab !== 'discussions') return;
     const uid = auth.currentUser?.uid;
@@ -325,7 +326,6 @@ export default function AdminDashboard() {
           const c = { id: d.id, ...d.data() };
           const otherUid = (c.participants || []).find((p) => p !== uid);
 
-          // essaie d'utiliser la liste "users" déjà chargée
           let person = users.find((u) => u.id === otherUid);
           if (!person) {
             try {
@@ -519,9 +519,6 @@ export default function AdminDashboard() {
   /* ===========================
      Guards
   =========================== */
-  // ✅ meRole=null = encore en chargement, meRole!='admin' = acces interdit
-  // Sans ce split, pendant le chargement Firestore (meRole=null) le dashboard
-  // s'affiche entierement a n'importe quel utilisateur connecte
   if (meRole === null) {
     return <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="text-gray-500">Chargement…</div>
@@ -711,14 +708,13 @@ export default function AdminDashboard() {
                       <td className="p-2">{toDateStr(u.createdAt)}</td>
                       <td className="p-2 text-right">
                         <div className="flex gap-2 justify-end">
-                          {/* Contacter : sélectionne directement la conversation dans l’onglet Discussions (sans navigation) */}
-                            <Link
+                          <Link
                             to={`/chat/${u.id}?from=admin`}
                             className="px-2 py-1 text-xs rounded bg-primary text-white hover:bg-primary-dark"
                             title="Contacter par messagerie"
-                            >
+                          >
                             Contacter
-                            </Link>
+                          </Link>
                           <button
                             className="px-2 py-1 text-xs rounded bg-amber-100 hover:bg-amber-200"
                             onClick={() => resetPassword(u)}
@@ -813,7 +809,6 @@ export default function AdminDashboard() {
                     <tr><td colSpan={4} className="p-4 text-center text-gray-400">Aucune donnée</td></tr>
                   )}
                   {!payLoading && (() => {
-                    // re-calc local pour affichage
                     const byId = new Map();
                     const add = (tid, kind, cents) => {
                       if (!byId.has(tid)) byId.set(tid, { teacher_id: tid, paid: 0, refunded: 0, net: 0 });
@@ -932,7 +927,7 @@ export default function AdminDashboard() {
                   </tbody>
                 </table>
               </div>
-              
+
               {/* Virements en attente (RIB manquant) */}
               <div className="bg-white border rounded-xl overflow-hidden lg:col-span-2">
                 <div className="p-3 border-b font-semibold flex items-center gap-2">
@@ -1077,7 +1072,6 @@ export default function AdminDashboard() {
                   onClick={async () => {
                     try {
                       setMessageSending(true);
-                      // ✅ Batches de 20 pour eviter throttling Firestore/Resend
                       const ids = Array.from(selectedIds);
                       for (let _i = 0; _i < ids.length; _i += 20) {
                         await Promise.all(ids.slice(_i, _i + 20).map(async (uid) => {
@@ -1110,7 +1104,6 @@ export default function AdminDashboard() {
                   onClick={async () => {
                     try {
                       setMessageSending(true);
-                      // ✅ Batches de 20
                       for (let _i = 0; _i < filteredUsers.length; _i += 20) {
                         await Promise.all(filteredUsers.slice(_i, _i + 20).map(async (u) => {
                           await addDoc(collection(db, 'notifications'), {
@@ -1142,7 +1135,6 @@ export default function AdminDashboard() {
                   onClick={async () => {
                     try {
                       setMessageSending(true);
-                      // ✅ Batches de 20
                       const nonAdmins = users.filter(u => u.role !== 'admin');
                       for (let _i = 0; _i < nonAdmins.length; _i += 20) {
                         await Promise.all(nonAdmins.slice(_i, _i + 20).map(async (u) => {
@@ -1169,7 +1161,7 @@ export default function AdminDashboard() {
                 </button>
               </div>
               <p className="text-xs text-gray-500 mt-2">
-                Diffusion via <code>notifications</code>. Pour un échange direct, utilise l’onglet <b>Discussions</b>.
+                Diffusion via <code>notifications</code>. Pour un échange direct, utilise l'onglet <b>Discussions</b>.
               </p>
             </div>
 
@@ -1191,10 +1183,10 @@ export default function AdminDashboard() {
                       <div className="text-xs text-gray-500">{u.email} · {u.role}</div>
                     </div>
                     <Link
-                    to={`/chat/${u.id}?from=admin`}
-                    className="bg-primary text-white px-3 py-1.5 rounded hover:bg-primary-dark"
+                      to={`/chat/${u.id}?from=admin`}
+                      className="bg-primary text-white px-3 py-1.5 rounded hover:bg-primary-dark"
                     >
-                    Discuter
+                      Discuter
                     </Link>
                   </label>
                 ))}
@@ -1210,51 +1202,46 @@ export default function AdminDashboard() {
 
         {/* === DISCUSSIONS TAB (inline, sans layout, on reste sur la page) === */}
         {tab === 'discussions' && (
-        <>
-            {/* Si une cible est choisie → afficher uniquement la conversation */}
+          <>
             {selectedChatId ? (
-            <div className="bg-white border rounded-xl overflow-hidden h-[70vh]">
+              <div className="bg-white border rounded-xl overflow-hidden h-[70vh]">
                 <Messages
-                key={selectedChatId}        // 👈 force le remount quand la cible change
-                receiverId={selectedChatId}
-                onBack={() => {
-                    // retour : on enlève la cible et on revient à la liste compacte
-                    setSelectedChatId(null);
-                }}
+                  key={selectedChatId}
+                  receiverId={selectedChatId}
+                  onBack={() => setSelectedChatId(null)}
                 />
-            </div>
+              </div>
             ) : (
-            // Sinon : petite liste compacte, sans layout ni titres
-            <div className="bg-white border rounded-xl overflow-hidden">
+              <div className="bg-white border rounded-xl overflow-hidden">
                 <ul className="divide-y divide-gray-100 max-h-[70vh] overflow-y-auto">
-                {convs.length === 0 && (
+                  {convs.length === 0 && (
                     <li className="py-10 text-center text-gray-500">Aucune conversation.</li>
-                )}
-                {convs.map((c) => (
+                  )}
+                  {convs.map((c) => (
                     <li key={c.cid} className="flex items-center gap-3 p-3">
-                    <img
+                      <img
                         src={c.avatar}
                         alt={c.name}
                         className="w-10 h-10 rounded-full object-cover border"
-                    />
-                    <div className="flex-1 min-w-0">
+                      />
+                      <div className="flex-1 min-w-0">
                         <div className="font-semibold text-primary truncate">{c.name}</div>
                         <div className="text-xs text-gray-500 truncate">
-                        {c.lastMessage || 'Aucun message'}
+                          {c.lastMessage || 'Aucun message'}
                         </div>
-                    </div>
-                    <Link
-                    to={`/chat/${c.otherUid}?from=admin`}
-                    className="bg-primary text-white px-3 py-1.5 rounded hover:bg-primary-dark"
-                    >
-                    Discuter
-                    </Link>
+                      </div>
+                      <Link
+                        to={`/chat/${c.otherUid}?from=admin`}
+                        className="bg-primary text-white px-3 py-1.5 rounded hover:bg-primary-dark"
+                      >
+                        Discuter
+                      </Link>
                     </li>
-                ))}
+                  ))}
                 </ul>
-            </div>
+              </div>
             )}
-        </>
+          </>
         )}
 
         {/* === INFLUENCEURS TAB === */}
@@ -1304,7 +1291,7 @@ export default function AdminDashboard() {
                   <thead className="bg-gray-50 text-left">
                     <tr>
                       <th className="p-3">Nom / Email</th>
-                      <th className="p-3">Code</th>
+                      <th className="p-3">Code promo</th>
                       <th className="p-3 text-right">Utilisations</th>
                       <th className="p-3 text-right">Total gagné</th>
                       <th className="p-3 text-right">En attente</th>
@@ -1329,6 +1316,8 @@ export default function AdminDashboard() {
                       })
                       .map(influ => (
                         <tr key={influ.id} className="border-t hover:bg-gray-50">
+
+                          {/* Nom / Email / IBAN */}
                           <td className="p-3">
                             <div className="font-medium">{influ.name || '—'}</div>
                             <div className="text-xs text-gray-400">{influ.email || '—'}</div>
@@ -1336,18 +1325,93 @@ export default function AdminDashboard() {
                               <div className="text-xs text-gray-400 font-mono mt-0.5">IBAN: {influ.rib?.slice(0,4)}••••{influ.rib?.slice(-4)}</div>
                             )}
                           </td>
+
+                          {/* ── Code promo (éditable) ── */}
                           <td className="p-3">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-xs">{influ.code}</span>
-                              <button
-                                className="text-gray-400 hover:text-gray-700 text-xs"
-                                title="Copier"
-                                onClick={() => navigator.clipboard.writeText(influ.code)}
-                              >
-                                📋
-                              </button>
-                            </div>
+                            {influCodeEdit === influ.id ? (
+                              <div className="flex items-center gap-1">
+                                <input
+                                  autoFocus
+                                  className="border rounded px-2 py-1 text-xs font-mono w-28 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                                  value={influCodeInput}
+                                  onChange={e => setInfluCodeInput(e.target.value.toUpperCase())}
+                                  placeholder="NOUVEAU_CODE"
+                                  maxLength={20}
+                                  onKeyDown={async (e) => {
+                                    if (e.key === 'Enter') {
+                                      const newCode = influCodeInput.trim().toUpperCase();
+                                      if (!newCode) return;
+                                      setInfluCodeSaving(true);
+                                      try {
+                                        await updateDoc(doc(db, 'influencers', influ.id), { code: newCode });
+                                        setInfluencers(prev => prev.map(i =>
+                                          i.id === influ.id ? { ...i, code: newCode } : i
+                                        ));
+                                        setInfluCodeEdit(null);
+                                      } catch (err) {
+                                        alert('Erreur : ' + err.message);
+                                      } finally {
+                                        setInfluCodeSaving(false);
+                                      }
+                                    }
+                                    if (e.key === 'Escape') setInfluCodeEdit(null);
+                                  }}
+                                />
+                                <button
+                                  disabled={influCodeSaving || !influCodeInput.trim()}
+                                  title="Valider"
+                                  className="text-xs bg-primary text-white px-2 py-1 rounded disabled:opacity-40 hover:bg-primary-dark"
+                                  onClick={async () => {
+                                    const newCode = influCodeInput.trim().toUpperCase();
+                                    if (!newCode) return;
+                                    setInfluCodeSaving(true);
+                                    try {
+                                      await updateDoc(doc(db, 'influencers', influ.id), { code: newCode });
+                                      setInfluencers(prev => prev.map(i =>
+                                        i.id === influ.id ? { ...i, code: newCode } : i
+                                      ));
+                                      setInfluCodeEdit(null);
+                                    } catch (err) {
+                                      alert('Erreur : ' + err.message);
+                                    } finally {
+                                      setInfluCodeSaving(false);
+                                    }
+                                  }}
+                                >
+                                  {influCodeSaving ? '…' : '✓'}
+                                </button>
+                                <button
+                                  title="Annuler"
+                                  className="text-xs text-gray-400 hover:text-gray-600 px-1"
+                                  onClick={() => setInfluCodeEdit(null)}
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-xs">{influ.code}</span>
+                                <button
+                                  className="text-gray-400 hover:text-gray-700 text-xs"
+                                  title="Copier le code"
+                                  onClick={() => navigator.clipboard.writeText(influ.code)}
+                                >
+                                  📋
+                                </button>
+                                <button
+                                  className="text-gray-400 hover:text-primary text-xs"
+                                  title="Modifier le code promo"
+                                  onClick={() => {
+                                    setInfluCodeEdit(influ.id);
+                                    setInfluCodeInput(influ.code || '');
+                                  }}
+                                >
+                                  ✏️
+                                </button>
+                              </div>
+                            )}
                           </td>
+
                           <td className="p-3 text-right text-gray-700">{influ.usageCount || 0}</td>
                           <td className="p-3 text-right font-medium text-emerald-700">
                             {(influ.totalEarned || 0).toFixed(2)} €
@@ -1371,11 +1435,9 @@ export default function AdminDashboard() {
                                 title={!influ.rib ? "Pas d'IBAN enregistré" : `Virer ${(influ.pendingPayout || 0).toFixed(2)} €`}
                                 onClick={async () => {
                                   const _maskedRib = influ.rib ? influ.rib.slice(0,4) + '••••' + influ.rib.slice(-4) : 'N/A';
-                                  if (!window.confirm(`Virer ${(influ.pendingPayout || 0).toFixed(2)} € à ${influ.name} ?
-                                    IBAN: ${_maskedRib}`)) return;
+                                  if (!window.confirm(`Virer ${(influ.pendingPayout || 0).toFixed(2)} € à ${influ.name} ?\nIBAN: ${_maskedRib}`)) return;
                                   setInfluPayoutLoading(influ.id);
                                   try {
-                                    // ✅ fetchWithAuth retourne déjà l'objet JSON parsé, pas une Response
                                     const data = await fetchWithAuth('/api/trigger-influencer-payout', {
                                       method: 'POST',
                                       body: JSON.stringify({ influencerUid: influ.id }),
@@ -1440,6 +1502,7 @@ export default function AdminDashboard() {
     </div>
   );
 }
+
 /* ===========================
    SiteVisitsSection — sous-composants (hors fonction)
 =========================== */
@@ -1498,364 +1561,140 @@ function DonutChart({ data, colors }) {
     var y2 = CY + R * Math.sin(endA);
     var large = pct > 0.5 ? 1 : 0;
     var pathD = "M " + CX + " " + CY + " L " + x1 + " " + y1 + " A " + R + " " + R + " 0 " + large + " 1 " + x2 + " " + y2 + " Z";
-    return { pathD: pathD, color: COLORS[i], label: d.label, value: d.value, pct: Math.round(pct * 100) };
+    return { pathD, color: COLORS[i % COLORS.length], label: d.label, value: d.value, pct };
   });
   return (
-    <div className="flex items-center gap-4">
-      <svg viewBox="0 0 110 110" className="w-24 h-24 flex-shrink-0">
-        {slices.map(function(s, i) {
-          return <path key={i} d={s.pathD} fill={s.color} opacity={0.85} />;
-        })}
-        <circle cx={CX} cy={CY} r={22} fill="white" />
-        <text x={CX} y={CY} textAnchor="middle" dominantBaseline="middle" fontSize={9} fill="#374151" fontWeight="bold">{total}</text>
-      </svg>
-      <div className="flex flex-col gap-1 text-xs min-w-0">
-        {slices.map(function(s, i) {
-          return (
-            <div key={i} className="flex items-center gap-1.5 truncate">
-              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: s.color }} />
-              <span className="truncate text-gray-600">{s.label}</span>
-              <span className="text-gray-400 flex-shrink-0">{s.pct}%</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    <svg viewBox="0 0 200 110" className="w-full max-w-[200px]">
+      {slices.map(function(s, i) {
+        return <path key={i} d={s.pathD} fill={s.color} />;
+      })}
+      <circle cx={CX} cy={CY} r={22} fill="white" />
+      {slices.map(function(s, i) {
+        return (
+          <g key={i}>
+            <rect x={110} y={4 + i * 13} width={8} height={8} rx={2} fill={s.color} />
+            <text x={122} y={12 + i * 13} fontSize={7} fill="#374151">
+              {s.label} ({Math.round(s.pct * 100)}%)
+            </text>
+          </g>
+        );
+      })}
+    </svg>
   );
 }
 
-function HBar({ label, value, max, color }) {
-  var barColor = color || '#3b82f6';
-  var width = Math.round(value / max * 100) + '%';
-  return (
-    <div className="flex items-center gap-2 text-xs">
-      <div className="w-28 truncate text-gray-600 flex-shrink-0">{label}</div>
-      <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
-        <div className="h-2 rounded-full" style={{ width: width, background: barColor }} />
-      </div>
-      <div className="w-10 text-right text-gray-500 flex-shrink-0">{value.toLocaleString('fr-FR')}</div>
-    </div>
-  );
-}
-
-/* ===========================
-   SiteVisitsSection — Vercel Analytics via Firestore
-=========================== */
 function SiteVisitsSection() {
-  var PERIOD_DAYS = { '7d': 7, '30d': 30, '90d': 90, '1y': 365 };
+  const [visitData, setVisitData] = useState(null);
+  const [visitLoading, setVisitLoading] = useState(true);
+  const [visitError, setVisitError] = useState(null);
+  const [visitPeriod, setVisitPeriod] = useState('30d');
 
-  const [period,       setPeriod]       = useState('30d');
-  const [loading,      setLoading]      = useState(true);
-  const [daily,        setDaily]        = useState([]);
-  const [monthly,      setMonthly]      = useState([]);
-  const [topPages,     setTopPages]     = useState([]);
-  const [topCountries, setTopCountries] = useState([]);
-  const [topDevices,   setTopDevices]   = useState([]);
-  const [topBrowsers,  setTopBrowsers]  = useState([]);
-  const [topReferrers, setTopReferrers] = useState([]);
-  const [noData,       setNoData]       = useState(false);
-
-  useEffect(function() {
-    setLoading(true);
-    setNoData(false);
-
-    var now = new Date();
-    var daysBack = PERIOD_DAYS[period] || 30;
-
-    var dateKeys = [];
-    for (var i = 0; i < daysBack; i++) {
-      var d = new Date(now);
-      d.setDate(d.getDate() - (daysBack - 1 - i));
-      var y = d.getFullYear();
-      var m = String(d.getMonth() + 1).padStart(2, '0');
-      var day = String(d.getDate()).padStart(2, '0');
-      dateKeys.push(y + '-' + m + '-' + day);
-    }
-
-    var seenMonths = {};
-    var monthKeys = [];
-    dateKeys.forEach(function(k) {
-      var mk = k.slice(0, 7);
-      if (!seenMonths[mk]) { seenMonths[mk] = true; monthKeys.push(mk); }
-    });
-
-    // ✅ Pour 1 an : on saute les 365 getDoc individuels (couteux et lents)
-    // et on utilise uniquement les 12 docs mensuels deja calcules
-    var dailyPromises = period === '1y' ? [] : dateKeys.map(function(k) {
-      return getDoc(doc(db, 'analytics_daily', k))
-        .then(function(s) { return { day: k, pageviews: s.exists() ? (s.data().pageviews || 0) : 0, visitors: s.exists() ? (s.data().visitors || 0) : 0 }; })
-        .catch(function() { return { day: k, pageviews: 0, visitors: 0 }; });
-    });
-
-    var monthlyPromises = monthKeys.map(function(k) {
-      return getDoc(doc(db, 'analytics_monthly', k))
-        .then(function(s) { return { month: k, pageviews: s.exists() ? (s.data().pageviews || 0) : 0, visitors: s.exists() ? (s.data().visitors || 0) : 0 }; })
-        .catch(function() { return { month: k, pageviews: 0, visitors: 0 }; });
-    });
-
-    function toSortedList(snap) {
-      if (!snap || !snap.exists()) return [];
-      return Object.entries(snap.data())
-        .map(function(entry) {
-          return { label: entry[0].replace(/__SLASH__/g, '/').replace(/__DOT__/g, '.'), value: entry[1] };
-        })
-        .sort(function(a, b) { return b.value - a.value; })
-        .slice(0, 10);
-    }
-
-    Promise.all([
-      Promise.all(dailyPromises),
-      Promise.all(monthlyPromises),
-      getDoc(doc(db, 'analytics_top', 'pages')).catch(function() { return null; }),
-      getDoc(doc(db, 'analytics_top', 'countries')).catch(function() { return null; }),
-      getDoc(doc(db, 'analytics_top', 'devices')).catch(function() { return null; }),
-      getDoc(doc(db, 'analytics_top', 'browsers')).catch(function() { return null; }),
-      getDoc(doc(db, 'analytics_top', 'referrers')).catch(function() { return null; }),
-    ]).then(function(results) {
-      var dailyData    = results[0];
-      var monthlyData  = results[1];
-      var pagesSnap    = results[2];
-      var countriesSnap = results[3];
-      var devicesSnap  = results[4];
-      var browsersSnap = results[5];
-      var referrersSnap = results[6];
-
-      setDaily(dailyData);
-      setMonthly(monthlyData);
-      setTopPages(toSortedList(pagesSnap));
-      setTopCountries(toSortedList(countriesSnap));
-      setTopDevices(toSortedList(devicesSnap));
-      setTopBrowsers(toSortedList(browsersSnap));
-      setTopReferrers(toSortedList(referrersSnap));
-
-      // Pour 1y : totalPV base sur les mensuels (les daily sont vides intentionnellement)
-      var totalPV = period === '1y'
-        ? monthlyData.reduce(function(a, d) { return a + (Number(d.pageviews) || 0); }, 0)
-        : dailyData.reduce(function(a, d) { return a + (Number(d.pageviews) || 0); }, 0);
-      setNoData(totalPV === 0);
-      setLoading(false);
-    }).catch(function(e) {
-      console.error('analytics fetch error', e);
-      setLoading(false);
-    });
-  }, [period]);
-
-  var totalPV  = daily.reduce(function(a, d) { return a + (Number(d.pageviews) || 0); }, 0);
-  var totalVis = daily.reduce(function(a, d) { return a + (Number(d.visitors)  || 0); }, 0);
-  var avgDaily = daily.length > 0 ? Math.round(totalPV / daily.length) : 0;
-  // bounceRate : approx (pages sup / total pages), pas un vrai taux de rebond
-  // Un vrai rebond = sessions avec 1 seule page vue, non calculable sans donnee de session
-  var bounceRate = totalPV > 0 && totalVis > 0 ? Math.round(((totalPV - totalVis) / totalPV) * 100) : 0;
-  var showEvery = daily.length > 14 ? 7 : 1;
-
-  var PERIOD_BTNS = [['7d','7 jours'],['30d','30 jours'],['90d','90 jours'],['1y','1 an']];
+  useEffect(() => {
+    setVisitLoading(true);
+    setVisitError(null);
+    fetchWithAuth(`/api/analytics?period=${visitPeriod}`)
+      .then(data => {
+        setVisitData(data);
+        setVisitLoading(false);
+      })
+      .catch(err => {
+        setVisitError(err.message || 'Erreur');
+        setVisitLoading(false);
+      });
+  }, [visitPeriod]);
 
   return (
-    <div className="space-y-4">
-
-      {/* Header + sélecteur de période */}
-      <div className="bg-white border rounded-xl p-4">
-        <div className="flex items-center justify-between mb-4" style={{ flexWrap: 'wrap', gap: '8px' }}>
-          <div className="font-semibold text-lg">🌐 Visites du site</div>
-          <div className="flex gap-1">
-            {PERIOD_BTNS.map(function(btn) {
-              var k = btn[0];
-              var lbl = btn[1];
-              var active = period === k;
-              return (
-                <button
-                  key={k}
-                  onClick={function() { setPeriod(k); }}
-                  className={active ? "px-3 py-1 rounded-lg text-xs border bg-primary text-white border-primary" : "px-3 py-1 rounded-lg text-xs border bg-white text-gray-600"}
-                >
-                  {lbl}
-                </button>
-              );
-            })}
-          </div>
+    <div className="bg-white border rounded-xl p-4">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="font-semibold">🌐 Visites du site (Vercel Analytics)</div>
+        <div className="flex gap-1">
+          {['7d','30d','90d'].map(p => (
+            <button
+              key={p}
+              className={`px-3 py-1 rounded text-xs border ${visitPeriod === p ? 'bg-primary text-white border-primary' : 'bg-white text-gray-600'}`}
+              onClick={() => setVisitPeriod(p)}
+            >
+              {p}
+            </button>
+          ))}
         </div>
-
-        {loading ? (
-          <div className="text-gray-400 text-sm text-center py-8">Chargement des visites…</div>
-        ) : (
-          <div>
-            {/* KPIs */}
-            <div className="grid grid-cols-2 gap-3 mb-4" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-              <div className="bg-gray-50 rounded-xl p-3 border">
-                <div className="text-xs text-gray-500">👁️ Pages vues</div>
-                <div className="text-2xl font-bold text-blue-600">{totalPV.toLocaleString('fr-FR')}</div>
-              </div>
-              <div className="bg-gray-50 rounded-xl p-3 border">
-                <div className="text-xs text-gray-500">👤 Visiteurs uniques</div>
-                <div className="text-2xl font-bold text-emerald-600">{totalVis.toLocaleString('fr-FR')}</div>
-              </div>
-              <div className="bg-gray-50 rounded-xl p-3 border">
-                <div className="text-xs text-gray-500">📅 Moy. pages/jour</div>
-                <div className="text-2xl font-bold text-purple-600">{avgDaily.toLocaleString('fr-FR')}</div>
-              </div>
-              <div className="bg-gray-50 rounded-xl p-3 border">
-                <div className="text-xs text-gray-500" title="Approximation : pages sup. / total pages vues">↩️ Pages/visite (approx.)</div>
-                <div className="text-2xl font-bold text-orange-600">{bounceRate}%</div>
-              </div>
-            </div>
-
-            {/* Légende */}
-            <div className="flex items-center gap-4 text-xs text-gray-500 mb-1">
-              <span className="flex items-center gap-1">
-                <span className="inline-block w-3 h-2 rounded bg-blue-400" />
-                Pages vues
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="inline-block w-3 h-2 rounded bg-emerald-400" />
-                Visiteurs
-              </span>
-            </div>
-
-            {/* Graphique temporel */}
-            {noData ? (
-              <div className="bg-orange-50 border border-orange-200 text-orange-700 rounded-lg p-3 text-sm">
-                Aucune donnée pour cette période. Le Log Drain est-il configuré sur Vercel ?
-              </div>
-            ) : (
-              <VisitBarChart data={daily} showEvery={showEvery} />
-            )}
-          </div>
-        )}
       </div>
 
-      {/* Tableau mensuel */}
-      {!loading && !noData && (
-        <div className="bg-white border rounded-xl p-4">
-          <div className="font-semibold text-sm mb-3 text-blue-700">📆 Évolution mensuelle</div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-xs text-gray-500 border-b">
-                  <th className="p-2 text-left">Mois</th>
-                  <th className="p-2 text-right">Pages vues</th>
-                  <th className="p-2 text-right">Visiteurs</th>
-                  <th className="p-2 text-right">PV / Vis</th>
-                </tr>
-              </thead>
-              <tbody>
-                {monthly.slice().reverse().map(function(m) {
-                  var pv  = Number(m.pageviews) || 0;
-                  var vis = Number(m.visitors)  || 0;
-                  return (
-                    <tr key={m.month} className="border-t hover:bg-gray-50">
-                      <td className="p-2 font-medium">{m.month}</td>
-                      <td className="p-2 text-right text-blue-600">{pv.toLocaleString('fr-FR')}</td>
-                      <td className="p-2 text-right text-emerald-600">{vis.toLocaleString('fr-FR')}</td>
-                      <td className="p-2 text-right text-gray-500">{vis > 0 ? (pv / vis).toFixed(1) : '—'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {visitLoading && <div className="text-gray-400 text-sm py-4 text-center">Chargement des analytics…</div>}
+      {visitError && <div className="text-red-500 text-sm py-4 text-center">Erreur : {visitError}</div>}
 
-      {/* Top pages + Pays */}
-      {!loading && (topPages.length > 0 || topCountries.length > 0) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-white border rounded-xl p-4">
-            <div className="font-semibold text-sm mb-3">📄 Pages les plus visitées</div>
-            <div className="space-y-2">
-              {topPages.map(function(p, i) {
-                return (
-                  <HBar
-                    key={i}
-                    label={p.label || '/'}
-                    value={p.value}
-                    max={topPages[0] ? topPages[0].value : 1}
-                    color="#3b82f6"
-                  />
-                );
-              })}
-              {topPages.length === 0 && <div className="text-xs text-gray-400">Aucune donnée</div>}
+      {!visitLoading && !visitError && visitData && (
+        <div className="space-y-4">
+          {/* KPIs */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              { label: 'Pageviews', value: visitData.summary?.pageviews ?? '—', color: 'text-blue-600' },
+              { label: 'Visiteurs uniques', value: visitData.summary?.visitors ?? '—', color: 'text-emerald-600' },
+              { label: 'Sessions', value: visitData.summary?.sessions ?? '—', color: 'text-purple-600' },
+              { label: 'Taux de rebond', value: visitData.summary?.bounceRate != null ? Math.round(visitData.summary.bounceRate * 100) + '%' : '—', color: 'text-orange-600' },
+            ].map(k => (
+              <div key={k.label} className="bg-gray-50 border rounded-lg p-3">
+                <div className="text-xs text-gray-500">{k.label}</div>
+                <div className={`text-xl font-bold ${k.color}`}>{k.value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Graphique journalier */}
+          {visitData.timeseries && visitData.timeseries.length > 0 && (
+            <div>
+              <div className="text-xs text-gray-500 mb-1 flex gap-3">
+                <span><span className="inline-block w-2 h-2 rounded bg-blue-500 mr-1" />Pageviews</span>
+                <span><span className="inline-block w-2 h-2 rounded bg-emerald-500 mr-1" />Visiteurs</span>
+              </div>
+              <VisitBarChart
+                data={visitData.timeseries}
+                showEvery={visitData.timeseries.length > 30 ? 7 : visitData.timeseries.length > 14 ? 3 : 1}
+              />
             </div>
-          </div>
-          <div className="bg-white border rounded-xl p-4">
-            <div className="font-semibold text-sm mb-3">🌍 Pays</div>
-            {topCountries.length > 0 ? (
-              <DonutChart data={topCountries} colors={['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16']} />
-            ) : (
-              <div className="text-xs text-gray-400">Aucune donnée</div>
+          )}
+
+          {/* Top pages + pays */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {visitData.topPages && visitData.topPages.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold text-gray-500 mb-2">Top pages</div>
+                <ul className="space-y-1">
+                  {visitData.topPages.slice(0, 8).map((p, i) => (
+                    <li key={i} className="flex items-center gap-2 text-xs">
+                      <span className="text-gray-400 w-4">{i+1}.</span>
+                      <span className="flex-1 truncate text-gray-700 font-mono">{p.page}</span>
+                      <span className="text-blue-600 font-semibold">{p.pageviews}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {visitData.countries && visitData.countries.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold text-gray-500 mb-2">Pays</div>
+                <DonutChart
+                  data={visitData.countries.slice(0, 6).map(c => ({ label: c.country, value: c.visitors }))}
+                />
+              </div>
             )}
           </div>
         </div>
       )}
-
-      {/* Appareils + Navigateurs + Sources */}
-      {!loading && (topDevices.length > 0 || topBrowsers.length > 0 || topReferrers.length > 0) && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white border rounded-xl p-4">
-            <div className="font-semibold text-sm mb-3">📱 Appareils</div>
-            {topDevices.length > 0 ? (
-              <DonutChart data={topDevices} colors={['#6366f1','#f59e0b','#10b981','#ef4444']} />
-            ) : (
-              <div className="text-xs text-gray-400">Aucune donnée</div>
-            )}
-          </div>
-          <div className="bg-white border rounded-xl p-4">
-            <div className="font-semibold text-sm mb-3">🌐 Navigateurs</div>
-            {topBrowsers.length > 0 ? (
-              <DonutChart data={topBrowsers} colors={['#f59e0b','#3b82f6','#10b981','#ef4444','#8b5cf6','#ec4899']} />
-            ) : (
-              <div className="text-xs text-gray-400">Aucune donnée</div>
-            )}
-          </div>
-          <div className="bg-white border rounded-xl p-4">
-            <div className="font-semibold text-sm mb-3">🔗 Sources de trafic</div>
-            <div className="space-y-2">
-              {topReferrers.map(function(r, i) {
-                return (
-                  <HBar
-                    key={i}
-                    label={r.label || 'direct'}
-                    value={r.value}
-                    max={topReferrers[0] ? topReferrers[0].value : 1}
-                    color="#8b5cf6"
-                  />
-                );
-              })}
-              {topReferrers.length === 0 && <div className="text-xs text-gray-400">Aucune donnée</div>}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Instructions setup si pas de données */}
-      {!loading && noData && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
-          <div className="font-semibold mb-2">⚙️ Comment activer les visites en temps réel ?</div>
-          <ol className="list-decimal list-inside space-y-1 text-xs">
-            <li>Va sur <b>vercel.com</b> → ton projet → <b>Settings → Log Drains</b></li>
-            <li>Clique <b>Add Drain</b></li>
-            <li>Delivery URL : <code className="bg-blue-100 px-1 rounded">https://edukaraib.com/api/analytics-drain</code></li>
-            <li>Sources : coche <b>Web Analytics</b></li>
-            <li>Format : <b>JSON</b></li>
-            <li>Sauvegarde — les pageviews arrivent en temps réel ici</li>
-          </ol>
-        </div>
-      )}
-
     </div>
   );
 }
 
 /* ===========================
-   StatsTab — Statistiques complètes
+   StatsTab — sous-composant (hors fonction principale)
 =========================== */
 function StatsTab({ users, payments, lessons, lessonsLoading }) {
-
-  // ── Helpers date ──
   const toDate = (ts) => {
-    if (!ts) return null;
-    if (ts?.toDate) return ts.toDate();
-    if (typeof ts === 'string' || typeof ts === 'number') return new Date(ts);
-    return null;
+    try {
+      if (!ts) return null;
+      if (ts?.toDate) return ts.toDate();
+      return new Date(ts);
+    } catch { return null; }
   };
   const monthKey = (d) => d ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` : null;
   const monthLabel = (k) => {
@@ -1863,14 +1702,12 @@ function StatsTab({ users, payments, lessons, lessonsLoading }) {
     return new Date(Number(y), Number(m)-1, 1).toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
   };
 
-  // ── 6 derniers mois ──
   const last6 = Array.from({ length: 6 }, (_, i) => {
     const d = new Date();
     d.setMonth(d.getMonth() - (5 - i));
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
   });
 
-  // ── Inscrits par mois ──
   const signupsByMonth = useMemo(() => {
     const counts = {};
     users.forEach(u => {
@@ -1881,7 +1718,6 @@ function StatsTab({ users, payments, lessons, lessonsLoading }) {
     return last6.map(k => ({ label: monthLabel(k), value: counts[k] || 0 }));
   }, [users]);
 
-  // ── Cours par mois ──
   const lessonsByMonth = useMemo(() => {
     const counts = {};
     lessons.forEach(l => {
@@ -1892,7 +1728,6 @@ function StatsTab({ users, payments, lessons, lessonsLoading }) {
     return last6.map(k => ({ label: monthLabel(k), value: counts[k] || 0 }));
   }, [lessons]);
 
-  // ── Revenus par mois ──
   const revenueByMonth = useMemo(() => {
     const sums = {};
     payments.filter(p => p.status === 'held' || p.status === 'released').forEach(p => {
@@ -1903,7 +1738,6 @@ function StatsTab({ users, payments, lessons, lessonsLoading }) {
     return last6.map(k => ({ label: monthLabel(k), value: Math.round(sums[k] || 0) }));
   }, [payments]);
 
-  // ── KPIs globaux ──
   const totalUsers     = users.length;
   const totalTeachers  = users.filter(u => u.role === 'teacher').length;
   const totalStudents  = users.filter(u => u.role === 'student').length;
@@ -1918,11 +1752,9 @@ function StatsTab({ users, payments, lessons, lessonsLoading }) {
     .filter(p => p.status === 'held' || p.status === 'released')
     .reduce((a, p) => a + Number(p.fee_eur || 0), 0);
 
-  // Nouveaux inscrits ce mois
   const thisMonth = monthKey(new Date());
   const newThisMonth = users.filter(u => monthKey(toDate(u.createdAt)) === thisMonth).length;
 
-  // ── Mini bar chart SVG ──
   const BarChart = ({ data, color = '#00804B', unit = '' }) => {
     const max = Math.max(...data.map(d => d.value), 1);
     const W = 400, H = 120, pad = 30, barW = Math.floor((W - pad * 2) / data.length) - 4;
@@ -1989,7 +1821,6 @@ function StatsTab({ users, payments, lessons, lessonsLoading }) {
             </div>
           ))}
         </div>
-        {/* barre proportionnelle */}
         <div className="mt-3 flex rounded-full overflow-hidden h-3">
           {totalTeachers > 0 && <div className="bg-emerald-500" style={{ width: `${totalTeachers/totalUsers*100}%` }} />}
           {totalStudents > 0 && <div className="bg-blue-500"    style={{ width: `${totalStudents/totalUsers*100}%` }} />}
@@ -2013,9 +1844,7 @@ function StatsTab({ users, payments, lessons, lessonsLoading }) {
         </div>
       </div>
 
-      {/* ═══════════════════════════════════════════
-           🌐 VISITES DU SITE — Vercel Web Analytics
-      ═══════════════════════════════════════════ */}
+      {/* Visites du site */}
       <SiteVisitsSection />
 
       {/* Derniers inscrits */}
