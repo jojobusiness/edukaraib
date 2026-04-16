@@ -629,6 +629,7 @@ export default function AdminDashboard() {
                 <option value="student">Élève</option>
                 <option value="parent">Parent</option>
                 <option value="teacher">Professeur</option>
+                <option value="influencer">Influenceur</option>
                 <option value="admin">Admin</option>
                 <option value="disabled">Désactivés</option>
               </select>
@@ -684,7 +685,13 @@ export default function AdminDashboard() {
                       <td className="p-2">{u.email}</td>
                       <td className="p-2">
                         <span className="inline-flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded bg-gray-100">{u.role || 'n/a'}</span>
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                            u.role === 'teacher'    ? 'bg-emerald-100 text-emerald-700' :
+                            u.role === 'parent'     ? 'bg-purple-100 text-purple-700'  :
+                            u.role === 'influencer' ? 'bg-pink-100 text-pink-700'      :
+                            u.role === 'student'    ? 'bg-blue-100 text-blue-700'      :
+                            'bg-gray-100 text-gray-600'
+                          }`}>{u.role || 'n/a'}</span>
                           <select
                             className="border rounded px-1 py-0.5 text-xs"
                             value={u.role || 'student'}
@@ -693,6 +700,7 @@ export default function AdminDashboard() {
                             <option value="student">student</option>
                             <option value="parent">parent</option>
                             <option value="teacher">teacher</option>
+                            <option value="influencer">influencer</option>
                             <option value="admin">admin</option>
                           </select>
                         </span>
@@ -1347,6 +1355,19 @@ export default function AdminDashboard() {
                                         setInfluencers(prev => prev.map(i =>
                                           i.id === influ.id ? { ...i, code: newCode } : i
                                         ));
+                                        // ✉️ Email de notification à l'influenceur
+                                        if (influ.email) {
+                                          await fetchWithAuth('/api/notify-email', {
+                                            method: 'POST',
+                                            body: JSON.stringify({
+                                              to: influ.email,
+                                              title: 'Votre code promo a été modifié',
+                                              message: `Bonjour ${influ.name || ''},\n\nVotre code promo a été mis à jour par l'équipe EduKaraib.\n\nNouveau code : ${newCode}\n\nUtilisez ce nouveau code pour vos prochaines recommandations.`,
+                                              ctaUrl: 'https://edukaraib.com/influencer/dashboard',
+                                              ctaText: 'Voir mon tableau de bord',
+                                            }),
+                                          });
+                                        }
                                         setInfluCodeEdit(null);
                                       } catch (err) {
                                         alert('Erreur : ' + err.message);
@@ -1370,6 +1391,19 @@ export default function AdminDashboard() {
                                       setInfluencers(prev => prev.map(i =>
                                         i.id === influ.id ? { ...i, code: newCode } : i
                                       ));
+                                      // ✉️ Email de notification à l'influenceur
+                                      if (influ.email) {
+                                        await fetchWithAuth('/api/notify-email', {
+                                          method: 'POST',
+                                          body: JSON.stringify({
+                                            to: influ.email,
+                                            title: 'Votre code promo a été modifié',
+                                            message: `Bonjour ${influ.name || ''},\n\nVotre code promo a été mis à jour par l'équipe EduKaraib.\n\nNouveau code : ${newCode}\n\nUtilisez ce nouveau code pour vos prochaines recommandations.`,
+                                            ctaUrl: 'https://edukaraib.com/influencer/dashboard',
+                                            ctaText: 'Voir mon tableau de bord',
+                                          }),
+                                        });
+                                      }
                                       setInfluCodeEdit(null);
                                     } catch (err) {
                                       alert('Erreur : ' + err.message);
@@ -1738,10 +1772,11 @@ function StatsTab({ users, payments, lessons, lessonsLoading }) {
     return last6.map(k => ({ label: monthLabel(k), value: Math.round(sums[k] || 0) }));
   }, [payments]);
 
-  const totalUsers     = users.length;
-  const totalTeachers  = users.filter(u => u.role === 'teacher').length;
-  const totalStudents  = users.filter(u => u.role === 'student').length;
-  const totalParents   = users.filter(u => u.role === 'parent').length;
+  const totalUsers       = users.length;
+  const totalTeachers    = users.filter(u => u.role === 'teacher').length;
+  const totalStudents    = users.filter(u => u.role === 'student').length;
+  const totalParents     = users.filter(u => u.role === 'parent').length;
+  const totalInfluencers = users.filter(u => u.role === 'influencer').length;
   const totalLessons   = lessons.length;
   const completedLessons = lessons.filter(l => l.status === 'completed').length;
   const paidLessons    = lessons.filter(l => l.is_paid).length;
@@ -1790,7 +1825,7 @@ function StatsTab({ users, payments, lessons, lessonsLoading }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: 'Utilisateurs', value: totalUsers, sub: `+${newThisMonth} ce mois`, color: 'text-blue-600' },
-          { label: 'Profs', value: totalTeachers, sub: `${totalStudents} élèves · ${totalParents} parents`, color: 'text-emerald-600' },
+          { label: 'Profs', value: totalTeachers, sub: `${totalStudents} élèves · ${totalParents} parents · ${totalInfluencers} influenceurs`, color: 'text-emerald-600' },
           { label: 'Cours créés', value: totalLessons, sub: `${completedLessons} terminés · ${paidLessons} payés`, color: 'text-purple-600' },
           { label: 'Revenu plateforme', value: `${totalFees.toFixed(0)} €`, sub: `Brut total ${totalRevenue.toFixed(0)} €`, color: 'text-green-700' },
         ].map(k => (
@@ -1807,9 +1842,10 @@ function StatsTab({ users, payments, lessons, lessonsLoading }) {
         <div className="font-semibold mb-3">Répartition des comptes</div>
         <div className="flex gap-4 flex-wrap">
           {[
-            { label: 'Profs', count: totalTeachers, color: 'bg-emerald-500' },
-            { label: 'Élèves', count: totalStudents, color: 'bg-blue-500' },
-            { label: 'Parents', count: totalParents, color: 'bg-purple-500' },
+            { label: 'Profs',        count: totalTeachers,    color: 'bg-emerald-500' },
+            { label: 'Élèves',       count: totalStudents,    color: 'bg-blue-500'    },
+            { label: 'Parents',      count: totalParents,     color: 'bg-purple-500'  },
+            { label: 'Influenceurs', count: totalInfluencers, color: 'bg-pink-500'    },
           ].map(r => (
             <div key={r.label} className="flex items-center gap-2">
               <div className={`w-3 h-3 rounded-full ${r.color}`} />
@@ -1822,9 +1858,10 @@ function StatsTab({ users, payments, lessons, lessonsLoading }) {
           ))}
         </div>
         <div className="mt-3 flex rounded-full overflow-hidden h-3">
-          {totalTeachers > 0 && <div className="bg-emerald-500" style={{ width: `${totalTeachers/totalUsers*100}%` }} />}
-          {totalStudents > 0 && <div className="bg-blue-500"    style={{ width: `${totalStudents/totalUsers*100}%` }} />}
-          {totalParents  > 0 && <div className="bg-purple-500"  style={{ width: `${totalParents/totalUsers*100}%` }} />}
+          {totalTeachers    > 0 && <div className="bg-emerald-500" style={{ width: `${totalTeachers/totalUsers*100}%` }} />}
+          {totalStudents    > 0 && <div className="bg-blue-500"    style={{ width: `${totalStudents/totalUsers*100}%` }} />}
+          {totalParents     > 0 && <div className="bg-purple-500"  style={{ width: `${totalParents/totalUsers*100}%` }} />}
+          {totalInfluencers > 0 && <div className="bg-pink-500"    style={{ width: `${totalInfluencers/totalUsers*100}%` }} />}
         </div>
       </div>
 
@@ -1872,8 +1909,9 @@ function StatsTab({ users, payments, lessons, lessonsLoading }) {
                   <td className="p-2 font-medium">{nameOf(u)}</td>
                   <td className="p-2">
                     <span className={`px-2 py-0.5 rounded text-xs ${
-                      u.role === 'teacher' ? 'bg-emerald-100 text-emerald-700' :
-                      u.role === 'parent'  ? 'bg-purple-100 text-purple-700' :
+                      u.role === 'teacher'    ? 'bg-emerald-100 text-emerald-700' :
+                      u.role === 'parent'     ? 'bg-purple-100 text-purple-700'  :
+                      u.role === 'influencer' ? 'bg-pink-100 text-pink-700'      :
                       'bg-blue-100 text-blue-700'
                     }`}>{u.role}</span>
                   </td>
