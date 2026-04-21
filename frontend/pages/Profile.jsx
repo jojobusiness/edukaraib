@@ -77,6 +77,18 @@ const CARAIBES_VILLES = [
   'George Town',
   // Turks-et-Caïcos
   'Cockburn Town',
+  // La Réunion
+  'Saint-Denis','Saint-Paul','Saint-Pierre','Le Tampon','Saint-Louis','Saint-André','Saint-Benoît','La Possession','Sainte-Marie','Sainte-Suzanne','Saint-Leu','Cilaos','Salazie',
+  // Mayotte
+  'Mamoudzou','Koungou','Bandraboua','Dzaoudzi','Bouéni','Kani-Kéli','Chiconi','Tsingoni',
+  // Polynésie française
+  'Papeete','Faaa','Punaauia','Pirae','Mahina','Moorea','Bora Bora','Raiatea','Huahine',
+  // Nouvelle-Calédonie
+  'Nouméa','Mont-Dore','Dumbéa','Païta','Koné','Bourail',
+  // Saint-Pierre-et-Miquelon
+  'Saint-Pierre','Miquelon',
+  // Wallis-et-Futuna
+  'Mata-Utu',
   // France métropolitaine (pour profs en visio)
   'Paris','Lyon','Marseille','Bordeaux','Toulouse','Nantes','Strasbourg','Montpellier','Nice','Rennes','Lille','Reims','Saint-Étienne','Le Havre','Toulon','Grenoble','Dijon','Angers','Nîmes','Clermont-Ferrand',
   // International

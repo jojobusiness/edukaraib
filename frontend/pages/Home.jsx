@@ -375,37 +375,26 @@ export default function Home() {
     []
   );
 
-  const cities = useMemo(
+  const cityGroups = useMemo(
     () => [
-      // Guadeloupe
-      'Pointe-à-Pitre', 'Basse-Terre', 'Les Abymes', 'Baie-Mahault', 'Le Gosier',
-      // Martinique
-      'Fort-de-France', 'Le Lamentin', 'Le Robert', 'Schoelcher', 'Le François',
-      // Guyane
-      'Cayenne', 'Kourou', 'Matoury', 'Rémire-Montjoly', 'Saint-Laurent-du-Maroni',
-      // Haïti
-      'Port-au-Prince', 'Cap-Haïtien', 'Pétionville', 'Carrefour', 'Delmas',
-      // République Dominicaine
-      'Saint-Domingue', 'Santiago de los Caballeros', 'La Romana', 'San Pedro de Macorís',
-      // Cuba
-      'La Havane', 'Santiago de Cuba', 'Holguín', 'Camagüey',
-      // Jamaïque
-      'Kingston', 'Montego Bay', 'Spanish Town',
-      // Trinidad-et-Tobago
-      'Port of Spain', 'San Fernando', 'Chaguanas',
-      // Barbade
-      'Bridgetown',
-      // Saint-Martin / Sint Maarten
-      'Marigot', 'Philipsburg',
-      // Saint-Barthélemy
-      'Gustavia',
-      // Autres îles
-      'Roseau', 'Castries', 'Kingstown', 'Saint-Georges', 'Basseterre', 'Plymouth',
-      // En ligne / mondial
-      'En ligne',
+      { label: '🇬🇵 Guadeloupe', cities: ['Pointe-à-Pitre', 'Les Abymes', 'Baie-Mahault', 'Le Gosier', 'Basse-Terre', 'Sainte-Anne', 'Le Moule', 'Capesterre-Belle-Eau'] },
+      { label: '🇲🇶 Martinique', cities: ['Fort-de-France', 'Le Lamentin', 'Le Robert', 'Schoelcher', 'Le François', 'Sainte-Marie', 'Le Marin', 'La Trinité'] },
+      { label: '🇬🇫 Guyane', cities: ['Cayenne', 'Kourou', 'Matoury', 'Rémire-Montjoly', 'Saint-Laurent-du-Maroni', 'Macouria', 'Mana', 'Maripasoula'] },
+      { label: '🇷🇪 La Réunion', cities: ['Saint-Denis', 'Saint-Paul', 'Saint-Pierre', 'Le Tampon', 'Saint-Louis', 'Saint-André', 'Saint-Benoît', 'La Possession'] },
+      { label: '🇾🇹 Mayotte', cities: ['Mamoudzou', 'Koungou', 'Bandraboua', 'Dzaoudzi', 'Bouéni'] },
+      { label: '🏝️ Saint-Martin / Saint-Barth', cities: ['Marigot', 'Grand-Case', 'Philipsburg', 'Gustavia'] },
+      { label: '🇭🇹 Haïti', cities: ['Port-au-Prince', 'Pétionville', 'Cap-Haïtien', 'Delmas', 'Carrefour', 'Gonaïves'] },
+      { label: '🇩🇴 Rép. Dominicaine', cities: ['Saint-Domingue', 'Santiago de los Caballeros', 'La Romana', 'Puerto Plata'] },
+      { label: '🇯🇲 Jamaïque', cities: ['Kingston', 'Montego Bay', 'Spanish Town'] },
+      { label: '🇹🇹 Trinidad', cities: ['Port of Spain', 'San Fernando', 'Chaguanas'] },
+      { label: '🇵🇫 Polynésie française', cities: ['Papeete', 'Faaa', 'Punaauia', 'Pirae'] },
+      { label: '🇳🇨 Nouvelle-Calédonie', cities: ['Nouméa', 'Mont-Dore', 'Dumbéa', 'Païta'] },
+      { label: '🌐 En ligne', cities: ['En ligne'] },
     ],
     []
   );
+
+  const cities = useMemo(() => cityGroups.flatMap(g => g.cities), [cityGroups]);
 
   const getModesLabel = (t) => {
     const pres = !!t.presentiel_enabled;
@@ -894,16 +883,25 @@ export default function Home() {
             ))}
           </div>
 
-          {/* Villes rapides */}
-          <div className="mt-6 text-sm text-gray-600 flex flex-wrap gap-2">
-            {cities.map((city) => (
-              <button
-                key={city}
-                onClick={() => navigate(`/search?city=${encodeURIComponent(city)}`)}
-                className="px-3 py-1 rounded-full bg-white border hover:border-primary hover:text-primary"
-              >
-                {city}
-              </button>
+          {/* Villes par territoire */}
+          <div className="mt-8 space-y-4">
+            {cityGroups.map((group) => (
+              <div key={group.label}>
+                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+                  {group.label}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {group.cities.map((city) => (
+                    <button
+                      key={city}
+                      onClick={() => navigate(`/search?city=${encodeURIComponent(city)}`)}
+                      className="px-3 py-1.5 rounded-full bg-white border border-gray-200 text-sm text-gray-700 hover:border-primary hover:text-primary hover:shadow-sm transition"
+                    >
+                      {city}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </div>
