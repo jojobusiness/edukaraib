@@ -21,6 +21,7 @@ import fetchWithAuth from '../utils/fetchWithAuth';
 
 // 👇 imports messagerie (utilisés dans l'onglet "Discussions")
 import Messages from './Messages';
+import AnalyticsTab from '../components/admin/AnalyticsTab';
 
 /* ===========================
    Utils
@@ -171,7 +172,7 @@ async function notifyByEmail(uid, title, message, ctaUrl, ctaText = "Ouvrir le t
    AdminDashboard (sans layout)
 =========================== */
 export default function AdminDashboard() {
-  const [tab, setTab] = useState('stats'); // stats | accounts | payments | messages | discussions | influencers
+  const [tab, setTab] = useState('stats'); // stats | accounts | payments | messages | discussions | influencers | analytics
   const [meRole, setMeRole] = useState(null);
   const [meId, setMeId] = useState(null);
 
@@ -607,6 +608,12 @@ export default function AdminDashboard() {
             onClick={() => setTab('influencers')}
           >
             🎤 Influenceurs
+          </button>
+          <button
+            className={`px-4 py-2 rounded-lg border ${tab === 'analytics' ? 'bg-primary text-white border-primary' : 'bg-white'}`}
+            onClick={() => setTab('analytics')}
+          >
+            📈 Analytics
           </button>
         </div>
 
@@ -1925,6 +1932,9 @@ function StatsTab({ users, payments, lessons, lessonsLoading }) {
           </tbody>
         </table>
       </div>
+
+        {/* === ANALYTICS TAB === */}
+        {tab === 'analytics' && <AnalyticsTab />}
 
     </div>
   );
