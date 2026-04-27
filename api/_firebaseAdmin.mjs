@@ -73,8 +73,9 @@ export async function verifyAuth(req, res) {
     const decoded = await getAuthAdmin().verifyIdToken(idToken);
     return decoded; // { uid, ... }
   } catch (e) {
+    const expired = e?.code === 'auth/id-token-expired' || e?.errorInfo?.code === 'auth/id-token-expired';
     console.error('[verifyAuth] error:', e?.message || e);
-    res.status(401).json({ error: 'INVALID_TOKEN' });
+    res.status(401).json({ error: expired ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN' });
     return null;
   }
 }

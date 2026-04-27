@@ -1,4 +1,5 @@
 import { auth } from '../lib/firebase';
+import { signOut } from 'firebase/auth';
 
 const DEFAULT_TIMEOUT_MS = 15_000; // 15s — adapté aux connexions mobiles lentes
 
@@ -35,8 +36,14 @@ export async function fetchWithAuth(url, opts = {}) {
 
   // Retry automatique si token expiré (401)
   if (res.status === 401) {
-    token = await user.getIdToken(true); // force refresh
-    res = await doFetch(token);
+    try {
+      token = await user.getIdToken(true); // force refresh
+      res = await doFetch(token);
+    } catch {
+      // Refresh impossible → session définitivement expirée
+      await signOut(auth).catch(() => {});
+      throw new Error('Votre session a expiré. Veuillez vous reconnecter.');
+    }
   }
 
   if (!res.ok) {

@@ -3,6 +3,17 @@ import { stripe } from './_stripe.mjs';
 
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://www.edukaraib.com';
 
+function validateIban(iban) {
+  const rearranged = iban.slice(4) + iban.slice(0, 4);
+  const numeric = rearranged.split('').map(c => {
+    const n = c.charCodeAt(0) - 55;
+    return n >= 10 ? String(n) : c;
+  }).join('');
+  let remainder = 0;
+  for (const char of numeric) remainder = (remainder * 10 + parseInt(char, 10)) % 97;
+  return remainder === 1;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
@@ -40,6 +51,13 @@ export default async function handler(req, res) {
 
   if (!influ.rib) {
     return res.status(400).json({ error: 'NO_IBAN_ON_FILE' });
+  }
+
+  // Validation IBAN : format + checksum mod97
+  const iban = influ.rib.trim().replace(/\s/g, '').toUpperCase();
+  const ibanRegex = /^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/;
+  if (!ibanRegex.test(iban) || iban.length < 15 || iban.length > 34 || !validateIban(iban)) {
+    return res.status(400).json({ error: 'INVALID_IBAN', detail: 'Format ou checksum IBAN incorrect.' });
   }
 
   // ── 1. Virement SEPA réel via Stripe Payouts ──────────────────────────────
