@@ -1542,6 +1542,10 @@ export default function AdminDashboard() {
             )}
           </div>
         )}
+
+        {/* === ANALYTICS TAB === */}
+        {tab === 'analytics' && <AnalyticsTab />}
+
       </main>
     </div>
   );
@@ -1932,9 +1936,6 @@ function StatsTab({ users, payments, lessons, lessonsLoading }) {
           </tbody>
         </table>
       </div>
-
-        {/* === ANALYTICS TAB === */}
-        {tab === 'analytics' && <AnalyticsTab />}
 
     </div>
   );
