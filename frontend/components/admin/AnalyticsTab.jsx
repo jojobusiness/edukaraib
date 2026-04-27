@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
-import { collection, doc, getDocs, getDoc, orderBy, query } from 'firebase/firestore';
+import { collection, doc, getDocs, getDoc } from 'firebase/firestore';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid,
@@ -15,11 +15,10 @@ export default function AnalyticsTab() {
     async function load() {
       setLoading(true);
       try {
-        const dailySnap = await getDocs(
-          query(collection(db, 'analytics_daily'), orderBy('__name__', 'desc'))
-        );
+        const dailySnap = await getDocs(collection(db, 'analytics_daily'));
         const dailyData = dailySnap.docs
           .map(d => ({ date: d.id, pageviews: d.data().pageviews || 0, visitors: d.data().visitors || 0 }))
+          .sort((a, b) => b.date.localeCompare(a.date))
           .slice(0, 30)
           .reverse();
         setDaily(dailyData);
