@@ -37,15 +37,18 @@ export default async function handler(req, res) {
     }
   }
 
-  // ✅ Parser le NDJSON : chaque ligne est un objet JSON indépendant
+  // Parser NDJSON (une ligne par event) OU JSON array (encoding JSON Vercel)
   let events = [];
-  for (const line of rawBody.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      events.push(JSON.parse(trimmed));
-    } catch {
-      // ligne non-JSON ignorée silencieusement
+  const trimmedBody = rawBody.trim();
+  if (trimmedBody.startsWith('[')) {
+    // JSON array
+    try { events = JSON.parse(trimmedBody); } catch {}
+  } else {
+    // NDJSON
+    for (const line of trimmedBody.split('\n')) {
+      const t = line.trim();
+      if (!t) continue;
+      try { events.push(JSON.parse(t)); } catch {}
     }
   }
 
