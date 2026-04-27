@@ -1,5 +1,6 @@
 import { stripe } from './_stripe.mjs';
 import { adminDb, rawBody } from './_firebaseAdmin.mjs';
+import { Resend } from 'resend';
 
 export const config = { api: { bodyParser: false } };
 
@@ -22,8 +23,11 @@ export default async function handler(req, res) {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object;
-        // Peut suffire (les metadata sont sur la Session ET sur le PI via payment_intent_data.metadata)
         await markPaymentHeldAndUpdateLesson({ sessionId: session.id, paymentIntentId: session.payment_intent }, session.metadata);
+        // Email de confirmation — non-bloquant, n'affecte pas le webhook si ça échoue
+        sendPaymentConfirmationEmail(session.metadata, session.amount_total).catch(e =>
+          console.warn('[webhook] confirmation email error:', e?.message)
+        );
         break;
       }
       case 'payment_intent.succeeded': {
@@ -236,4 +240,135 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
       console.warn('[webhook] referral bonus error:', e?.message);
     }
   }
+}
+
+// ── Email de confirmation de paiement ────────────────────────────────────────
+async function sendPaymentConfirmationEmail(md, amountTotalCents) {
+  if (!process.env.RESEND_API_KEY) return;
+
+  const payerUid   = md.payer_uid  || md.payerUid  || null;
+  const teacherUid = md.teacher_uid || md.teacher_id || null;
+  const lessonId   = md.lesson_id  || md.lessonId  || null;
+  if (!payerUid) return;
+
+  // Lookup en parallèle : payeur, prof, leçon
+  const [payerSnap, teacherSnap, lessonSnap] = await Promise.all([
+    adminDb.collection('users').doc(payerUid).get(),
+    teacherUid ? adminDb.collection('users').doc(teacherUid).get() : Promise.resolve(null),
+    lessonId   ? adminDb.collection('lessons').doc(lessonId).get() : Promise.resolve(null),
+  ]);
+
+  if (!payerSnap.exists) return;
+  const payer = payerSnap.data();
+  const email = payer.email;
+  if (!email) return;
+
+  const payerFirstName = payer.firstName || payer.displayName?.split(' ')[0] || 'là';
+
+  let teacherName = 'votre professeur';
+  if (teacherSnap?.exists) {
+    const t = teacherSnap.data();
+    teacherName = [t.firstName, t.lastName].filter(Boolean).join(' ') || t.displayName || teacherName;
+  }
+
+  let subjectLabel = 'Cours particulier';
+  let lessonDateStr = '';
+  if (lessonSnap?.exists) {
+    const l = lessonSnap.data();
+    if (l.subject_id) subjectLabel = `Cours de ${l.subject_id}`;
+    const raw = l.scheduled_at || l.date || l.start_time || null;
+    if (raw) {
+      const d = raw?.toDate ? raw.toDate() : new Date(raw);
+      lessonDateStr = d.toLocaleDateString('fr-FR', {
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+      });
+    }
+  }
+
+  const isPack        = String(md.is_pack) === '1';
+  const packHours     = Number(md.pack_hours || 0);
+  const totalEur      = (amountTotalCents || 0) / 100;
+  const discountEur   = Number(md.coupon_discount_cents || 0) / 100;
+  const typeLabel     = isPack ? `Pack ${packHours}h` : subjectLabel;
+  const modeLabel     = String(md.lesson_source || '').includes('visio') ? 'Visio' : 'Présentiel';
+
+  const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
+
+  const html = `
+<div style="font-family:Inter,system-ui,Arial,sans-serif;background:#f5f7fb;padding:24px;">
+<table width="100%" cellspacing="0" cellpadding="0" style="max-width:660px;margin:auto;background:#fff;border-radius:18px;overflow:hidden;border:1px solid #e2e8f0;">
+  <!-- Header -->
+  <tr>
+    <td style="background:#00804B;padding:20px 24px;">
+      <table width="100%" cellspacing="0" cellpadding="0"><tr>
+        <td style="vertical-align:middle;">
+          <span style="display:inline-flex;align-items:center;gap:10px;">
+            <img src="https://edukaraib.com/edukaraib_logo.png" alt="EduKaraib" style="width:40px;height:40px;border-radius:8px;background:#fff;display:block;" />
+            <span style="color:#fff;font-weight:700;font-size:17px;">EduKaraib</span>
+          </span>
+        </td>
+        <td align="right" style="color:#bbf7d0;font-size:13px;font-weight:600;">Confirmation de paiement</td>
+      </tr></table>
+    </td>
+  </tr>
+
+  <!-- Body -->
+  <tr><td style="padding:28px 28px 0;">
+    <p style="margin:0 0 6px;font-size:22px;font-weight:700;color:#0f172a;">✅ Paiement confirmé !</p>
+    <p style="margin:0 0 20px;color:#475569;font-size:15px;">Bonjour ${esc(payerFirstName)}, votre réservation est enregistrée.</p>
+
+    <!-- Récapitulatif -->
+    <table width="100%" cellspacing="0" cellpadding="0" style="background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:20px;">
+      <tr><td style="padding:16px 18px;">
+        <p style="margin:0 0 12px;font-weight:700;color:#0f172a;font-size:14px;">Récapitulatif de votre commande</p>
+        ${row('Type',        typeLabel)}
+        ${row('Matière',     subjectLabel)}
+        ${row('Professeur',  teacherName)}
+        ${lessonDateStr ? row('Date',  lessonDateStr) : ''}
+        ${!isPack && modeLabel ? row('Mode', modeLabel) : ''}
+        ${discountEur > 0 ? row('Remise appliquée', `<span style="color:#16a34a;font-weight:600;">-${fmt(discountEur)} €</span>`) : ''}
+        <tr><td colspan="2" style="padding:8px 0 0;border-top:1px solid #e2e8f0;"></td></tr>
+        ${row('Total payé', `<span style="font-weight:700;font-size:16px;color:#0f172a;">${fmt(totalEur)} €</span>`)}
+      </td></tr>
+    </table>
+
+    <!-- Crédit d'impôt -->
+    <table width="100%" cellspacing="0" cellpadding="0" style="background:#fffbeb;border-radius:10px;border:1px solid #fde68a;margin-bottom:24px;">
+      <tr><td style="padding:14px 16px;">
+        <p style="margin:0;font-size:13px;color:#92400e;line-height:1.6;">
+          💡 <strong>Crédit d'impôt :</strong> En France, les cours particuliers ouvrent droit à un crédit d'impôt de <strong>50 %</strong> des sommes versées (service à la personne — art. 199 sexdecies CGI). Conservez cet email comme justificatif.
+        </p>
+      </td></tr>
+    </table>
+
+    <!-- CTA -->
+    <div style="text-align:center;margin-bottom:28px;">
+      <a href="${APP_BASE_URL}/smart-dashboard" style="display:inline-block;background:#facc15;color:#111827;text-decoration:none;font-weight:700;padding:13px 28px;border-radius:12px;font-size:15px;">Voir mes cours →</a>
+    </div>
+  </td></tr>
+
+  <!-- Footer -->
+  <tr><td style="padding:0 28px 24px;color:#94a3b8;font-size:12px;border-top:1px solid #f1f5f9;">
+    <p style="margin:12px 0 4px;font-weight:600;color:#64748b;">L'équipe EduKaraib</p>
+    <p style="margin:0;"><a href="mailto:contact@edukaraib.com" style="color:#00804B;text-decoration:none;">contact@edukaraib.com</a> · <a href="${APP_BASE_URL}" style="color:#00804B;text-decoration:none;">edukaraib.com</a></p>
+  </td></tr>
+</table>
+</div>`;
+
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  await resend.emails.send({
+    from: 'EduKaraib <notifications@edukaraib.com>',
+    to: [email],
+    subject: `✅ Paiement confirmé — ${typeLabel} avec ${teacherName}`,
+    html,
+  });
+}
+
+function esc(s) { return String(s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function fmt(n) { return Number(n).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function row(label, value) {
+  return `<tr>
+    <td style="padding:5px 0;color:#64748b;font-size:13px;width:45%;">${esc(label)}</td>
+    <td style="padding:5px 0;color:#0f172a;font-size:13px;font-weight:500;">${value}</td>
+  </tr>`;
 }
