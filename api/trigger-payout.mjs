@@ -46,42 +46,58 @@ export default async function handler(req, res) {
         .get();
 
       const packLessons = packSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const allCompleted = packLessons.every(l => l.status === 'completed');
-      const allPaid = packLessons.every(l => {
-        if (l.is_group) {
-          return (l.participant_ids || []).every(sid => !!l.participantsMap?.[sid]?.is_paid);
-        }
-        return !!l.is_paid;
-      });
+      const totalCount = packLessons.length;
+      if (totalCount === 0) return res.json({ ok: true, skipped: 'empty_pack' });
 
-      if (!allCompleted || !allPaid) {
-        return res.json({ ok: true, skipped: 'pack_not_fully_done' });
+      // Seules les leçons complétées ET payées donnent lieu au payout prof
+      const completedAndPaid = packLessons.filter(l => {
+        const done = l.status === 'completed';
+        const paid = l.is_group
+          ? (l.participant_ids || []).some(sid => !!l.participantsMap?.[sid]?.is_paid)
+          : !!l.is_paid;
+        return done && paid;
+      });
+      const completedCount = completedAndPaid.length;
+
+      if (completedCount === 0) {
+        return res.json({ ok: true, skipped: 'no_completed_paid_lessons' });
       }
 
-      // Vérifier si un payout pack a déjà été fait
-      const existingPayout = await adminDb.collection('payments')
-        .where('pack_id', '==', lesson.pack_id)
-        .where('status', 'in', ['released', 'payout_pending_rib'])
+      // Retrouver le document payment (lesson_ids est un tableau dans Firestore)
+      const paySnap = await adminDb.collection('payments')
+        .where('lesson_ids', 'array-contains', lessonId)
         .limit(1).get();
 
-      if (!existingPayout.empty) {
-        return res.json({ ok: true, skipped: 'pack_already_paid_out' });
+      if (!paySnap.empty) {
+        const currentStatus = paySnap.docs[0].data().status;
+        if (currentStatus === 'released' || currentStatus === 'payout_pending_rib') {
+          return res.json({ ok: true, skipped: 'pack_already_paid_out' });
+        }
       }
 
-      // Calculer le total net prof pour tout le pack
-      const paymentSnaps = await adminDb.collection('payments')
-        .where('pack_id', '==', lesson.pack_id).get();
+      if (paySnap.empty) {
+        return res.json({ ok: true, skipped: 'no_held_payment' });
+      }
 
-      const totalNetCents = paymentSnaps.docs.reduce((acc, d) => {
-        return acc + Math.round(Number(d.data().net_to_teacher_eur || 0) * 100);
-      }, 0);
+      const payDoc = paySnap.docs[0];
+      const payData = payDoc.data();
+      const totalNetCents   = Math.round(Number(payData.net_to_teacher_eur || 0) * 100);
+      const totalGrossCents = Math.round(Number(payData.gross_eur || 0) * 100);
 
-      return await doPayout({
+      // Prorata : prof payé pour les leçons faites, client remboursé pour les non faites
+      const uncompletedCount   = totalCount - completedCount;
+      const teacherAmountCents = Math.round(totalNetCents * completedCount / totalCount);
+      const refundCents        = Math.round(totalGrossCents * uncompletedCount / totalCount);
+
+      return await doPackSettlement({
         res, stripeReady, stripeAccountId, teacherUid,
-        amountCents: totalNetCents,
+        teacherAmountCents, refundCents,
+        chargeId: payData.stripe_charge_id || null,
+        paymentIntentId: payData.payment_intent_id || null,
         lessonId: lesson.id,
         packId: lesson.pack_id,
-        label: `Pack ${lesson.pack_id}`,
+        payDoc,
+        completedCount, totalCount,
       });
     }
 
@@ -119,6 +135,78 @@ export default async function handler(req, res) {
     console.error('trigger-payout error:', e);
     return res.status(500).json({ error: e.message });
   }
+}
+
+async function doPackSettlement({
+  res, stripeReady, stripeAccountId, teacherUid,
+  teacherAmountCents, refundCents,
+  chargeId, paymentIntentId,
+  lessonId, packId, payDoc,
+  completedCount, totalCount,
+}) {
+  let transferId = null;
+  let refundId   = null;
+  let refundError = null;
+
+  // 1) Payer le prof pour les leçons complétées
+  if (teacherAmountCents > 0) {
+    if (stripeReady) {
+      const transfer = await stripe.transfers.create({
+        amount: teacherAmountCents,
+        currency: 'eur',
+        destination: stripeAccountId,
+        metadata: {
+          lesson_id: String(lessonId),
+          pack_id: String(packId || ''),
+          teacher_uid: String(teacherUid),
+          completed_lessons: String(completedCount),
+          total_lessons: String(totalCount),
+        },
+      });
+      transferId = transfer.id;
+    }
+  }
+
+  // 2) Rembourser le client pour les leçons non réalisées
+  if (refundCents > 0 && (chargeId || paymentIntentId)) {
+    try {
+      const refundParams = { amount: refundCents };
+      if (chargeId) refundParams.charge = chargeId;
+      else refundParams.payment_intent = paymentIntentId;
+      const refund = await stripe.refunds.create(refundParams);
+      refundId = refund.id;
+    } catch (e) {
+      console.error('[pack-settlement] refund failed:', e?.message);
+      refundError = e?.message || 'refund_failed';
+    }
+  }
+
+  // 3) Mettre à jour le document payment (visibilité admin)
+  const settlementData = {
+    status: stripeReady ? 'released' : 'payout_pending_rib',
+    released_at: new Date(),
+    pack_id: packId,
+    teacher_uid: teacherUid,
+    net_to_teacher_eur: teacherAmountCents / 100,
+    pack_completed_lessons: completedCount,
+    pack_total_lessons: totalCount,
+    ...(transferId  ? { transfer_id: transferId }                        : {}),
+    ...(refundId    ? { refund_id: refundId, refund_eur: refundCents / 100 } : {}),
+    ...(refundError ? { refund_error: refundError }                      : {}),
+  };
+  await adminDb.collection('payments').doc(payDoc.id).set(settlementData, { merge: true });
+
+  return res.json({
+    ok: true,
+    type: stripeReady ? 'stripe_transfer' : 'pending_rib',
+    teacher_paid_eur:  teacherAmountCents / 100,
+    refund_eur:        refundId ? refundCents / 100 : 0,
+    refund_error:      refundError || null,
+    completed_lessons: completedCount,
+    total_lessons:     totalCount,
+    ...(transferId ? { transfer_id: transferId } : {}),
+    ...(refundId   ? { refund_id: refundId }     : {}),
+  });
 }
 
 async function doPayout({ res, stripeReady, stripeAccountId, teacherUid, amountCents, lessonId, packId, paymentDocId, label }) {

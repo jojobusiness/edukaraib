@@ -36,39 +36,42 @@ function useInstallGlobalHandlers() {
     });
 
     window.addEventListener("unhandledrejection", (event) => {
-      const msg =
-        event?.reason?.message ||
-        event?.reason?.statusText ||
-        "Une erreur réseau s'est produite.";
-      toast.error("Oops: " + msg);
+      const reason = event?.reason;
+      // Ignorer les erreurs internes Firebase, Stripe, extensions navigateur
+      const msg = reason?.message || reason?.statusText || "";
+      const isNoise = !msg ||
+        msg.includes("firebase") || msg.includes("firestore") ||
+        msg.includes("auth/") || msg.includes("stripe") ||
+        msg.includes("AbortError") || msg.includes("ResizeObserver");
+      if (isNoise) return;
+      toast.error(msg);
     });
 
-    // Patch global fetch -> toasts sur 4xx/5xx et sur erreurs réseau
+    // Patch global fetch -> toasts uniquement sur nos appels /api/
     if (!window.__fetch_patched) {
       window.__fetch_patched = true;
       const originalFetch = window.fetch.bind(window);
       window.fetch = async (...args) => {
+        const url = String(typeof args[0] === "string" ? args[0] : args[0]?.url || "");
+        const isOurApi = url.startsWith("/api/") || url.includes(window.location.host + "/api/");
         try {
           const res = await originalFetch(...args);
-          if (!res.ok) {
+          if (!res.ok && isOurApi) {
             let detail = "";
             try {
               const ct = res.headers.get("content-type") || "";
               if (ct.includes("application/json")) {
                 const data = await res.clone().json();
                 detail = data?.message || data?.error || "";
-              } else {
-                const text = await res.clone().text();
-                detail = (text || "").slice(0, 160);
               }
             } catch {}
             toast.error(
-              `Erreur ${res.status} – ${res.statusText}${detail ? `: ${detail}` : ""}`
+              `Erreur ${res.status}${detail ? ` : ${detail}` : ""}`
             );
           }
           return res;
         } catch (e) {
-          toast.error(e?.message || "Échec de la requête réseau.");
+          if (isOurApi) toast.error(e?.message || "Échec de la requête réseau.");
           throw e;
         }
       };
