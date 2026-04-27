@@ -1090,6 +1090,7 @@ export default function AdminDashboard() {
                             type: 'admin_broadcast',
                             created_at: serverTimestamp(),
                             from_admin: auth.currentUser?.uid || null,
+                            email_disabled: true,
                           });
                           await notifyByEmail(uid, messageTitle.trim(), messageBody.trim(), "https://edukaraib.com/smart-dashboard", "Ouvrir le tableau de bord");
                         }));
@@ -1121,6 +1122,7 @@ export default function AdminDashboard() {
                             type: 'admin_broadcast',
                             created_at: serverTimestamp(),
                             from_admin: auth.currentUser?.uid || null,
+                            email_disabled: true,
                           });
                           await notifyByEmail(u.id, messageTitle.trim(), messageBody.trim(), "https://edukaraib.com/dashboard", "Ouvrir le tableau de bord");
                         }));
@@ -1153,6 +1155,7 @@ export default function AdminDashboard() {
                             type: 'admin_broadcast',
                             created_at: serverTimestamp(),
                             from_admin: auth.currentUser?.uid || null,
+                            email_disabled: true,
                           });
                           await notifyByEmail(u.id, messageTitle.trim(), messageBody.trim(), "https://edukaraib.com/dashboard", "Ouvrir le tableau de bord");
                         }));

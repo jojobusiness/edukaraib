@@ -1093,6 +1093,7 @@ export default function TeacherLessons() {
         withName: profName,
         lesson_id: lesson.id,
         message,
+        email_disabled: true,
       });
       
       // --- ENVOI EMAIL lié au statut (parents uniquement + élèves si mail) ---
