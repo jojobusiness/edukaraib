@@ -195,7 +195,7 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
       });
 
       // Enregistre l'usage dans influencer_usages (pour limites IP + compte)
-      const clientIp = ''; // IP non disponible dans le webhook — déjà vérifiée au checkout
+      const clientIp = md.client_ip || '';
       await adminDb.collection('influencer_usages').add({
         influencer_uid:  influencerUid,
         payer_uid:       payerUid || null,

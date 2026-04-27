@@ -237,6 +237,10 @@ export default async function handler(req, res) {
   let couponDocId = null;      // garde la compatibilité avec l'ancien système
   let influencerUid = null;    // uid Firestore du doc influenceurs/{uid}
   let influencerCommissionCents = 0;
+  let clientIp =
+    req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+    req.socket?.remoteAddress ||
+    '';
 
   if (couponCode && typeof couponCode === 'string') {
     const code = couponCode.trim().toUpperCase();
@@ -297,11 +301,6 @@ export default async function handler(req, res) {
       }
 
       // 4) Limitation IP (1 usage par IP par code)
-      const clientIp =
-        req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-        req.socket?.remoteAddress ||
-        '';
-
       if (clientIp) {
         const usageIp = await adminDb
           .collection('influencer_usages')
@@ -387,6 +386,7 @@ export default async function handler(req, res) {
     coupon_discount_cents: String(couponDiscountCents),
     influencer_uid: influencerUid || '',
     influencer_commission_cents: String(influencerCommissionCents),
+    client_ip: clientIp,
   };
 
   let session;
