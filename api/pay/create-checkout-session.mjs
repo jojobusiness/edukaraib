@@ -424,6 +424,7 @@ export default async function handler(req, res) {
     lesson_id: String(lesson.id),
     lesson_ids: lessonIds,
     for_student: String(participantId),
+    payer_uid: String(payerUid),
     teacher_uid: String(lesson.teacher_id || ''),
     lesson_source: source,
     gross_eur: totalCents / 100,
@@ -431,7 +432,7 @@ export default async function handler(req, res) {
     net_to_teacher_eur: teacherAmountCents / 100,
     status: 'pending',
     created_at: new Date(),
-    billed_hours : String(billedHours),
+    billed_hours: String(billedHours),
     is_pack: !!packMode,
   }, { merge: true });
 

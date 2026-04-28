@@ -35,6 +35,7 @@ import ChildDetails from './pages/ChildDetails';
 import TeacherProfile from './pages/TeacherProfile';
 import PaySuccess from './pages/pay/Success.jsx';
 import PayCancel from './pages/pay/Cancel.jsx';
+import Invoice from './pages/Invoice';
 import VisioRoom from './pages/VisioRoom.jsx';
 import TeacherRoute from './components/TeacherRoute';
 import ParentRoute from './components/ParentRoute';
@@ -120,6 +121,7 @@ function App() {
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/pay/success" element={<PaySuccess />} />
             <Route path="/pay/cancel" element={<PayCancel />} />
+            <Route path="/facture/:paymentId" element={<PrivateRoute><Invoice /></PrivateRoute>} />
             <Route path="/visio/:lessonId" element={<VisioRoom />} />
 
             {/* Protégées génériques */}

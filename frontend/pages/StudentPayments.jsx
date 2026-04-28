@@ -181,6 +181,7 @@ export default function StudentPayments() {
   const [loading, setLoading] = useState(true);
   const [payingId, setPayingId] = useState(null);
   const [refundingId, setRefundingId] = useState(null);
+  const [invoiceLoadingId, setInvoiceLoadingId] = useState(null);
   const [couponCode, setCouponCode] = useState('');
   const [couponError, setCouponError] = useState('');
   const [couponValid, setCouponValid] = useState(false);
@@ -412,6 +413,17 @@ export default function StudentPayments() {
     }
   };
 
+  const handleInvoice = async (lesson) => {
+    setInvoiceLoadingId(lesson.id);
+    try {
+      const paymentId = await resolvePaymentId(lesson.id);
+      if (!paymentId) { alert('Facture introuvable.'); return; }
+      window.open(`/facture/${paymentId}`, '_blank');
+    } finally {
+      setInvoiceLoadingId(null);
+    }
+  };
+
   const handleRefund = async (lesson) => {
     if (!window.confirm('Confirmer la demande de remboursement ?')) return;
     try {
@@ -597,8 +609,15 @@ export default function StudentPayments() {
                     <span className="text-green-600 text-xs font-semibold md:ml-auto">Payé</span>
                   </div>
 
-                  {/* Bouton remboursement */}
-                  <div className="flex justify-end">
+                  {/* Actions */}
+                  <div className="flex justify-end gap-2 flex-wrap">
+                    <button
+                      className="text-sm px-3 py-1.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                      onClick={() => handleInvoice(l)}
+                      disabled={invoiceLoadingId === l.id}
+                    >
+                      {invoiceLoadingId === l.id ? '…' : '📄 Facture'}
+                    </button>
                     <button
                       className="text-sm px-3 py-1.5 rounded border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-60"
                       onClick={() => handleRefund(l)}

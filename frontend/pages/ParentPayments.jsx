@@ -209,6 +209,7 @@ export default function ParentPayments() {
 
   const [payingKey, setPayingKey] = useState(null);
   const [refundingKey, setRefundingKey] = useState(null);
+  const [invoiceLoadingKey, setInvoiceLoadingKey] = useState(null);
   const [couponCodes, setCouponCodes] = useState({}); // { "lessonId:studentId": "CODE" }
   const [couponErrors, setCouponErrors] = useState({});
   const [couponValid, setCouponValid] = useState({}); // { rowKey: true } quand appliqué
@@ -457,6 +458,18 @@ export default function ParentPayments() {
     }
   };
 
+  const handleInvoice = async (row) => {
+    const key = `${row.lesson.id}:${row.forStudent}`;
+    setInvoiceLoadingKey(key);
+    try {
+      const paymentId = await resolvePaymentId(row.lesson.id, row.forStudent);
+      if (!paymentId) { alert('Facture introuvable.'); return; }
+      window.open(`/facture/${paymentId}`, '_blank');
+    } finally {
+      setInvoiceLoadingKey(null);
+    }
+  };
+
   const handleRefund = async (row) => {
     if (!window.confirm('Confirmer la demande de remboursement ?')) return;
     const key = `${row.lesson.id}:${row.forStudent}`;
@@ -676,7 +689,14 @@ export default function ParentPayments() {
                       <span className="text-green-600 text-xs font-semibold md:ml-auto">Payé</span>
                     </div>
 
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-2 flex-wrap">
+                      <button
+                        className="text-sm px-3 py-1.5 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                        onClick={() => handleInvoice(r)}
+                        disabled={invoiceLoadingKey === rowKey}
+                      >
+                        {invoiceLoadingKey === rowKey ? '…' : '📄 Facture'}
+                      </button>
                       <button
                         className="text-sm px-3 py-1.5 rounded border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-60"
                         onClick={() => handleRefund(r)}
