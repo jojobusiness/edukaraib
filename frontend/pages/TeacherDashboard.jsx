@@ -153,14 +153,15 @@ function countPendingRequests(lessons) {
 }
 
 export default function TeacherDashboard() {
-  const [upcomingCourses, setUpcomingCourses] = useState([]); // confirmés, futur (incl. groupes confirmés côté participants)
+  const [upcomingCourses, setUpcomingCourses] = useState([]);
   const [revenues, setRevenues] = useState(0);
   const [pending, setPending] = useState(0);
   const [reviews, setReviews] = useState([]);
   const [studentMap, setStudentMap] = useState(new Map());
-  const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map()); // lessonId -> [names]
-  const [openGroupId, setOpenGroupId] = useState(null); // ✅ unique & cohérent
+  const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map());
+  const [openGroupId, setOpenGroupId] = useState(null);
   const [notifications, setNotifications] = useState([]);
+  const [stats, setStats] = useState({ profileViews: 0, activeStudents: 0, completedThisMonth: 0 });
 
   // ✅ tick horaire pour faire « expirer » visuellement les notifs à J+2
   const [nowTick, setNowTick] = useState(Date.now());
@@ -298,6 +299,26 @@ export default function TeacherDashboard() {
         query(collection(db, 'reviews'), where('teacher_id', '==', userId))
       );
       setReviews(reviewsSnap.docs.map(d => d.data()).slice(0, 3));
+
+      // 8) Stats : vues profil + élèves actifs + cours complétés ce mois
+      try {
+        const userSnap = await getDoc(doc(db, 'users', userId));
+        const profileViews = Number(userSnap.data()?.profileViews || 0);
+
+        const studentIds = new Set();
+        lessons.forEach(l => {
+          if (l.student_id) studentIds.add(l.student_id);
+          if (Array.isArray(l.participant_ids)) l.participant_ids.forEach(id => studentIds.add(id));
+        });
+        const activeStudents = studentIds.size;
+
+        const nowD = new Date();
+        const completedThisMonth = lessons.filter(l =>
+          l.status === 'completed' && isSameMonth(l.updated_at || l.created_at, nowD)
+        ).length;
+
+        setStats({ profileViews, activeStudents, completedThisMonth });
+      } catch {}
     })();
   }, [userId]);
 
@@ -411,6 +432,41 @@ export default function TeacherDashboard() {
           <span className="text-3xl mb-2">📝</span>
           <span className="text-xl font-bold text-secondary">Demandes en attente</span>
           <span className="text-gray-700 mt-1">{pending} cours à valider</span>
+        </div>
+      </div>
+
+      {/* Statistiques profil */}
+      <div className="mb-8">
+        <h3 className="text-lg font-bold text-gray-800 mb-3">Statistiques de votre profil</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-xl shadow-sm border p-4 flex flex-col items-start">
+            <span className="text-2xl mb-1">👁️</span>
+            <span className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Vues du profil</span>
+            <span className="text-2xl font-extrabold text-gray-800 mt-1">{stats.profileViews.toLocaleString('fr-FR')}</span>
+            <span className="text-xs text-gray-400 mt-1">total cumulé</span>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border p-4 flex flex-col items-start">
+            <span className="text-2xl mb-1">👥</span>
+            <span className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Élèves actifs</span>
+            <span className="text-2xl font-extrabold text-gray-800 mt-1">{stats.activeStudents}</span>
+            <span className="text-xs text-gray-400 mt-1">tous vos élèves</span>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border p-4 flex flex-col items-start">
+            <span className="text-2xl mb-1">✅</span>
+            <span className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Cours complétés</span>
+            <span className="text-2xl font-extrabold text-gray-800 mt-1">{stats.completedThisMonth}</span>
+            <span className="text-xs text-gray-400 mt-1">ce mois-ci</span>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border p-4 flex flex-col items-start">
+            <span className="text-2xl mb-1">📈</span>
+            <span className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Taux de conversion</span>
+            <span className="text-2xl font-extrabold text-gray-800 mt-1">
+              {stats.profileViews > 0
+                ? `${((stats.activeStudents / stats.profileViews) * 100).toFixed(1)} %`
+                : '—'}
+            </span>
+            <span className="text-xs text-gray-400 mt-1">élèves / vues profil</span>
+          </div>
         </div>
       </div>
 

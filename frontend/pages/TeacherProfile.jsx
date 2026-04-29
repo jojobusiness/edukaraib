@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import {
   doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc,
-  serverTimestamp, arrayUnion, onSnapshot, deleteField, runTransaction
+  serverTimestamp, arrayUnion, onSnapshot, deleteField, runTransaction, increment
 } from 'firebase/firestore';
 import BookingModal from '../components/BookingModal';
 import { useSEO } from '../hooks/useSEO';
@@ -220,6 +220,14 @@ export default function TeacherProfile() {
 
     return () => unsubTeacher();
   }, [teacherId, navigate]);
+
+  // Compteur de vues profil (non bloquant, ne compte pas le prof lui-même)
+  useEffect(() => {
+    if (!teacherId) return;
+    const viewerUid = auth.currentUser?.uid;
+    if (viewerUid === teacherId) return;
+    updateDoc(doc(db, 'users', teacherId), { profileViews: increment(1) }).catch(() => {});
+  }, [teacherId]);
 
   // ✅ Profs similaires (même matière)
   useEffect(() => {
