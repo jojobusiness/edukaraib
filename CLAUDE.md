@@ -120,6 +120,18 @@ Firebase Functions : configurer via `firebase functions:config:set postmark.key=
 
 ---
 
+## Règle — Nouvelles pages frontend
+
+Chaque fois qu'une nouvelle page est créée dans `frontend/pages/`, vérifier obligatoirement :
+
+1. **Route déclarée** dans `frontend/App.jsx` (ou le fichier de routing principal) avec le bon `path`
+2. **Lien dans le footer ou le sitemap** si c'est une page publique SEO
+3. **Test manuel** : naviguer vers l'URL en local (`npm run dev`) pour confirmer que la page s'affiche sans erreur 404 ni crash
+
+Ne jamais livrer une page sans avoir validé ces 3 points. Les pages non routées sont invisibles pour les utilisateurs ET pour Google.
+
+---
+
 ## Conventions de code
 
 - Toutes les API routes sont en **ESM** (`.mjs`) sauf `functions/` qui est CommonJS (`.js`)
