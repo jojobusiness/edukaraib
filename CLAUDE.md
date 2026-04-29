@@ -147,14 +147,39 @@ Firebase Functions : configurer via `firebase functions:config:set postmark.key=
 
 ---
 
+## RÈGLE ABSOLUE — Réductions et coupons
+
+**Un coupon ou code promo ne doit JAMAIS réduire la part du professeur. Il réduit uniquement la commission plateforme (`site_fee_cents`).**
+
+Le calcul correct (déjà en place dans `create-checkout-session.mjs`) :
+```
+totalCents = teacherAmountCents + siteFeeCents
+effectiveSiteFeeCents = max(0, siteFeeCents - couponDiscountCents)  ← plancher à 0, jamais négatif
+totalCents = teacherAmountCents + effectiveSiteFeeCents  ← le prof reçoit toujours son plein tarif
+```
+
+Si tu touches au système de prix ou de coupons, vérifie TOUJOURS que `teacherAmountCents` est inchangé après application d'une réduction. Le prof ne doit jamais payer la remise à la place de la plateforme.
+
+**Un seul coupon par checkout — pas de cumul.** L'API `create-checkout-session.mjs` n'accepte qu'un seul champ `couponCode` par requête. Ne jamais modifier ce comportement pour accepter un tableau de codes ou chaîner plusieurs remises. Si la commission tombe à 0€ après remise, le total client = tarif prof uniquement (minimum Stripe 0,50€ appliqué côté Stripe, pas côté prof).
+
+Cette règle s'applique à :
+- Tous les codes `BIENVENUE-`, `AVIS-`, `FILLEUL-`, `PARRAIN-`
+- Les remises influenceurs (déjà prélevées sur `effectiveSiteFeeCents`)
+- Tout futur système de promotion
+
+---
+
 ## Priorités CA (référence AUDIT_EDUKARAIB.md)
 
 Les features à plus fort impact sur le chiffre d'affaires, dans l'ordre :
 
-1. **Email de confirmation de paiement** — déclencher depuis `stripe-webhook.mjs` après `checkout.session.completed`
-2. **Paiement en 3x** — activer Stripe Payment Installments ou intégrer Alma
-3. **Remboursement self-service** — bouton dans `ParentPayments.jsx` / `StudentPayments.jsx` appelant `api/refund.mjs`
-4. **Facture PDF téléchargeable** — les familles françaises déduisent 50% des cours particuliers (crédit impôt)
-5. **Pages SEO locales** — `/cours-maths-martinique`, `/cours-anglais-guadeloupe`, etc.
-6. **Apple Pay / Google Pay** — activer dans le dashboard Stripe (0 code à écrire)
-7. **Parrainage étudiant** — même mécanique que le code PARRAIN prof mais pour les familles
+1. **Email de confirmation de paiement** ✅ FAIT — déclenché depuis `stripe-webhook.mjs` après `checkout.session.completed`
+2. **Paiement en 3x (Klarna)** ✅ FAIT — `payment_method_types: ['card', 'klarna']` + `billing_address_collection: 'required'` + `locale: 'fr'` dans `create-checkout-session.mjs`. Activer Klarna dans le dashboard Stripe.
+3. **Remboursement self-service** ✅ FAIT — bouton dans `ParentPayments.jsx` / `StudentPayments.jsx` appelant `api/refund.mjs`
+4. **Facture PDF téléchargeable** ✅ FAIT — page `/facture/:paymentId` avec `pdf-lib`, lien dans l'historique des paiements
+5. **Pages SEO locales** ✅ FAIT — 5 pages (`/cours-particuliers-martinique`, `/cours-particuliers-guadeloupe`, `/cours-maths-martinique`, `/cours-anglais-guadeloupe`, `/cours-francais-guyane`), dans le footer et le sitemap
+6. **Apple Pay / Google Pay** — activer dans le dashboard Stripe (0 code à écrire, inclus automatiquement avec `card`)
+7. **Parrainage étudiant** ✅ FAIT — code `REF-XXXXXX` par élève/parent, URL `?ref=`, coupons `-10€` (transaction atomique), email Resend au parrain, `ReferralCard` dans les dashboards
+8. **Email avis Google post-pack** ✅ FAIT — déclenché depuis `trigger-payout.mjs` après règlement d'un pack. Mettre à jour `GOOGLE_REVIEW_URL` avec l'URL Google My Business une fois créé.
+9. **Programme parrainage étudiant + SEO pages locales** — déjà dans le code, promouvoir en dehors
+10. **Paiement en plusieurs fois (Alma)** — alternative à Klarna pour les marchés FR si Klarna non approuvé

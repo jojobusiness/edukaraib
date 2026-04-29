@@ -219,7 +219,6 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
   if (teacherUid) {
     try {
       const source = md.lesson_source || '';
-      // paymentType : 'course' pour cours unitaire, 'pack5' ou 'pack10' pour packs
       const paymentType =
         source === 'pack5'  ? 'pack5'  :
         source === 'pack10' ? 'pack10' :
@@ -239,6 +238,119 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
     } catch (e) {
       console.warn('[webhook] referral bonus error:', e?.message);
     }
+  }
+
+  // 5) Parrainage étudiant — coupon -10€ pour les deux au premier paiement
+  if (payerUid) {
+    triggerStudentReferralReward(payerUid).catch(e =>
+      console.warn('[webhook] student referral reward error:', e?.message)
+    );
+  }
+}
+
+async function triggerStudentReferralReward(payerUid) {
+  const userRef = adminDb.collection('users').doc(payerUid);
+
+  // Lecture initiale rapide pour éviter une transaction inutile
+  const userSnap = await userRef.get();
+  if (!userSnap.exists) return;
+  const user = userSnap.data();
+  if (user.studentReferralRewardSent || !user.studentReferredBy) return;
+
+  // Vérifie que c'est bien le premier paiement de cet utilisateur
+  const prevPayments = await adminDb.collection('payments')
+    .where('payer_uid', '==', payerUid)
+    .where('status', 'in', ['held', 'released'])
+    .limit(2)
+    .get();
+  if (prevPayments.size > 1) return;
+
+  // Transaction atomique pour éviter le double-reward sur retry Stripe
+  let alreadySent = false;
+  await adminDb.runTransaction(async (tx) => {
+    const freshSnap = await tx.get(userRef);
+    if (freshSnap.data()?.studentReferralRewardSent) {
+      alreadySent = true;
+      return;
+    }
+    tx.set(userRef, { studentReferralRewardSent: true }, { merge: true });
+  });
+  if (alreadySent) return;
+
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const genCode = (prefix) => {
+    let s = prefix;
+    for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    return s;
+  };
+
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 90);
+
+  // Coupon pour le filleul (payeur actuel) — préfixe FILLEUL- distinct
+  const filleulCode = genCode('FILLEUL-');
+  await adminDb.collection('coupons').add({
+    code: filleulCode,
+    type: 'student_referral_filleul',
+    discount_eur: 10,
+    used: false,
+    used_at: null,
+    user_uid: payerUid,
+    created_at: new Date(),
+    expires_at: expiresAt,
+  });
+
+  // Coupon pour le parrain
+  const parrainUid = user.studentReferredBy;
+  const parrainCode = genCode('FILLEUL-');
+  await adminDb.collection('coupons').add({
+    code: parrainCode,
+    type: 'student_referral_parrain',
+    discount_eur: 10,
+    used: false,
+    used_at: null,
+    user_uid: parrainUid,
+    created_at: new Date(),
+    expires_at: expiresAt,
+  });
+
+  // Notifier le parrain par email
+  const parrainSnap = await adminDb.collection('users').doc(parrainUid).get();
+  if (parrainSnap.exists && parrainSnap.data()?.email && process.env.RESEND_API_KEY) {
+    const p = parrainSnap.data();
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const prenom = p.firstName || p.displayName?.split(' ')[0] || 'là';
+    const filleulName = user.firstName || user.displayName?.split(' ')[0] || 'Votre filleul';
+    const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
+    await resend.emails.send({
+      from: 'EduKaraib <notifications@edukaraib.com>',
+      to: [p.email],
+      subject: '🎉 Votre filleul a effectué son premier paiement — voici votre bon de -10 €',
+      html: `<div style="font-family:Inter,system-ui,sans-serif;background:#f5f7fb;padding:24px;">
+<table width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;margin:auto;background:#fff;border-radius:18px;overflow:hidden;border:1px solid #e2e8f0;">
+<tr><td style="background:#00804B;padding:18px 24px;"><span style="color:#fff;font-weight:700;font-size:17px;">EduKaraib</span></td></tr>
+<tr><td style="padding:28px;">
+<h1 style="margin:0 0 12px;font-size:22px;color:#0f172a;">Bonne nouvelle, ${prenom} ! 🎉</h1>
+<p style="color:#475569;font-size:15px;line-height:1.7;margin:0 0 20px;">
+<strong>${filleulName}</strong> a effectué son premier paiement sur EduKaraib grâce à votre code de parrainage.<br><br>
+En récompense, vous recevez <strong>-10 € de réduction</strong> sur votre prochain cours !
+</p>
+<div style="background:#f0fdf4;border:2px dashed #22c55e;border-radius:12px;padding:18px;text-align:center;margin-bottom:24px;">
+<div style="font-size:13px;color:#166534;font-weight:600;margin-bottom:6px;">Votre code de réduction</div>
+<div style="font-size:28px;font-weight:900;letter-spacing:4px;color:#15803d;">${parrainCode}</div>
+<div style="font-size:13px;color:#166534;margin-top:6px;">-10 € · Valable 90 jours</div>
+</div>
+<p style="color:#64748b;font-size:13px;text-align:center;">Saisissez ce code au moment du paiement de votre prochain cours.</p>
+<div style="text-align:center;margin-top:20px;">
+<a href="${APP_BASE_URL}/search" style="background:#facc15;color:#111827;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:12px;display:inline-block;">Trouver un cours →</a>
+</div>
+</td></tr>
+<tr><td style="padding:12px 28px 20px;color:#94a3b8;font-size:12px;border-top:1px solid #f1f5f9;">
+EduKaraib · <a href="mailto:contact@edukaraib.com" style="color:#00804B;">contact@edukaraib.com</a>
+</td></tr>
+</table>
+</div>`,
+    }).catch(e => console.warn('[webhook] referral reward email failed:', e?.message));
   }
 }
 

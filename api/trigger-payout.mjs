@@ -1,5 +1,51 @@
 import { stripe } from './_stripe.mjs';
 import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
+import { Resend } from 'resend';
+
+const GOOGLE_REVIEW_URL = 'https://www.google.com/search?q=EduKaraib+cours+particuliers+Antilles&hl=fr';
+const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
+
+async function sendGoogleReviewEmail(payerUid, lessonId) {
+  if (!payerUid || !process.env.RESEND_API_KEY) return;
+  try {
+    const payerSnap = await adminDb.collection('users').doc(payerUid).get();
+    if (!payerSnap.exists) return;
+    const payer = payerSnap.data();
+    if (!payer.email) return;
+    const prenom = payer.firstName || payer.displayName?.split(' ')[0] || 'là';
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    await resend.emails.send({
+      from: 'EduKaraib <notifications@edukaraib.com>',
+      to: [payer.email],
+      subject: '⭐ Comment s\'est passée votre expérience EduKaraib ?',
+      html: `<div style="font-family:Inter,system-ui,sans-serif;background:#f5f7fb;padding:24px;">
+<table width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;margin:auto;background:#fff;border-radius:18px;overflow:hidden;border:1px solid #e2e8f0;">
+<tr><td style="background:#00804B;padding:18px 24px;"><span style="color:#fff;font-weight:700;font-size:17px;">EduKaraib</span></td></tr>
+<tr><td style="padding:28px;">
+<h1 style="margin:0 0 12px;font-size:22px;color:#0f172a;">Votre avis compte beaucoup, ${prenom} 🙏</h1>
+<p style="color:#475569;font-size:15px;line-height:1.7;margin:0 0 20px;">
+Votre pack de cours est terminé ! Nous espérons que l'expérience a été à la hauteur de vos attentes.<br><br>
+Pourriez-vous prendre 30 secondes pour laisser un avis ? Cela aide d'autres familles à trouver de bons professeurs.
+</p>
+<div style="text-align:center;margin-bottom:24px;">
+<a href="${GOOGLE_REVIEW_URL}" style="background:#facc15;color:#111827;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:12px;display:inline-block;font-size:16px;">⭐ Laisser un avis Google</a>
+</div>
+<p style="color:#94a3b8;font-size:13px;text-align:center;">Ça ne prend que 30 secondes et c'est une aide précieuse pour notre équipe.</p>
+<hr style="border:none;border-top:1px solid #f1f5f9;margin:20px 0;" />
+<p style="color:#64748b;font-size:13px;text-align:center;">
+Vous pouvez aussi consulter <a href="${APP_BASE_URL}/search" style="color:#00804B;">nos autres professeurs</a> pour continuer l'aventure.
+</p>
+</td></tr>
+<tr><td style="padding:12px 28px 20px;color:#94a3b8;font-size:12px;border-top:1px solid #f1f5f9;">
+EduKaraib · <a href="mailto:contact@edukaraib.com" style="color:#00804B;">contact@edukaraib.com</a>
+</td></tr>
+</table>
+</div>`,
+    });
+  } catch (e) {
+    console.warn('[trigger-payout] google review email failed:', e?.message);
+  }
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
@@ -196,6 +242,12 @@ async function doPackSettlement({
   };
   await adminDb.collection('payments').doc(payDoc.id).set(settlementData, { merge: true });
 
+  // Email d'avis Google envoyé de façon non-bloquante après un pack terminé
+  const payerUid = payDoc.data()?.payer_uid;
+  if (payerUid) {
+    sendGoogleReviewEmail(payerUid, lessonId).catch(() => {});
+  }
+
   return res.json({
     ok: true,
     type: stripeReady ? 'stripe_transfer' : 'pending_rib',
@@ -253,6 +305,48 @@ async function doPayout({ res, stripeReady, stripeAccountId, teacherUid, amountC
       await adminDb.collection('payments').add({ ...updateData, lesson_id: lessonId, created_at: new Date() });
     }
 
+    // Rappel Stripe Connect : le prof n'a pas encore configuré son compte
+    sendStripeConnectReminderEmail(teacherUid, amountCents / 100).catch(() => {});
+
     return res.json({ ok: true, type: 'pending_rib', amount_eur: amountCents / 100 });
+  }
+}
+
+async function sendStripeConnectReminderEmail(teacherUid, amountEur) {
+  if (!teacherUid || !process.env.RESEND_API_KEY) return;
+  try {
+    const snap = await adminDb.collection('users').doc(teacherUid).get();
+    if (!snap.exists) return;
+    const teacher = snap.data();
+    if (!teacher.email) return;
+    const prenom = teacher.firstName || teacher.displayName?.split(' ')[0] || 'là';
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    await resend.emails.send({
+      from: 'EduKaraib <notifications@edukaraib.com>',
+      to: [teacher.email],
+      subject: `💳 ${amountEur.toFixed(2)} € vous attendent — finalisez votre compte Stripe`,
+      html: `<div style="font-family:Inter,system-ui,sans-serif;background:#f5f7fb;padding:24px;">
+<table width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;margin:auto;background:#fff;border-radius:18px;overflow:hidden;border:1px solid #e2e8f0;">
+<tr><td style="background:#00804B;padding:18px 24px;"><span style="color:#fff;font-weight:700;font-size:17px;">EduKaraib</span></td></tr>
+<tr><td style="padding:28px;">
+<h1 style="margin:0 0 12px;font-size:22px;color:#0f172a;">Votre virement est prêt, ${prenom} 💰</h1>
+<p style="color:#475569;font-size:15px;line-height:1.7;margin:0 0 20px;">
+Un paiement de <strong>${amountEur.toFixed(2)} €</strong> vous est dû pour votre cours.<br><br>
+Pour recevoir vos virements automatiquement, vous devez finaliser votre compte Stripe Connect depuis votre profil EduKaraib.<br><br>
+Sans ça, vos paiements sont mis en attente et vous devrez contacter le support pour chaque virement.
+</p>
+<div style="text-align:center;margin-bottom:20px;">
+<a href="${APP_BASE_URL}/prof/profile" style="background:#facc15;color:#111827;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:12px;display:inline-block;font-size:15px;">Finaliser mon compte Stripe →</a>
+</div>
+<p style="color:#94a3b8;font-size:13px;text-align:center;">Cela prend moins de 5 minutes. Vos informations sont sécurisées par Stripe.</p>
+</td></tr>
+<tr><td style="padding:12px 28px 20px;color:#94a3b8;font-size:12px;border-top:1px solid #f1f5f9;">
+EduKaraib · <a href="mailto:contact@edukaraib.com" style="color:#00804B;">contact@edukaraib.com</a>
+</td></tr>
+</table>
+</div>`,
+    });
+  } catch (e) {
+    console.warn('[trigger-payout] stripe connect reminder email failed:', e?.message);
   }
 }

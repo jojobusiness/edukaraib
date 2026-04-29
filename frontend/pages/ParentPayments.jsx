@@ -619,8 +619,8 @@ export default function ParentPayments() {
                           onClick={() => {
                             const code = couponCodes[rowKey]?.trim();
                             if (!code) return;
-                            // Validation légère côté front : format BIENVENUE- ou AVIS-
-                            if (code.startsWith('BIENVENUE-') || code.startsWith('AVIS-')) {
+                            // Validation légère côté front : formats acceptés
+                            if (code.startsWith('BIENVENUE-') || code.startsWith('AVIS-') || code.startsWith('FILLEUL-') || code.startsWith('PARRAIN-')) {
                               setCouponValid(prev => ({ ...prev, [rowKey]: true }));
                               setCouponErrors(prev => ({ ...prev, [rowKey]: '' }));
                             } else {

@@ -2,6 +2,11 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://edukaraib.com/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
   <url><loc>https://edukaraib.com/search</loc><changefreq>daily</changefreq><priority>0.9</priority></url>
+  <url><loc>https://edukaraib.com/cours-particuliers-martinique</loc><changefreq>monthly</changefreq><priority>0.85</priority></url>
+  <url><loc>https://edukaraib.com/cours-particuliers-guadeloupe</loc><changefreq>monthly</changefreq><priority>0.85</priority></url>
+  <url><loc>https://edukaraib.com/cours-maths-martinique</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://edukaraib.com/cours-anglais-guadeloupe</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://edukaraib.com/cours-francais-guyane</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://edukaraib.com/contact</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
   <url><loc>https://edukaraib.com/cgu</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
   <url><loc>https://edukaraib.com/privacy</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>

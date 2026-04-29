@@ -456,6 +456,22 @@ function CertifiedBadge({ className = '' }) {
   );
 }
 
+// ── Pastille "Nouveau prof" (inscrit il y a < 30 jours) ──────────────────
+function NewProfBadge({ teacher, className = '' }) {
+  const raw = teacher.createdAt;
+  if (!raw) return null;
+  const date = raw?.toDate ? raw.toDate() : new Date((raw?.seconds ?? 0) * 1000);
+  if (Date.now() - date.getTime() > 30 * 24 * 60 * 60 * 1000) return null;
+  return (
+    <span
+      title="Nouveau professeur sur EduKaraib"
+      className={"inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500 text-white text-[10px] font-bold shadow-sm shrink-0 " + className}
+    >
+      ✨ Nouveau
+    </span>
+  );
+}
+
 // ───────────────────────── Carte professeur ─────────────────────────
 function TeacherCard({ teacher, navigate }) {
   const [showContactModal, setShowContactModal] = useState(false);
@@ -550,6 +566,7 @@ function TeacherCard({ teacher, navigate }) {
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="font-semibold text-lg md:text-xl text-gray-900">{teacher.fullName || 'Professeur'}</h3>
           {reviewsCount >= 5 && <CertifiedBadge />}
+          <NewProfBadge teacher={teacher} />
           {rating > 0 && (
             <span className="inline-flex items-center gap-1 text-sm text-amber-600 font-semibold">
               ★ {rating.toFixed(1)} <span className="text-gray-400 font-normal">({reviewsCount})</span>

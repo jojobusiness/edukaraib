@@ -543,7 +543,7 @@ export default function StudentPayments() {
                           onClick={() => {
                             const code = couponCode.trim();
                             if (!code) return;
-                            if (code.startsWith('BIENVENUE-') || code.startsWith('AVIS-')) {
+                            if (code.startsWith('BIENVENUE-') || code.startsWith('AVIS-') || code.startsWith('FILLEUL-') || code.startsWith('PARRAIN-')) {
                               setCouponValid(true);
                               setCouponError('');
                             } else {

@@ -15,6 +15,7 @@ import {
   limit,
 } from 'firebase/firestore';
 import { autoClearPaymentDueNotifications } from '../lib/paymentNotifications';
+import ReferralCard from '../components/ReferralCard';
 
 // ---------- Helpers temps ----------
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -421,7 +422,9 @@ export default function StudentDashboard() {
 
       {/* Notifications (titre + message + date) */}
       <div className="bg-white rounded-xl shadow p-5 mt-6">
-        <h3 className="font-bold text-primary mb-3">Notifications</h3>
+        <h3 className="font-bold text-primary mb-3 mt-6">Parrainez un ami</h3>
+        <ReferralCard />
+        <h3 className="font-bold text-primary mb-3 mt-6">Notifications</h3>
         {recentNotifications.length === 0 ? (
           <div className="text-gray-500 text-sm">Aucune notification.</div>
         ) : (

@@ -48,6 +48,11 @@ import InfluencerHome from './pages/InfluencerHome.jsx'
 import InfluencerDashboard from './pages/InfluencerDashboard.jsx'
 import InfluencerProfile from './pages/InfluencerProfile'
 import InfluencerCommissions from './pages/InfluencerCommissions'
+import CoursMathsMartinique from './pages/seo/CoursMathsMartinique';
+import CoursAnglaisGuadeloupe from './pages/seo/CoursAnglaisGuadeloupe';
+import CoursFrancaisGuyane from './pages/seo/CoursFrancaisGuyane';
+import CoursParticuliersMartinique from './pages/seo/CoursParticuliersMartinique';
+import CoursParticuliersGuadeloupe from './pages/seo/CoursParticuliersGuadeloupe';
 
 /* === Google Analytics PageView Tracker === */
 function PageViewTracker() {
@@ -200,6 +205,13 @@ function App() {
             <Route path="/auth/action" element={<AuthAction />} />
             <Route path="/__/auth/action" element={<AuthAction />} />
             <Route path="/__auth/action" element={<AuthAction />} />   {/* ✅ ton lien actuel */}
+
+            {/* SEO local */}
+            <Route path="/cours-maths-martinique" element={<CoursMathsMartinique />} />
+            <Route path="/cours-anglais-guadeloupe" element={<CoursAnglaisGuadeloupe />} />
+            <Route path="/cours-francais-guyane" element={<CoursFrancaisGuyane />} />
+            <Route path="/cours-particuliers-martinique" element={<CoursParticuliersMartinique />} />
+            <Route path="/cours-particuliers-guadeloupe" element={<CoursParticuliersGuadeloupe />} />
 
             {/* 404 */}
             <Route path="*" element={<NotFound />} />

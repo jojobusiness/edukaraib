@@ -12,6 +12,7 @@ import {
   getDoc,
 } from 'firebase/firestore';
 import { autoClearPaymentDueNotifications } from '../lib/paymentNotifications';
+import ReferralCard from '../components/ReferralCard';
 
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const codeIndex = (c) => Math.max(0, FR_DAY_CODES.indexOf(c));
@@ -370,6 +371,11 @@ export default function ParentDashboard() {
           <span className="text-xl font-bold text-secondary">Paiements à régler</span>
           <span className="text-gray-700 mt-1">{unpaid} cours à régler</span>
         </div>
+      </div>
+
+      {/* Parrainage */}
+      <div className="mb-6">
+        <ReferralCard />
       </div>
 
       {/* Notifications (titre + message + date) */}

@@ -329,7 +329,7 @@ export default function Profile() {
         // ✅ ne toucher QUE les cours vraiment vides
         if (!isLessonEmpty(l)) continue;
 
-        // ✅ éviter de modifier l’historique
+        // ✅ éviter de modifier l'historique
         if (!isFutureLesson(l)) continue;
 
         const ref = doc(db, 'lessons', d.id);
@@ -366,7 +366,7 @@ export default function Profile() {
       return alert('Ville inconnue : sélectionne une ville de la liste, ou "En ligne".');
     }
     if (profile.birth && profile.birth > TODAY) {
-      return alert("La date de naissance ne peut pas dépasser aujourd’hui.");
+      return alert("La date de naissance ne peut pas dépasser aujourd'hui.");
     }
 
     // Prix / Capacité
@@ -380,7 +380,7 @@ export default function Profile() {
     if (profile.role === 'teacher') {
       // Au moins un mode actif
       if (!profile.presentiel_enabled && !profile.visio_enabled) {
-        return alert("Active au moins un mode d’enseignement : présentiel ou visio.");
+        return alert("Active au moins un mode d'enseignement : présentiel ou visio.");
       }
       if (profile.presentiel_enabled) {
         if (priceNum === null || Number.isNaN(priceNum) || priceNum < 0 || priceNum > 1000) {
@@ -486,6 +486,8 @@ export default function Profile() {
         about_me: (profile.about_me || '').trim(),
         about_course: (profile.about_course || '').trim(),
         teaching_levels: profile.teaching_levels || [],
+        videoUrl: (profile.videoUrl || '').trim(),
+        trial_enabled: profile.trial_enabled !== false,
       };
       delete toSave.uid;
 
@@ -772,7 +774,38 @@ export default function Profile() {
                 <label className="block mb-1 text-sm font-medium text-gray-700">À propos du cours</label>
                 <textarea name="about_course" className="w-full border border-gray-300 rounded-lg px-3 py-2"
                   value={profile.about_course || ''} onChange={handleChange} rows={4}
-                  placeholder="Déroulé d’un cours type, supports utilisés, suivi, devoirs, etc." />
+                  placeholder="Déroulé d'un cours type, supports utilisés, suivi, devoirs, etc." />
+              </div>
+
+              {/* Essai gratuit */}
+              <div className="flex items-center justify-between rounded-xl border border-gray-200 p-4 bg-gray-50">
+                <div>
+                  <label className="text-sm font-semibold text-gray-700">Proposer un essai gratuit (1h)</label>
+                  <p className="text-xs text-gray-500 mt-0.5">Les nouveaux eleves peuvent demander 1h offerte. Vous acceptez ou refusez.</p>
+                </div>
+                <input
+                  type="checkbox"
+                  name="trial_enabled"
+                  checked={profile.trial_enabled !== false}
+                  onChange={handleChange}
+                  className="h-5 w-5 shrink-0"
+                />
+              </div>
+
+              {/* Vidéo de présentation */}
+              <div>
+                <label className="block mb-1 text-sm font-medium text-gray-700">
+                  Video de présentation <span className="text-gray-400 font-normal">(optionnel)</span>
+                </label>
+                <input
+                  type="url"
+                  name="videoUrl"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  value={profile.videoUrl || ''}
+                  onChange={handleChange}
+                  placeholder="ex : https://www.youtube.com/watch?v=..."
+                />
+                <p className="text-xs text-gray-500 mt-1">YouTube ou Vimeo uniquement. Affichee sur votre profil public.</p>
               </div>
 
               {/* Choix des modes */}
@@ -785,7 +818,7 @@ export default function Profile() {
                           Afficher mon offre sur EduKaraib
                         </label>
                         <p className="text-xs text-gray-500">
-                          Si désactivé, ton profil n’apparaît plus dans la recherche et l’accueil.
+                          Si désactivé, ton profil n'apparaît plus dans la recherche et l'accueil.
                         </p>
                       </div>
 
@@ -827,7 +860,7 @@ export default function Profile() {
               {profile.presentiel_enabled && (
                 <>
                   <div>
-                    <label className="block mb-1 text-sm font-medium text-gray-700">Prix à l’heure (présentiel) €</label>
+                    <label className="block mb-1 text-sm font-medium text-gray-700">Prix à l'heure (présentiel) €</label>
                     <input type="number" name="price_per_hour" min={0} max={1000} step={1}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2"
                       value={profile.price_per_hour ?? ''} onChange={handleChange}/>
@@ -930,7 +963,7 @@ export default function Profile() {
             <div className="mt-8 bg-white border border-gray-200 rounded-2xl p-6">
               <h3 className="text-lg font-bold text-primary mb-2">Paiements & RIB (via Stripe)</h3>
               <p className="text-sm text-gray-600 mb-3">
-                Configure tes informations (identité, IBAN). Stripe les stocke/vérifie — rien n’est conservé chez EduKaraib.
+                Configure tes informations (identité, IBAN). Stripe les stocke/vérifie — rien n'est conservé chez EduKaraib.
               </p>
 
               <PaymentStatusCard />
@@ -960,7 +993,7 @@ export default function Profile() {
 
               <div>
                 <label className="block mb-1 text-sm font-semibold text-gray-700">
-                  Nombre d’élèves par cours (par défaut)
+                  Nombre d'élèves par cours (par défaut)
                 </label>
                 <input
                   type="number"

@@ -6,7 +6,7 @@ import {
   reload
 } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import StripeConnectButtons from '../components/stripe/StripeConnectButtons';
 import PhoneInput from 'react-phone-number-input';
@@ -164,6 +164,9 @@ export default function Register() {
   const [afterSignupTeacher, setAfterSignupTeacher] = useState(false);
 
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // Code parrain student transmis via ?ref=REF-XXXXXX
+  const refCodeFromUrl = searchParams.get('ref') || '';
 
   // ✅ Lien utilisé dans les emails Firebase (vérif email)
   const actionCodeSettings = {
@@ -423,8 +426,34 @@ export default function Register() {
         }
 
         setAfterSignupTeacher(true);
-      } else if (form.role === 'parent') {
-        navigate('/parent/dashboard');
+      } else if (form.role === 'parent' || form.role === 'student') {
+        // Générer un code de parrainage étudiant unique
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        let suffix = '';
+        for (let i = 0; i < 6; i++) suffix += chars[Math.floor(Math.random() * chars.length)];
+        const studentReferralCode = 'REF-' + suffix;
+        await setDoc(doc(db, 'users', activeUser.uid), { studentReferralCode }, { merge: true });
+
+        // Appliquer le code parrain reçu en URL si présent
+        const refCode = (refCodeFromUrl || '').trim().toUpperCase();
+        if (refCode.startsWith('REF-')) {
+          fetch('/api/apply-student-referral', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              referralCode: refCode,
+              newUserUid: activeUser.uid,
+              newUserEmail: activeUser.email,
+              newUserName: fullName,
+            }),
+          }).catch(e => console.warn('[apply-student-referral] échec:', e?.message));
+        }
+
+        if (form.role === 'parent') {
+          navigate('/parent/dashboard');
+        } else {
+          navigate('/dashboard-eleve');
+        }
       } else {
         navigate('/dashboard-eleve');
       }

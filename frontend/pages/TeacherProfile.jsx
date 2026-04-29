@@ -10,6 +10,26 @@ import { useSEO } from '../hooks/useSEO';
 
 const DAYS_ORDER = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
+function getEmbedUrl(url) {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (u.hostname === 'www.youtube.com' || u.hostname === 'youtube.com') {
+      const v = u.searchParams.get('v');
+      return v ? `https://www.youtube.com/embed/${v}` : null;
+    }
+    if (u.hostname === 'youtu.be') {
+      const v = u.pathname.slice(1);
+      return v ? `https://www.youtube.com/embed/${v}` : null;
+    }
+    if (u.hostname === 'vimeo.com' || u.hostname === 'www.vimeo.com') {
+      const v = u.pathname.replace(/^\//, '').split('/')[0];
+      return v ? `https://player.vimeo.com/video/${v}` : null;
+    }
+  } catch { return null; }
+  return null;
+}
+
 function pickDisplayName(x = {}) {
   return (
     x.fullName || x.full_name || x.name || x.displayName ||
@@ -168,6 +188,8 @@ export default function TeacherProfile() {
 
   const [similarTeachers, setSimilarTeachers] = useState([]);
   const [loadingSimilar, setLoadingSimilar] = useState(false);
+  const [trialMode, setTrialMode] = useState(false);
+  const [trialUsed, setTrialUsed] = useState(false);
 
   // ✅ Sticky stop propre
   const layoutRef = useRef(null);
@@ -472,6 +494,8 @@ export default function TeacherProfile() {
         if (!cancelled) setCurrentRole(role || null);
         computedRole = meSnap.exists() ? meSnap.data()?.role : null;
         if (!cancelled) setCurrentRole(computedRole || null);
+        const usedWith = meSnap.exists() ? (meSnap.data()?.trialUsedWith || []) : [];
+        if (!cancelled) setTrialUsed(usedWith.includes(teacherId));
       } catch { if (!cancelled) setCurrentRole(null); }
 
       try {
@@ -784,10 +808,9 @@ export default function TeacherProfile() {
       const results = [];
       for (let i = 0; i < slots.length; i++) {
         const slot = slots[i];
-        const isFree = isPack && i < bonusHours;
-        const freeReason = isFree
-          ? (i < baseBonusHours ? "pack_bonus" : "first_review_promo")
-          : null;
+        const isFree = trialMode ? true : (isPack && i < bonusHours);
+        const freeReason = trialMode ? 'trial'
+          : (isFree ? (i < baseBonusHours ? "pack_bonus" : "first_review_promo") : null);
           
         try {
           // Vérifier doublons + réactiver si précédemment "rejected"
@@ -1014,7 +1037,7 @@ export default function TeacherProfile() {
             status: 'booked',
             created_at: serverTimestamp(),
             subject_id: Array.isArray(teacher?.subjects) ? teacher.subjects.join(', ') : (teacher?.subjects || ''),
-            price_per_hour: hourly || 0,
+            price_per_hour: trialMode ? 0 : (hourly || 0),
             slot_day: slot.day,
             slot_hour: slot.hour,
             date: slot.date,
@@ -1025,15 +1048,16 @@ export default function TeacherProfile() {
             student_id: createAsGroup ? null : targetStudentId,
             is_free_hour: isFree,
             free_reason: freeReason,
+            ...(trialMode ? { is_trial: true } : {}),
 
             participant_ids: [targetStudentId],
             participantsMap: {
               [targetStudentId]: {
                 parent_id: (bookingFor === 'child' ? me.uid : null),
                 booked_by: me.uid,
-                is_paid: false,
-                paid_by: null,
-                paid_at: null,
+                is_paid: trialMode ? true : false,
+                paid_by: trialMode ? 'trial' : null,
+                paid_at: trialMode ? serverTimestamp() : null,
                 is_free_hour: isFree,
                 free_reason: freeReason,
                 status: 'pending_teacher',
@@ -1061,14 +1085,18 @@ export default function TeacherProfile() {
             type: 'lesson_request',
             lesson_id: newLessonRef.id,
             requester_id: targetStudentId,
-            message: `Demande de cours ${createAsGroup ? 'groupé' : 'individuel'} (${slot.day} ${slot.hour}h).`,
+            message: trialMode
+              ? `Demande d'essai gratuit (${slot.day} ${slot.hour}h).`
+              : `Demande de cours ${createAsGroup ? 'groupé' : 'individuel'} (${slot.day} ${slot.hour}h).`,
           });
 
           // Pour ton feedback UI local
           results.push({
             slot,
             status: createAsGroup ? 'created_group' : 'created_individual',
-            message: `Demande de cours ${createAsGroup ? 'groupé' : 'individuel'} pour ${slot.day} ${slot.hour}h.`,
+            message: trialMode
+              ? `Essai gratuit demandé pour ${slot.day} ${slot.hour}h.`
+              : `Demande de cours ${createAsGroup ? 'groupé' : 'individuel'} pour ${slot.day} ${slot.hour}h.`,
           });
         } catch (e) {
           console.error("Booking error (single)", e);
@@ -1120,6 +1148,16 @@ export default function TeacherProfile() {
 
       const onlyOk = results.filter(r => r.status !== 'error');
       const hasOk  = onlyOk.length > 0;
+
+      if (trialMode && hasOk) {
+        setTrialUsed(true);
+        setTrialMode(false);
+        try {
+          await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+            trialUsedWith: arrayUnion(teacherId),
+          });
+        } catch {}
+      }
 
       setConfirmationMsg(
         hasOk
@@ -1344,11 +1382,35 @@ export default function TeacherProfile() {
                     className="mt-4 w-full bg-primary text-white px-5 py-3 rounded-xl font-semibold shadow hover:bg-primary-dark transition"
                     onClick={() => {
                       if (!auth.currentUser) return navigate("/login");
+                      setTrialMode(false);
                       setShowBooking(true);
                       setConfirmationMsg("");
                     }}
                   >
                     {isBooking ? "Envoi…" : "Réserver"}
+                  </button>
+                )}
+
+                {/* Essai gratuit */}
+                {(!isTeacherUser && !isOwnProfile) && teacher.trial_enabled !== false && (
+                  <button
+                    disabled={trialUsed}
+                    className={`mt-2 w-full px-5 py-3 rounded-xl font-semibold shadow transition ${
+                      trialUsed
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-green-500 text-white hover:bg-green-600'
+                    }`}
+                    onClick={() => {
+                      if (!auth.currentUser) return navigate("/login");
+                      if (trialUsed) return;
+                      setTrialMode(true);
+                      setPackChoice(0);
+                      setHoursWanted(1);
+                      setShowBooking(true);
+                      setConfirmationMsg("");
+                    }}
+                  >
+                    {trialUsed ? "Essai gratuit dejà utilisé" : "Essai gratuit (1h)"}
                   </button>
                 )}
 
@@ -1414,6 +1476,22 @@ export default function TeacherProfile() {
               {teacher.about_me || teacher.bio || "Le professeur n’a pas encore renseigné sa présentation."}
             </div>
           </section>
+
+          {/* Vidéo de présentation */}
+          {getEmbedUrl(teacher.videoUrl) && (
+            <section className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
+              <h2 className="text-xl md:text-2xl font-extrabold text-slate-900 mb-4">Vidéo de présentation</h2>
+              <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
+                <iframe
+                  src={getEmbedUrl(teacher.videoUrl)}
+                  title="Présentation du professeur"
+                  className="absolute inset-0 w-full h-full rounded-xl"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
+            </section>
+          )}
 
           {/* À propos du cours */}
           <section className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
@@ -1782,11 +1860,35 @@ export default function TeacherProfile() {
                     className="mt-4 w-full bg-primary text-white px-5 py-3 rounded-xl font-semibold shadow hover:bg-primary-dark transition"
                     onClick={() => {
                       if (!auth.currentUser) return navigate("/login");
+                      setTrialMode(false);
                       setShowBooking(true);
                       setConfirmationMsg("");
                     }}
                   >
                     {isBooking ? "Envoi…" : "Réserver"}
+                  </button>
+                )}
+
+                {/* Essai gratuit */}
+                {(!isTeacherUser && !isOwnProfile) && teacher.trial_enabled !== false && (
+                  <button
+                    disabled={trialUsed}
+                    className={`mt-2 w-full px-5 py-3 rounded-xl font-semibold shadow transition ${
+                      trialUsed
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-green-500 text-white hover:bg-green-600'
+                    }`}
+                    onClick={() => {
+                      if (!auth.currentUser) return navigate("/login");
+                      if (trialUsed) return;
+                      setTrialMode(true);
+                      setPackChoice(0);
+                      setHoursWanted(1);
+                      setShowBooking(true);
+                      setConfirmationMsg("");
+                    }}
+                  >
+                    {trialUsed ? "Essai gratuit dejà utilisé" : "Essai gratuit (1h)"}
                   </button>
                 )}
 

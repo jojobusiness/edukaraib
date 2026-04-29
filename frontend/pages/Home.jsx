@@ -18,6 +18,22 @@ function CertifiedBadge({ className = '' }) {
   );
 }
 
+// ── Pastille "Nouveau prof" (inscrit il y a < 30 jours) ──────────────────
+function NewProfBadge({ teacher, className = '' }) {
+  const raw = teacher.createdAt;
+  if (!raw) return null;
+  const date = raw?.toDate ? raw.toDate() : new Date((raw?.seconds ?? 0) * 1000);
+  if (Date.now() - date.getTime() > 30 * 24 * 60 * 60 * 1000) return null;
+  return (
+    <span
+      title="Nouveau professeur sur EduKaraib"
+      className={"inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-500 text-white text-[10px] font-bold shadow-sm shrink-0 " + className}
+    >
+      ✨ Nouveau
+    </span>
+  );
+}
+
 
 
 // ── Carrousel avis auto-défilant (jusqu'à 10 avis, mobile + desktop) ──────
@@ -676,6 +692,33 @@ export default function Home() {
         </div>
       </div>
 
+      {/* COMMENT ÇA MARCHE */}
+      <section className="py-14 bg-gray-50 border-y">
+        <div className="max-w-5xl mx-auto px-4">
+          <h2 className="text-2xl md:text-3xl font-extrabold text-center text-gray-900 mb-2">Comment ça marche ?</h2>
+          <p className="text-center text-gray-500 mb-10">Trouvez un prof et commencez en moins de 5 minutes.</p>
+          <div className="grid md:grid-cols-3 gap-6">
+            {[
+              { step: '1', icon: '🔍', title: 'Cherchez un professeur', desc: 'Filtrez par matière, niveau, ville ou visio. Consultez les profils et les avis vérifiés des familles.' },
+              { step: '2', icon: '💳', title: 'Réservez et payez', desc: 'Choisissez un créneau, payez par carte en toute sécurité — en une fois ou en 3 fois. Zéro cash, zéro chèque.' },
+              { step: '3', icon: '🎓', title: 'Commencez les cours', desc: 'Rejoignez la visio directement depuis votre espace, ou retrouvez le prof à domicile. Résultats garantis.' },
+            ].map(({ step, icon, title, desc }) => (
+              <div key={step} className="bg-white rounded-2xl p-6 shadow-sm border text-center">
+                <div className="w-12 h-12 rounded-full bg-primary text-white font-extrabold text-xl flex items-center justify-center mx-auto mb-3">{step}</div>
+                <div className="text-3xl mb-2">{icon}</div>
+                <h3 className="font-bold text-gray-900 mb-2">{title}</h3>
+                <p className="text-gray-500 text-sm leading-relaxed">{desc}</p>
+              </div>
+            ))}
+          </div>
+          <div className="text-center mt-8">
+            <Link to="/search" className="inline-block bg-primary text-white font-bold px-8 py-3 rounded-full shadow hover:bg-primary/90 transition">
+              Trouver un professeur →
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* PROFESSEURS */}
       <section className="py-12 bg-white">
         <div className="max-w-7xl mx-auto px-4">
@@ -709,11 +752,10 @@ export default function Home() {
                         to={`/profils/${prof.id}`}
                         className="snap-start shrink-0 w-[78%] max-w-[320px] relative"
                       >
-                        {reviewsCount >= 5 && (
-                          <div className="absolute top-2 left-2 z-10">
-                            <CertifiedBadge />
-                          </div>
-                        )}
+                        <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
+                          {reviewsCount >= 5 && <CertifiedBadge />}
+                          <NewProfBadge teacher={prof} />
+                        </div>
                         {/* IMAGE + NOM SUR IMAGE */}
                         <div className="relative h-60 bg-gray-100 rounded-3xl overflow-hidden">
                           <img
@@ -792,11 +834,10 @@ export default function Home() {
                       to={`/profils/${prof.id}`}
                       className="group relative"
                     >
-                      {reviewsCount >= 5 && (
-                        <div className="absolute top-2 left-2 z-10">
-                          <CertifiedBadge />
-                        </div>
-                      )}
+                      <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
+                        {reviewsCount >= 5 && <CertifiedBadge />}
+                        <NewProfBadge teacher={prof} />
+                      </div>
                       {/* IMAGE + NOM SUR IMAGE */}
                       <div className="relative h-56 bg-gray-100 rounded-3xl overflow-hidden">
                         <img
