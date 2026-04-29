@@ -1478,18 +1478,26 @@ export default function TeacherProfile() {
           </section>
 
           {/* Vidéo de présentation */}
-          {getEmbedUrl(teacher.videoUrl) && (
+          {teacher.videoUrl && (
             <section className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
               <h2 className="text-xl md:text-2xl font-extrabold text-slate-900 mb-4">Vidéo de présentation</h2>
-              <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
-                <iframe
-                  src={getEmbedUrl(teacher.videoUrl)}
-                  title="Présentation du professeur"
-                  className="absolute inset-0 w-full h-full rounded-xl"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
+              {teacher.videoUrl.includes('firebasestorage.googleapis.com') ? (
+                <video
+                  src={teacher.videoUrl}
+                  controls
+                  className="w-full rounded-xl max-h-[450px] bg-black"
                 />
-              </div>
+              ) : getEmbedUrl(teacher.videoUrl) ? (
+                <div className="relative w-full" style={{ paddingTop: '56.25%' }}>
+                  <iframe
+                    src={getEmbedUrl(teacher.videoUrl)}
+                    title="Présentation du professeur"
+                    className="absolute inset-0 w-full h-full rounded-xl"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              ) : null}
             </section>
           )}
 

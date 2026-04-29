@@ -177,6 +177,8 @@ export default function Profile() {
     offer_enabled: true,
   });
   const [avatarFile, setAvatarFile] = useState(null);
+  const [videoFile, setVideoFile] = useState(null);
+  const [videoFileName, setVideoFileName] = useState('');
   const [saving, setSaving] = useState(false);
 
   // Charger l'utilisateur + profil
@@ -441,6 +443,16 @@ export default function Profile() {
         avatarUrl = await getDownloadURL(r);
       }
 
+      // Upload vidéo si présente
+      let videoUrl = (profile.videoUrl || '').trim();
+      if (videoFile) {
+        const ext = videoFile.name.split('.').pop().toLowerCase();
+        const path = `intro-videos/${profile.uid}.${ext}`;
+        const r = sRef(storage, path);
+        await uploadBytes(r, videoFile);
+        videoUrl = await getDownloadURL(r);
+      }
+
       const ref = doc(db, 'users', profile.uid);
       const fullName = `${(profile.firstName || '').trim()} ${(profile.lastName || '').trim()}`.trim();
 
@@ -486,7 +498,7 @@ export default function Profile() {
         about_me: (profile.about_me || '').trim(),
         about_course: (profile.about_course || '').trim(),
         teaching_levels: profile.teaching_levels || [],
-        videoUrl: (profile.videoUrl || '').trim(),
+        videoUrl,
         trial_enabled: !!profile.trial_enabled,
       };
       delete toSave.uid;
@@ -795,17 +807,39 @@ export default function Profile() {
               {/* Vidéo de présentation */}
               <div>
                 <label className="block mb-1 text-sm font-medium text-gray-700">
-                  Video de présentation <span className="text-gray-400 font-normal">(optionnel)</span>
+                  Vidéo de présentation <span className="text-gray-400 font-normal">(optionnel)</span>
                 </label>
-                <input
-                  type="url"
-                  name="videoUrl"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                  value={profile.videoUrl || ''}
-                  onChange={handleChange}
-                  placeholder="ex : https://www.youtube.com/watch?v=..."
-                />
-                <p className="text-xs text-gray-500 mt-1">YouTube ou Vimeo uniquement. Affichee sur votre profil public.</p>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer w-fit bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 hover:bg-gray-100 transition text-sm">
+                    <span>📁 Uploader une vidéo</span>
+                    <input
+                      type="file"
+                      accept="video/mp4,video/webm,video/quicktime"
+                      className="hidden"
+                      onChange={e => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+                        if (f.size > 150 * 1024 * 1024) { alert('Vidéo trop lourde (max 150 Mo).'); return; }
+                        setVideoFile(f);
+                        setVideoFileName(f.name);
+                      }}
+                    />
+                  </label>
+                  {videoFileName && <p className="text-xs text-green-600">✓ {videoFileName} — sera uploadée à la sauvegarde</p>}
+                  {!videoFileName && profile.videoUrl && profile.videoUrl.includes('firebasestorage') && (
+                    <p className="text-xs text-gray-500">Vidéo uploadée actuellement en ligne</p>
+                  )}
+                  <p className="text-xs text-gray-400">ou coller un lien YouTube / Vimeo :</p>
+                  <input
+                    type="url"
+                    name="videoUrl"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    value={videoFile ? '' : (profile.videoUrl || '')}
+                    disabled={!!videoFile}
+                    onChange={handleChange}
+                    placeholder="https://www.youtube.com/watch?v=..."
+                  />
+                </div>
               </div>
 
               {/* Choix des modes */}

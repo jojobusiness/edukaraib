@@ -1,8 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { auth, db } from '../lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 const BASE_URL = 'https://edukaraib.com';
+const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function genCode() {
+  let s = 'REF-';
+  for (let i = 0; i < 6; i++) s += CHARS[Math.floor(Math.random() * CHARS.length)];
+  return s;
+}
 
 export default function ReferralCard() {
   const [code, setCode] = useState(null);
@@ -12,8 +18,14 @@ export default function ReferralCard() {
     const user = auth.currentUser;
     if (!user) return;
     let cancelled = false;
-    getDoc(doc(db, 'users', user.uid)).then(snap => {
-      if (!cancelled && snap.exists()) setCode(snap.data()?.studentReferralCode || null);
+    getDoc(doc(db, 'users', user.uid)).then(async snap => {
+      if (cancelled || !snap.exists()) return;
+      let existing = snap.data()?.studentReferralCode;
+      if (!existing) {
+        existing = genCode();
+        await setDoc(doc(db, 'users', user.uid), { studentReferralCode: existing }, { merge: true });
+      }
+      if (!cancelled) setCode(existing);
     }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
