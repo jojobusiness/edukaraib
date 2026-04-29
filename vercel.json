@@ -6,5 +6,8 @@
   "routes": [
     { "src": "/api/(.*)", "dest": "/api/$1" },
     { "src": "/((?!api|.*\\..*).*)", "dest": "/index.html" }
+  ],
+  "crons": [
+    { "path": "/api/lesson-reminders?key=$CRON_SECRET", "schedule": "*/30 * * * *" }
   ]
 }
