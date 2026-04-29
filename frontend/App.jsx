@@ -56,6 +56,9 @@ import CoursParticuliersGuadeloupe from './pages/seo/CoursParticuliersGuadeloupe
 import CoursMathsGuadeloupe from './pages/seo/CoursMathsGuadeloupe';
 import CoursAnglaisMartinique from './pages/seo/CoursAnglaisMartinique';
 import CoursParticuliersGuyane from './pages/seo/CoursParticuliersGuyane';
+import CoursMaths from './pages/seo/CoursMaths';
+import CoursAnglais from './pages/seo/CoursAnglais';
+import CoursFrancais from './pages/seo/CoursFrancais';
 import FAQ from './pages/FAQ';
 
 /* === Google Analytics PageView Tracker === */
@@ -220,6 +223,9 @@ function App() {
             <Route path="/cours-maths-guadeloupe" element={<CoursMathsGuadeloupe />} />
             <Route path="/cours-anglais-martinique" element={<CoursAnglaisMartinique />} />
             <Route path="/cours-particuliers-guyane" element={<CoursParticuliersGuyane />} />
+            <Route path="/cours-maths" element={<CoursMaths />} />
+            <Route path="/cours-anglais" element={<CoursAnglais />} />
+            <Route path="/cours-francais" element={<CoursFrancais />} />
 
             {/* 404 */}
             <Route path="*" element={<NotFound />} />
