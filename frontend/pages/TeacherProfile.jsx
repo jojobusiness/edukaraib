@@ -1392,7 +1392,7 @@ export default function TeacherProfile() {
                 )}
 
                 {/* Essai gratuit */}
-                {(!isTeacherUser && !isOwnProfile) && teacher.trial_enabled !== false && (
+                {(!isTeacherUser && !isOwnProfile) && teacher.trial_enabled === true && (
                   <button
                     disabled={trialUsed}
                     className={`mt-2 w-full px-5 py-3 rounded-xl font-semibold shadow transition ${
@@ -1890,7 +1890,7 @@ export default function TeacherProfile() {
                 )}
 
                 {/* Essai gratuit */}
-                {(!isTeacherUser && !isOwnProfile) && teacher.trial_enabled !== false && (
+                {(!isTeacherUser && !isOwnProfile) && teacher.trial_enabled === true && (
                   <button
                     disabled={trialUsed}
                     className={`mt-2 w-full px-5 py-3 rounded-xl font-semibold shadow transition ${

@@ -487,7 +487,7 @@ export default function Profile() {
         about_course: (profile.about_course || '').trim(),
         teaching_levels: profile.teaching_levels || [],
         videoUrl: (profile.videoUrl || '').trim(),
-        trial_enabled: profile.trial_enabled !== false,
+        trial_enabled: !!profile.trial_enabled,
       };
       delete toSave.uid;
 
@@ -786,7 +786,7 @@ export default function Profile() {
                 <input
                   type="checkbox"
                   name="trial_enabled"
-                  checked={profile.trial_enabled !== false}
+                  checked={!!profile.trial_enabled}
                   onChange={handleChange}
                   className="h-5 w-5 shrink-0"
                 />
