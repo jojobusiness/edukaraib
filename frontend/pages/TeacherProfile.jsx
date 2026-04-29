@@ -519,7 +519,7 @@ export default function TeacherProfile() {
     return () => { cancelled = true; };
   }, []);
 
-  // ✅ Sticky stop “propre” avec IntersectionObserver (et recalcul sur resize)
+  // ✅ Sticky stop "propre" avec IntersectionObserver (et recalcul sur resize)
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)'); // lg+
     const TOP_OFFSET = 24; // top-6
@@ -852,7 +852,7 @@ export default function TeacherProfile() {
               continue;
             }
 
-            // 💡 “Réactiver” l’ancien individuel rejeté pour CET élève, sans pack si wantSingle
+            // 💡 "Réactiver" l’ancien individuel rejeté pour CET élève, sans pack si wantSingle
             await updateDoc(doc(db, 'lessons', existingIndId), {
               status: 'booked',
               student_id: targetStudentId,
@@ -874,7 +874,7 @@ export default function TeacherProfile() {
 
               participant_ids: Array.from(new Set([...(existingInd.participant_ids || []), targetStudentId])),
 
-              // on repart sur une demande “unitaire” => on efface tout Pack du participant
+              // on repart sur une demande "unitaire" => on efface tout Pack du participant
               ...wipePackParticipant(targetStudentId),
 
               [`participantsMap.${targetStudentId}.parent_id`]: (bookingFor === 'child' ? me.uid : null),
@@ -1501,7 +1501,7 @@ export default function TeacherProfile() {
             </div>
           </section>
 
-          {/* Tarifs (tu m’as dit : enlever la section “mode”, et mettre tarifs après) */}
+          {/* Tarifs (tu m’as dit : enlever la section "mode", et mettre tarifs après) */}
           <section className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
             <h2 className="text-xl md:text-2xl font-extrabold text-slate-900">Tarifs</h2>
 
@@ -1509,18 +1509,34 @@ export default function TeacherProfile() {
               {teacher.presentiel_enabled && (
                 <div className="border rounded-xl p-4">
                   <div className="font-semibold">Présentiel</div>
-                  <div className="mt-1">À l’heure : <b>{displayHourPresentiel != null ? `${displayHourPresentiel.toFixed(2)} € / h` : "—"}</b></div>
-                  <div className="mt-1">Pack 5h : <b>{displayPack5Presentiel != null ? `${displayPack5Presentiel.toFixed(2)} €` : "—"}</b></div>
-                  <div className="mt-1">Pack 10h : <b>{displayPack10Presentiel != null ? `${displayPack10Presentiel.toFixed(2)} €` : "—"}</b></div>
+                  <div className="mt-2 text-2xl font-extrabold text-primary">
+                    {displayHourPresentiel != null ? `${displayHourPresentiel.toFixed(0)} € / h` : "—"}
+                  </div>
+                  {basePrice > 0 && (
+                    <div className="mt-2 text-xs text-slate-500 space-y-0.5">
+                      <div>Prof reçoit : <span className="font-medium text-slate-700">{basePrice.toFixed(0)} €</span></div>
+                      <div>Frais EduKaraib : <span className="font-medium text-slate-700">10 €</span></div>
+                    </div>
+                  )}
+                  {displayPack5Presentiel != null && <div className="mt-2 text-sm">Pack 5h : <b>{displayPack5Presentiel.toFixed(0)} €</b> <span className="text-green-600 text-xs">(−10%)</span></div>}
+                  {displayPack10Presentiel != null && <div className="mt-1 text-sm">Pack 10h : <b>{displayPack10Presentiel.toFixed(0)} €</b> <span className="text-green-600 text-xs">(−10%)</span></div>}
                 </div>
               )}
 
               {teacher.visio_enabled && (
                 <div className="border rounded-xl p-4">
                   <div className="font-semibold">Visio</div>
-                  <div className="mt-1">À l’heure : <b>{displayHourVisio != null ? `${displayHourVisio.toFixed(2)} € / h` : "—"}</b></div>
-                  <div className="mt-1">Pack 5h : <b>{displayPack5Visio != null ? `${displayPack5Visio.toFixed(2)} €` : "—"}</b></div>
-                  <div className="mt-1">Pack 10h : <b>{displayPack10Visio != null ? `${displayPack10Visio.toFixed(2)} €` : "—"}</b></div>
+                  <div className="mt-2 text-2xl font-extrabold text-primary">
+                    {displayHourVisio != null ? `${displayHourVisio.toFixed(0)} € / h` : "—"}
+                  </div>
+                  {effectiveVisio > 0 && (
+                    <div className="mt-2 text-xs text-slate-500 space-y-0.5">
+                      <div>Prof reçoit : <span className="font-medium text-slate-700">{effectiveVisio.toFixed(0)} €</span></div>
+                      <div>Frais EduKaraib : <span className="font-medium text-slate-700">10 €</span></div>
+                    </div>
+                  )}
+                  {displayPack5Visio != null && <div className="mt-2 text-sm">Pack 5h : <b>{displayPack5Visio.toFixed(0)} €</b> <span className="text-green-600 text-xs">(−10%)</span></div>}
+                  {displayPack10Visio != null && <div className="mt-1 text-sm">Pack 10h : <b>{displayPack10Visio.toFixed(0)} €</b> <span className="text-green-600 text-xs">(−10%)</span></div>}
                 </div>
               )}
 
@@ -1528,6 +1544,10 @@ export default function TeacherProfile() {
                 <div className="text-gray-500">Tarifs non disponibles.</div>
               )}
             </div>
+
+            <p className="mt-3 text-xs text-slate-400">
+              Les frais EduKaraib (10 €/h) couvrent le paiement sécurisé, la visio intégrée et le support. Le professeur reçoit directement sa part sur son compte bancaire.
+            </p>
           </section>
 
           {/* Avis */}

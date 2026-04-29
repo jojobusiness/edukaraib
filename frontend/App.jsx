@@ -53,6 +53,10 @@ import CoursAnglaisGuadeloupe from './pages/seo/CoursAnglaisGuadeloupe';
 import CoursFrancaisGuyane from './pages/seo/CoursFrancaisGuyane';
 import CoursParticuliersMartinique from './pages/seo/CoursParticuliersMartinique';
 import CoursParticuliersGuadeloupe from './pages/seo/CoursParticuliersGuadeloupe';
+import CoursMathsGuadeloupe from './pages/seo/CoursMathsGuadeloupe';
+import CoursAnglaisMartinique from './pages/seo/CoursAnglaisMartinique';
+import CoursParticuliersGuyane from './pages/seo/CoursParticuliersGuyane';
+import FAQ from './pages/FAQ';
 
 /* === Google Analytics PageView Tracker === */
 function PageViewTracker() {
@@ -122,6 +126,7 @@ function App() {
             <Route path="/profils/:teacherId" element={<TeacherProfile />} />
             <Route path="/unauthorized" element={<Unauthorized />} />
             <Route path="/contact" element={<Contact />} />
+            <Route path="/faq" element={<FAQ />} />
             <Route path="/cgu" element={<CGU />} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/pay/success" element={<PaySuccess />} />
@@ -212,6 +217,9 @@ function App() {
             <Route path="/cours-francais-guyane" element={<CoursFrancaisGuyane />} />
             <Route path="/cours-particuliers-martinique" element={<CoursParticuliersMartinique />} />
             <Route path="/cours-particuliers-guadeloupe" element={<CoursParticuliersGuadeloupe />} />
+            <Route path="/cours-maths-guadeloupe" element={<CoursMathsGuadeloupe />} />
+            <Route path="/cours-anglais-martinique" element={<CoursAnglaisMartinique />} />
+            <Route path="/cours-particuliers-guyane" element={<CoursParticuliersGuyane />} />
 
             {/* 404 */}
             <Route path="*" element={<NotFound />} />

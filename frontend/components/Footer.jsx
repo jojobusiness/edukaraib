@@ -10,9 +10,12 @@ export default function Footer() {
           <div className="flex flex-wrap justify-center gap-x-4 gap-y-2">
             <Link to="/cours-particuliers-martinique" className="hover:text-primary hover:underline">Cours particuliers Martinique</Link>
             <Link to="/cours-particuliers-guadeloupe" className="hover:text-primary hover:underline">Cours particuliers Guadeloupe</Link>
+            <Link to="/cours-particuliers-guyane" className="hover:text-primary hover:underline">Cours particuliers Guyane</Link>
             <Link to="/cours-maths-martinique" className="hover:text-primary hover:underline">Cours de Maths Martinique</Link>
+            <Link to="/cours-maths-guadeloupe" className="hover:text-primary hover:underline">Cours de Maths Guadeloupe</Link>
+            <Link to="/cours-anglais-martinique" className="hover:text-primary hover:underline">Cours d'Anglais Martinique</Link>
             <Link to="/cours-anglais-guadeloupe" className="hover:text-primary hover:underline">Cours d'Anglais Guadeloupe</Link>
-            <Link to="/cours-francais-guyane" className="hover:text-primary hover:underline">Cours de Français Guyane</Link>
+            <Link to="/cours-francais-guyane" className="hover:text-primary hover:underline">Cours de Francais Guyane</Link>
           </div>
         </div>
 
@@ -20,6 +23,7 @@ export default function Footer() {
           <p>© {new Date().getFullYear()} EduKaraib — Tous droits réservés</p>
           <div className="mt-2 flex justify-center gap-4">
             <Link to="/contact" className="hover:underline">Contact</Link>
+            <Link to="/faq" className="hover:underline">FAQ</Link>
             <Link to="/cgu" className="hover:underline">Conditions</Link>
             <Link to="/privacy" className="hover:underline">Confidentialité</Link>
           </div>
