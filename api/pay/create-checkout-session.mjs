@@ -1,5 +1,6 @@
 import { stripe } from '../_stripe.mjs';
 import { adminDb, verifyAuth } from '../_firebaseAdmin.mjs';
+import { captureError } from '../_sentry.mjs';
 
 // -- helpers lecture corps & num
 function readBody(req) {
@@ -417,6 +418,7 @@ export default async function handler(req, res) {
     });
   } catch (e) {
     console.error('stripe.sessions.create error:', e?.message || e);
+    captureError(e, { lesson_id: lessonId, payer_uid: payerUid });
     return res.status(400).json({ error: 'STRIPE_CREATE_SESSION_FAILED', detail: String(e?.message || e) });
   }
 

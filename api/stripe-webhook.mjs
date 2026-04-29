@@ -1,6 +1,7 @@
 import { stripe } from './_stripe.mjs';
 import { adminDb, rawBody } from './_firebaseAdmin.mjs';
 import { Resend } from 'resend';
+import { captureError } from './_sentry.mjs';
 
 export const config = { api: { bodyParser: false } };
 
@@ -41,6 +42,7 @@ export default async function handler(req, res) {
     res.json({ received: true });
   } catch (e) {
     console.error('webhook handler error:', e);
+    captureError(e, { event_type: event?.type });
     res.status(500).json({ error: 'webhook_error' });
   }
 }

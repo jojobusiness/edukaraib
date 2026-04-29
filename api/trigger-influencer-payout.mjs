@@ -1,5 +1,6 @@
 import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
 import { stripe } from './_stripe.mjs';
+import { captureError } from './_sentry.mjs';
 
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://www.edukaraib.com';
 
@@ -81,10 +82,9 @@ export default async function handler(req, res) {
       },
     });
   } catch (e) {
-    // On capture l'erreur Stripe mais on ne bloque pas la transaction Firestore
-    // L'admin voit l'erreur dans la réponse et peut réessayer
     stripeError = e?.message || String(e);
     console.error('[payout] Stripe error:', stripeError);
+    captureError(e, { influencer_uid: influencerUid, amount_eur: pendingEur, context: 'influencer_payout' });
   }
 
   // ── 2. Mise à jour Firestore ──────────────────────────────────────────────
@@ -116,6 +116,7 @@ export default async function handler(req, res) {
     });
   } catch (txErr) {
     console.error('[payout] Firestore transaction error:', txErr?.message);
+    captureError(txErr, { influencer_uid: influencerUid, context: 'influencer_payout_firestore' });
     return res.status(500).json({ error: 'FIRESTORE_ERROR', detail: txErr?.message });
   }
 

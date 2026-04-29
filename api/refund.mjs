@@ -7,6 +7,7 @@
 
 import { stripe } from './_stripe.mjs';
 import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
+import { captureError } from './_sentry.mjs';
 
 function readBody(req) {
   try {
@@ -155,6 +156,7 @@ export default async function handler(req, res) {
 
   } catch (e) {
     console.error('refund error', e);
+    captureError(e, { payment_id: paymentId, caller_uid: adminUid });
     return res.status(500).json({ error: e.message });
   }
 }

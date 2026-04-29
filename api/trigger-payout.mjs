@@ -1,6 +1,7 @@
 import { stripe } from './_stripe.mjs';
 import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
 import { Resend } from 'resend';
+import { captureError } from './_sentry.mjs';
 
 const GOOGLE_REVIEW_URL = 'https://www.google.com/search?q=EduKaraib+cours+particuliers+Antilles&hl=fr';
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
@@ -179,6 +180,7 @@ export default async function handler(req, res) {
 
   } catch (e) {
     console.error('trigger-payout error:', e);
+    captureError(e, { lesson_id: lessonId, teacher_uid: teacherUid });
     return res.status(500).json({ error: e.message });
   }
 }
@@ -223,6 +225,7 @@ async function doPackSettlement({
       refundId = refund.id;
     } catch (e) {
       console.error('[pack-settlement] refund failed:', e?.message);
+      captureError(e, { lesson_id: lessonId, pack_id: packId, context: 'pack_refund' });
       refundError = e?.message || 'refund_failed';
     }
   }
