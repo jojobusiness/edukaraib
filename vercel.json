@@ -4,6 +4,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "routes": [
+    { "src": "/sitemap.xml", "dest": "/api/sitemap.mjs" },
     { "src": "/api/(.*)", "dest": "/api/$1" },
     { "src": "/((?!api|.*\\..*).*)", "dest": "/index.html" }
   ],

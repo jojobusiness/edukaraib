@@ -722,9 +722,29 @@ export default function TeacherProfile() {
   // ✅ GARDE : tant que teacher n'est pas chargé
   if (!teacher) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="max-w-xl mx-auto bg-white p-6 rounded-xl shadow text-center">
-          Chargement…
+      <div className="min-h-screen bg-gray-50 py-8 px-4">
+        <div className="max-w-5xl mx-auto animate-pulse">
+          <div className="bg-white rounded-2xl shadow p-6 flex gap-6 mb-6">
+            <div className="w-24 h-24 rounded-full bg-gray-200 shrink-0" />
+            <div className="flex-1 space-y-3">
+              <div className="h-6 bg-gray-200 rounded w-1/3" />
+              <div className="h-4 bg-gray-200 rounded w-1/2" />
+              <div className="h-4 bg-gray-200 rounded w-1/4" />
+              <div className="flex gap-2 mt-2">
+                <div className="h-6 bg-gray-200 rounded-full w-20" />
+                <div className="h-6 bg-gray-200 rounded-full w-20" />
+              </div>
+            </div>
+            <div className="shrink-0 space-y-2">
+              <div className="h-6 bg-gray-200 rounded w-24" />
+              <div className="h-10 bg-gray-200 rounded-xl w-32" />
+            </div>
+          </div>
+          <div className="bg-white rounded-2xl shadow p-6 space-y-3">
+            <div className="h-4 bg-gray-200 rounded w-full" />
+            <div className="h-4 bg-gray-200 rounded w-5/6" />
+            <div className="h-4 bg-gray-200 rounded w-4/6" />
+          </div>
         </div>
       </div>
     );

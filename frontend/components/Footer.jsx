@@ -30,6 +30,7 @@ export default function Footer() {
         <div className="border-t pt-4 text-center">
           <p>© {new Date().getFullYear()} EduKaraib — Tous droits réservés</p>
           <div className="mt-2 flex justify-center gap-4">
+            <Link to="/about" className="hover:underline">À propos</Link>
             <Link to="/contact" className="hover:underline">Contact</Link>
             <Link to="/faq" className="hover:underline">FAQ</Link>
             <Link to="/cgu" className="hover:underline">Conditions</Link>
