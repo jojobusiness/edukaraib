@@ -313,10 +313,27 @@ export default function TeacherProfile() {
       name: teacherName,
       jobTitle: 'Professeur particulier',
       image: teacher.avatarUrl || undefined,
-      url: `https://edukaraib.com/prof/${teacherId}`,
+      url: `https://edukaraib.com/profils/${teacherId}`,
       description: teacher.bio || '',
       knowsAbout: subjects,
       areaServed: teacher.city || 'Caraïbes & DOM-TOM',
+      ...(reviews.length > 0 ? {
+        aggregateRating: {
+          '@type': 'AggregateRating',
+          ratingValue: (reviews.reduce((s, r) => s + Number(r.rating || 0), 0) / reviews.length).toFixed(1),
+          reviewCount: reviews.length,
+          bestRating: 5,
+          worstRating: 1,
+        },
+      } : {}),
+      ...(teacher.price_per_hour ? {
+        makesOffer: {
+          '@type': 'Offer',
+          price: Number(teacher.price_per_hour).toFixed(2),
+          priceCurrency: 'EUR',
+          description: `Cours particuliers de ${subjects}`,
+        },
+      } : {}),
     } : undefined,
   });
 
