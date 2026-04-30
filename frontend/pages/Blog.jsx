@@ -7,7 +7,7 @@ import Footer from '../components/Footer';
 export default function Blog() {
   useSEO({
     title: 'Blog — Conseils cours particuliers aux Caraïbes',
-    description: 'Guides et conseils pour trouver le meilleur professeur particulier en Martinique, Guadeloupe et Guyane. Tarifs, méthodes, matières : tout ce qu'il faut savoir.',
+    description: "Guides et conseils pour trouver le meilleur professeur particulier en Martinique, Guadeloupe et Guyane. Tarifs, méthodes, matières : tout ce qu'il faut savoir.",
     url: '/blog',
   });
 
