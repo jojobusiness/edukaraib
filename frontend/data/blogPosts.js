@@ -60,7 +60,7 @@ export const blogPosts = [
         content: `Sur EduKaraib, les packs d'heures permettent de réduire le coût unitaire. Un pack 5h offre 10 % de réduction par rapport aux cours à l'unité, et un pack 10h permet jusqu'à 10 % d'économie également. Ces packs sont particulièrement adaptés aux préparations d'examens ou aux suivis sur la durée. En cas d'annulation ou de cours non effectués, un remboursement automatique au prorata est appliqué.`,
       },
       {
-        heading: 'Déduction fiscale : jusqu'à 50 % remboursés',
+        heading: "Déduction fiscale : jusqu'à 50 % remboursés",
         content: `Un avantage souvent méconnu : en France (y compris les DOM), les dépenses de cours particuliers à domicile ouvrent droit à un crédit d'impôt de 50 %. Concrètement, si vous dépensez 200 € en cours particuliers sur l'année, vous récupérez 100 € lors de votre déclaration d'impôts. Ce mécanisme s'applique aux cours réalisés en présentiel au domicile de l'élève. EduKaraib fournit des factures téléchargeables pour faciliter votre déclaration.`,
       },
       {
@@ -106,7 +106,7 @@ export const blogPosts = [
   },
   {
     slug: 'cours-visio-avantages-caraibes',
-    title: 'Cours particuliers en visio aux Caraïbes : pourquoi c'est la meilleure option',
+    title: "Cours particuliers en visio aux Caraïbes : pourquoi c'est la meilleure option",
     description: 'Pourquoi les cours particuliers en visioconférence sont parfaitement adaptés aux spécificités des Caraïbes : accès élargi aux professeurs, économies sur les transports, flexibilité et résultats prouvés.',
     date: '2026-04-15',
     subject: 'Conseils',
