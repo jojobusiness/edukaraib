@@ -463,7 +463,7 @@ export default function TeacherProfile() {
     return () => unsubLessons();
   }, [teacherId, teacher]);
 
-  // Infos auteurs d’avis
+  // Infos auteurs d'avis
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -668,7 +668,7 @@ export default function TeacherProfile() {
   // 🔸 image promo (mets le chemin correct dans /public)
   const PROMO_BANNER_SRC = "/promo/packs-guyane.png";
 
-  // ✅ IMPORTANT : on ne calcule les labels/modes qu’avec safeTeacher (jamais teacher direct)
+  // ✅ IMPORTANT : on ne calcule les labels/modes qu'avec safeTeacher (jamais teacher direct)
   const modeLabel =
     safeTeacher.presentiel_enabled && safeTeacher.visio_enabled
       ? "Présentiel + Visio"
@@ -897,7 +897,7 @@ export default function TeacherProfile() {
               continue;
             }
 
-            // 💡 "Réactiver" l’ancien individuel rejeté pour CET élève, sans pack si wantSingle
+            // 💡 "Réactiver" l'ancien individuel rejeté pour CET élève, sans pack si wantSingle
             await updateDoc(doc(db, 'lessons', existingIndId), {
               status: 'booked',
               student_id: targetStudentId,
@@ -1183,7 +1183,7 @@ export default function TeacherProfile() {
       if (grouped.error.length)
         parts.push(`Erreurs sur : ${grouped.error.join(", ")}.`);
 
-      // Si on vient de "réactiver" un refus en unitaire => coupe l’état UI du pack
+      // Si on vient de "réactiver" un refus en unitaire => coupe l'état UI du pack
       if (isPack && results.some(r => r.status === 'revived_individual' || r.status === 'revived_group')) {
         setPackChoice(0);  // plus d'étiquette Pack dans la confirmation
       }
@@ -1256,13 +1256,13 @@ export default function TeacherProfile() {
                 className="w-full h-[70vh] min-h-[420px] max-h-[560px] object-cover block rounded-b-3xl"
               />
 
-              {/* badge mode dans l’image */}
+              {/* badge mode dans l'image */}
               <div className="absolute bottom-4 left-4 px-3 py-1.5 rounded-full text-xs font-bold bg-black/65 text-white">
                 {modeLabel}
               </div>
             </div>
 
-            {/* Carte qui remonte sur l’image (Superprof-like) */}
+            {/* Carte qui remonte sur l'image (Superprof-like) */}
             <div className="-mt-24 px-4 pb-6 relative z-10">
               <div className="bg-white border border-gray-100 rounded-2xl shadow-lg p-5">
                 <div className="text-2xl font-extrabold text-slate-900 leading-tight">
@@ -1281,7 +1281,7 @@ export default function TeacherProfile() {
                   {reviewsCount >= 5 && <CertifiedBadge />}
                 </div>
 
-                {/* Tarifs à l’heure (visio/presentiel) */}
+                {/* Tarifs à l'heure (visio/presentiel) */}
                 <div className="mt-2 text-sm text-slate-700">
                   {teacher.presentiel_enabled && (
                     <div>
@@ -1323,7 +1323,7 @@ export default function TeacherProfile() {
                 {currentRole === "parent" && (
                   <div className="mt-4">
                     <label className="block text-sm font-semibold text-slate-700 mb-2">
-                      Qui est l’élève ?
+                      Qui est l'élève ?
                     </label>
 
                     <select
@@ -1340,7 +1340,7 @@ export default function TeacherProfile() {
                     </select>
 
                     <p className="mt-2 text-xs text-slate-500">
-                      Les créneaux en rouge sont indisponibles pour l’élève sélectionné.
+                      Les créneaux en rouge sont indisponibles pour l'élève sélectionné.
                     </p>
                   </div>
                 )}
@@ -1404,7 +1404,7 @@ export default function TeacherProfile() {
                 {packChoice === 0 && (
                   <div className="mt-3">
                     <label className="block text-xs font-semibold text-slate-600 mb-1">
-                      Nombre d’heures
+                      Nombre d'heures
                     </label>
                     <input
                       type="number"
@@ -1479,7 +1479,7 @@ export default function TeacherProfile() {
             {/* Bio (grande, très visible) */}
             <div className="mt-4">
               <div className="text-xl md:text-2xl font-extrabold text-slate-900 leading-snug">
-                {teacher.bio || teacher.about_me || "Le professeur n’a pas encore ajouté de bio."}
+                {teacher.bio || teacher.about_me || "Le professeur n'a pas encore ajouté de bio."}
               </div>
             </div>
 
@@ -1518,7 +1518,7 @@ export default function TeacherProfile() {
           <section className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
             <h2 className="text-xl md:text-2xl font-extrabold text-slate-900">À propos de moi</h2>
             <div className="mt-3 text-slate-700 leading-relaxed whitespace-pre-line">
-              {teacher.about_me || teacher.bio || "Le professeur n’a pas encore renseigné sa présentation."}
+              {teacher.about_me || teacher.bio || "Le professeur n'a pas encore renseigné sa présentation."}
             </div>
           </section>
 
@@ -1550,11 +1550,37 @@ export default function TeacherProfile() {
           <section className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
             <h2 className="text-xl md:text-2xl font-extrabold text-slate-900">À propos du cours</h2>
             <div className="mt-3 text-slate-700 leading-relaxed whitespace-pre-line">
-              {teacher.about_course || "Le professeur n’a pas encore renseigné la description détaillée du cours."}
+              {teacher.about_course || "Le professeur n'a pas encore renseigné la description détaillée du cours."}
             </div>
           </section>
 
-          {/* Tarifs (tu m’as dit : enlever la section "mode", et mettre tarifs après) */}
+          {/* Certifications */}
+          {(teacher.certificatesUrls || []).length > 0 && (
+            <section className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
+              <h2 className="text-xl md:text-2xl font-extrabold text-slate-900 mb-4">Certifications & diplômes</h2>
+              <div className="flex flex-wrap gap-3">
+                {(teacher.certificatesUrls || []).map((url, i) => {
+                  const isPdf = /\.pdf(\?|$)/i.test(url) || url.toLowerCase().includes('%2epdf');
+                  const raw = decodeURIComponent(url.split('/').pop().split('?')[0]);
+                  const fileName = raw.replace(/^\d+_/, '').slice(0, 50) || `Certificat ${i + 1}`;
+                  return (
+                    <a
+                      key={i}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 transition"
+                    >
+                      <span>{isPdf ? '📄' : '🖼️'}</span>
+                      <span>{fileName}</span>
+                    </a>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* Tarifs (tu m'as dit : enlever la section "mode", et mettre tarifs après) */}
           <section className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">
             <h2 className="text-xl md:text-2xl font-extrabold text-slate-900">Tarifs</h2>
 
@@ -1829,7 +1855,7 @@ export default function TeacherProfile() {
                 {currentRole === "parent" && (
                   <div className="mt-4">
                     <label className="block text-sm font-semibold text-slate-700 mb-2">
-                      Qui est l’élève ?
+                      Qui est l'élève ?
                     </label>
 
                     <select
@@ -1846,7 +1872,7 @@ export default function TeacherProfile() {
                     </select>
 
                     <p className="mt-2 text-xs text-slate-500">
-                      Les créneaux en rouge sont indisponibles pour l’élève sélectionné.
+                      Les créneaux en rouge sont indisponibles pour l'élève sélectionné.
                     </p>
                   </div>
                 )}
@@ -1910,7 +1936,7 @@ export default function TeacherProfile() {
                 {packChoice === 0 && (
                   <div className="mt-3">
                     <label className="block text-xs font-semibold text-slate-600 mb-1">
-                      Nombre d’heures
+                      Nombre d'heures
                     </label>
                     <input
                       type="number"

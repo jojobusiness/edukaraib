@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { autoClearPaymentDueNotifications } from '../lib/paymentNotifications';
 import ReferralCard from '../components/ReferralCard';
+import TrustpilotBanner from '../components/TrustpilotBanner';
 
 // ---------- Helpers temps ----------
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -232,7 +233,7 @@ export default function StudentDashboard() {
       }
       setNextCourse(nextCourseWithProf);
 
-      // Liste confirmés pour l’affichage des participants (même règle que ci-dessus)
+      // Liste confirmés pour l'affichage des participants (même règle que ci-dessus)
       const confirmed = allLessons
         .filter(l => FR_DAY_CODES.includes(l.slot_day) && isConfirmedForMe(l, userId))
         .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
@@ -384,7 +385,7 @@ export default function StudentDashboard() {
           <span className="text-3xl mb-2">👨‍🏫</span>
           <span className="text-xl font-bold text-yellow-600">Profs favoris</span>
           <ul className="text-gray-700 mt-2 w-full">
-            {favoriteTeachers.length === 0 && <li className="text-gray-500">Aucun favori pour l’instant.</li>}
+            {favoriteTeachers.length === 0 && <li className="text-gray-500">Aucun favori pour l'instant.</li>}
             {favoriteTeachers.map((p) => (
               <li key={p.uid} className="flex items-center justify-between py-1">
                 <div className="truncate">
@@ -424,6 +425,9 @@ export default function StudentDashboard() {
       <div className="bg-white rounded-xl shadow p-5 mt-6">
         <h3 className="font-bold text-primary mb-3 mt-6">Parrainez un ami</h3>
         <ReferralCard />
+        <div className="mt-6 mb-2">
+          <TrustpilotBanner />
+        </div>
         <h3 className="font-bold text-primary mb-3 mt-6">Notifications</h3>
         {recentNotifications.length === 0 ? (
           <div className="text-gray-500 text-sm">Aucune notification.</div>

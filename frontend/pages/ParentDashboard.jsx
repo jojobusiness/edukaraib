@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { autoClearPaymentDueNotifications } from '../lib/paymentNotifications';
 import ReferralCard from '../components/ReferralCard';
+import TrustpilotBanner from '../components/TrustpilotBanner';
 
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const codeIndex = (c) => Math.max(0, FR_DAY_CODES.indexOf(c));
@@ -376,6 +377,11 @@ export default function ParentDashboard() {
       {/* Parrainage */}
       <div className="mb-6">
         <ReferralCard />
+      </div>
+
+      {/* Trustpilot */}
+      <div className="mb-6">
+        <TrustpilotBanner />
       </div>
 
       {/* Notifications (titre + message + date) */}

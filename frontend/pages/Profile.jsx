@@ -174,11 +174,14 @@ export default function Profile() {
     about_me: '',
     about_course: '',
 
+    certificatesUrls: [],
+
     offer_enabled: true,
   });
   const [avatarFile, setAvatarFile] = useState(null);
   const [videoFile, setVideoFile] = useState(null);
   const [videoFileName, setVideoFileName] = useState('');
+  const [certFiles, setCertFiles] = useState([]);
   const [saving, setSaving] = useState(false);
 
   // Charger l'utilisateur + profil
@@ -453,6 +456,17 @@ export default function Profile() {
         videoUrl = await getDownloadURL(r);
       }
 
+      // Upload certificats si présents
+      const newCertUrls = [];
+      for (const certFile of certFiles) {
+        const ext = certFile.name.split('.').pop().toLowerCase();
+        const safeName = Date.now() + '_' + certFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const certPath = `certificates/${profile.uid}/${safeName}`;
+        const cRef = sRef(storage, certPath);
+        await uploadBytes(cRef, certFile);
+        newCertUrls.push(await getDownloadURL(cRef));
+      }
+
       const ref = doc(db, 'users', profile.uid);
       const fullName = `${(profile.firstName || '').trim()} ${(profile.lastName || '').trim()}`.trim();
 
@@ -500,6 +514,7 @@ export default function Profile() {
         teaching_levels: profile.teaching_levels || [],
         videoUrl,
         trial_enabled: !!profile.trial_enabled,
+        certificatesUrls: [...(profile.certificatesUrls || []), ...newCertUrls],
       };
       delete toSave.uid;
 
@@ -508,6 +523,7 @@ export default function Profile() {
         await safelyApplyGroupSettings(profile.uid, !!profile.group_enabled, profile.group_capacity);
       }
       setProfile((p) => ({ ...p, avatarUrl, fullName }));
+      setCertFiles([]);
       alert('Profil mis à jour !');
     } catch (err) {
       console.error(err);
@@ -773,6 +789,61 @@ export default function Profile() {
                 <label className="block mb-1 text-sm font-medium text-gray-700">Diplômes</label>
                 <input type="text" name="diploma" className="w-full border border-gray-300 rounded-lg px-3 py-2"
                   value={profile.diploma || ''} onChange={handleChange} placeholder="ex : Master Maths" />
+              </div>
+
+              {/* Certificats vérifiés */}
+              <div>
+                <label className="block mb-2 text-sm font-medium text-gray-700">
+                  Certificats & diplômes scannés <span className="text-gray-400 font-normal">(PDF ou image, max 5 Mo, optionnel)</span>
+                </label>
+                {(profile.certificatesUrls || []).length > 0 && (
+                  <div className="mb-3 space-y-2">
+                    {(profile.certificatesUrls || []).map((url, i) => {
+                      const isPdf = /\.pdf(\?|$)/i.test(url) || url.toLowerCase().includes('%2epdf');
+                      const raw = decodeURIComponent(url.split('/').pop().split('?')[0]);
+                      const fileName = raw.replace(/^\d+_/, '').slice(0, 50) || `Certificat ${i + 1}`;
+                      return (
+                        <div key={i} className="flex items-center gap-2 text-sm bg-gray-50 border rounded-lg px-3 py-2">
+                          <span>{isPdf ? '📄' : '🖼️'}</span>
+                          <span className="truncate flex-1 text-gray-700">{fileName}</span>
+                          <button
+                            type="button"
+                            onClick={() => setProfile(p => ({ ...p, certificatesUrls: (p.certificatesUrls || []).filter((_, j) => j !== i) }))}
+                            className="text-red-400 hover:text-red-600 text-xs shrink-0"
+                          >
+                            Supprimer
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {certFiles.length > 0 && (
+                  <div className="mb-3 space-y-1">
+                    {certFiles.map((f, i) => (
+                      <div key={i} className="flex items-center gap-2 text-xs text-green-700">
+                        <span>+ {f.name}</span>
+                        <button type="button" onClick={() => setCertFiles(prev => prev.filter((_, j) => j !== i))} className="text-red-400 ml-2">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <label className="flex items-center gap-2 cursor-pointer w-fit bg-gray-50 border border-gray-300 rounded-lg px-3 py-2 hover:bg-gray-100 transition text-sm">
+                  <span>📎 Ajouter un certificat</span>
+                  <input
+                    type="file"
+                    accept=".pdf,image/*"
+                    multiple
+                    className="hidden"
+                    onChange={e => {
+                      const files = Array.from(e.target.files || []);
+                      const valid = files.filter(f => f.size <= 5 * 1024 * 1024);
+                      if (valid.length < files.length) alert("Certains fichiers depassent 5 Mo et ont ete ignores.");
+                      setCertFiles(prev => [...prev, ...valid]);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
               </div>
 
               {/* À propos */}
