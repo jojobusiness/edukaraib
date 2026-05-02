@@ -24,16 +24,34 @@ export default async function handler(req, res) {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object;
-        await markPaymentHeldAndUpdateLesson({ sessionId: session.id, paymentIntentId: session.payment_intent }, session.metadata);
-        // Email de confirmation — non-bloquant, n'affecte pas le webhook si ça échoue
-        sendPaymentConfirmationEmail(session.metadata, session.amount_total).catch(e =>
-          console.warn('[webhook] confirmation email error:', e?.message)
-        );
+        if (session.mode === 'subscription') {
+          await handleSubscriptionCreated(session);
+        } else {
+          await markPaymentHeldAndUpdateLesson({ sessionId: session.id, paymentIntentId: session.payment_intent }, session.metadata);
+          sendPaymentConfirmationEmail(session.metadata, session.amount_total).catch(e =>
+            console.warn('[webhook] confirmation email error:', e?.message)
+          );
+        }
         break;
       }
       case 'payment_intent.succeeded': {
         const pi = event.data.object;
         await markPaymentHeldAndUpdateLesson({ sessionId: null, paymentIntentId: pi.id }, pi.metadata);
+        break;
+      }
+      case 'invoice.payment_succeeded': {
+        const invoice = event.data.object;
+        if (invoice.subscription && invoice.billing_reason === 'subscription_cycle') {
+          await handleSubscriptionRenewal(invoice);
+        }
+        break;
+      }
+      case 'customer.subscription.deleted': {
+        const stripeSub = event.data.object;
+        await adminDb.collection('subscriptions').doc(stripeSub.id).set(
+          { status: 'cancelled', cancelled_at: new Date() },
+          { merge: true }
+        );
         break;
       }
       default:
@@ -133,7 +151,7 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
     }
   }
 
-  // 2) Marquer le paiement “held” côté payments (en attente de versement prof)
+  // 2) Marquer le paiement "held" côté payments (en attente de versement prof)
   const paymentDocId = refs.sessionId || refs.paymentIntentId;
   if (paymentDocId) {
     await adminDb.collection('payments').doc(paymentDocId).set({
@@ -147,7 +165,7 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
       net_to_teacher_eur: Math.max(0, teacherAmountCents) / 100,
       payment_intent_id: pi?.id || refs.paymentIntentId || null,
       stripe_charge_id: charge?.id || null,
-      // Tu pourras plus tard compléter lors du “release” avec transfer_id, released_at, etc.
+      // Tu pourras plus tard compléter lors du "release" avec transfer_id, released_at, etc.
     }, { merge: true });
   }
 
@@ -476,6 +494,125 @@ async function sendPaymentConfirmationEmail(md, amountTotalCents) {
     subject: `✅ Paiement confirmé — ${typeLabel} avec ${teacherName}`,
     html,
   });
+}
+
+// ── Abonnement : creation ────────────────────────────────────────────────────
+async function handleSubscriptionCreated(session) {
+  const md = session.metadata || {};
+  const stripeSubId = session.subscription;
+  if (!stripeSubId) return;
+
+  await adminDb.collection('subscriptions').doc(stripeSubId).set({
+    stripe_subscription_id: stripeSubId,
+    stripe_customer_id: session.customer || null,
+    teacher_id: md.teacher_id || null,
+    student_id: md.student_id || null,
+    payer_uid: md.payer_uid || null,
+    slot_day: md.slot_day || null,
+    slot_hour: Number(md.slot_hour || 0),
+    mode: md.mode || 'presentiel',
+    subscription_rate: Number(md.subscription_rate || 0),
+    per_lesson_cents: Number(md.per_lesson_cents || 0),
+    status: 'active',
+    last_booked_period: '',
+    created_at: new Date(),
+  }, { merge: true });
+
+  await bookSubscriptionLessons(stripeSubId, {
+    teacher_id: md.teacher_id,
+    student_id: md.student_id,
+    payer_uid: md.payer_uid,
+    slot_day: md.slot_day,
+    slot_hour: Number(md.slot_hour || 0),
+    mode: md.mode || 'presentiel',
+    subscription_rate: Number(md.subscription_rate || 0),
+  });
+}
+
+// ── Abonnement : renouvellement mensuel ─────────────────────────────────────
+async function handleSubscriptionRenewal(invoice) {
+  const stripeSubId = invoice.subscription;
+  const subSnap = await adminDb.collection('subscriptions').doc(stripeSubId).get();
+  if (!subSnap.exists) return;
+
+  const sub = subSnap.data();
+  if (sub.status !== 'active' && sub.status !== 'cancelling') return;
+
+  await bookSubscriptionLessons(stripeSubId, sub);
+}
+
+// ── Booking 4 lecons (premier mois ou renouvellement) ───────────────────────
+async function bookSubscriptionLessons(stripeSubId, sub) {
+  const { teacher_id, student_id, slot_day, slot_hour, mode, subscription_rate, payer_uid } = sub;
+  if (!teacher_id || !student_id || !slot_day || slot_hour == null) return;
+
+  const DAY_MAP = { Lun: 1, Mar: 2, Mer: 3, Jeu: 4, Ven: 5, Sam: 6, Dim: 0 };
+  const targetDayNum = DAY_MAP[slot_day];
+  if (targetDayNum === undefined) return;
+
+  // Periode courante (YYYY-MM) pour eviter le double-booking
+  const now = new Date();
+  const periodKey = now.toISOString().slice(0, 7);
+
+  const subRef = adminDb.collection('subscriptions').doc(stripeSubId);
+  const fresh = await subRef.get();
+  if (fresh.exists && fresh.data().last_booked_period === periodKey) return; // deja book
+
+  // Calculer les 4 prochaines occurrences du creneau
+  const cursor = new Date(now);
+  cursor.setHours(0, 0, 0, 0);
+  while (cursor.getDay() !== targetDayNum) {
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  const dates = [];
+  for (let i = 0; i < 4; i++) {
+    const d = new Date(cursor);
+    d.setHours(Number(slot_hour), 0, 0, 0);
+    dates.push(d);
+    cursor.setDate(cursor.getDate() + 7);
+  }
+
+  const batch = adminDb.batch();
+  for (const d of dates) {
+    const dateStr = d.toISOString().slice(0, 10);
+    const monday = new Date(d);
+    monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    const weekStr = monday.toISOString().slice(0, 10);
+
+    const lessonRef = adminDb.collection('lessons').doc();
+    batch.set(lessonRef, {
+      teacher_id: String(teacher_id),
+      student_id: null,
+      participant_ids: [String(student_id)],
+      participantsMap: {
+        [String(student_id)]: {
+          status: 'confirmed',
+          is_paid: true,
+          paid_at: new Date(),
+          booked_by: String(payer_uid || student_id),
+          parent_id: payer_uid && payer_uid !== student_id ? String(payer_uid) : null,
+        },
+      },
+      slot_day: String(slot_day),
+      slot_hour: Number(slot_hour),
+      date: dateStr,
+      week: weekStr,
+      startAt: d,
+      mode: mode || 'presentiel',
+      is_group: false,
+      capacity: 1,
+      is_subscription: true,
+      subscription_id: String(stripeSubId),
+      price_per_hour: Number(subscription_rate || 0),
+      status: 'confirmed',
+      is_paid: true,
+      created_at: new Date(),
+    });
+  }
+  await batch.commit();
+
+  await subRef.set({ last_booked_period: periodKey }, { merge: true });
 }
 
 function esc(s) { return String(s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }

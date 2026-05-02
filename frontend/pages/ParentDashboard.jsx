@@ -94,6 +94,7 @@ export default function ParentDashboard() {
   const [notifications, setNotifications] = useState([]);
   const [groupNamesByLesson, setGroupNamesByLesson] = useState(new Map());
   const [openRowId, setOpenRowId] = useState(null);
+  const [subscriptions, setSubscriptions] = useState([]);
 
   // ✅ tick horaire pour faire « expirer » visuellement les notifs à J+2
   const [nowTick, setNowTick] = useState(Date.now());
@@ -103,6 +104,28 @@ export default function ParentDashboard() {
   }, []);
 
   const userId = auth.currentUser?.uid;
+
+  // Abonnements actifs
+  useEffect(() => {
+    if (!userId) return;
+    getDocs(query(collection(db, 'subscriptions'), where('payer_uid', '==', userId)))
+      .then(snap => setSubscriptions(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+      .catch(() => {});
+  }, [userId]);
+
+  const handleCancelSubscription = async (subId) => {
+    if (!window.confirm('Annuler cet abonnement ? Les cours du mois en cours restent reserves.')) return;
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const r = await fetch('/api/cancel-subscription', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ subscriptionId: subId }),
+      });
+      if (r.ok) setSubscriptions(prev => prev.map(s => s.id === subId ? { ...s, status: 'cancelling' } : s));
+      else { const d = await r.json(); alert('Erreur : ' + (d.error || 'Impossible')); }
+    } catch (e) { alert('Erreur reseau'); }
+  };
 
   // 🔔 Notifications LIVE + auto-clean paiement
   useEffect(() => {
@@ -373,6 +396,38 @@ export default function ParentDashboard() {
           <span className="text-gray-700 mt-1">{unpaid} cours à régler</span>
         </div>
       </div>
+
+      {/* Abonnements */}
+      {subscriptions.filter(s => s.status !== 'cancelled').length > 0 && (
+        <div className="mb-6">
+          <h3 className="font-bold text-primary mb-3">Mes abonnements</h3>
+          <div className="space-y-3">
+            {subscriptions.filter(s => s.status !== 'cancelled').map(sub => (
+              <div key={sub.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="font-semibold text-slate-800 text-sm">
+                    {sub.slot_day} {sub.slot_hour}h &mdash; {sub.mode === 'visio' ? 'Visio' : 'Presentiel'}
+                  </div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    {((sub.per_lesson_cents || 0) / 100 * 4).toFixed(0)} euros/mois &middot; 4 cours inclus
+                  </div>
+                  <div className={`mt-1 text-xs font-semibold ${sub.status === 'cancelling' ? 'text-amber-600' : 'text-green-600'}`}>
+                    {sub.status === 'cancelling' ? 'Annulation en fin de periode' : 'Actif'}
+                  </div>
+                </div>
+                {sub.status === 'active' && (
+                  <button
+                    onClick={() => handleCancelSubscription(sub.id)}
+                    className="text-xs text-red-500 hover:text-red-700 border border-red-200 rounded-lg px-3 py-1.5 transition shrink-0"
+                  >
+                    Annuler
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Parrainage */}
       <div className="mb-6">

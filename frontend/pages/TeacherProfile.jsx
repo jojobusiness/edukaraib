@@ -191,6 +191,13 @@ export default function TeacherProfile() {
   const [trialMode, setTrialMode] = useState(false);
   const [trialUsed, setTrialUsed] = useState(false);
 
+  // Abonnement
+  const [showSubscribeForm, setShowSubscribeForm] = useState(false);
+  const [subSlotDay, setSubSlotDay] = useState('');
+  const [subSlotHour, setSubSlotHour] = useState(null);
+  const [subMode, setSubMode] = useState('presentiel');
+  const [subLoading, setSubLoading] = useState(false);
+
   // ✅ Sticky stop propre
   const layoutRef = useRef(null);
   const stickyRef = useRef(null);
@@ -736,6 +743,58 @@ export default function TeacherProfile() {
     : packChoice === 10 ? (10 + freeCount)
     : Math.max(1, Number(hoursWanted) || 1);
     
+  // Creneaux disponibles du prof (pour le formulaire d'abonnement)
+  const availableSlots = useMemo(() => {
+    const avail = teacher?.availability || {};
+    const slots = [];
+    const seen = new Set();
+    const isNewFormat = Object.keys(avail).some(k => /^\d{4}-\d{2}-\d{2}$/.test(k));
+    const addSlot = (day, h) => {
+      const key = `${day}:${h}`;
+      if (!seen.has(key)) { seen.add(key); slots.push({ day, hour: h }); }
+    };
+    if (isNewFormat) {
+      Object.values(avail).forEach(days => {
+        if (!days || typeof days !== 'object') return;
+        Object.entries(days).forEach(([day, hours]) => (hours || []).forEach(h => addSlot(day, h)));
+      });
+    } else {
+      Object.entries(avail).forEach(([day, hours]) => (hours || []).forEach(h => addSlot(day, h)));
+    }
+    const dayOrder = { Lun: 0, Mar: 1, Mer: 2, Jeu: 3, Ven: 4, Sam: 5, Dim: 6 };
+    return slots.sort((a, b) => {
+      if ((dayOrder[a.day] ?? 9) !== (dayOrder[b.day] ?? 9)) return (dayOrder[a.day] ?? 9) - (dayOrder[b.day] ?? 9);
+      return a.hour - b.hour;
+    });
+  }, [teacher]);
+
+  const handleSubscribe = async () => {
+    if (!auth.currentUser) return navigate('/login');
+    if (!subSlotDay || subSlotHour == null) return;
+    setSubLoading(true);
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const r = await fetch('/api/create-subscription-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({
+          teacherId,
+          slotDay: subSlotDay,
+          slotHour: subSlotHour,
+          mode: subMode,
+          forStudent: selectedStudentId || auth.currentUser.uid,
+        }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Erreur');
+      window.location.href = data.url;
+    } catch (e) {
+      alert('Erreur : ' + e.message);
+    } finally {
+      setSubLoading(false);
+    }
+  };
+
   // ✅ GARDE : tant que teacher n'est pas chargé
   if (!teacher) {
     return (
@@ -1628,6 +1687,118 @@ export default function TeacherProfile() {
               Les frais EduKaraib (10 €/h) couvrent le paiement sécurisé, la visio intégrée et le support. Le professeur reçoit directement sa part sur son compte bancaire.
             </p>
           </section>
+
+          {/* Abonnement mensuel */}
+          {canBook && teacher.subscription_enabled && Number(teacher.subscription_rate || 0) > 0 && (
+            <section className="bg-white border border-primary/20 rounded-2xl shadow-sm p-6">
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                  <h2 className="text-xl md:text-2xl font-extrabold text-slate-900">Abonnement mensuel</h2>
+                  <p className="text-slate-500 text-sm mt-1">
+                    Un creneau fixe chaque semaine, preleve automatiquement chaque mois.
+                  </p>
+                  <div className="mt-3 flex items-center gap-3">
+                    <span className="text-3xl font-extrabold text-primary">
+                      {((Number(teacher.subscription_rate) + 10) * 4).toFixed(0)} euros
+                    </span>
+                    <span className="text-slate-500 text-sm">/mois · 4 cours inclus</span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    {(Number(teacher.subscription_rate) + 10).toFixed(0)} euros/cours (dont 10 euros frais plateforme)
+                  </p>
+                </div>
+                {!showSubscribeForm && (
+                  <button
+                    onClick={() => setShowSubscribeForm(true)}
+                    className="bg-primary hover:bg-primary/90 text-white font-bold px-5 py-2.5 rounded-xl transition shrink-0"
+                  >
+                    S'abonner
+                  </button>
+                )}
+              </div>
+
+              {showSubscribeForm && (
+                <div className="mt-5 pt-5 border-t border-gray-100 space-y-4">
+                  {/* Choix du creneau */}
+                  <div>
+                    <p className="text-sm font-semibold text-slate-700 mb-2">Choisissez un creneau hebdomadaire</p>
+                    {availableSlots.length === 0 ? (
+                      <p className="text-sm text-gray-400">Aucun creneau disponible.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {availableSlots.map(({ day, hour }) => {
+                          const key = `${day}:${hour}`;
+                          const active = subSlotDay === day && subSlotHour === hour;
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => { setSubSlotDay(day); setSubSlotHour(hour); }}
+                              className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${active ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-300 hover:border-primary'}`}
+                            >
+                              {day} {hour}h
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Mode visio/presentiel */}
+                  {teacher.presentiel_enabled && teacher.visio_enabled && (
+                    <div>
+                      <p className="text-sm font-semibold text-slate-700 mb-2">Mode</p>
+                      <div className="flex gap-2">
+                        {['presentiel', 'visio'].map(m => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setSubMode(m)}
+                            className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition capitalize ${subMode === m ? 'bg-primary text-white border-primary' : 'bg-white text-gray-700 border-gray-300 hover:border-primary'}`}
+                          >
+                            {m === 'visio' ? 'Visio' : 'Presentiel'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Enfant (si parent) */}
+                  {currentRole === 'parent' && children.length > 0 && (
+                    <div>
+                      <p className="text-sm font-semibold text-slate-700 mb-2">Pour quel enfant ?</p>
+                      <select
+                        value={selectedStudentId}
+                        onChange={e => setSelectedStudentId(e.target.value)}  // eslint-disable-line
+                        className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full max-w-xs"
+                      >
+                        {children.map(c => (
+                          <option key={c.id} value={c.id}>{c.full_name || c.name || 'Enfant'}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="flex gap-3 flex-wrap">
+                    <button
+                      onClick={handleSubscribe}
+                      disabled={subLoading || !subSlotDay || subSlotHour == null}
+                      className="bg-primary hover:bg-primary/90 disabled:opacity-50 text-white font-bold px-5 py-2.5 rounded-xl transition"
+                    >
+                      {subLoading ? 'Chargement...' : 'Confirmer et payer'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowSubscribeForm(false)}
+                      className="text-gray-500 hover:text-gray-700 text-sm px-3 py-2"
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Avis */}
           <section className="bg-white border border-gray-100 rounded-2xl shadow-sm p-6">

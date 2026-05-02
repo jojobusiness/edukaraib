@@ -176,6 +176,9 @@ export default function Profile() {
 
     certificatesUrls: [],
 
+    subscription_enabled: false,
+    subscription_rate: '',
+
     offer_enabled: true,
   });
   const [avatarFile, setAvatarFile] = useState(null);
@@ -515,6 +518,10 @@ export default function Profile() {
         videoUrl,
         trial_enabled: !!profile.trial_enabled,
         certificatesUrls: [...(profile.certificatesUrls || []), ...newCertUrls],
+        subscription_enabled: !!profile.subscription_enabled,
+        subscription_rate: profile.subscription_enabled && profile.subscription_rate !== ''
+          ? Number(profile.subscription_rate)
+          : '',
       };
       delete toSave.uid;
 
@@ -859,6 +866,43 @@ export default function Profile() {
                   value={profile.about_course || ''} onChange={handleChange} rows={4}
                   placeholder="Déroulé d'un cours type, supports utilisés, suivi, devoirs, etc." />
               </div>
+
+              {/* Abonnement mensuel */}
+              <div className="flex items-center justify-between rounded-xl border border-gray-200 p-4 bg-gray-50">
+                <div>
+                  <label className="text-sm font-semibold text-gray-700">Proposer un abonnement mensuel</label>
+                  <p className="text-xs text-gray-500 mt-0.5">Les eleves peuvent s'abonner a un creneau fixe chaque semaine (4 cours/mois).</p>
+                </div>
+                <input
+                  type="checkbox"
+                  name="subscription_enabled"
+                  checked={!!profile.subscription_enabled}
+                  onChange={handleChange}
+                  className="h-5 w-5 shrink-0"
+                />
+              </div>
+              {profile.subscription_enabled && (
+                <div>
+                  <label className="block mb-1 text-sm font-medium text-gray-700">
+                    Tarif abonnement (euros/h) <span className="text-gray-400 font-normal">— peut differ du tarif normal</span>
+                  </label>
+                  <input
+                    type="number"
+                    name="subscription_rate"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                    value={profile.subscription_rate || ''}
+                    onChange={handleChange}
+                    placeholder="ex : 30"
+                    min="0"
+                    max="1000"
+                  />
+                  {profile.subscription_rate !== '' && Number(profile.subscription_rate) > 0 && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Prix affiche aux eleves : <strong>{Number(profile.subscription_rate) + 10} euros/cours</strong> (votre tarif + 10 euros plateforme) = <strong>{(Number(profile.subscription_rate) + 10) * 4} euros/mois</strong>
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Essai gratuit */}
               <div className="flex items-center justify-between rounded-xl border border-gray-200 p-4 bg-gray-50">
