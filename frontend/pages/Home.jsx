@@ -5,6 +5,7 @@ import Footer from '../components/Footer';
 import { db, auth } from '../lib/firebase';
 import { collection, getDocs, doc, getDoc, query, orderBy, limit, where } from 'firebase/firestore';
 import { useSEO } from '../hooks/useSEO';
+import { blogPosts } from '../data/blogPosts';
 
 // ── Pastille "Prof certifié" (≥ 5 avis) ─────────────────────────────────
 function CertifiedBadge({ className = '' }) {
@@ -553,14 +554,14 @@ export default function Home() {
             {/* voile pour lisibilité */}
             <div className="absolute inset-0 bg-white/35" />
 
-            {/* Texte directement sur l’image */}
+            {/* Texte directement sur l'image */}
             <div className="relative px-5 pt-6 pb-6">
               <span className="inline-flex items-center gap-2 mb-4 px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold">
                 🎓 Offre nouvelle année – aux Caraïbes
               </span>
 
               <h1 className="text-4xl font-extrabold text-gray-900 leading-tight">
-                Commencez l’année scolaire
+                Commencez l'année scolaire
                 <span className="block text-primary">avec les bons professeurs</span>
               </h1>
 
@@ -572,7 +573,7 @@ export default function Home() {
               <ul className="mt-4 space-y-2 text-base text-gray-800">
                 <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Professeurs vérifiés aux Caraïbes</li>
                 <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Présentiel ou visio</li>
-                <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Packs économiques pour l’année</li>
+                <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Packs économiques pour l'année</li>
               </ul>
               {/* 🔴 CTA MOBILE */}
               <div className="mt-6">
@@ -608,7 +609,7 @@ export default function Home() {
               </span>
 
               <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-gray-900">
-                Commencez l’année scolaire
+                Commencez l'année scolaire
                 <span className="block text-primary">avec les bons professeurs</span>
               </h1>
 
@@ -620,7 +621,7 @@ export default function Home() {
               <ul className="mt-6 space-y-2 text-gray-700">
                 <li>✔ Professeurs vérifiés aux Caraïbes</li>
                 <li>✔ Présentiel ou visio</li>
-                <li>✔ Packs économiques pour l’année</li>
+                <li>✔ Packs économiques pour l'année</li>
               </ul>
               {/* 🔴 CTA DESKTOP */}
               <div className="mt-8">
@@ -863,7 +864,7 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* RESTE EN DESSOUS (pas un “bloc”) */}
+                      {/* RESTE EN DESSOUS (pas un "bloc") */}
                       <div className="mt-3 px-1">
                         <div className="flex items-center gap-2 text-sm">
                           {rating > 0 ? (
@@ -1021,6 +1022,30 @@ export default function Home() {
             <p className="text-sm text-gray-700">
               EduKaraib est la plateforme locale de mise en relation entre élèves, parents et professeurs aux Caraïbes. Notre mission : rendre l'accompagnement pédagogique accessible à tous, avec une attention particulière aux réalités du territoire.
             </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Derniers articles */}
+      <section className="py-14 px-4 bg-white">
+        <div className="max-w-5xl mx-auto">
+          <div className="flex items-center justify-between mb-8">
+            <h2 className="text-2xl md:text-3xl font-extrabold text-slate-900">Conseils & ressources</h2>
+            <Link to="/blog" className="text-primary text-sm font-semibold hover:underline">Voir tous les articles →</Link>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+            {blogPosts.slice(0, 3).map(post => (
+              <Link
+                key={post.slug}
+                to={`/blog/${post.slug}`}
+                className="group bg-gray-50 border border-gray-100 rounded-2xl p-5 hover:shadow-md transition flex flex-col gap-2"
+              >
+                <span className="text-xs font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-full w-fit">{post.subject}</span>
+                <h3 className="font-bold text-slate-900 leading-snug group-hover:text-primary transition text-sm">{post.title}</h3>
+                <p className="text-gray-500 text-xs leading-relaxed line-clamp-2">{post.description}</p>
+                <span className="text-xs text-gray-400 mt-auto">{post.readingTime} min de lecture</span>
+              </Link>
+            ))}
           </div>
         </div>
       </section>

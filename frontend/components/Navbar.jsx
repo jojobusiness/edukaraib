@@ -69,6 +69,7 @@ export default function Navbar() {
   return (
     <nav className="bg-white shadow-md py-4 px-6 flex justify-between items-center">
       <Link to="/" className="text-xl font-bold text-primary">EduKaraib</Link>
+      <Link to="/blog" className="hidden sm:inline text-sm text-gray-600 hover:text-primary transition">Blog</Link>
       <div className="flex gap-2 sm:gap-4 items-center">
 
         {user ? (
