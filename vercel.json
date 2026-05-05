@@ -9,6 +9,7 @@
     { "src": "/((?!api|.*\\..*).*)", "dest": "/index.html" }
   ],
   "crons": [
-    { "path": "/api/lesson-reminders?key=$CRON_SECRET", "schedule": "*/30 * * * *" }
+    { "path": "/api/lesson-reminders?key=$CRON_SECRET", "schedule": "*/30 * * * *" },
+    { "path": "/api/subscription-renewal-cron?key=$CRON_SECRET", "schedule": "0 6 * * *" }
   ]
 }
