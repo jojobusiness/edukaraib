@@ -7,6 +7,35 @@ import { collection, getDocs, doc, getDoc, query, orderBy, limit, where } from '
 import { useSEO } from '../hooks/useSEO';
 import { blogPosts } from '../data/blogPosts';
 
+// ── Couleurs cartes matières ─────────────────────────────────────────────
+const SUBJECT_CARD_STYLES = {
+  maths:        { bg: 'linear-gradient(135deg,#3b82f6,#4338ca)' },
+  francais:     { bg: 'linear-gradient(135deg,#f43f5e,#be123c)' },
+  anglais:      { bg: 'linear-gradient(135deg,#f59e0b,#d97706)' },
+  physique:     { bg: 'linear-gradient(135deg,#a855f7,#7c3aed)' },
+  creole:       { bg: 'linear-gradient(135deg,#14b8a6,#0d9488)' },
+  svt:          { bg: 'linear-gradient(135deg,#84cc16,#16a34a)' },
+  informatique: { bg: 'linear-gradient(135deg,#64748b,#334155)' },
+  musique:      { bg: 'linear-gradient(135deg,#ec4899,#db2777)' },
+};
+
+// ── Couleurs cartes territoires ───────────────────────────────────────────
+const TERRITORY_STYLES = {
+  '🇬🇵 Guadeloupe':                   { bg: 'linear-gradient(135deg,#0ea5e9,#0369a1)' },
+  '🇲🇶 Martinique':                   { bg: 'linear-gradient(135deg,#10b981,#065f46)' },
+  '🇬🇫 Guyane':                       { bg: 'linear-gradient(135deg,#22c55e,#15803d)' },
+  '🇷🇪 La Réunion':                   { bg: 'linear-gradient(135deg,#f97316,#b45309)' },
+  '🇾🇹 Mayotte':                      { bg: 'linear-gradient(135deg,#38bdf8,#0284c7)' },
+  '🇭🇹 Haïti':                        { bg: 'linear-gradient(135deg,#3b82f6,#1e3a8a)' },
+  '🇩🇴 Rép. Dominicaine':             { bg: 'linear-gradient(135deg,#6366f1,#3730a3)' },
+  '🇯🇲 Jamaïque':                     { bg: 'linear-gradient(135deg,#eab308,#16a34a)' },
+  '🇹🇹 Trinidad':                     { bg: 'linear-gradient(135deg,#ef4444,#991b1b)' },
+  '🇵🇫 Polynésie française':           { bg: 'linear-gradient(135deg,#06b6d4,#0e7490)' },
+  '🇳🇨 Nouvelle-Calédonie':           { bg: 'linear-gradient(135deg,#2dd4bf,#0f766e)' },
+  '🏝️ Saint-Martin / Saint-Barth':    { bg: 'linear-gradient(135deg,#f472b6,#be185d)' },
+  '🌐 En ligne':                       { bg: 'linear-gradient(135deg,#8b5cf6,#4c1d95)' },
+};
+
 // ── Pastille "Prof certifié" (≥ 5 avis) ─────────────────────────────────
 function CertifiedBadge({ className = '' }) {
   return (
@@ -875,49 +904,130 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ───────────────────────── CATÉGORIES POPULAIRES ───────────────────────── */}
-      <section className="py-10 bg-gray-50 border-t">
+      {/* ── MATIÈRES POPULAIRES ──────────────────────────────────────── */}
+      <section className="py-14 bg-white border-t">
         <div className="max-w-7xl mx-auto px-4">
-          <div className="flex items-end justify-between mb-6">
-            <h2 className="text-2xl font-bold">Matières populaires</h2>
-            <Link to="/search" className="text-primary hover:underline">Parcourir</Link>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-            {categories.map((c) => (
-              <button
-                key={c.slug}
-                onClick={() => navigate(`/search?subject=${encodeURIComponent(c.label)}`)}
-                className="group bg-white border rounded-2xl p-4 text-left hover:shadow transition"
-              >
-                <div className="text-2xl mb-2">{c.emoji}</div>
-                <div className="font-semibold group-hover:text-primary">{c.label}</div>
-                <div className="text-xs text-gray-500">
-                  {(() => { const n = getSubjectCount(c.label); return n > 0 ? `${n} professeur${n > 1 ? 's' : ''} disponible${n > 1 ? 's' : ''}` : 'Professeurs disponibles'; })()}
-                </div>
-              </button>
-            ))}
+          <div className="flex items-end justify-between mb-8">
+            <div>
+              <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900">Matières populaires</h2>
+              <p className="text-gray-500 mt-1 text-sm">Choisissez votre matière et trouvez le bon prof</p>
+            </div>
+            <Link to="/search" className="hidden sm:block text-primary text-sm font-semibold hover:underline">Tout parcourir →</Link>
           </div>
 
-          {/* Villes par territoire */}
-          <div className="mt-8 space-y-4">
-            {cityGroups.map((group) => (
-              <div key={group.label}>
-                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                  {group.label}
+          {/* Mobile : scroll horizontal */}
+          <div className="flex sm:hidden gap-3 overflow-x-auto pb-3 -mx-4 px-4 snap-x snap-mandatory">
+            {categories.map((c) => {
+              const n = getSubjectCount(c.label);
+              const style = SUBJECT_CARD_STYLES[c.slug] || { bg: '#00804B', light: '#e6f4ef' };
+              return (
+                <button
+                  key={c.slug}
+                  onClick={() => navigate(`/search?subject=${encodeURIComponent(c.label)}`)}
+                  className="snap-start shrink-0 w-32 rounded-2xl p-4 text-left hover:scale-[1.04] active:scale-95 transition-transform duration-150 shadow-sm"
+                  style={{ background: style.bg }}
+                >
+                  <div className="text-4xl mb-3">{c.emoji}</div>
+                  <div className="font-bold text-white text-sm leading-tight">{c.label}</div>
+                  {n > 0 && (
+                    <div className="mt-2 text-[11px] font-semibold text-white/80">{n} prof{n > 1 ? 's' : ''}</div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Desktop : grille 8 colonnes */}
+          <div className="hidden sm:grid grid-cols-4 md:grid-cols-8 gap-3">
+            {categories.map((c) => {
+              const n = getSubjectCount(c.label);
+              const style = SUBJECT_CARD_STYLES[c.slug] || { bg: '#00804B' };
+              return (
+                <button
+                  key={c.slug}
+                  onClick={() => navigate(`/search?subject=${encodeURIComponent(c.label)}`)}
+                  className="group rounded-2xl p-4 text-left hover:scale-[1.05] hover:shadow-lg transition-all duration-200 shadow-sm"
+                  style={{ background: style.bg }}
+                >
+                  <div className="text-4xl mb-3">{c.emoji}</div>
+                  <div className="font-bold text-white text-sm leading-tight">{c.label}</div>
+                  {n > 0 && (
+                    <div className="mt-2 inline-flex items-center bg-white/20 text-white text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                      {n} prof{n > 1 ? 's' : ''}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ── EXPLORER PAR TERRITOIRE ──────────────────────────────────── */}
+      <section className="py-14 bg-gray-50 border-t">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="mb-8">
+            <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900">Explorer par territoire</h2>
+            <p className="text-gray-500 mt-1 text-sm">Des professeurs partout dans la Caraïbe, les DOM-TOM et au-delà</p>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {cityGroups.map((group) => {
+              const tStyle = TERRITORY_STYLES[group.label] || { bg: 'linear-gradient(135deg,#00804B,#006038)', border: '#005a30' };
+              const mainCity = group.cities[0];
+              const extraCount = group.cities.length - 3;
+              return (
+                <div
+                  key={group.label}
+                  className="group relative rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-200 cursor-pointer hover:-translate-y-1"
+                  style={{ background: tStyle.bg }}
+                  onClick={() => navigate(`/search?city=${encodeURIComponent(mainCity)}`)}
+                >
+                  {/* Motif déco */}
+                  <div className="absolute -right-6 -top-6 w-28 h-28 rounded-full bg-white/10 pointer-events-none" />
+                  <div className="absolute -right-2 bottom-4 w-16 h-16 rounded-full bg-white/5 pointer-events-none" />
+
+                  <div className="relative p-5">
+                    {/* Emoji + nom */}
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div>
+                        <div className="text-3xl mb-1">{group.label.match(/[\u{1F1E0}-\u{1F1FF}][\u{1F1E0}-\u{1F1FF}]|\u{1F30D}|\u{1F30E}|\u{1F30F}|\u{1F310}|\u{1F5FA}|\u{1F3DD}/u)?.[0] || '🌍'}</div>
+                        <div className="font-extrabold text-white text-base leading-tight">
+                          {group.label.replace(/^[\u{1F1E0}-\u{1F1FF}\u{1F30D}-\u{1F5FA}🌐🏝️\s]+/u, '').trim() || group.label}
+                        </div>
+                      </div>
+                      <div className="shrink-0 bg-white/20 text-white text-[11px] font-bold px-2 py-0.5 rounded-full mt-0.5">
+                        {group.cities.length} ville{group.cities.length > 1 ? 's' : ''}
+                      </div>
+                    </div>
+
+                    {/* Séparateur */}
+                    <div className="h-px bg-white/20 mb-3" />
+
+                    {/* Pills villes cliquables */}
+                    <div className="flex flex-wrap gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      {group.cities.slice(0, 3).map((city) => (
+                        <button
+                          key={city}
+                          onClick={(e) => { e.stopPropagation(); navigate(`/search?city=${encodeURIComponent(city)}`); }}
+                          className="text-[11px] font-semibold text-white bg-white/20 hover:bg-white/35 px-2.5 py-1 rounded-full transition"
+                        >
+                          {city}
+                        </button>
+                      ))}
+                      {extraCount > 0 && (
+                        <span className="text-[11px] font-semibold text-white/60 px-1 py-1">+{extraCount}</span>
+                      )}
+                    </div>
+
+                    {/* CTA hover */}
+                    <div className="mt-4 text-xs text-white/70 group-hover:text-white font-semibold flex items-center gap-1 transition-colors">
+                      Voir les professeurs <span className="group-hover:translate-x-1 transition-transform inline-block">→</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {group.cities.map((city) => (
-                    <button
-                      key={city}
-                      onClick={() => navigate(`/search?city=${encodeURIComponent(city)}`)}
-                      className="px-3 py-1.5 rounded-full bg-white border border-gray-200 text-sm text-gray-700 hover:border-primary hover:text-primary hover:shadow-sm transition"
-                    >
-                      {city}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
