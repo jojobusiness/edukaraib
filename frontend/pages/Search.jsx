@@ -282,7 +282,7 @@ export default function Search() {
             <option value="Adulte">Adulte</option>
           </select>
           <select value={city} onChange={e => setCity(e.target.value)} className="shrink-0 border border-gray-300 rounded-full px-3 py-1.5 text-sm bg-white">
-            <option value="">Toute la au Caraïbe</option>
+            <option value="">Toute la Caraïbe</option>
             {Array.from(new Set(teachers.map(t => (t.city || t.location || '').trim()).filter(Boolean))).sort().map(c => (
               <option key={c} value={c}>{c}</option>
             ))}

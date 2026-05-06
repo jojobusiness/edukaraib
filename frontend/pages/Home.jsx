@@ -183,7 +183,7 @@ export default function Home() {
     navigate(`/search?${params.toString()}`);
   };
 
-  // ── Professeurs ───────────────────────────────────────────────
+  // ── Professeurs + agrégation notes (chargement unique) ──────────
   const [teachers, setTeachers] = useState([]);
   const [loadingTeachers, setLoadingTeachers] = useState(true);
   const [teacherMap, setTeacherMap] = useState(new Map());
@@ -225,10 +225,39 @@ export default function Home() {
 
         all = (all || []).filter((t) => t.offer_enabled !== false);
 
-        // Tri : mieux notés à gauche (>=4.7), autres en aléatoire
-        const withMeta = (all || []).map((p) => ({
+        // 3) Agrégation notes en parallèle (chunks de 10)
+        const ids = all.map(t => t.id).filter(Boolean);
+        const chunks = [];
+        for (let i = 0; i < ids.length; i += 10) chunks.push(ids.slice(i, i + 10));
+
+        const stats = new Map();
+        await Promise.all(chunks.map(async (chunk) => {
+          try {
+            const snap = await getDocs(query(collection(db, 'reviews'), where('teacher_id', 'in', chunk)));
+            snap.docs.forEach(d => {
+              const r = d.data();
+              const tid = r.teacher_id;
+              const rating = Number(r.rating || 0);
+              if (!tid || rating <= 0) return;
+              const prev = stats.get(tid) || { sum: 0, count: 0 };
+              prev.sum += rating;
+              prev.count += 1;
+              stats.set(tid, prev);
+            });
+          } catch {}
+        }));
+
+        // 4) Enrichir + trier
+        const enriched = all.map(t => {
+          const s = stats.get(t.id);
+          return s
+            ? { ...t, _avgRating: s.sum / s.count, _reviewsCount: s.count }
+            : { ...t, _avgRating: 0, _reviewsCount: 0 };
+        });
+
+        const withMeta = enriched.map((p) => ({
           ...p,
-          _rating: Number(p.avgRating ?? p.rating ?? 0),
+          _rating: Number(p._avgRating ?? p.avgRating ?? p.rating ?? 0),
         }));
         const top = withMeta.filter((p) => p._rating >= 4.7).sort((a, b) => b._rating - a._rating);
         const rest = withMeta.filter((p) => p._rating < 4.7);
@@ -252,7 +281,7 @@ export default function Home() {
     run();
   }, []);
 
-  // ── Avis (réels) ─────────────────────────────────────────────
+  // ── Avis (réels) — batch lookup reviewer + prof ───────────────
   const [reviews, setReviews] = useState([]);
   const [hasRealReviews, setHasRealReviews] = useState(false);
 
@@ -268,49 +297,48 @@ export default function Home() {
           .map((d) => ({ id: d.id, ...d.data() }))
           .filter((r) => (r.comment?.trim()?.length ?? 0) > 0 && Number(r.rating) > 0);
 
-        // Enrichir avec users/{user_id} si nom/avatar manquent (reviewer)
-        // + enrichir avec users/{teacher_id} pour le nom/matière du prof
-        list = await Promise.all(
-          list.map(async (r) => {
-            // 1) Données du reviewer
-            if (!(r.fullName || r.userName || r.reviewerName || r.userAvatar || r.photoURL)) {
-              const reviewerId = r.user_id || r.student_id || r.parent_id;
-              if (reviewerId) {
-                try {
-                  const us = await getDoc(doc(db, 'users', reviewerId));
-                  if (us.exists()) {
-                    const u = us.data();
-                    r.fullName =
-                      r.fullName ||
-                      u.fullName ||
-                      u.name ||
-                      [u.firstName, u.lastName].filter(Boolean).join(' ') ||
-                      'Utilisateur';
-                    r.userAvatar = r.userAvatar || u.avatarUrl || u.photoURL;
-                  }
-                } catch {}
-              }
-            }
+        // Collecter tous les UIDs uniques à résoudre
+        const reviewerIds = new Set();
+        const teacherIds = new Set();
+        list.forEach(r => {
+          if (!(r.fullName || r.userName || r.reviewerName || r.userAvatar || r.photoURL)) {
+            const rid = r.user_id || r.student_id || r.parent_id;
+            if (rid) reviewerIds.add(rid);
+          }
+          if (r.teacher_id && !(r._teacherFullName || r._teacherSubjects)) {
+            teacherIds.add(r.teacher_id);
+          }
+        });
 
-            // 2) Données du prof (toujours récupérées depuis users/{teacher_id})
-            if (r.teacher_id && !(r._teacherFullName || r._teacherSubjects)) {
-              try {
-                const ts = await getDoc(doc(db, 'users', r.teacher_id));
-                if (ts.exists()) {
-                  const t = ts.data();
-                  r._teacherFullName =
-                    t.fullName ||
-                    t.name ||
-                    [t.firstName, t.lastName].filter(Boolean).join(' ') ||
-                    'Professeur';
-                  r._teacherSubjects = t.subjects ?? t.subject ?? t.main_subject ?? '';
-                }
-              } catch {}
-            }
+        // Batch fetch en parallèle
+        const allIds = [...new Set([...reviewerIds, ...teacherIds])];
+        const userCache = new Map();
+        await Promise.all(allIds.map(async (uid) => {
+          try {
+            const snap = await getDoc(doc(db, 'users', uid));
+            if (snap.exists()) userCache.set(uid, snap.data());
+          } catch {}
+        }));
 
-            return r;
-          })
-        );
+        // Enrichir les avis depuis le cache
+        list = list.map(r => {
+          if (!(r.fullName || r.userName || r.reviewerName || r.userAvatar || r.photoURL)) {
+            const rid = r.user_id || r.student_id || r.parent_id;
+            const u = rid ? userCache.get(rid) : null;
+            if (u) {
+              r.fullName = r.fullName || u.fullName || u.name || [u.firstName, u.lastName].filter(Boolean).join(' ') || 'Utilisateur';
+              r.userAvatar = r.userAvatar || u.avatarUrl || u.photoURL;
+            }
+          }
+          if (r.teacher_id && !(r._teacherFullName || r._teacherSubjects)) {
+            const t = userCache.get(r.teacher_id);
+            if (t) {
+              r._teacherFullName = t.fullName || t.name || [t.firstName, t.lastName].filter(Boolean).join(' ') || 'Professeur';
+              r._teacherSubjects = t.subjects ?? t.subject ?? t.main_subject ?? '';
+            }
+          }
+          return r;
+        });
 
         setReviews(list);
         setHasRealReviews((list?.length || 0) > 0);
@@ -321,61 +349,6 @@ export default function Home() {
     };
     run();
   }, []);
-
-  // ── Agrégation avis par prof (avgRating + reviewsCount) ─────────
-  useEffect(() => {
-    const run = async () => {
-      try {
-        if (!teachers?.length) return;
-
-        const ids = teachers.map(t => t.id).filter(Boolean);
-
-        // Firestore: where("in") max 10 éléments
-        const chunks = [];
-        for (let i = 0; i < ids.length; i += 10) chunks.push(ids.slice(i, i + 10));
-
-        const stats = new Map(); // teacherId => { sum, count }
-
-        for (const chunk of chunks) {
-          const qRev = query(
-            collection(db, "reviews"),
-            where("teacher_id", "in", chunk)
-          );
-          const snap = await getDocs(qRev);
-
-          snap.docs.forEach(d => {
-            const r = d.data();
-            const tid = r.teacher_id;
-            const rating = Number(r.rating || 0);
-            if (!tid || rating <= 0) return;
-
-            const prev = stats.get(tid) || { sum: 0, count: 0 };
-            prev.sum += rating;
-            prev.count += 1;
-            stats.set(tid, prev);
-          });
-        }
-
-        // Injecte avg + count dans teachers
-        setTeachers(prev =>
-          prev.map(t => {
-            const s = stats.get(t.id);
-            if (!s) return { ...t, _avgRating: 0, _reviewsCount: 0 };
-            return {
-              ...t,
-              _avgRating: s.sum / s.count,
-              _reviewsCount: s.count,
-            };
-          })
-        );
-      } catch (e) {
-        console.error("Aggregation reviews failed:", e);
-      }
-    };
-
-    run();
-    // important: on relance quand les teachers changent
-  }, [teachers.length]);
 
   // ── Catégories / Villes ──────────────────────────────────────
   const categories = useMemo(
@@ -945,30 +918,6 @@ export default function Home() {
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ───────────────────────── COMMENT ÇA MARCHE ───────────────────────── */}
-      <section className="py-12 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4">
-          <h2 className="text-2xl font-bold mb-6">Comment ça marche ?</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white border rounded-2xl p-6">
-              <div className="text-3xl mb-3">🔎</div>
-              <h3 className="font-semibold mb-1">1. Recherchez</h3>
-              <p className="text-gray-600 text-sm">Filtrez par matière, ville, niveau et disponibilités pour trouver le bon prof.</p>
-            </div>
-            <div className="bg-white border rounded-2xl p-6">
-              <div className="text-3xl mb-3">💬</div>
-              <h3 className="font-semibold mb-1">2. Contactez</h3>
-              <p className="text-gray-600 text-sm">Discutez gratuitement via la messagerie sécurisée pour préciser vos besoins.</p>
-            </div>
-            <div className="bg-white border rounded-2xl p-6">
-              <div className="text-3xl mb-3">📅</div>
-              <h3 className="font-semibold mb-1">3. Réservez</h3>
-              <p className="text-gray-600 text-sm">Payez en ligne et retrouvez votre cours au bon moment.</p>
-            </div>
           </div>
         </div>
       </section>

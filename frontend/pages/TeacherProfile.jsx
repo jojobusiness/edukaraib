@@ -253,18 +253,29 @@ export default function TeacherProfile() {
     (async () => {
       setLoadingSimilar(true);
       try {
-        // 1) On récupère des profs qui ont la même matière (subjects)
-        const qTeachers = query(
-          collection(db, 'users'),
-          where('role', '==', 'teacher'),
-          where('subjects', '==', mainSubject)
-        );
+        // Deux requêtes en parallèle : subjects array vs string
+        const [snapArray, snapString] = await Promise.all([
+          getDocs(query(
+            collection(db, 'users'),
+            where('role', '==', 'teacher'),
+            where('subjects', 'array-contains', mainSubject)
+          )).catch(() => ({ docs: [] })),
+          getDocs(query(
+            collection(db, 'users'),
+            where('role', '==', 'teacher'),
+            where('subjects', '==', mainSubject)
+          )).catch(() => ({ docs: [] })),
+        ]);
 
-        const snap = await getDocs(qTeachers);
-        const candidates = snap.docs
+        const seen = new Set();
+        const candidates = [...snapArray.docs, ...snapString.docs]
           .map(d => ({ id: d.id, ...d.data() }))
-          .filter(t => t.id !== teacherId)
-          .filter(t => t.offer_enabled !== false);
+          .filter(t => {
+            if (t.id === teacherId || t.offer_enabled === false) return false;
+            if (seen.has(t.id)) return false;
+            seen.add(t.id);
+            return true;
+          });
         // Limite raisonnable
         const shortlist = candidates.slice(0, 10);
 
