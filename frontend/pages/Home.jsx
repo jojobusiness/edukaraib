@@ -7,33 +7,33 @@ import { collection, getDocs, doc, getDoc, query, orderBy, limit, where } from '
 import { useSEO } from '../hooks/useSEO';
 import { blogPosts } from '../data/blogPosts';
 
-// ── Couleurs cartes matières ─────────────────────────────────────────────
+// ── Couleurs cartes matières (accent discret sur fond blanc) ─────────────
 const SUBJECT_CARD_STYLES = {
-  maths:        { bg: 'linear-gradient(135deg,#3b82f6,#4338ca)' },
-  francais:     { bg: 'linear-gradient(135deg,#f43f5e,#be123c)' },
-  anglais:      { bg: 'linear-gradient(135deg,#f59e0b,#d97706)' },
-  physique:     { bg: 'linear-gradient(135deg,#a855f7,#7c3aed)' },
-  creole:       { bg: 'linear-gradient(135deg,#14b8a6,#0d9488)' },
-  svt:          { bg: 'linear-gradient(135deg,#84cc16,#16a34a)' },
-  informatique: { bg: 'linear-gradient(135deg,#64748b,#334155)' },
-  musique:      { bg: 'linear-gradient(135deg,#ec4899,#db2777)' },
+  maths:        { accent: '#3b82f6' },
+  francais:     { accent: '#e11d48' },
+  anglais:      { accent: '#d97706' },
+  physique:     { accent: '#7c3aed' },
+  creole:       { accent: '#0d9488' },
+  svt:          { accent: '#16a34a' },
+  informatique: { accent: '#475569' },
+  musique:      { accent: '#db2777' },
 };
 
-// ── Couleurs cartes territoires ───────────────────────────────────────────
+// ── Couleurs cartes territoires (palette sombre cohérente) ───────────────
 const TERRITORY_STYLES = {
-  '🇬🇵 Guadeloupe':                   { bg: 'linear-gradient(135deg,#0ea5e9,#0369a1)' },
-  '🇲🇶 Martinique':                   { bg: 'linear-gradient(135deg,#10b981,#065f46)' },
-  '🇬🇫 Guyane':                       { bg: 'linear-gradient(135deg,#22c55e,#15803d)' },
-  '🇷🇪 La Réunion':                   { bg: 'linear-gradient(135deg,#f97316,#b45309)' },
-  '🇾🇹 Mayotte':                      { bg: 'linear-gradient(135deg,#38bdf8,#0284c7)' },
-  '🇭🇹 Haïti':                        { bg: 'linear-gradient(135deg,#3b82f6,#1e3a8a)' },
-  '🇩🇴 Rép. Dominicaine':             { bg: 'linear-gradient(135deg,#6366f1,#3730a3)' },
-  '🇯🇲 Jamaïque':                     { bg: 'linear-gradient(135deg,#eab308,#16a34a)' },
-  '🇹🇹 Trinidad':                     { bg: 'linear-gradient(135deg,#ef4444,#991b1b)' },
-  '🇵🇫 Polynésie française':           { bg: 'linear-gradient(135deg,#06b6d4,#0e7490)' },
-  '🇳🇨 Nouvelle-Calédonie':           { bg: 'linear-gradient(135deg,#2dd4bf,#0f766e)' },
-  '🏝️ Saint-Martin / Saint-Barth':    { bg: 'linear-gradient(135deg,#f472b6,#be185d)' },
-  '🌐 En ligne':                       { bg: 'linear-gradient(135deg,#8b5cf6,#4c1d95)' },
+  '🇬🇵 Guadeloupe':                   { bg: 'linear-gradient(135deg,#1e3a5f,#0f2340)' },
+  '🇲🇶 Martinique':                   { bg: 'linear-gradient(135deg,#14432a,#0a2918)' },
+  '🇬🇫 Guyane':                       { bg: 'linear-gradient(135deg,#1a4731,#0e2e1e)' },
+  '🇷🇪 La Réunion':                   { bg: 'linear-gradient(135deg,#4a2008,#2d1305)' },
+  '🇾🇹 Mayotte':                      { bg: 'linear-gradient(135deg,#0c3559,#071e35)' },
+  '🇭🇹 Haïti':                        { bg: 'linear-gradient(135deg,#1a2e5e,#0e1b3a)' },
+  '🇩🇴 Rép. Dominicaine':             { bg: 'linear-gradient(135deg,#1e2060,#12143d)' },
+  '🇯🇲 Jamaïque':                     { bg: 'linear-gradient(135deg,#2a3a10,#192208)' },
+  '🇹🇹 Trinidad':                     { bg: 'linear-gradient(135deg,#3d1010,#220808)' },
+  '🇵🇫 Polynésie française':           { bg: 'linear-gradient(135deg,#0c3545,#07202b)' },
+  '🇳🇨 Nouvelle-Calédonie':           { bg: 'linear-gradient(135deg,#0f3535,#082020)' },
+  '🏝️ Saint-Martin / Saint-Barth':    { bg: 'linear-gradient(135deg,#3d1535,#220a1e)' },
+  '🌐 En ligne':                       { bg: 'linear-gradient(135deg,#1e1560,#110d3a)' },
 };
 
 // ── Pastille "Prof certifié" (≥ 5 avis) ─────────────────────────────────
@@ -559,23 +559,22 @@ export default function Home() {
             {/* Texte directement sur l'image */}
             <div className="relative px-5 pt-6 pb-6">
               <span className="inline-flex items-center gap-2 mb-4 px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold">
-                🎓 Offre nouvelle année – aux Caraïbes
+                🎓 Cours particuliers aux Caraïbes
               </span>
 
               <h1 className="text-4xl font-extrabold text-gray-900 leading-tight">
-                Commencez l'année scolaire
-                <span className="block text-primary">avec les bons professeurs</span>
+                Trouvez le bon prof,
+                <span className="block text-primary">où que vous soyez</span>
               </h1>
 
               <p className="mt-3 text-base text-gray-800 max-w-[32ch]">
-                1 à 2 heures de cours offertes avec nos packs de soutien scolaire.
-                Professeurs locaux, présentiel ou visio.
+                Des professeurs vérifiés dans toute la Caraïbe, en présentiel ou visio. Réservez en quelques clics.
               </p>
 
               <ul className="mt-4 space-y-2 text-base text-gray-800">
                 <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Professeurs vérifiés aux Caraïbes</li>
                 <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Présentiel ou visio</li>
-                <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Packs économiques pour l'année</li>
+                <li className="flex items-center gap-2"><span className="text-primary font-bold">✔</span> Paiement sécurisé, remboursement possible</li>
               </ul>
               {/* 🔴 CTA MOBILE */}
               <div className="mt-6">
@@ -607,23 +606,22 @@ export default function Home() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
             <div className="hidden lg:block">
               <span className="inline-block mb-4 px-4 py-2 rounded-full bg-primary text-white text-sm font-semibold">
-                🎓 Offre nouvelle année – aux Caraïbes
+                🎓 Cours particuliers aux Caraïbes
               </span>
 
               <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-gray-900">
-                Commencez l'année scolaire
-                <span className="block text-primary">avec les bons professeurs</span>
+                Trouvez le bon prof,
+                <span className="block text-primary">où que vous soyez</span>
               </h1>
 
               <p className="mt-4 text-lg text-gray-700 max-w-xl">
-                1 à 2 heures de cours offertes avec nos packs de soutien scolaire.
-                Professeurs locaux, présentiel ou visio.
+                Des professeurs vérifiés dans toute la Caraïbe, en présentiel ou visio. Réservez en quelques clics.
               </p>
 
               <ul className="mt-6 space-y-2 text-gray-700">
                 <li>✔ Professeurs vérifiés aux Caraïbes</li>
                 <li>✔ Présentiel ou visio</li>
-                <li>✔ Packs économiques pour l'année</li>
+                <li>✔ Paiement sécurisé, remboursement possible</li>
               </ul>
               {/* 🔴 CTA DESKTOP */}
               <div className="mt-8">
@@ -919,18 +917,19 @@ export default function Home() {
           <div className="flex sm:hidden gap-3 overflow-x-auto pb-3 -mx-4 px-4 snap-x snap-mandatory">
             {categories.map((c) => {
               const n = getSubjectCount(c.label);
-              const style = SUBJECT_CARD_STYLES[c.slug] || { bg: '#00804B', light: '#e6f4ef' };
+              const { accent = '#00804B' } = SUBJECT_CARD_STYLES[c.slug] || {};
               return (
                 <button
                   key={c.slug}
                   onClick={() => navigate(`/search?subject=${encodeURIComponent(c.label)}`)}
-                  className="snap-start shrink-0 w-32 rounded-2xl p-4 text-left hover:scale-[1.04] active:scale-95 transition-transform duration-150 shadow-sm"
-                  style={{ background: style.bg }}
+                  className="snap-start shrink-0 w-32 bg-white rounded-2xl p-4 text-left border border-gray-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all duration-150"
                 >
-                  <div className="text-4xl mb-3">{c.emoji}</div>
-                  <div className="font-bold text-white text-sm leading-tight">{c.label}</div>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-2xl mb-3" style={{ background: accent + '18' }}>
+                    {c.emoji}
+                  </div>
+                  <div className="font-bold text-gray-800 text-sm leading-tight">{c.label}</div>
                   {n > 0 && (
-                    <div className="mt-2 text-[11px] font-semibold text-white/80">{n} prof{n > 1 ? 's' : ''}</div>
+                    <div className="mt-1.5 text-[11px] font-medium text-gray-400">{n} prof{n > 1 ? 's' : ''}</div>
                   )}
                 </button>
               );
@@ -941,20 +940,19 @@ export default function Home() {
           <div className="hidden sm:grid grid-cols-4 md:grid-cols-8 gap-3">
             {categories.map((c) => {
               const n = getSubjectCount(c.label);
-              const style = SUBJECT_CARD_STYLES[c.slug] || { bg: '#00804B' };
+              const { accent = '#00804B' } = SUBJECT_CARD_STYLES[c.slug] || {};
               return (
                 <button
                   key={c.slug}
                   onClick={() => navigate(`/search?subject=${encodeURIComponent(c.label)}`)}
-                  className="group rounded-2xl p-4 text-left hover:scale-[1.05] hover:shadow-lg transition-all duration-200 shadow-sm"
-                  style={{ background: style.bg }}
+                  className="group bg-white rounded-2xl p-4 text-left border border-gray-100 shadow-sm hover:shadow-md hover:-translate-y-1 hover:border-gray-200 transition-all duration-200"
                 >
-                  <div className="text-4xl mb-3">{c.emoji}</div>
-                  <div className="font-bold text-white text-sm leading-tight">{c.label}</div>
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl mb-3 transition-transform group-hover:scale-110" style={{ background: accent + '18' }}>
+                    {c.emoji}
+                  </div>
+                  <div className="font-bold text-gray-800 text-sm leading-tight">{c.label}</div>
                   {n > 0 && (
-                    <div className="mt-2 inline-flex items-center bg-white/20 text-white text-[11px] font-semibold px-2 py-0.5 rounded-full">
-                      {n} prof{n > 1 ? 's' : ''}
-                    </div>
+                    <div className="mt-1.5 text-[11px] font-medium text-gray-400">{n} prof{n > 1 ? 's' : ''}</div>
                   )}
                 </button>
               );
