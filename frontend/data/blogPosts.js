@@ -279,4 +279,144 @@ export const blogPosts = [
       },
     ],
   },
+  {
+    slug: 'trouver-professeur-particulier-guadeloupe',
+    title: 'Comment trouver un bon professeur particulier en Guadeloupe',
+    description: 'Guide complet pour trouver le meilleur professeur particulier en Guadeloupe : où chercher, comment comparer les profils, quels tarifs attendre et comment réserver en ligne depuis Pointe-à-Pitre, Basse-Terre ou les Abymes.',
+    date: '2026-05-10',
+    subject: 'Conseils',
+    island: 'Guadeloupe',
+    readingTime: 5,
+    sections: [
+      {
+        heading: 'Le marché du soutien scolaire en Guadeloupe',
+        content: `En Guadeloupe, la demande en cours particuliers est en constante progression. Les familles guadeloupéennes font face aux mêmes pressions scolaires que celles de métropole, avec des spécificités locales : éloignement géographique entre les communes, programme de l'Académie de Guadeloupe, et une offre de soutien scolaire moins dense qu'en France hexagonale. Que ce soit pour préparer le brevet, le baccalauréat ou simplement combler des lacunes en primaire, le recours à un professeur particulier est devenu une pratique courante chez les familles guadeloupéennes.`,
+      },
+      {
+        heading: 'Où trouver un professeur particulier en Guadeloupe ?',
+        content: `Les familles guadeloupéennes ont plusieurs options. Le bouche-à-oreille fonctionne bien mais limite le choix aux contacts directs. Les groupes Facebook locaux permettent de trouver des annonces, mais sans vérification des profils ni système de paiement sécurisé. Les plateformes spécialisées comme EduKaraib rassemblent des professeurs vérifiés avec des avis authentiques de parents et d'élèves, des profils détaillés et un système de paiement intégré. Pour les familles de Pointe-à-Pitre, Basse-Terre, Les Abymes, Baie-Mahault ou Saint-François, EduKaraib propose des filtres par ville pour trouver un professeur disponible en présentiel ou en visio.`,
+      },
+      {
+        heading: 'Comment choisir le bon professeur ?',
+        content: `Avant de réserver, consultez attentivement le profil du professeur : ses matières, les niveaux qu'il enseigne (primaire, collège, lycée, supérieur), ses disponibilités et son mode de cours (présentiel ou visio). Les avis laissés par d'autres familles guadeloupéennes sont un indicateur précieux pour évaluer la qualité pédagogique et la régularité du professeur. Un bon professeur particulier en Guadeloupe doit s'aligner sur le programme de l'Académie de Guadeloupe et adapter sa méthode au profil de l'élève. Profitez des essais gratuits disponibles sur certains profils pour tester le courant avant de vous engager sur un pack.`,
+      },
+      {
+        heading: 'Quels tarifs pour un cours particulier en Guadeloupe ?',
+        content: `Les tarifs en Guadeloupe varient entre 20 et 50 euros de l'heure selon la matière, le niveau et l'expérience du professeur. Les cours de terminale et les préparations aux concours sont tarifés plus haut que les cours de primaire ou de collège. Sur EduKaraib, les packs 5h et 10h permettent de réaliser jusqu'à 10 % d'économie. Important : 50 % des dépenses de cours particuliers sont déductibles des impôts pour les résidents français (crédit d'impôt pour l'emploi à domicile), ce qui réduit significativement le coût réel pour les familles guadeloupéennes.`,
+      },
+      {
+        heading: 'Présentiel ou visio en Guadeloupe : que choisir ?',
+        content: `En Guadeloupe, le choix entre présentiel et visio dépend de plusieurs facteurs. Le présentiel est idéal pour les jeunes élèves du primaire et du collège qui ont besoin d'une présence physique pour maintenir leur concentration. La visio est recommandée pour les lycéens et les étudiants autonomes, et pour accéder à des professeurs spécialisés qui ne sont pas disponibles localement. Entre les communes (Grande-Terre, Basse-Terre, Marie-Galante), la visio permet d'éviter de longs trajets et d'accéder à des professeurs de qualité quel que soit l'endroit où vous habitez.`,
+      },
+      {
+        heading: 'Comment réserver sur EduKaraib depuis la Guadeloupe ?',
+        content: `La démarche est entièrement en ligne. Créez un compte gratuit sur EduKaraib, recherchez un professeur en filtrant par matière et par ville, consultez les profils et les avis, puis réservez en quelques clics. Le paiement est sécurisé par carte bancaire, Klarna en 3 fois sans frais ou Apple Pay. Le professeur est prévenu automatiquement, vous recevez une confirmation par email et un rappel 30 minutes avant chaque cours. Les factures sont téléchargeables depuis votre tableau de bord pour faciliter la déclaration du crédit d'impôt.`,
+      },
+    ],
+  },
+  {
+    slug: 'reussir-bac-maths-martinique',
+    title: 'Réussir son Bac de Maths en Martinique : méthodes et ressources',
+    description: 'Conseils concrets pour préparer et réussir son baccalauréat de mathématiques en Martinique : programme de Terminale, méthodes de révision, quand commencer les cours particuliers et ressources disponibles localement.',
+    date: '2026-05-12',
+    subject: 'Mathématiques',
+    island: 'Martinique',
+    readingTime: 5,
+    sections: [
+      {
+        heading: 'Le Bac de Maths en Martinique : ce qu\'il faut savoir',
+        content: `Les lycéens de Martinique passent les mêmes épreuves de mathématiques que leurs homologues de métropole. En Terminale Générale, les mathématiques sont proposées en tant que spécialité ou en enseignement de mathématiques complémentaires. Le programme est national, défini par l'Éducation nationale, et les coefficients sont identiques. La correction des copies est effectuée par l'Académie de Martinique, ce qui peut entraîner de légères variations dans les attentes pédagogiques locales. Un professeur particulier martiniquais connaît ces nuances et peut adapter sa préparation en conséquence.`,
+      },
+      {
+        heading: 'Les chapitres les plus redoutés en Terminale Maths',
+        content: `En spécialité Maths, les chapitres qui concentrent le plus de difficultés sont les suites (arithmétiques et géométriques), les fonctions exponentielles et logarithmiques, la dérivation et l'étude de fonctions, les probabilités et la loi normale, ainsi que les nombres complexes et la géométrie dans l'espace. Ce sont ces chapitres qui représentent l'essentiel des points disponibles lors des épreuves. Identifier ses lacunes tôt et les travailler avec un professeur particulier est la stratégie la plus efficace pour obtenir une bonne note.`,
+      },
+      {
+        heading: 'Méthodes de révision efficaces',
+        content: `La répétition espacée est la méthode scientifiquement la plus validée pour ancrer des notions mathématiques. Concrètement, cela signifie retravailler un exercice 1 jour après, puis 3 jours, puis 1 semaine plus tard. Associez cette méthode à la résolution d'annales du baccalauréat (disponibles sur Eduscol) pour vous familiariser avec le format et le niveau d'exigence. Travaillez chaque sujet sous forme chronométrée : l'épreuve de maths dure 4 heures, et la gestion du temps est souvent décisive.`,
+      },
+      {
+        heading: 'Quand commencer les cours particuliers de maths en Martinique ?',
+        content: `Le meilleur moment pour commencer un accompagnement est le début du deuxième trimestre de Terminale. Les bases sont posées, les premières évaluations ont révélé les lacunes, et il reste assez de temps pour les combler avant les épreuves. Attendre les deux derniers mois avant le bac est une erreur fréquente : le volume à rattraper est trop important. Un accompagnement régulier de 2h par semaine sur 4 à 5 mois donne de bien meilleurs résultats qu'une révision intensive de dernière minute. Pour les élèves qui ont des lacunes depuis la Première, commencer dès la rentrée de Terminale est encore plus efficace.`,
+      },
+      {
+        heading: 'Trouver un prof de maths en Martinique',
+        content: `Sur EduKaraib, plusieurs professeurs de mathématiques sont disponibles en Martinique, en présentiel (Fort-de-France, Le Lamentin, Schoelcher, Le Robert) ou en visioconférence. Filtrez par "Mathématiques" et "Lycée" dans la barre de recherche pour voir les profils disponibles. Lisez les avis laissés par d'autres familles martiniquaises et vérifiez l'expérience du professeur avec les épreuves du baccalauréat. Le premier cours d'essai gratuit, disponible sur certains profils, permet de tester la méthode sans engagement.`,
+      },
+      {
+        heading: 'Ressources complémentaires gratuites',
+        content: `Plusieurs ressources gratuites peuvent compléter les cours particuliers. Khan Academy en français propose des exercices interactifs sur tous les chapitres du programme national. Les chaînes YouTube "Yvan Monka" et "Le Bon Prof" sont particulièrement complètes pour le programme de Terminale. Les annales officielles du baccalauréat sont disponibles gratuitement sur le site d'Eduscol. Certains professeurs sur EduKaraib proposent également des séances en petit groupe en visio, moins chères que les cours individuels tout en offrant un encadrement professionnel.`,
+      },
+    ],
+  },
+  {
+    slug: 'cours-physique-chimie-caraibes',
+    title: 'Cours particuliers de Physique-Chimie aux Caraïbes : trouver le bon professeur',
+    description: 'Physique-chimie est l\'une des matières les plus redoutées au lycée. Découvrez comment trouver un professeur particulier en physique-chimie en Martinique, Guadeloupe et Guyane, les méthodes qui fonctionnent et les tarifs pratiqués.',
+    date: '2026-05-14',
+    subject: 'Sciences',
+    island: 'Caraïbes',
+    readingTime: 5,
+    sections: [
+      {
+        heading: 'Pourquoi la physique-chimie est si difficile pour les lycéens caribéens',
+        content: `La physique-chimie est l'une des matières avec le plus fort taux de difficultés signalées par les lycéens en Martinique, Guadeloupe et Guyane. Plusieurs raisons expliquent cela : la matière mélange des compétences très différentes (calcul mathématique, raisonnement expérimental, compréhension conceptuelle), les cours en classe sont souvent trop rapides pour traiter tous les profils, et les TP (travaux pratiques) sont difficiles à rattraper en autonomie. Un professeur particulier de physique-chimie permet de décomposer les notions complexes, de retravailler les exercices types et de préparer les épreuves de façon ciblée.`,
+      },
+      {
+        heading: 'Les chapitres clés en Seconde et en Terminale',
+        content: `En Seconde, les points difficiles sont la mécanique (vitesse, mouvements), la chimie organique de base et l'optique. En Première, la chimie organique et la thermochimie posent souvent problème. En Terminale spécialité, les chapitres les plus redoutés sont la mécanique avancée (champs, énergie potentielle), la chimie des équilibres, l'électrocinétique et la physique des ondes. Pour les élèves qui font physique-chimie en spécialité jusqu'en Terminale, un accompagnement en cours particuliers sur ces chapitres précis peut faire passer la note de 8 à 14 ou plus.`,
+      },
+      {
+        heading: 'La méthode pour progresser en physique-chimie',
+        content: `La progression en physique-chimie repose sur trois axes : comprendre les concepts (pas mémoriser les formules), pratiquer un maximum d'exercices variés, et analyser les erreurs. Un professeur particulier efficace ne répète pas le cours magistral — il identifie le blocage précis de l'élève et travaille dessus avec des exercices progressifs. Il apprend aussi à l'élève à analyser un énoncé, à identifier les lois applicables, et à présenter une copie propre et structurée, ce que les correcteurs valorisent fortement au baccalauréat.`,
+      },
+      {
+        heading: 'Physique-chimie en présentiel ou en visio',
+        content: `La physique-chimie se prête très bien aux cours en visio, notamment pour la partie théorique et les exercices de calcul. Le professeur peut partager son écran pour corriger des exercices, montrer des démonstrations animées ou annoter directement les calculs de l'élève. Pour les parties expérimentales et les TP, le présentiel garde un avantage. La plupart des lycéens choisissent la visio pour les révisions régulières et gardent les sessions en présentiel pour les points bloquants spécifiques ou avant les examens.`,
+      },
+      {
+        heading: 'Trouver un prof de physique-chimie en Martinique, Guadeloupe ou Guyane',
+        content: `Sur EduKaraib, filtrez par "Physique-Chimie" dans la barre de recherche pour accéder aux professeurs disponibles dans les trois territoires et en visio. Vérifiez les niveaux enseignés (Seconde, Première, Terminale, BTS, supérieur), l'expérience du professeur avec le programme national et les avis laissés par d'autres familles. Pour les élèves en Terminale spécialité, cherchez un professeur spécialisé dans les niveaux avancés de la matière. Le premier cours d'essai gratuit disponible sur certains profils permet de tester l'approche pédagogique avant de s'engager.`,
+      },
+      {
+        heading: 'Tarifs et options de paiement',
+        content: `Les tarifs pour les cours particuliers de physique-chimie se situent entre 25 et 50 euros de l'heure selon le niveau et l'expérience du professeur. Pour la Terminale spécialité et les niveaux supérieurs, les tarifs peuvent atteindre 55 euros. Les packs 5h et 10h disponibles sur EduKaraib permettent de réduire le coût unitaire jusqu'à 10 %. Le paiement est possible par carte bancaire, Klarna en 3 fois sans frais ou Apple Pay. Les factures téléchargeables depuis votre tableau de bord vous permettent de bénéficier du crédit d'impôt de 50 % sur les cours à domicile.`,
+      },
+    ],
+  },
+  {
+    slug: 'cours-particuliers-vacances-caraibes',
+    title: 'Cours particuliers pendant les vacances aux Caraïbes : bonne ou mauvaise idée ?',
+    description: 'Faut-il prendre des cours particuliers pendant les vacances scolaires en Martinique, Guadeloupe ou Guyane ? Avantages, matières prioritaires, stage de révision intensif et comment organiser un suivi efficace sans gâcher les vacances.',
+    date: '2026-05-16',
+    subject: 'Conseils',
+    island: 'Caraïbes',
+    readingTime: 4,
+    sections: [
+      {
+        heading: 'Cours pendant les vacances : pour qui, pour quoi ?',
+        content: `Les cours particuliers pendant les vacances scolaires ne conviennent pas à tous les élèves, mais ils sont particulièrement efficaces dans certaines situations. En priorité : les élèves qui ont cumulé des lacunes importantes en cours d'année et qui ont besoin d'une remise à niveau avant la reprise, les lycéens qui passent le baccalauréat dans les semaines suivantes et qui veulent consolider les chapitres les plus faibles, et les élèves qui veulent prendre de l'avance sur le programme suivant pour aborder la rentrée avec confiance. Les vacances d'été en Martinique, Guadeloupe et Guyane sont souvent longues — bien utilisées, elles représentent une vraie fenêtre de progression.`,
+      },
+      {
+        heading: 'Stage de révision intensif : le bon format',
+        content: `Pendant les vacances, le format stage intensif fonctionne mieux que des cours espacés. Plutôt que 1h par semaine, optez pour 2h à 3h tous les deux jours sur une période de 2 à 3 semaines. Ce rythme permet de travailler en profondeur un ou deux chapitres difficiles, de consolider les notions vues et de voir rapidement des résultats. Sur EduKaraib, réservez un pack 5h ou 10h pour bénéficier d'une remise et organiser plusieurs séances consécutives avec le même professeur, ce qui améliore la continuité pédagogique.`,
+      },
+      {
+        heading: 'Matières prioritaires pendant les vacances',
+        content: `Les mathématiques et le français sont les matières les plus sollicitées pendant les vacances, car ce sont les disciplines où les lacunes sont les plus structurantes. Une faiblesse en algèbre en 4e aura des conséquences directes en Seconde. Pour les lycéens, la physique-chimie, l'anglais et les matières de spécialité sont également très demandées avant les examens. En primaire, une remise à niveau en lecture ou en calcul mental avant la rentrée peut changer significativement le rapport de l'enfant à l'école pour l'année suivante.`,
+      },
+      {
+        heading: 'Équilibre travail-détente : ne pas saturer l\'élève',
+        content: `Un piège fréquent est de surcharger les vacances de cours. Un élève fatigué ou démotivé retient beaucoup moins bien. Les séances de cours particuliers pendant les vacances doivent être ciblées, courtes (1h30 à 2h maximum par session) et espacées de temps de repos. Laissez du temps libre chaque jour. L'objectif n'est pas de travailler autant que pendant l'année — c'est de travailler intelligemment sur des points précis pour repartir avec plus de confiance à la rentrée.`,
+      },
+      {
+        heading: 'La visio : idéale pendant les vacances',
+        content: `Les cours en visio sont particulièrement adaptés aux vacances. L'élève n'a pas à se déplacer, les séances peuvent être organisées le matin pour laisser l'après-midi libre, et il est possible de continuer le suivi même si la famille part en voyage. En Martinique, Guadeloupe et Guyane, les connexions fibre et 4G permettent des séances en visio de bonne qualité. Sur EduKaraib, les professeurs disponibles en visio couvrent toutes les matières et tous les niveaux, y compris pendant les périodes de vacances.`,
+      },
+      {
+        heading: 'Comment réserver des cours pour les vacances sur EduKaraib',
+        content: `Anticipez la réservation : les professeurs les plus demandés ont souvent leurs créneaux de vacances remplis rapidement. Connectez-vous sur EduKaraib, choisissez la matière et le mode de cours, consultez les disponibilités affichées sur les profils et réservez un pack. Vous recevez une confirmation par email et un rappel avant chaque séance. Le paiement en 3 fois Klarna est disponible sur les packs 5h et 10h, ce qui permet d'étaler le coût sans frais supplémentaires.`,
+      },
+    ],
+  },
 ];
