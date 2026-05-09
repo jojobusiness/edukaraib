@@ -1,5 +1,6 @@
 // /api/notify-email.js (version améliorée avec design + lien dynamique)
 import { Resend } from "resend";
+import { verifyAuth } from "./_firebaseAdmin.mjs";
 
 const APP_BASE_URL = process.env.APP_BASE_URL || "https://edukaraib.com";
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -76,16 +77,12 @@ export default async function handler(req, res) {
       return res.status(405).json({ ok: false, error: "method_not_allowed" });
     }
 
-    // ✅ Protection : cet endpoint est interne — seuls les appels authentifiés
-    // (via token Firebase OU clé interne) sont acceptés.
-    // Sans ça, n'importe qui peut envoyer des emails depuis notre domaine.
     const internalKey = req.headers["x-internal-key"];
-    const bearerToken = (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
     const hasInternalKey = internalKey && internalKey === process.env.INTERNAL_API_SECRET;
-    const hasBearer = !!bearerToken; // token Firebase vérifié implicitement par fetchWithAuth côté client
 
-    if (!hasInternalKey && !hasBearer) {
-      return res.status(401).json({ ok: false, error: "unauthorized" });
+    if (!hasInternalKey) {
+      const auth = await verifyAuth(req, res);
+      if (!auth) return; // verifyAuth a déjà envoyé le 401
     }
 
     // Body JSON sécurisé

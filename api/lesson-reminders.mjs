@@ -1,4 +1,4 @@
-import { getAdminDb } from './_firebaseAdmin.mjs';
+import { adminDb } from './_firebaseAdmin.mjs';
 import { Resend } from 'resend';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   const key = req.headers['x-cron-key'] || req.query?.key;
   if (key !== secret) return res.status(403).json({ error: 'FORBIDDEN' });
 
-  const db = getAdminDb();
+  const db = adminDb;
   const now = Date.now();
   // Fenetre : cours qui commencent entre 20min et 40min à partir de maintenant
   const from = new Date(now + 20 * 60 * 1000);

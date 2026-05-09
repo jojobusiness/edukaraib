@@ -36,6 +36,8 @@ export default async function handler(req, res) {
       }
       case 'payment_intent.succeeded': {
         const pi = event.data.object;
+        // Skip si le PI vient d'un Checkout : déjà traité par checkout.session.completed
+        if (pi.metadata?.lesson_id || pi.metadata?.lessonId) break;
         await markPaymentHeldAndUpdateLesson({ sessionId: null, paymentIntentId: pi.id }, pi.metadata);
         break;
       }
@@ -247,7 +249,10 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
       const BASE_URL = process.env.APP_BASE_URL || 'https://www.edukaraib.com';
       await fetch(`${BASE_URL}/api/trigger-referral-bonus`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-internal-key': process.env.INTERNAL_API_SECRET || '',
+        },
         body: JSON.stringify({
           teacherUid,
           paymentType,
