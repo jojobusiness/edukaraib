@@ -1,4 +1,4 @@
-import { adminDb } from './_firebaseAdmin.mjs';
+import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
 
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
 
@@ -24,11 +24,11 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false, error: 'METHOD_NOT_ALLOWED' });
   }
 
-  const { uid, email, fullName } = readBody(req);
+  const auth = await verifyAuth(req, res);
+  if (!auth) return;
 
-  if (!uid || !email) {
-    return res.status(400).json({ ok: false, error: 'MISSING_UID_OR_EMAIL' });
-  }
+  const { fullName } = readBody(req);
+  const uid = auth.uid;
 
   try {
     // 1) Vérifie qu'un coupon de bienvenue n'existe pas déjà pour cet utilisateur
@@ -43,9 +43,15 @@ export default async function handler(req, res) {
       return res.json({ ok: true, skipped: 'already_has_welcome_coupon' });
     }
 
-    // Sécurité côté serveur : récupère le rôle depuis Firestore
+    // Récupère email + rôle depuis Firestore (jamais depuis le body)
     const userSnap = await adminDb.collection('users').doc(uid).get();
-    const role = userSnap.exists ? userSnap.data()?.role : null;
+    const userData = userSnap.exists ? userSnap.data() : {};
+    const role = userData?.role || null;
+    const email = userData?.email || auth.email || null;
+
+    if (!email) {
+      return res.status(400).json({ ok: false, error: 'NO_EMAIL_FOUND' });
+    }
     if (role === 'teacher') {
       return res.json({ ok: true, skipped: 'teachers_not_eligible' });
     }

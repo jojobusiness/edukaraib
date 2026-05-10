@@ -70,6 +70,8 @@ export default async function handler(req, res) {
     await deleteQueryBatch(db.collection('lessons').where('student_id', '==', uid));
     // Lessons où l'utilisateur est prof (teacher_id)
     await deleteQueryBatch(db.collection('lessons').where('teacher_id', '==', uid));
+    // Lessons de groupe où l'utilisateur est dans participant_ids (RGPD)
+    await deleteQueryBatch(db.collection('lessons').where('participant_ids', 'array-contains', uid));
     // Conversations (messagerie)
     await deleteQueryBatch(db.collection('conversations').where('participants', 'array-contains', uid));
     // Messages envoyés

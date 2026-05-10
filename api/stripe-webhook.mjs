@@ -68,6 +68,19 @@ export default async function handler(req, res) {
 }
 
 async function markPaymentHeldAndUpdateLesson(refs, metadata) {
+  // Idempotence : si le paiement est déjà traité, on sort immédiatement
+  const paymentDocId = refs.sessionId || refs.paymentIntentId;
+  if (paymentDocId) {
+    const existingSnap = await adminDb.collection('payments').doc(paymentDocId).get();
+    if (existingSnap.exists) {
+      const st = existingSnap.data()?.status;
+      if (st === 'held' || st === 'released') {
+        console.log(`[webhook] payment ${paymentDocId} already ${st}, skipping`);
+        return;
+      }
+    }
+  }
+
   // Récup métadonnées robustes
   const md = metadata || {};
   const lessonId  = md.lesson_id || md.lessonId;
@@ -126,10 +139,10 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
   const charge = pi?.charges?.data?.[0] || null;
   const grossCents = pi?.amount_received ?? pi?.amount ?? 0;
 
-  // 1) Mettre à jour la leçon : payé POUR L'ÉLÈVE ciblé, afin d'éviter un double paiement
+  // 1) Mettre à jour la leçon pivot — skip si pack (déjà traité dans la boucle ci-dessus)
   const lessonRef = adminDb.collection('lessons').doc(String(lessonId));
-  const lessonSnap = await lessonRef.get();
-  if (lessonSnap.exists) {
+  const lessonSnap = lessonIds.length <= 1 ? await lessonRef.get() : null;
+  if (lessonSnap?.exists) {
     if (isGroup && forStudent) {
       await lessonRef.set({
         participantsMap: {

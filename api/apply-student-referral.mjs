@@ -1,8 +1,6 @@
 // apply-student-referral.mjs
 // Appelé à l'inscription d'un nouvel élève/parent avec un code parrainage student.
-// Ne requiert PAS d'authentification (appelé juste après inscription, token non encore prêt).
-
-import { adminDb } from './_firebaseAdmin.mjs';
+import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
 import { FieldValue } from 'firebase-admin/firestore';
 
 function readBody(req) {
@@ -16,8 +14,13 @@ function readBody(req) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'METHOD_NOT_ALLOWED' });
 
-  const { referralCode, newUserUid, newUserEmail, newUserName } = readBody(req);
-  if (!referralCode || !newUserUid) {
+  const auth = await verifyAuth(req, res);
+  if (!auth) return;
+
+  const { referralCode, newUserEmail, newUserName } = readBody(req);
+  const newUserUid = auth.uid;
+
+  if (!referralCode) {
     return res.status(400).json({ ok: false, error: 'MISSING_FIELDS' });
   }
 

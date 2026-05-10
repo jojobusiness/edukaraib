@@ -59,11 +59,21 @@ export default async function handler(req, res) {
     const resendClient = new Resend(process.env.RESEND_API_KEY);
 
     // ── Prime parrain : 10 € sur le 1er cours du filleul ──────────────────────
-    if (paymentType === 'course' && !filleulData.referral_firstCoursePaid) {
+    if (paymentType === 'course') {
       const PRIME_PARRAIN = 10;
 
-      // Marquer le filleul
-      await filleulRef.set({ referral_firstCoursePaid: true }, { merge: true });
+      // Transaction atomique : lire + vérifier + marquer en une seule opération
+      let shouldCredit = false;
+      await adminDb.runTransaction(async (tx) => {
+        const freshFilleul = await tx.get(filleulRef);
+        if (freshFilleul.data()?.referral_firstCoursePaid) return;
+        tx.set(filleulRef, { referral_firstCoursePaid: true }, { merge: true });
+        shouldCredit = true;
+      });
+
+      if (!shouldCredit) {
+        return res.status(200).json({ ok: true, action: 'ALREADY_CREDITED' });
+      }
 
       // Créditer le parrain
       const parrainPending = Number(parrainData?.referralEarnings?.pending || 0);
