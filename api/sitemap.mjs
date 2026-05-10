@@ -1,4 +1,5 @@
 import { getFirestore } from './_firebaseAdmin.mjs';
+import { blogPosts } from '../frontend/data/blogPosts.js';
 
 const STATIC_URLS = [
   { loc: 'https://edukaraib.com/', changefreq: 'weekly', priority: '1.0' },
@@ -18,14 +19,17 @@ const STATIC_URLS = [
   { loc: 'https://edukaraib.com/influencer', changefreq: 'monthly', priority: '0.7' },
   { loc: 'https://edukaraib.com/about', changefreq: 'yearly', priority: '0.5' },
   { loc: 'https://edukaraib.com/blog', changefreq: 'weekly', priority: '0.8' },
-  { loc: 'https://edukaraib.com/blog/trouver-professeur-particulier-martinique', changefreq: 'monthly', priority: '0.75' },
-  { loc: 'https://edukaraib.com/blog/prix-cours-particuliers-caraibes-2026', changefreq: 'monthly', priority: '0.75' },
-  { loc: 'https://edukaraib.com/blog/reussir-bac-maths-guadeloupe', changefreq: 'monthly', priority: '0.75' },
-  { loc: 'https://edukaraib.com/blog/cours-visio-avantages-caraibes', changefreq: 'monthly', priority: '0.75' },
   { loc: 'https://edukaraib.com/contact', changefreq: 'monthly', priority: '0.6' },
   { loc: 'https://edukaraib.com/cgu', changefreq: 'yearly', priority: '0.3' },
   { loc: 'https://edukaraib.com/privacy', changefreq: 'yearly', priority: '0.3' },
 ];
+
+const BLOG_URLS = blogPosts.map(p => ({
+  loc: `https://edukaraib.com/blog/${p.slug}`,
+  changefreq: 'monthly',
+  priority: '0.75',
+  lastmod: p.date,
+}));
 
 export default async function handler(req, res) {
   try {
@@ -34,17 +38,26 @@ export default async function handler(req, res) {
 
     const teacherUrls = snap.docs
       .filter(d => d.data().offer_enabled !== false)
-      .map(d => ({
-        loc: `https://edukaraib.com/profils/${d.id}`,
-        changefreq: 'weekly',
-        priority: '0.75',
-      }));
+      .map(d => {
+        const updatedAt = d.data().updatedAt?.toDate?.()?.toISOString?.()?.slice(0, 10) || null;
+        return {
+          loc: `https://edukaraib.com/profils/${d.id}`,
+          changefreq: 'weekly',
+          priority: '0.75',
+          lastmod: updatedAt,
+        };
+      });
 
-    const allUrls = [...STATIC_URLS, ...teacherUrls];
+    const allUrls = [...STATIC_URLS, ...BLOG_URLS, ...teacherUrls];
+
+    const urlTag = (u) => {
+      const lastmod = u.lastmod ? `<lastmod>${u.lastmod}</lastmod>` : '';
+      return `  <url><loc>${u.loc}</loc>${lastmod}<changefreq>${u.changefreq}</changefreq><priority>${u.priority}</priority></url>`;
+    };
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${allUrls.map(u => `  <url><loc>${u.loc}</loc><changefreq>${u.changefreq}</changefreq><priority>${u.priority}</priority></url>`).join('\n')}
+${allUrls.map(urlTag).join('\n')}
 </urlset>`;
 
     res.setHeader('Content-Type', 'application/xml');
