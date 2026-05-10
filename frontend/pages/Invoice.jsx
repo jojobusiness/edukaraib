@@ -39,6 +39,9 @@ export default function Invoice() {
         if (!paySnap.exists()) { setError('Facture introuvable.'); return; }
         const pay = { id: paySnap.id, ...paySnap.data() };
 
+        const isOwner = pay.payer_uid === user.uid || pay.teacher_uid === user.uid;
+        if (!isOwner) { setError('Accès non autorisé.'); return; }
+
         const [lessonSnap, teacherSnap, payerSnap] = await Promise.all([
           pay.lesson_id ? getDoc(doc(db, 'lessons', String(pay.lesson_id))) : Promise.resolve(null),
           pay.teacher_uid ? getDoc(doc(db, 'users', String(pay.teacher_uid))) : Promise.resolve(null),

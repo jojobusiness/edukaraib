@@ -10,8 +10,9 @@ export default async function handler(req, res) {
   const secret = process.env.CRON_SECRET;
   if (!secret) return res.status(500).json({ error: 'SERVER_MISCONFIGURED' });
 
-  const key = req.headers['x-cron-key'] || req.query?.key;
-  if (key !== secret) return res.status(403).json({ error: 'FORBIDDEN' });
+  const authHeader = req.headers.authorization || '';
+  const key = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : req.headers['x-cron-secret'];
+  if (!key || key !== secret) return res.status(403).json({ error: 'FORBIDDEN' });
 
   const db = adminDb;
   const now = Date.now();

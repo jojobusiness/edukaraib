@@ -1,8 +1,12 @@
 import { adminDb } from './_firebaseAdmin.mjs';
 
 export default async function handler(req, res) {
-  const key = req.query.key || req.headers['x-cron-secret'];
-  if (key !== process.env.CRON_SECRET) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return res.status(500).json({ error: 'SERVER_MISCONFIGURED' });
+
+  const authHeader = req.headers.authorization || '';
+  const key = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : req.headers['x-cron-secret'];
+  if (!key || key !== secret) {
     return res.status(401).json({ error: 'unauthorized' });
   }
 

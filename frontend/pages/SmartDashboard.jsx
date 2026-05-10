@@ -21,9 +21,10 @@ export default function SmartDashboard() {
         const role = snap.exists() ? snap.data()?.role : null;
 
         // Route par rôle
-        if (role === "teacher") return navigate("/prof/dashboard", { replace: true });
-        if (role === "parent")  return navigate("/parent/dashboard", { replace: true });
-        if (role === "admin")   return navigate("/admin/dashboard", { replace: true });
+        if (role === "teacher")    return navigate("/prof/dashboard",       { replace: true });
+        if (role === "parent")     return navigate("/parent/dashboard",     { replace: true });
+        if (role === "admin")      return navigate("/admin/dashboard",      { replace: true });
+        if (role === "influencer") return navigate("/influencer/dashboard", { replace: true });
 
         // Élève (ou fallback)
         return navigate("/dashboard-eleve", { replace: true });

@@ -5,18 +5,21 @@ import fetchWithAuth from '../../utils/fetchWithAuth';
  * Props
  * - lessonId: string (obligatoire)
  * - forStudent?: string (optionnel, OBLIGATOIRE quand c'est un parent qui paie pour un enfant)
+ * - couponCode?: string (optionnel, code promo à appliquer au checkout)
+ * - packKey?: string (optionnel, clé de pack pour regrouper les leçons)
  */
-export default function PayButton({ lessonId, forStudent }) {
+export default function PayButton({ lessonId, forStudent, couponCode, packKey }) {
   const [loading, setLoading] = useState(false);
 
   const onPay = async () => {
     try {
       setLoading(true);
-      // ✅ variant 'payment_link' supprimé — /api/pay/create-payment-link n'existe pas
       const url = '/api/pay/create-checkout-session';
 
       const body = { lessonId };
       if (forStudent) body.forStudent = forStudent;
+      if (couponCode) body.couponCode = couponCode;
+      if (packKey)    body.packKey    = packKey;
 
       const data = await fetchWithAuth(url, {
         method: 'POST',

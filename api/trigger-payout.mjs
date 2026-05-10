@@ -86,13 +86,33 @@ export default async function handler(req, res) {
 
   try {
     // ── CAS PACK ──────────────────────────────────────────────
-    if (lesson.pack_id) {
-      const packSnap = await adminDb.collection('lessons')
-        .where('pack_id', '==', lesson.pack_id)
-        .where('teacher_id', '==', teacherUid)
-        .get();
+    // Charge le payment doc en avance : sert à détecter les packs AUTO: (sans pack_id)
+    // ET évite une 2ème requête Firestore plus loin dans le flux
+    const packPaySnap = await adminDb.collection('payments')
+      .where('lesson_ids', 'array-contains', lessonId)
+      .where('teacher_uid', '==', teacherUid)
+      .limit(1).get();
 
-      const packLessons = packSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const isPackViaPayment = !packPaySnap.empty && packPaySnap.docs[0].data().is_pack === true;
+
+    if (lesson.pack_id || isPackViaPayment) {
+      let packLessons;
+
+      if (lesson.pack_id) {
+        const packSnap = await adminDb.collection('lessons')
+          .where('pack_id', '==', lesson.pack_id)
+          .where('teacher_id', '==', teacherUid)
+          .get();
+        packLessons = packSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      } else {
+        // Pack AUTO: — les lesson_ids sont stockés dans le payment doc
+        const lessonIdsFromPay = packPaySnap.docs[0].data().lesson_ids || [];
+        const snaps = await Promise.all(
+          lessonIdsFromPay.map(id => adminDb.collection('lessons').doc(id).get())
+        );
+        packLessons = snaps.filter(s => s.exists).map(s => ({ id: s.id, ...s.data() }));
+      }
+
       const totalCount = packLessons.length;
       if (totalCount === 0) return res.json({ ok: true, skipped: 'empty_pack' });
 
@@ -110,10 +130,8 @@ export default async function handler(req, res) {
         return res.json({ ok: true, skipped: 'no_completed_paid_lessons' });
       }
 
-      // Retrouver le document payment (lesson_ids est un tableau dans Firestore)
-      const paySnap = await adminDb.collection('payments')
-        .where('lesson_ids', 'array-contains', lessonId)
-        .limit(1).get();
+      // Réutilise le payment doc déjà chargé
+      const paySnap = packPaySnap;
 
       if (!paySnap.empty) {
         const currentStatus = paySnap.docs[0].data().status;
