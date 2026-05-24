@@ -247,6 +247,16 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
         created_at:      new Date(),
       });
 
+      // Email de transparence a l'influenceur
+      sendInfluencerConversionEmail(influencerUid, {
+        commissionEur: influencerCommissionCents / 100,
+        siteFeeCents: Number(md.site_fee_cents || 0),
+        totalCents: grossCents || Number(md.teacher_amount_cents || 0) + Number(md.site_fee_cents || 0),
+        teacherAmountCents: Number(md.teacher_amount_cents || 0),
+        type: !isPack ? 'Cours unitaire' : billedHoursWh === 10 ? 'Pack 10h' : 'Pack 5h',
+        couponCode: md.coupon_code || '',
+      }).catch(e => console.warn('[webhook] influencer email failed:', e?.message));
+
     } catch (e) {
       console.warn('[webhook] influencer commission credit failed:', e?.message);
     }
@@ -642,4 +652,87 @@ function row(label, value) {
     <td style="padding:5px 0;color:#64748b;font-size:13px;width:45%;">${esc(label)}</td>
     <td style="padding:5px 0;color:#0f172a;font-size:13px;font-weight:500;">${value}</td>
   </tr>`;
+}
+
+// ── Email transparence influenceur ─────────────────────────────────────────
+async function sendInfluencerConversionEmail(influencerUid, data) {
+  if (!process.env.RESEND_API_KEY) return;
+
+  const influSnap = await adminDb.collection('influencers').doc(influencerUid).get();
+  if (!influSnap.exists) return;
+  const influ = influSnap.data();
+  const email = influ.email;
+  if (!email) return;
+
+  const name = influ.name || influ.firstName || '';
+  const prenom = name ? `, ${name.split(' ')[0]}` : '';
+
+  const clientPaidEur = fmt(data.totalCents / 100);
+  const platformFeeEur = fmt(data.siteFeeCents / 100);
+  const teacherEur = fmt(data.teacherAmountCents / 100);
+  const commissionEur = fmt(data.commissionEur);
+  const pendingTotal = fmt((influ.pendingPayout || 0));
+
+  const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
+  const resend = new Resend(process.env.RESEND_API_KEY);
+
+  await resend.emails.send({
+    from: 'EduKaraib <notifications@edukaraib.com>',
+    to: [email],
+    subject: `Nouvelle conversion avec votre code ${esc(data.couponCode)} — +${commissionEur} €`,
+    html: `<div style="font-family:Inter,system-ui,sans-serif;background:#f5f7fb;padding:24px;">
+<table width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;margin:auto;background:#fff;border-radius:18px;overflow:hidden;border:1px solid #e2e8f0;">
+  <tr><td style="background:#0ea5e9;padding:18px 24px;">
+    <span style="color:#fff;font-weight:700;font-size:17px;">EduKaraib</span>
+  </td></tr>
+  <tr><td style="padding:28px;">
+    <h1 style="margin:0 0 12px;font-size:20px;color:#0f172a;">Nouvelle vente${prenom} !</h1>
+    <p style="color:#475569;font-size:15px;line-height:1.7;margin:0 0 20px;">
+      Quelqu'un vient d'utiliser votre code <strong>${esc(data.couponCode)}</strong> pour un <strong>${esc(data.type)}</strong>.
+      Voici le detail complet de cette transaction :
+    </p>
+
+    <table width="100%" cellspacing="0" cellpadding="0" style="background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:20px;">
+      <tr><td style="padding:16px 18px;">
+        <p style="margin:0 0 12px;font-weight:700;color:#0f172a;font-size:14px;">Ventilation de la transaction</p>
+        <table width="100%" cellspacing="0" cellpadding="0">
+          <tr>
+            <td style="padding:8px 0;color:#64748b;font-size:13px;border-bottom:1px solid #e2e8f0;">Prix paye par le client</td>
+            <td style="padding:8px 0;color:#0f172a;font-size:14px;font-weight:700;text-align:right;border-bottom:1px solid #e2e8f0;">${clientPaidEur} €</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0;color:#64748b;font-size:13px;border-bottom:1px solid #e2e8f0;">Part du professeur</td>
+            <td style="padding:8px 0;color:#0f172a;font-size:14px;font-weight:500;text-align:right;border-bottom:1px solid #e2e8f0;">${teacherEur} €</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0;color:#64748b;font-size:13px;border-bottom:1px solid #e2e8f0;">Commission EduKaraib</td>
+            <td style="padding:8px 0;color:#0f172a;font-size:14px;font-weight:500;text-align:right;border-bottom:1px solid #e2e8f0;">${platformFeeEur} €</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 0 4px;color:#0f172a;font-size:14px;font-weight:700;">Votre commission</td>
+            <td style="padding:10px 0 4px;color:#16a34a;font-size:18px;font-weight:800;text-align:right;">+${commissionEur} €</td>
+          </tr>
+        </table>
+      </td></tr>
+    </table>
+
+    <div style="background:#f0fdf4;border:2px solid #22c55e;border-radius:12px;padding:16px;text-align:center;margin-bottom:24px;">
+      <div style="font-size:13px;color:#166534;font-weight:600;">Solde en attente de virement</div>
+      <div style="font-size:28px;font-weight:800;color:#15803d;margin-top:4px;">${pendingTotal} €</div>
+    </div>
+
+    <p style="color:#64748b;font-size:13px;margin:0 0 20px;">
+      Ce montant sera inclus dans votre prochain virement. Continuez a partager votre code pour augmenter vos gains !
+    </p>
+
+    <div style="text-align:center;">
+      <a href="${APP_BASE_URL}/influencer/dashboard" style="display:inline-block;background:#facc15;color:#111827;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:12px;font-size:15px;">Voir mon tableau de bord</a>
+    </div>
+  </td></tr>
+  <tr><td style="padding:12px 28px 20px;color:#94a3b8;font-size:12px;border-top:1px solid #f1f5f9;">
+    EduKaraib · <a href="mailto:contact@edukaraib.com" style="color:#0ea5e9;">contact@edukaraib.com</a>
+  </td></tr>
+</table>
+</div>`,
+  });
 }
