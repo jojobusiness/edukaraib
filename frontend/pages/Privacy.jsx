@@ -124,9 +124,8 @@ const SECTIONS = [
     contenu: (
       <>
         <p>
-          Le responsable du traitement est <strong>Joseph Twizeyimana EI</strong> (EduKaraib),
-          micro-entreprise immatriculée sous le SIRET <strong>105 341 036 00017</strong> (APE 6202A),
-          dont le siège social est situé au 29 rue Daviel, 75013 Paris, France.
+          Le responsable du traitement est <strong>Jojo Empire</strong> (EduKaraib),
+          micro-entreprise immatriculée sous le SIRET <strong>105 341 036 00017</strong> (APE 6202A).
         </p>
         <p className="mt-2">
           Pour toute question relative à vos données personnelles, contactez-nous à{' '}

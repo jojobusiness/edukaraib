@@ -94,9 +94,8 @@ export default function CGU() {
                 est invité à ne pas utiliser le Site.
               </p>
               <p>
-                Le Site EduKaraib est édité par <strong>Joseph Twizeyimana EI</strong>, micro-entreprise
-                immatriculée sous le SIRET <strong>105 341 036 00017</strong> (APE 6202A),
-                dont le siège social est situé au 29 rue Daviel, 75013 Paris, France.
+                Le Site EduKaraib est édité par <strong>Jojo Empire</strong>, micro-entreprise
+                immatriculée sous le SIRET <strong>105 341 036 00017</strong> (APE 6202A).
                 Contact : <a href="mailto:contact@edukaraib.com">contact@edukaraib.com</a>.
                 TVA non applicable, art. 293B du CGI.
               </p>

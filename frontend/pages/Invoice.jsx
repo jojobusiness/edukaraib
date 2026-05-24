@@ -167,10 +167,9 @@ export default function Invoice() {
             <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 24 }}>
               <div>
                 <div style={labelStyle}>Prestataire</div>
-                <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>EduKaraib — Joseph Twizeyimana EI</div>
+                <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>EduKaraib — Jojo Empire</div>
                 <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.6 }}>
                   SIRET : 105 341 036 00017 · APE : 6202A<br />
-                  29 rue Daviel, 75013 Paris<br />
                   edukaraib.com · contact@edukaraib.com
                 </div>
               </div>
@@ -244,10 +243,9 @@ export default function Invoice() {
             {/* Pied de page — mentions legales */}
             <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid #f1f5f9', fontSize: 11, color: '#94a3b8', textAlign: 'center', lineHeight: 1.7 }}>
               <div>
-                EduKaraib — Joseph Twizeyimana EI · SIRET 105 341 036 00017 · APE 6202A
+                EduKaraib — Jojo Empire · SIRET 105 341 036 00017 · APE 6202A
               </div>
               <div>
-                29 rue Daviel, 75013 Paris ·{' '}
                 <a href="https://edukaraib.com" style={{ color: '#00804B', textDecoration: 'none' }}>edukaraib.com</a>
                 {' · '}
                 <a href="mailto:contact@edukaraib.com" style={{ color: '#00804B', textDecoration: 'none' }}>contact@edukaraib.com</a>
