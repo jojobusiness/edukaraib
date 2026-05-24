@@ -4,6 +4,7 @@
 // Envoie un email de bienvenue avec son code de parrainage et les étapes clés.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
 import { Resend } from 'resend';
 
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
@@ -13,7 +14,15 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false, error: 'METHOD_NOT_ALLOWED' });
   }
 
-  const { email, firstName, referralCode } = req.body || {};
+  const auth = await verifyAuth(req, res);
+  if (!auth) return;
+
+  const userSnap = await adminDb.collection('users').doc(auth.uid).get();
+  if (!userSnap.exists) return res.status(404).json({ ok: false, error: 'USER_NOT_FOUND' });
+  const userData = userSnap.data();
+  const email = userData.email;
+  const firstName = userData.firstName || userData.fullName?.split(' ')[0] || '';
+  const referralCode = userData.referralCode;
 
   if (!email || !referralCode) {
     return res.status(400).json({ ok: false, error: 'MISSING_FIELDS' });

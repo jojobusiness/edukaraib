@@ -141,15 +141,25 @@ export default async function handler(req, res) {
     }
 
     // ── Prime filleul : 20 € sur son 1er pack 5h ──────────────────────────────
-    if (paymentType === 'pack5' && !filleulData.referral_firstPackPaid) {
+    if (paymentType === 'pack5') {
       const PRIME_FILLEUL = 20;
 
-      // Marquer
-      await filleulRef.set({ referral_firstPackPaid: true }, { merge: true });
+      let shouldCreditFilleul = false;
+      await adminDb.runTransaction(async (tx) => {
+        const freshFilleul = await tx.get(filleulRef);
+        if (freshFilleul.data()?.referral_firstPackPaid) return;
+        tx.set(filleulRef, { referral_firstPackPaid: true }, { merge: true });
+        shouldCreditFilleul = true;
+      });
 
-      // Créditer le filleul
-      const filleulPending = Number(filleulData?.referralEarnings?.pending || 0);
-      const filleulTotal   = Number(filleulData?.referralEarnings?.total   || 0);
+      if (!shouldCreditFilleul) {
+        return res.status(200).json({ ok: true, action: 'PACK_ALREADY_CREDITED' });
+      }
+
+      const freshFilleulSnap = await filleulRef.get();
+      const freshFilleulData = freshFilleulSnap.data() || {};
+      const filleulPending = Number(freshFilleulData?.referralEarnings?.pending || 0);
+      const filleulTotal   = Number(freshFilleulData?.referralEarnings?.total   || 0);
       await filleulRef.set({
         referralEarnings: {
           pending: filleulPending + PRIME_FILLEUL,
@@ -157,9 +167,10 @@ export default async function handler(req, res) {
         },
       }, { merge: true });
 
-      // Mettre à jour dans la liste du parrain
+      const freshParrainSnap = await parrainRef.get();
+      const freshParrainData = freshParrainSnap.data() || {};
       await parrainRef.set({
-        referralFilleuls: (parrainData.referralFilleuls || []).map(f =>
+        referralFilleuls: (freshParrainData.referralFilleuls || []).map(f =>
           f.uid === teacherUid ? { ...f, firstPackPaid: true } : f
         ),
       }, { merge: true });

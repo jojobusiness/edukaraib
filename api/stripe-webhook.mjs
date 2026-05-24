@@ -28,7 +28,7 @@ export default async function handler(req, res) {
           await handleSubscriptionCreated(session);
         } else {
           await markPaymentHeldAndUpdateLesson({ sessionId: session.id, paymentIntentId: session.payment_intent }, session.metadata);
-          sendPaymentConfirmationEmail(session.metadata, session.amount_total).catch(e =>
+          sendPaymentConfirmationEmail(session.metadata, session.amount_total || 0).catch(e =>
             console.warn('[webhook] confirmation email error:', e?.message)
           );
         }
@@ -184,18 +184,20 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
     }, { merge: true });
   }
 
-  // 3) Marquer le coupon comme utilisé si présent (ancien système)
-  const couponDocId = md.coupon_doc_id;
-  if (couponDocId && !md.influencer_uid) {
+  // 3) Marquer les coupons comme utilises (supporte le cumul)
+  const couponDocIdStr = md.coupon_doc_id || '';
+  const couponDocIds = couponDocIdStr.split(',').map(s => s.trim()).filter(Boolean);
+  for (const docId of couponDocIds) {
+    if (docId === md.influencer_uid) continue;
     try {
-      await adminDb.collection('coupons').doc(couponDocId).update({
+      await adminDb.collection('coupons').doc(docId).update({
         used: true,
         used_at: new Date(),
         used_for_lesson: String(lessonId),
         used_by: payerUid || null,
       });
     } catch (e) {
-      console.warn('[webhook] coupon update failed:', e?.message);
+      console.warn('[webhook] coupon update failed:', docId, e?.message);
     }
   }
 

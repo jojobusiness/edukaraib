@@ -28,13 +28,15 @@ export default async function handler(req, res) {
   // ✅ Vérifier la signature Vercel (HMAC-SHA256)
   // Configurer le secret dans : Vercel Dashboard → Project → Settings → Log Drains
   const secret = process.env.VERCEL_DRAIN_SECRET;
-  if (secret) {
-    const sig = req.headers['x-vercel-signature'] || req.headers['x-vercel-log-drain-signature'];
-    const valid = await verifySignature(rawBody, sig, secret);
-    if (!valid) {
-      console.warn('[drain] Invalid signature');
-      return res.status(401).json({ error: 'Invalid signature' });
-    }
+  if (!secret) {
+    console.error('[drain] VERCEL_DRAIN_SECRET not configured');
+    return res.status(500).json({ error: 'SERVER_MISCONFIGURED' });
+  }
+  const sig = req.headers['x-vercel-signature'] || req.headers['x-vercel-log-drain-signature'];
+  const valid = await verifySignature(rawBody, sig, secret);
+  if (!valid) {
+    console.warn('[drain] Invalid signature');
+    return res.status(401).json({ error: 'Invalid signature' });
   }
 
   // Parser NDJSON (une ligne par event) OU JSON array (encoding JSON Vercel)

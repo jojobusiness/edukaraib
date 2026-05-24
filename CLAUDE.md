@@ -172,7 +172,7 @@ totalCents = teacherAmountCents + effectiveSiteFeeCents  ← le prof reçoit tou
 
 Si tu touches au système de prix ou de coupons, vérifie TOUJOURS que `teacherAmountCents` est inchangé après application d'une réduction. Le prof ne doit jamais payer la remise à la place de la plateforme.
 
-**Un seul coupon par checkout — pas de cumul.** L'API `create-checkout-session.mjs` n'accepte qu'un seul champ `couponCode` par requête. Ne jamais modifier ce comportement pour accepter un tableau de codes ou chaîner plusieurs remises. Si la commission tombe à 0€ après remise, le total client = tarif prof uniquement (minimum Stripe 0,50€ appliqué côté Stripe, pas côté prof).
+**Cumul de coupons autorisé.** L'API `create-checkout-session.mjs` accepte `couponCodes` (tableau) ou `couponCode` (string, backward compat). Plusieurs codes peuvent être appliqués sur un checkout, mais la remise totale est plafonnée à la commission plateforme : max -10€ (cours), -50€ (pack 5h), -100€ (pack 10h). Un seul code influenceur par checkout. Si la commission tombe à 0€ après remise, le total client = tarif prof uniquement (minimum Stripe 0,50€ appliqué côté Stripe, pas côté prof).
 
 Cette règle s'applique à :
 - Tous les codes `BIENVENUE-`, `AVIS-`, `FILLEUL-`, `PARRAIN-`

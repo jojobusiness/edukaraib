@@ -24,6 +24,15 @@ export default async function handler(req, res) {
   const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ['payment_intent'] });
   const pi = session.payment_intent;
 
+  const payerUid = session.metadata?.payer_uid || (typeof pi === 'object' ? pi?.metadata?.payer_uid : null);
+  const teacherUid = session.metadata?.teacher_uid || (typeof pi === 'object' ? pi?.metadata?.teacher_uid : null);
+  if (payerUid && payerUid !== auth.uid && teacherUid !== auth.uid) {
+    const callerSnap = await adminDb.collection('users').doc(auth.uid).get();
+    if (!callerSnap.exists || callerSnap.data()?.role !== 'admin') {
+      return res.status(403).json({ error: 'FORBIDDEN' });
+    }
+  }
+
   const lessonId =
     session.metadata?.lesson_id ||
     (typeof pi === 'object' && pi?.metadata?.lesson_id) || null;

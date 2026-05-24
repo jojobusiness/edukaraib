@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { verifyAuth } from './_firebaseAdmin.mjs';
+import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -14,11 +14,17 @@ export default async function handler(req, res) {
   if (!auth) return;
 
   try {
-    const { roomName, isModerator, userId, userName, userEmail } = req.body || {};
+    const { roomName, userId, userName, userEmail } = req.body || {};
 
     if (!roomName) {
       res.status(400).json({ error: 'roomName is required' });
       return;
+    }
+
+    let isModerator = false;
+    const lessonSnap = await adminDb.collection('lessons').doc(roomName).get();
+    if (lessonSnap.exists) {
+      isModerator = String(lessonSnap.data()?.teacher_id) === auth.uid;
     }
 
     const appId = process.env.JAAS_APP_ID;

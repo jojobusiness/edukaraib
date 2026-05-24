@@ -6,7 +6,7 @@
 // Envoie aussi un email de bienvenue spécifique filleul avec ses avantages.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { adminDb } from './_firebaseAdmin.mjs';
+import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
 import { Resend } from 'resend';
 
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
@@ -16,11 +16,20 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false, error: 'METHOD_NOT_ALLOWED' });
   }
 
-  const { referralCode, newTeacherUid, newTeacherEmail, newTeacherName } = req.body || {};
+  const auth = await verifyAuth(req, res);
+  if (!auth) return;
 
-  if (!referralCode || !newTeacherUid) {
+  const { referralCode } = req.body || {};
+  const newTeacherUid = auth.uid;
+
+  if (!referralCode) {
     return res.status(400).json({ ok: false, error: 'MISSING_FIELDS' });
   }
+
+  const callerSnap = await adminDb.collection('users').doc(auth.uid).get();
+  const callerData = callerSnap.exists ? callerSnap.data() : {};
+  const newTeacherEmail = callerData.email || '';
+  const newTeacherName = callerData.firstName || callerData.fullName || '';
 
   const code = String(referralCode).trim().toUpperCase();
 

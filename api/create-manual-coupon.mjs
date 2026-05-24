@@ -15,10 +15,9 @@ function readBody(req) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'METHOD_NOT_ALLOWED' });
 
-  const { adminSecret, userEmail } = readBody(req);
+  const { userEmail } = readBody(req);
+  const adminSecret = req.headers['x-admin-secret'] || readBody(req).adminSecret;
 
-  // ✅ Si la variable d'env n'est pas configurée, on bloque tout
-  // (évite le cas où undefined !== undefined = false → accès ouvert)
   if (!ADMIN_SECRET) {
     console.error('[create-manual-coupon] ADMIN_COUPON_SECRET env var not set');
     return res.status(500).json({ ok: false, error: 'SERVER_MISCONFIGURED' });

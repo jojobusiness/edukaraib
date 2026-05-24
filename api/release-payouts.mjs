@@ -10,9 +10,7 @@ export default async function handler(req, res) {
   }
 
   const headerKey = req.headers['x-cron-key'];
-  const qsKey = req.query?.key || req.query?.cron_key;
-
-  if (headerKey !== secret && qsKey !== secret) {
+  if (!headerKey || headerKey !== secret) {
     return res.status(403).json({ error: 'FORBIDDEN' });
   }
 

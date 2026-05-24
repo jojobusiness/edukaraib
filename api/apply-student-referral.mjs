@@ -59,7 +59,11 @@ export default async function handler(req, res) {
       studentReferredAt: new Date(),
     }, { merge: true });
 
-    // 4) Ajouter dans la liste du parrain via arrayUnion
+    // 4) Ajouter dans la liste du parrain via arrayUnion (max 100 filleuls)
+    const parrainData = (await adminDb.collection('users').doc(parrainUid).get()).data() || {};
+    if ((parrainData.studentReferralFilleuls || []).length >= 100) {
+      return res.status(400).json({ ok: false, error: 'PARRAIN_FILLEUL_LIMIT' });
+    }
     await adminDb.collection('users').doc(parrainUid).update({
       studentReferralFilleuls: FieldValue.arrayUnion({
         uid: newUserUid,

@@ -98,18 +98,16 @@ export default async function handler(req, res) {
     }
     if (!to) return res.json({ ok: true, skipped: "no_email" });
 
-    // Envoi
     let result = await resend.emails.send({
-      from: FROM_TEST,
+      from: FROM_PRO,
       to: [to],
       subject: title || "Notification EduKaraib",
       html: htmlTpl({ title, message, ctaUrl, ctaText }),
     });
 
-    // Deuxième essai avec le domaine pro si dispo
     if (!result?.id) {
       result = await resend.emails.send({
-        from: FROM_PRO,
+        from: FROM_TEST,
         to: [to],
         subject: title || "Notification EduKaraib",
         html: htmlTpl({ title, message, ctaUrl, ctaText }),

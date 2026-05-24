@@ -122,13 +122,19 @@ const SECTIONS = [
     id: 'contact',
     titre: '8. Contact & responsable du traitement',
     contenu: (
-      <p>
-        Le responsable du traitement est EduKaraib, joignable à{' '}
-        <a href="mailto:contact@edukaraib.com" className="text-sky-600 underline">
-          contact@edukaraib.com
-        </a>
-        . Pour toute question relative à vos données personnelles, n'hésitez pas à nous écrire.
-      </p>
+      <>
+        <p>
+          Le responsable du traitement est <strong>Joseph Twizeyimana EI</strong> (EduKaraib),
+          micro-entreprise immatriculée sous le SIRET <strong>105 341 036 00017</strong> (APE 6202A),
+          dont le siège social est situé au 29 rue Daviel, 75013 Paris, France.
+        </p>
+        <p className="mt-2">
+          Pour toute question relative à vos données personnelles, contactez-nous à{' '}
+          <a href="mailto:contact@edukaraib.com" className="text-sky-600 underline">
+            contact@edukaraib.com
+          </a>.
+        </p>
+      </>
     ),
   },
 ];

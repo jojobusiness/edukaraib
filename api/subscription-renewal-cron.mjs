@@ -50,10 +50,17 @@ async function bookSubscriptionLessons(stripeSubId, sub) {
   const now = new Date();
   const periodKey = now.toISOString().slice(0, 7);
 
-  // Double-check guard in case of concurrent runs
   const subRef = adminDb.collection('subscriptions').doc(stripeSubId);
-  const fresh = await subRef.get();
-  if (fresh.exists && fresh.data().last_booked_period === periodKey) return;
+  let alreadyBooked = false;
+  await adminDb.runTransaction(async (tx) => {
+    const fresh = await tx.get(subRef);
+    if (fresh.exists && fresh.data().last_booked_period === periodKey) {
+      alreadyBooked = true;
+      return;
+    }
+    tx.set(subRef, { last_booked_period: periodKey }, { merge: true });
+  });
+  if (alreadyBooked) return;
 
   const cursor = new Date(now);
   cursor.setHours(0, 0, 0, 0);
@@ -107,6 +114,4 @@ async function bookSubscriptionLessons(stripeSubId, sub) {
     });
   }
   await batch.commit();
-
-  await subRef.set({ last_booked_period: periodKey }, { merge: true });
 }
