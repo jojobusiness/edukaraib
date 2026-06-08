@@ -147,10 +147,12 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
       await lessonRef.set({
         participantsMap: {
           [String(forStudent)]: {
+            // Données existantes d'abord, puis on force is_paid: true par-dessus —
+            // sinon un participantsMap pré-existant écrasait le paiement.
+            ...(lessonSnap.data()?.participantsMap?.[String(forStudent)] || {}),
             is_paid: true,
             paid_at: new Date(),
             paid_by: payerUid || null,
-            ...(lessonSnap.data()?.participantsMap?.[String(forStudent)] || {}),
           }
         }
       }, { merge: true });
@@ -167,7 +169,7 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
   }
 
   // 2) Marquer le paiement "held" côté payments (en attente de versement prof)
-  const paymentDocId = refs.sessionId || refs.paymentIntentId;
+  // (paymentDocId déjà calculé en début de fonction pour le check d'idempotence)
   if (paymentDocId) {
     await adminDb.collection('payments').doc(paymentDocId).set({
       status: 'held',                  // ✅ argent encaissé par la plateforme, pas encore versé au prof

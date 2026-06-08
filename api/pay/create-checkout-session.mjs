@@ -108,11 +108,16 @@ function detectSourceFor(lesson, participantId) {
   const isVisio = String(lesson.mode) === 'visio' || lesson.is_visio === true;
   return isVisio ? 'visio' : 'presentiel';
 }
+// Plafond de sécurité : une leçon individuelle ne peut jamais facturer plus de
+// MAX_SINGLE_LESSON_HOURS heures. Empêche qu'un prof modifie `duration_hours`
+// dans Firestore pour gonfler le total facturé au client (et sa propre part).
+const MAX_SINGLE_LESSON_HOURS = 8;
 function getBilledHoursFor(lesson, participantId) {
   const { packHours } = participantPackInfo(lesson, participantId);
   if (packHours) return packHours;
   const h = Number(lesson.duration_hours);
-  return Number.isFinite(h) && h > 0 ? Math.floor(h) : 1;
+  if (!Number.isFinite(h) || h <= 0) return 1;
+  return Math.min(Math.floor(h), MAX_SINGLE_LESSON_HOURS);
 }
 function computeBaseRateEuroFor(lesson, participantId) {
   const isVisio = String(lesson.mode) === 'visio' || lesson.is_visio === true;
@@ -136,6 +141,10 @@ export default async function handler(req, res) {
   const { lessonId, forStudent, packKey } = body;
   const rawCouponCodes = body.couponCodes || (body.couponCode ? [body.couponCode] : []);
   if (!lessonId) return res.status(400).json({ error: 'MISSING_LESSON_ID' });
+  // Borne le nombre de codes pour éviter une avalanche de requêtes Firestore
+  if (Array.isArray(rawCouponCodes) && rawCouponCodes.length > 5) {
+    return res.status(400).json({ error: 'TOO_MANY_COUPONS' });
+  }
 
   // Leçon pivot
   const snap = await adminDb.collection('lessons').doc(String(lessonId)).get();
@@ -150,11 +159,15 @@ export default async function handler(req, res) {
   if (!participantId) return res.status(403).json({ error: 'NOT_PARTICIPANT' });
 
   // Autorisation payeur (élève lui-même ou parent lié)
+  const isGroupLesson = Array.isArray(lesson?.participant_ids) && lesson.participant_ids.length > 0;
   const payerIsStudent = aliases.some((a) => String(a) === String(payerUid));
   const payerIsParent =
     (lesson.participantsMap?.[participantId]?.parent_id &&
       String(lesson.participantsMap[participantId].parent_id) === String(payerUid)) ||
-    (lesson.parent_id && String(lesson.parent_id) === String(payerUid));
+    // Le fallback parent au niveau leçon ne vaut QUE pour les cours individuels.
+    // Sur une leçon de groupe, l'autorisation doit être liée au participant précis,
+    // sinon un parent inscrit pourrait régler pour n'importe quel élève du groupe.
+    (!isGroupLesson && lesson.parent_id && String(lesson.parent_id) === String(payerUid));
   if (!payerIsStudent && !payerIsParent) {
     return res.status(403).json({ error: 'NOT_ALLOWED' });
   }
@@ -197,7 +210,9 @@ export default async function handler(req, res) {
     const any = lessonsToBill[0] || lesson;
     const pmAny = (any.participantsMap || {})[String(participantId)] || {};
     const h = Number(pmAny.pack_hours || any.pack_hours || lessonsToBill.length || 1);
-    billedHours = (h === 5 || h === 10) ? h : (lessonsToBill.length || 1);
+    // Plafond pack à 10h : empêche un total facturé incohérent si beaucoup de
+    // leçons sont regroupées sous une même clé pack.
+    billedHours = (h === 5 || h === 10) ? h : Math.min(lessonsToBill.length || 1, 10);
   } else {
     // 1 leçon
     if (!isEligibleToPay(lesson, participantId)) return res.status(400).json({ error: 'NOT_CONFIRMED' });
