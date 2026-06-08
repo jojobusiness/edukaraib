@@ -72,7 +72,7 @@ export default async function handler(req, res) {
       amount:               Math.round(pendingEur * 100), // en centimes
       currency:             'eur',
       method:               'standard',                   // SEPA standard 1-2 jours ouvrés
-      destination:          influ.rib,                    // IBAN directement
+      destination:          iban,                         // IBAN normalisé (sans espaces, validé mod97)
       statement_descriptor: 'EDUKARAIB COMMISSION',
       metadata: {
         influencer_uid:   influencerUid,
@@ -92,7 +92,7 @@ export default async function handler(req, res) {
   // pour garder une trace complète et permettre une correction manuelle
   const payoutEntry = {
     amount_eur:        pendingEur,
-    iban:              influ.rib,
+    iban:              iban,
     triggered_by:      auth.uid,
     triggered_at:      new Date(),
     stripe_payout_id:  stripePayout?.id   || null,
@@ -126,7 +126,7 @@ export default async function handler(req, res) {
       const { Resend } = await import('resend');
       const resendClient = new Resend(process.env.RESEND_API_KEY);
       const firstName = (influ.name || '').split(' ')[0] || 'là';
-      const maskedIban = influ.rib.slice(0, 4) + ' •••• •••• ' + influ.rib.slice(-4);
+      const maskedIban = iban.slice(0, 4) + ' •••• •••• ' + iban.slice(-4);
 
       await resendClient.emails.send({
         from: 'EduKaraib <notifications@edukaraib.com>',
@@ -185,7 +185,7 @@ export default async function handler(req, res) {
   }
 
   // ── 4. Log RGPD (IBAN masqué) ─────────────────────────────────────────────
-  const maskedIban = influ.rib.slice(0, 4) + '****' + influ.rib.slice(-4);
+  const maskedIban = iban.slice(0, 4) + '****' + iban.slice(-4);
   console.log(`[payout] ${stripeError ? 'ECHEC' : 'OK'} — ${influ.name} (${influ.email}) — ${pendingEur} EUR → ${maskedIban}${stripePayout ? ' — Stripe ID: ' + stripePayout.id : ''}`);
 
   // ── 5. Réponse ────────────────────────────────────────────────────────────

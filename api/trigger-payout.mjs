@@ -6,6 +6,28 @@ import { captureError } from './_sentry.mjs';
 const GOOGLE_REVIEW_URL = 'https://www.google.com/search?q=EduKaraib+cours+particuliers+Antilles&hl=fr';
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
 
+// ── Idempotence payout ──────────────────────────────────────────────────────
+// Réclame un paiement 'held' en le passant à 'processing' dans une transaction.
+// Renvoie true si ce process a bien obtenu le verrou, false si déjà pris/réglé.
+// Empêche deux appels simultanés de déclencher deux virements pour le même prof.
+async function claimHeldPayment(docId) {
+  const ref = adminDb.collection('payments').doc(docId);
+  return adminDb.runTransaction(async (tx) => {
+    const s = await tx.get(ref);
+    if (!s.exists || s.data()?.status !== 'held') return false;
+    tx.update(ref, { status: 'processing', payout_processing_at: new Date() });
+    return true;
+  });
+}
+// Rend un paiement à l'état 'held' si Stripe a échoué après le claim (retry possible).
+async function revertToHeld(docId) {
+  try {
+    await adminDb.collection('payments').doc(docId).set({ status: 'held' }, { merge: true });
+  } catch (e) {
+    console.warn('[trigger-payout] revert to held failed:', e?.message);
+  }
+}
+
 async function sendGoogleReviewEmail(payerUid, lessonId) {
   if (!payerUid || !process.env.RESEND_API_KEY) return;
   try {
@@ -131,20 +153,18 @@ export default async function handler(req, res) {
       }
 
       // Réutilise le payment doc déjà chargé
-      const paySnap = packPaySnap;
-
-      if (!paySnap.empty) {
-        const currentStatus = paySnap.docs[0].data().status;
-        if (currentStatus === 'released' || currentStatus === 'payout_pending_rib') {
-          return res.json({ ok: true, skipped: 'pack_already_paid_out' });
-        }
-      }
-
-      if (paySnap.empty) {
+      if (packPaySnap.empty) {
         return res.json({ ok: true, skipped: 'no_held_payment' });
       }
 
-      const payDoc = paySnap.docs[0];
+      const payDoc = packPaySnap.docs[0];
+
+      // Idempotence : réclame le paiement (held → processing) avant tout virement
+      const claimed = await claimHeldPayment(payDoc.id);
+      if (!claimed) {
+        return res.json({ ok: true, skipped: 'pack_already_paid_out' });
+      }
+
       const payData = payDoc.data();
       const totalNetCents   = Math.round(Number(payData.net_to_teacher_eur || 0) * 100);
       const totalGrossCents = Math.round(Number(payData.gross_eur || 0) * 100);
@@ -154,16 +174,21 @@ export default async function handler(req, res) {
       const teacherAmountCents = Math.round(totalNetCents * completedCount / totalCount);
       const refundCents        = Math.round(totalGrossCents * uncompletedCount / totalCount);
 
-      return await doPackSettlement({
-        res, stripeReady, stripeAccountId, teacherUid,
-        teacherAmountCents, refundCents,
-        chargeId: payData.stripe_charge_id || null,
-        paymentIntentId: payData.payment_intent_id || null,
-        lessonId: lesson.id,
-        packId: lesson.pack_id,
-        payDoc,
-        completedCount, totalCount,
-      });
+      try {
+        return await doPackSettlement({
+          res, stripeReady, stripeAccountId, teacherUid,
+          teacherAmountCents, refundCents,
+          chargeId: payData.stripe_charge_id || null,
+          paymentIntentId: payData.payment_intent_id || null,
+          lessonId: lesson.id,
+          packId: lesson.pack_id,
+          payDoc,
+          completedCount, totalCount,
+        });
+      } catch (e) {
+        await revertToHeld(payDoc.id);
+        throw e;
+      }
     }
 
     // ── CAS INDIVIDUEL ────────────────────────────────────────
@@ -187,14 +212,28 @@ export default async function handler(req, res) {
 
     const payDoc = paySnap.docs[0];
     const netCents = Math.round(Number(payDoc.data().net_to_teacher_eur || 0) * 100);
+    if (netCents <= 0) {
+      return res.json({ ok: true, skipped: 'zero_amount' });
+    }
 
-    return await doPayout({
-      res, stripeReady, stripeAccountId, teacherUid,
-      amountCents: netCents,
-      lessonId,
-      paymentDocId: payDoc.id,
-      label: `Cours ${lessonId}`,
-    });
+    // Idempotence : réclame le paiement (held → processing) avant tout virement
+    const claimed = await claimHeldPayment(payDoc.id);
+    if (!claimed) {
+      return res.json({ ok: true, skipped: 'already_processing' });
+    }
+
+    try {
+      return await doPayout({
+        res, stripeReady, stripeAccountId, teacherUid,
+        amountCents: netCents,
+        lessonId,
+        paymentDocId: payDoc.id,
+        label: `Cours ${lessonId}`,
+      });
+    } catch (e) {
+      await revertToHeld(payDoc.id);
+      throw e;
+    }
 
   } catch (e) {
     console.error('trigger-payout error:', e);

@@ -16,7 +16,9 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'METHOD_NOT_ALLOWED' });
 
   const { userEmail } = readBody(req);
-  const adminSecret = req.headers['x-admin-secret'] || readBody(req).adminSecret;
+  // Secret lu uniquement depuis le header : un secret dans le body JSON peut être
+  // loggué intégralement par Vercel/Sentry (fuite). Header only.
+  const adminSecret = req.headers['x-admin-secret'];
 
   if (!ADMIN_SECRET) {
     console.error('[create-manual-coupon] ADMIN_COUPON_SECRET env var not set');

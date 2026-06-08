@@ -62,32 +62,37 @@ export default async function handler(req, res) {
     if (paymentType === 'course') {
       const PRIME_PARRAIN = 10;
 
-      // Transaction atomique : lire + vérifier + marquer en une seule opération
+      // Transaction atomique : vérifier le flag filleul ET créditer le parrain
+      // dans la même opération. Le crédit était auparavant hors transaction et
+      // lisait des données obsolètes → risque de double-crédit ou de perte de
+      // mise à jour si le parrain est crédité simultanément ailleurs.
       let shouldCredit = false;
       await adminDb.runTransaction(async (tx) => {
         const freshFilleul = await tx.get(filleulRef);
         if (freshFilleul.data()?.referral_firstCoursePaid) return;
+        const freshParrain = await tx.get(parrainRef);
+        if (!freshParrain.exists) return;
+        const pData = freshParrain.data() || {};
+        const parrainPending = Number(pData?.referralEarnings?.pending || 0);
+        const parrainTotal   = Number(pData?.referralEarnings?.total   || 0);
+
         tx.set(filleulRef, { referral_firstCoursePaid: true }, { merge: true });
+        tx.set(parrainRef, {
+          referralEarnings: {
+            pending: parrainPending + PRIME_PARRAIN,
+            total:   parrainTotal   + PRIME_PARRAIN,
+          },
+          // Mettre à jour firstCoursePaid dans la liste filleuls
+          referralFilleuls: (pData.referralFilleuls || []).map(f =>
+            f.uid === teacherUid ? { ...f, firstCoursePaid: true } : f
+          ),
+        }, { merge: true });
         shouldCredit = true;
       });
 
       if (!shouldCredit) {
         return res.status(200).json({ ok: true, action: 'ALREADY_CREDITED' });
       }
-
-      // Créditer le parrain
-      const parrainPending = Number(parrainData?.referralEarnings?.pending || 0);
-      const parrainTotal   = Number(parrainData?.referralEarnings?.total   || 0);
-      await parrainRef.set({
-        referralEarnings: {
-          pending: parrainPending + PRIME_PARRAIN,
-          total:   parrainTotal   + PRIME_PARRAIN,
-        },
-        // Mettre à jour firstCoursePaid dans la liste filleuls
-        referralFilleuls: (parrainData.referralFilleuls || []).map(f =>
-          f.uid === teacherUid ? { ...f, firstCoursePaid: true } : f
-        ),
-      }, { merge: true });
 
       // Log
       await bonusLog.add({
@@ -144,36 +149,40 @@ export default async function handler(req, res) {
     if (paymentType === 'pack5') {
       const PRIME_FILLEUL = 20;
 
+      // Transaction atomique : flag + crédit filleul + maj liste parrain en une
+      // seule opération (le crédit était hors transaction → perte de mise à jour
+      // possible si le filleul est crédité simultanément ailleurs).
       let shouldCreditFilleul = false;
       await adminDb.runTransaction(async (tx) => {
         const freshFilleul = await tx.get(filleulRef);
         if (freshFilleul.data()?.referral_firstPackPaid) return;
-        tx.set(filleulRef, { referral_firstPackPaid: true }, { merge: true });
+        const freshParrain = await tx.get(parrainRef);
+        const fData = freshFilleul.data() || {};
+        const filleulPending = Number(fData?.referralEarnings?.pending || 0);
+        const filleulTotal   = Number(fData?.referralEarnings?.total   || 0);
+
+        tx.set(filleulRef, {
+          referral_firstPackPaid: true,
+          referralEarnings: {
+            pending: filleulPending + PRIME_FILLEUL,
+            total:   filleulTotal   + PRIME_FILLEUL,
+          },
+        }, { merge: true });
+
+        if (freshParrain.exists) {
+          const pData = freshParrain.data() || {};
+          tx.set(parrainRef, {
+            referralFilleuls: (pData.referralFilleuls || []).map(f =>
+              f.uid === teacherUid ? { ...f, firstPackPaid: true } : f
+            ),
+          }, { merge: true });
+        }
         shouldCreditFilleul = true;
       });
 
       if (!shouldCreditFilleul) {
         return res.status(200).json({ ok: true, action: 'PACK_ALREADY_CREDITED' });
       }
-
-      const freshFilleulSnap = await filleulRef.get();
-      const freshFilleulData = freshFilleulSnap.data() || {};
-      const filleulPending = Number(freshFilleulData?.referralEarnings?.pending || 0);
-      const filleulTotal   = Number(freshFilleulData?.referralEarnings?.total   || 0);
-      await filleulRef.set({
-        referralEarnings: {
-          pending: filleulPending + PRIME_FILLEUL,
-          total:   filleulTotal   + PRIME_FILLEUL,
-        },
-      }, { merge: true });
-
-      const freshParrainSnap = await parrainRef.get();
-      const freshParrainData = freshParrainSnap.data() || {};
-      await parrainRef.set({
-        referralFilleuls: (freshParrainData.referralFilleuls || []).map(f =>
-          f.uid === teacherUid ? { ...f, firstPackPaid: true } : f
-        ),
-      }, { merge: true });
 
       // Log
       await bonusLog.add({

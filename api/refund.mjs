@@ -49,13 +49,29 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: 'FORBIDDEN' });
   }
 
+  // ── Idempotence : réclamer le remboursement atomiquement ──────────────────
+  // Sans ça, deux soumissions simultanées (ou un retry réseau) peuvent lancer
+  // deux fois reverse transfer + refund → on rembourse deux fois.
+  const originalStatus = pay.status;
+  if (originalStatus !== 'held' && originalStatus !== 'released') {
+    return res.status(400).json({ error: `INVALID_STATUS_${originalStatus}` });
+  }
+  const claimed = await adminDb.runTransaction(async (tx) => {
+    const s = await tx.get(paymentRef);
+    const st = s.data()?.status;
+    if (st !== 'held' && st !== 'released') return false;
+    tx.update(paymentRef, { status: 'refunding', refund_started_at: new Date() });
+    return true;
+  });
+  if (!claimed) return res.status(409).json({ error: 'REFUND_ALREADY_IN_PROGRESS' });
+
   // Charger la leçon
   const lessonRef = adminDb.collection('lessons').doc(String(pay.lesson_id));
   const lessonSnap = await lessonRef.get();
   const lesson = lessonSnap.exists ? { id: lessonSnap.id, ...lessonSnap.data() } : null;
 
   try {
-    if (pay.status === 'held') {
+    if (originalStatus === 'held') {
       // --- Cas A: Non libéré au prof => simple Refund du PaymentIntent
       if (!pay.payment_intent_id) {
         return res.status(400).json({ error: 'MISSING_PAYMENT_INTENT' });
@@ -85,7 +101,7 @@ export default async function handler(req, res) {
       return res.json({ ok: true, type: 'refund', id: refund.id });
     }
 
-    if (pay.status === 'released') {
+    if (originalStatus === 'released') {
       // --- Cas B: Déjà libéré au prof => il faut reprendre l'argent (reverse transfer)
       // 1) Reverse transfer (total ou partiel)
       if (!pay.transfer_id) {
@@ -157,6 +173,13 @@ export default async function handler(req, res) {
   } catch (e) {
     console.error('refund error', e);
     captureError(e, { payment_id: paymentId, caller_uid: adminUid });
+    // Stripe a échoué après avoir réclamé le remboursement : on rend le paiement
+    // à son état d'origine pour qu'une nouvelle tentative reste possible.
+    try {
+      await paymentRef.set({ status: originalStatus, refund_started_at: null }, { merge: true });
+    } catch (revertErr) {
+      console.warn('refund revert failed', revertErr?.message);
+    }
     return res.status(500).json({ error: e.message });
   }
 }
