@@ -20,24 +20,18 @@ export default async function handler(req, res) {
   const from = new Date(now + 20 * 60 * 1000);
   const to   = new Date(now + 40 * 60 * 1000);
 
-  // On cherche les leçons avec startAt dans cette fenêtre, pas encore rappelées
-  const snap = await db.collection('lessons')
-    .where('startAt', '>=', from)
-    .where('startAt', '<=', to)
-    .where('reminder_sent', '==', false)
-    .get();
-
-  // Leçons sans le champ reminder_sent (créées avant cette feature)
+  // On récupère toutes les leçons dont startAt est dans la fenêtre, puis on
+  // filtre `reminder_sent` en mémoire (ligne plus bas). Une requête sur le seul
+  // range `startAt` n'exige qu'un index simple (auto-créé) ; ajouter
+  // `where('reminder_sent','==',false)` imposerait un index composite inexistant
+  // → FAILED_PRECONDITION. On évite donc ce 2ᵉ filtre côté Firestore.
   const snap2 = await db.collection('lessons')
     .where('startAt', '>=', from)
     .where('startAt', '<=', to)
     .get();
 
   const docs = new Map();
-  snap.docs.forEach(d => docs.set(d.id, d));
-  snap2.docs.forEach(d => {
-    if (d.data().reminder_sent === undefined) docs.set(d.id, d);
-  });
+  snap2.docs.forEach(d => docs.set(d.id, d));
 
   let sent = 0;
   const errors = [];

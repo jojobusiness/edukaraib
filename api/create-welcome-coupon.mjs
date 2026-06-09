@@ -120,7 +120,8 @@ export default async function handler(req, res) {
       `,
     });
 
-    if (!mailResult?.id) {
+    // Resend SDK v6 : l'id est dans mailResult.data.id
+    if (!mailResult?.data?.id) {
       console.error('[create-welcome-coupon] mail non envoyé:', mailResult);
     }
 

@@ -122,7 +122,8 @@ export default async function handler(req, res) {
     return res.json({
       ok: true,
       code,
-      mailSent: !!mailResult?.id,
+      // Resend SDK v6 : l'id est dans mailResult.data.id (pas mailResult.id)
+      mailSent: !!mailResult?.data?.id,
       uid,
     });
 

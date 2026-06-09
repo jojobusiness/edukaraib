@@ -98,24 +98,31 @@ export default async function handler(req, res) {
     }
     if (!to) return res.json({ ok: true, skipped: "no_email" });
 
-    let result = await resend.emails.send({
+    // ⚠️ Resend SDK v6 renvoie { data, error }, PAS { id } directement.
+    // L'id est dans result.data.id. Tester result.id renvoyait toujours faux
+    // → 500 systématique alors que l'email partait (et était même renvoyé 2×).
+    const pro = await resend.emails.send({
       from: FROM_PRO,
       to: [to],
       subject: title || "Notification EduKaraib",
       html: htmlTpl({ title, message, ctaUrl, ctaText }),
     });
 
-    if (!result?.id) {
-      result = await resend.emails.send({
-        from: FROM_TEST,
-        to: [to],
-        subject: title || "Notification EduKaraib",
-        html: htmlTpl({ title, message, ctaUrl, ctaText }),
-      });
-    }
+    if (pro?.data?.id) return res.json({ ok: true, id: pro.data.id });
 
-    if (result?.id) return res.json({ ok: true, id: result.id });
-    return res.status(500).json({ ok: false, error: "send_failed" });
+    // Fallback uniquement si l'envoi pro a échoué
+    const fallback = await resend.emails.send({
+      from: FROM_TEST,
+      to: [to],
+      subject: title || "Notification EduKaraib",
+      html: htmlTpl({ title, message, ctaUrl, ctaText }),
+    });
+    if (fallback?.data?.id) return res.json({ ok: true, id: fallback.data.id });
+
+    return res.status(500).json({
+      ok: false,
+      error: pro?.error?.message || fallback?.error?.message || "send_failed",
+    });
   } catch (e) {
     const msg = (e && e.response) || e?.message || String(e);
     return res.status(500).json({ ok: false, error: msg });
