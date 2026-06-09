@@ -183,7 +183,8 @@ export default function Bac() {
               Code {promoCode} activé — ta remise s'appliquera au paiement
             </div>
           )}
-          <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight mb-4">
+          {/* text-white explicite : index.css force h1/h2/h3 en text-gray-800 */}
+          <h1 className="text-3xl sm:text-4xl font-extrabold leading-tight mb-4 text-white">
             {hero.title}
           </h1>
           <p className="text-slate-300 text-base sm:text-lg mb-6">
@@ -378,7 +379,7 @@ export default function Bac() {
           <p className="text-yellow-400 font-bold text-sm mb-2">
             🔥 {PROFS_DISPO} profs disponibles cette semaine
           </p>
-          <h2 className="text-2xl sm:text-3xl font-extrabold mb-4">
+          <h2 className="text-2xl sm:text-3xl font-extrabold mb-4 text-white">
             {phase === 'rattrapage'
               ? 'Le rattrapage ne t’attendra pas.'
               : 'Chaque jour compte avant les épreuves.'}
