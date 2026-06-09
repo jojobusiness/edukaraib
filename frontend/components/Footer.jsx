@@ -24,6 +24,7 @@ export default function Footer() {
             <Link to="/cours-maths" className="hover:text-primary hover:underline">Cours de Maths</Link>
             <Link to="/cours-anglais" className="hover:text-primary hover:underline">Cours d'Anglais</Link>
             <Link to="/cours-francais" className="hover:text-primary hover:underline">Cours de Français</Link>
+            <Link to="/bac" className="hover:text-primary hover:underline">Soutien Bac 2026</Link>
           </div>
         </div>
 

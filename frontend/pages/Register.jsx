@@ -12,6 +12,7 @@ import StripeConnectButtons from '../components/stripe/StripeConnectButtons';
 import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
 import fetchWithAuth from '../utils/fetchWithAuth';
+import { getCampaignSubject } from '../lib/bacCampaign';
 
 // ————————————————————————————————
 // Villes des Caraïbes et au-delà (pour profs en visio du monde entier)
@@ -167,6 +168,8 @@ export default function Register() {
   const [searchParams] = useSearchParams();
   // Code parrain student transmis via ?ref=REF-XXXXXX
   const refCodeFromUrl = searchParams.get('ref') || '';
+  // Mode express (landing /bac) : email + mdp + prénom/nom + rôle, c'est tout
+  const isExpress = searchParams.get('express') === '1';
 
   // ✅ Lien utilisé dans les emails Firebase (vérif email)
   const actionCodeSettings = {
@@ -207,8 +210,10 @@ export default function Register() {
     if (!form.password || form.password.length < 6) return alert("Mot de passe trop court (≥6).");
     if (form.password !== confirmPassword) return alert("Les mots de passe ne correspondent pas.");
 
-    if (!form.city) return alert("Merci d’indiquer votre ville.");
-    if (!existsCity(form.city)) return alert("Ville inconnue : choisissez une ville proposée dans la liste, ou sélectionnez 'En ligne'.");
+    if (!isExpress) {
+      if (!form.city) return alert("Merci d’indiquer votre ville.");
+      if (!existsCity(form.city)) return alert("Ville inconnue : choisissez une ville proposée dans la liste, ou sélectionnez 'En ligne'.");
+    }
     if (form.birth) {
       if (form.birth > TODAY) return alert("La date de naissance ne peut pas dépasser la date d’aujourd’hui.");
     }
@@ -302,7 +307,7 @@ export default function Register() {
         lastName: form.lastName,
         fullName,
         phone: form.phone || '',
-        city: form.city || '',
+        city: form.city || (isExpress ? 'En ligne' : ''),
         avatarUrl,
         createdAt: serverTimestamp(),
       };
@@ -449,7 +454,11 @@ export default function Register() {
           }).catch(e => console.warn('[apply-student-referral] échec:', e?.message));
         }
 
-        if (form.role === 'parent') {
+        if (isExpress) {
+          // Tunnel /bac : direct vers les profs de la matière choisie
+          const subj = getCampaignSubject();
+          navigate(subj ? `/search?subject=${encodeURIComponent(subj)}` : '/search');
+        } else if (form.role === 'parent') {
           navigate('/parent/dashboard');
         } else {
           navigate('/dashboard-eleve');
@@ -493,9 +502,13 @@ export default function Register() {
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
         <div className="flex flex-col items-center mb-6">
           <img src="/edukaraib_logo.png" alt="Logo EduKaraib" className="h-14 mb-3" />
-          <h2 className="text-2xl font-bold text-primary mb-1">Inscription</h2>
+          <h2 className="text-2xl font-bold text-primary mb-1">
+            {isExpress ? 'Inscription express' : 'Inscription'}
+          </h2>
           <p className="text-gray-600 text-center text-sm">
-            Crée ton compte gratuitement et trouve le prof qu’il te faut en au Caraïbe !
+            {isExpress
+              ? '30 secondes et tu choisis ton prof.'
+              : 'Crée ton compte gratuitement et trouve le prof qu’il te faut en au Caraïbe !'}
           </p>
         </div>
 
@@ -523,10 +536,12 @@ export default function Register() {
           // Étape A : formulaire
           <form className="space-y-4" onSubmit={startRegister}>
             {/* Photo */}
-            <div>
-              <label className="block mb-1 text-sm font-medium text-gray-700">Photo de profil</label>
-              <input type="file" accept="image/*" onChange={handlePhoto} className="w-full text-sm" />
-            </div>
+            {!isExpress && (
+              <div>
+                <label className="block mb-1 text-sm font-medium text-gray-700">Photo de profil</label>
+                <input type="file" accept="image/*" onChange={handlePhoto} className="w-full text-sm" />
+              </div>
+            )}
 
             {/* Prénom / Nom */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -643,12 +658,12 @@ export default function Register() {
               >
                 <option value="student">Élève</option>
                 <option value="parent">Parent</option>
-                <option value="teacher">Professeur</option>
+                {!isExpress && <option value="teacher">Professeur</option>}
               </select>
             </div>
 
             {/* Téléphone (facultatif mais validé si saisi) */}
-            {(form.role === 'parent' || form.role === 'teacher') && (
+            {!isExpress && (form.role === 'parent' || form.role === 'teacher') && (
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1">
                   Téléphone
@@ -668,6 +683,7 @@ export default function Register() {
             )}
 
             {/* Ville */}
+            {!isExpress && (
             <div>
               <label className="block mb-1 text-sm font-medium text-gray-700">Ville (commune)</label>
               <select
@@ -683,9 +699,10 @@ export default function Register() {
                 ))}
               </select>
             </div>
+            )}
 
             {/* Élève */}
-            {form.role === 'student' && (
+            {!isExpress && form.role === 'student' && (
               <>
                 <div>
                   <label className="block mb-1 text-sm font-medium text-gray-700">Niveau scolaire</label>

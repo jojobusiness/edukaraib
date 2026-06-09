@@ -60,6 +60,7 @@ import CoursMaths from './pages/seo/CoursMaths';
 import CoursAnglais from './pages/seo/CoursAnglais';
 import CoursFrancais from './pages/seo/CoursFrancais';
 import FAQ from './pages/FAQ';
+import Bac from './pages/Bac';
 import About from './pages/About';
 import Blog from './pages/Blog';
 import BlogPost from './pages/BlogPost';
@@ -229,6 +230,10 @@ function App() {
             <Route path="/cours-maths" element={<CoursMaths />} />
             <Route path="/cours-anglais" element={<CoursAnglais />} />
             <Route path="/cours-francais" element={<CoursFrancais />} />
+
+            {/* 🎯 Landing campagne bac (influenceurs : /bac?code=XXX) */}
+            <Route path="/bac" element={<Bac />} />
+            <Route path="/rattrapage" element={<Bac />} />
             <Route path="/about" element={<About />} />
             <Route path="/blog" element={<Blog />} />
             <Route path="/blog/:slug" element={<BlogPost />} />

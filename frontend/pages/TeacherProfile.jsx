@@ -7,6 +7,7 @@ import {
 } from 'firebase/firestore';
 import BookingModal from '../components/BookingModal';
 import { useSEO } from '../hooks/useSEO';
+import { getCampaignPack, getCampaignSubject, setChatDraft } from '../lib/bacCampaign';
 
 const DAYS_ORDER = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
@@ -181,6 +182,29 @@ export default function TeacherProfile() {
   const [bookMode, setBookMode] = useState('presentiel');
   const [packChoice, setPackChoice] = useState(0); // 0 = aucun pack, 5, 10
   const [hoursWanted, setHoursWanted] = useState(1); // utilisé seulement si aucun pack
+
+  // Tunnel /bac : pré-sélectionne le pack choisi sur la landing
+  useEffect(() => {
+    const p = getCampaignPack();
+    if (p === 5 || p === 10) setPackChoice(p);
+  }, []);
+
+  // Tunnel /bac : message pré-rempli pour le prof (pack + matière), injecté dans la messagerie
+  const handleContactTeacher = () => {
+    if (!auth.currentUser) return navigate('/login');
+    const pack = getCampaignPack();
+    const subject = getCampaignSubject();
+    if (pack !== null || subject) {
+      const packLabel = pack === 5 ? 'Pack Intensif 5h' : pack === 10 ? 'Pack Prépa 10h' : 'un cours';
+      const firstName = (teacher?.fullName || teacher?.firstName || '').split(' ')[0];
+      setChatDraft(
+        `Bonjour${firstName ? ` ${firstName}` : ''}, je suis intéressé(e) par le ${packLabel}` +
+        `${subject ? ` pour préparer le bac en ${subject}` : ' pour préparer le bac'}. ` +
+        `Quels créneaux avez-vous cette semaine ? Merci !`
+      );
+    }
+    navigate(`/chat/${teacherId}`);
+  };
 
   const [promoCode, setPromoCode] = useState('');
   const [promoOk, setPromoOk] = useState(false);
@@ -1380,10 +1404,7 @@ export default function TeacherProfile() {
                 {!isOwnProfile && (
                   <button
                     className="mt-4 w-full bg-yellow-400 text-slate-900 px-5 py-3 rounded-xl font-semibold shadow hover:bg-yellow-500 transition"
-                    onClick={() => {
-                      if (!auth.currentUser) return navigate("/login");
-                      navigate(`/chat/${teacherId}`);
-                    }}
+                    onClick={handleContactTeacher}
                   >
                     Contacter le professeur
                   </button>
@@ -2024,10 +2045,7 @@ export default function TeacherProfile() {
                 {!isOwnProfile && (
                   <button
                     className="mt-4 w-full bg-yellow-400 text-slate-900 px-5 py-3 rounded-xl font-semibold shadow hover:bg-yellow-500 transition"
-                    onClick={() => {
-                      if (!auth.currentUser) return navigate("/login");
-                      navigate(`/chat/${teacherId}`);
-                    }}
+                    onClick={handleContactTeacher}
                   >
                     Contacter le professeur
                   </button>

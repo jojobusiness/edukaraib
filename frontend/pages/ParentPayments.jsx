@@ -13,6 +13,11 @@ import {
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
 import fetchWithAuth from '../utils/fetchWithAuth';
+import { getCampaignCode } from '../lib/bacCampaign';
+
+// Codes à remise fixe -5€ (front) — les autres (codes influenceurs) sont validés côté serveur
+const FIXED5_PREFIX = /^(BIENVENUE|AVIS|FILLEUL|PARRAIN)-/;
+const GENERIC_CODE = /^[A-Z0-9-]{4,20}$/;
 
 // Convertit slot_day + slot_hour + date/start_datetime en objet Date complet
 const buildStartDate = (lesson) => {
@@ -213,6 +218,32 @@ export default function ParentPayments() {
   const [couponCodes, setCouponCodes] = useState({}); // { "lessonId:studentId": "CODE" }
   const [couponErrors, setCouponErrors] = useState({});
   const [couponValid, setCouponValid] = useState({}); // { rowKey: true } quand appliqué
+
+  // Pré-remplit le code campagne (/bac?code=XXX) sur les lignes sans code — le parent ne tape rien
+  useEffect(() => {
+    const campaignCode = getCampaignCode();
+    if (!campaignCode || !toPay.length) return;
+    setCouponCodes(prev => {
+      const next = { ...prev };
+      let changed = false;
+      toPay.forEach((r) => {
+        const rk = `${r.lesson.id}:${r.forStudent}`;
+        if (!next[rk]) { next[rk] = campaignCode; changed = true; }
+      });
+      if (changed) {
+        setCouponValid(pv => {
+          const v = { ...pv };
+          toPay.forEach((r) => {
+            const rk = `${r.lesson.id}:${r.forStudent}`;
+            if (next[rk] === campaignCode) v[rk] = true;
+          });
+          return v;
+        });
+      }
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toPay]);
 
   const teacherCacheRef = useRef(new Map());
   const childNameCacheRef = useRef(new Map());
@@ -509,7 +540,7 @@ export default function ParentPayments() {
             {!loading && (
               <span className="text-xs text-gray-600">
                 Total à régler :{' '}
-                {Object.keys(couponValid).some(k => couponValid[k]) ? (
+                {Object.keys(couponValid).some(k => couponValid[k] && FIXED5_PREFIX.test(couponCodes[k] || '')) ? (
                   <>
                     <span className="line-through text-gray-400 mr-1">
                       {toPay.reduce((acc, r) => acc + getDisplayAmountForChild(r.lesson, r.forStudent), 0).toFixed(2)} €
@@ -518,7 +549,8 @@ export default function ParentPayments() {
                       {toPay.reduce((acc, r) => {
                         const rk = `${r.lesson.id}:${r.forStudent}`;
                         const base = getDisplayAmountForChild(r.lesson, r.forStudent);
-                        return acc + Math.max(0, base - (couponValid[rk] && couponCodes[rk] ? 5 : 0));
+                        const fixed5 = couponValid[rk] && FIXED5_PREFIX.test(couponCodes[rk] || '');
+                        return acc + Math.max(0, base - (fixed5 ? 5 : 0));
                       }, 0).toFixed(2)} €
                     </span>
                   </>
@@ -546,7 +578,7 @@ export default function ParentPayments() {
                       <div className="font-bold text-primary flex items-center flex-wrap gap-2">
                         {r.lesson.subject_id || 'Matière'}
                         {getDisplayAmountForChild(r.lesson, r.forStudent) ? (
-                          couponValid[rowKey] && couponCodes[rowKey] ? (
+                          couponValid[rowKey] && couponCodes[rowKey] && FIXED5_PREFIX.test(couponCodes[rowKey]) ? (
                             <span className="flex items-center gap-1">
                               <span className="text-gray-400 line-through text-xs font-normal">
                                 {getDisplayAmountForChild(r.lesson, r.forStudent).toFixed(2)} €
@@ -619,8 +651,9 @@ export default function ParentPayments() {
                           onClick={() => {
                             const code = couponCodes[rowKey]?.trim();
                             if (!code) return;
-                            // Validation légère côté front : formats acceptés
-                            if (code.startsWith('BIENVENUE-') || code.startsWith('AVIS-') || code.startsWith('FILLEUL-') || code.startsWith('PARRAIN-')) {
+                            // Accepte les coupons -5€ ET les codes influenceurs (ex: LHATIEN81)
+                            // La vraie validation se fait côté serveur au checkout
+                            if (FIXED5_PREFIX.test(code) || GENERIC_CODE.test(code)) {
                               setCouponValid(prev => ({ ...prev, [rowKey]: true }));
                               setCouponErrors(prev => ({ ...prev, [rowKey]: '' }));
                             } else {
@@ -635,7 +668,10 @@ export default function ParentPayments() {
                       </div>
                       {couponValid[rowKey] && (
                         <div className="flex items-center gap-1 text-xs text-green-600 font-medium">
-                          <span>🎟️</span> -5 € sur la commission appliqués
+                          <span>🎟️</span>
+                          {FIXED5_PREFIX.test(couponCodes[rowKey] || '')
+                            ? '-5 € sur la commission appliqués'
+                            : `Code ${couponCodes[rowKey]} appliqué — remise calculée au paiement`}
                         </div>
                       )}
                       {couponErrors[rowKey] && (

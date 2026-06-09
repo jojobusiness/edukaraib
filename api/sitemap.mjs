@@ -15,6 +15,7 @@ const STATIC_URLS = [
   { loc: 'https://edukaraib.com/cours-maths', changefreq: 'monthly', priority: '0.8' },
   { loc: 'https://edukaraib.com/cours-anglais', changefreq: 'monthly', priority: '0.8' },
   { loc: 'https://edukaraib.com/cours-francais', changefreq: 'monthly', priority: '0.8' },
+  { loc: 'https://edukaraib.com/bac', changefreq: 'weekly', priority: '0.85' },
   { loc: 'https://edukaraib.com/faq', changefreq: 'monthly', priority: '0.75' },
   { loc: 'https://edukaraib.com/influencer', changefreq: 'monthly', priority: '0.7' },
   { loc: 'https://edukaraib.com/about', changefreq: 'yearly', priority: '0.5' },

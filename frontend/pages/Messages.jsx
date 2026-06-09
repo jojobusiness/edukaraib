@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { auth, db } from "../lib/firebase";
+import { consumeChatDraft } from "../lib/bacCampaign";
 import {
   collection,
   query,
@@ -232,6 +233,12 @@ export default function Messages(props) {
   const [cid, setCid] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
+
+  // Tunnel /bac : brouillon pré-rempli (pack + matière) déposé par TeacherProfile
+  useEffect(() => {
+    const draft = consumeChatDraft();
+    if (draft) setNewMessage((cur) => cur || draft);
+  }, []);
   const [sending, setSending] = useState(false);
   const [receiverName, setReceiverName] = useState("");
   const [receiverAvatar, setReceiverAvatar] = useState("/avatar-default.png");

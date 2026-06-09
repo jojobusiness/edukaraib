@@ -13,6 +13,11 @@ import {
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
 import fetchWithAuth from '../utils/fetchWithAuth';
+import { getCampaignCode } from '../lib/bacCampaign';
+
+// Codes à remise fixe -5€ (front) — les autres (codes influenceurs) sont validés côté serveur
+const FIXED5_PREFIX = /^(BIENVENUE|AVIS|FILLEUL|PARRAIN)-/;
+const GENERIC_CODE = /^[A-Z0-9-]{4,20}$/;
 
 // Convertit slot_day + slot_hour + date/start_datetime en objet Date complet
 const buildStartDate = (lesson) => {
@@ -182,9 +187,10 @@ export default function StudentPayments() {
   const [payingId, setPayingId] = useState(null);
   const [refundingId, setRefundingId] = useState(null);
   const [invoiceLoadingId, setInvoiceLoadingId] = useState(null);
-  const [couponCode, setCouponCode] = useState('');
+  // Pré-rempli avec le code campagne (/bac?code=XXX) s'il existe — l'élève ne tape rien
+  const [couponCode, setCouponCode] = useState(() => getCampaignCode() || '');
   const [couponError, setCouponError] = useState('');
-  const [couponValid, setCouponValid] = useState(false);
+  const [couponValid, setCouponValid] = useState(() => !!getCampaignCode());
   const teacherCacheRef = useRef(new Map());
   const [uid, setUid] = useState(auth.currentUser?.uid || null);
 
@@ -459,7 +465,7 @@ export default function StudentPayments() {
             {!loading && (
               <span className="text-xs text-gray-600">
                 Total à régler :{' '}
-                {couponValid ? (
+                {couponValid && FIXED5_PREFIX.test(couponCode) ? (
                   <>
                     <span className="line-through text-gray-400 mr-1">{totals.due.toFixed(2)} €</span>
                     <span className="text-green-600 font-semibold">
@@ -543,7 +549,9 @@ export default function StudentPayments() {
                           onClick={() => {
                             const code = couponCode.trim();
                             if (!code) return;
-                            if (code.startsWith('BIENVENUE-') || code.startsWith('AVIS-') || code.startsWith('FILLEUL-') || code.startsWith('PARRAIN-')) {
+                            // Accepte les coupons -5€ ET les codes influenceurs (ex: LHATIEN81)
+                            // La vraie validation se fait côté serveur au checkout
+                            if (FIXED5_PREFIX.test(code) || GENERIC_CODE.test(code)) {
                               setCouponValid(true);
                               setCouponError('');
                             } else {
@@ -558,7 +566,10 @@ export default function StudentPayments() {
                       </div>
                       {couponValid && (
                         <div className="flex items-center gap-1 text-xs text-green-600 font-medium">
-                          <span>🎟️</span> -5 € sur la commission appliqués
+                          <span>🎟️</span>
+                          {FIXED5_PREFIX.test(couponCode)
+                            ? '-5 € sur la commission appliqués'
+                            : `Code ${couponCode} appliqué — remise calculée au paiement`}
                         </div>
                       )}
                       {couponError && (
