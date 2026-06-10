@@ -51,12 +51,10 @@ const htmlTpl = ({
         <td style="background:#0ea5e9;padding:18px 20px;">
           <table width="100%" cellspacing="0" cellpadding="0">
             <tr>
-              <td style="vertical-align:middle;">
-                <span style="display:inline-flex;align-items:center;gap:10px;">
-                  <img src="https://edukaraib.com/edukaraib_logo.png" alt="EduKaraib" style="width:40px;height:40px;border-radius:8px;background:#fff;display:block;border:1px solid rgba(255,255,255,.35);" />
-                  <span style="color:#fff;font-weight:700;font-size:16px;letter-spacing:.2px;">EduKaraib</span>
-                </span>
+              <td style="vertical-align:middle;width:40px;">
+                <img src="https://edukaraib.com/edukaraib_logo.png" alt="EduKaraib" style="width:40px;height:40px;border-radius:8px;background:#fff;display:block;border:1px solid rgba(255,255,255,.35);" />
               </td>
+              <td style="vertical-align:middle;padding-left:12px;color:#fff;font-weight:700;font-size:16px;letter-spacing:.2px;">EduKaraib</td>
               <td align="right" style="color:#dff3ff;font-weight:600;font-size:12px;">Notification</td>
             </tr>
           </table>
