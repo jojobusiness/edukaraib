@@ -157,14 +157,54 @@ async function getUserEmail(uid) {
 async function notifyByEmail(uid, title, message, ctaUrl, ctaText = "Ouvrir le tableau de bord") {
   try {
     const to = await getUserEmail(uid);
-    if (!to) return;
+    if (!to) return true; // pas d'email connu : rien à envoyer, pas un échec
     await fetchWithAuth("/api/notify-email", {
       method: "POST",
       body: JSON.stringify({ to, title, message, ctaUrl, ctaText }),
     });
+    return true;
   } catch (e) {
     console.warn("notify-email error:", e);
+    return false;
   }
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Broadcast throttlé : Resend plafonne à 5 req/s — on reste à 3 emails/s,
+// puis on retente une fois les emails en échec. Retourne le nb d'emails KO.
+async function broadcastToUids(uids, title, message, ctaUrl) {
+  const fromAdmin = auth.currentUser?.uid || null;
+  let emailFails = [];
+  for (let i = 0; i < uids.length; i += 3) {
+    const chunk = uids.slice(i, i + 3);
+    await Promise.all(chunk.map(async (uid) => {
+      await addDoc(collection(db, 'notifications'), {
+        user_id: uid,
+        title,
+        message,
+        type: 'admin_broadcast',
+        created_at: serverTimestamp(),
+        from_admin: fromAdmin,
+        email_disabled: true,
+      });
+      const ok = await notifyByEmail(uid, title, message, ctaUrl);
+      if (!ok) emailFails.push(uid);
+    }));
+    if (i + 3 < uids.length) await sleep(1100);
+  }
+  if (emailFails.length) {
+    const retry = emailFails;
+    emailFails = [];
+    for (let i = 0; i < retry.length; i += 3) {
+      await sleep(1100);
+      await Promise.all(retry.slice(i, i + 3).map(async (uid) => {
+        const ok = await notifyByEmail(uid, title, message, ctaUrl);
+        if (!ok) emailFails.push(uid);
+      }));
+    }
+  }
+  return emailFails.length;
 }
 // --- /helper ---
 
@@ -1088,21 +1128,8 @@ export default function AdminDashboard() {
                     try {
                       setMessageSending(true);
                       const ids = Array.from(selectedIds);
-                      for (let _i = 0; _i < ids.length; _i += 20) {
-                        await Promise.all(ids.slice(_i, _i + 20).map(async (uid) => {
-                          await addDoc(collection(db, 'notifications'), {
-                            user_id: uid,
-                            title: messageTitle.trim(),
-                            message: messageBody.trim(),
-                            type: 'admin_broadcast',
-                            created_at: serverTimestamp(),
-                            from_admin: auth.currentUser?.uid || null,
-                            email_disabled: true,
-                          });
-                          await notifyByEmail(uid, messageTitle.trim(), messageBody.trim(), "https://edukaraib.com/smart-dashboard", "Ouvrir le tableau de bord");
-                        }));
-                      }
-                      alert('Message envoyé aux comptes sélectionnés.');
+                      const fails = await broadcastToUids(ids, messageTitle.trim(), messageBody.trim(), "https://edukaraib.com/smart-dashboard");
+                      alert(fails ? `Message envoyé, mais ${fails} email(s) en échec (notification in-app OK).` : 'Message envoyé aux comptes sélectionnés.');
                       setMessageTitle('');
                       setMessageBody('');
                     } finally {
@@ -1120,21 +1147,8 @@ export default function AdminDashboard() {
                   onClick={async () => {
                     try {
                       setMessageSending(true);
-                      for (let _i = 0; _i < filteredUsers.length; _i += 20) {
-                        await Promise.all(filteredUsers.slice(_i, _i + 20).map(async (u) => {
-                          await addDoc(collection(db, 'notifications'), {
-                            user_id: u.id,
-                            title: messageTitle.trim(),
-                            message: messageBody.trim(),
-                            type: 'admin_broadcast',
-                            created_at: serverTimestamp(),
-                            from_admin: auth.currentUser?.uid || null,
-                            email_disabled: true,
-                          });
-                          await notifyByEmail(u.id, messageTitle.trim(), messageBody.trim(), "https://edukaraib.com/dashboard", "Ouvrir le tableau de bord");
-                        }));
-                      }
-                      alert('Message envoyé à la liste filtrée.');
+                      const fails = await broadcastToUids(filteredUsers.map((u) => u.id), messageTitle.trim(), messageBody.trim(), "https://edukaraib.com/dashboard");
+                      alert(fails ? `Message envoyé, mais ${fails} email(s) en échec (notification in-app OK).` : 'Message envoyé à la liste filtrée.');
                       setMessageTitle('');
                       setMessageBody('');
                     } finally {
@@ -1153,21 +1167,8 @@ export default function AdminDashboard() {
                     try {
                       setMessageSending(true);
                       const nonAdmins = users.filter(u => u.role !== 'admin');
-                      for (let _i = 0; _i < nonAdmins.length; _i += 20) {
-                        await Promise.all(nonAdmins.slice(_i, _i + 20).map(async (u) => {
-                          await addDoc(collection(db, 'notifications'), {
-                            user_id: u.id,
-                            title: messageTitle.trim(),
-                            message: messageBody.trim(),
-                            type: 'admin_broadcast',
-                            created_at: serverTimestamp(),
-                            from_admin: auth.currentUser?.uid || null,
-                            email_disabled: true,
-                          });
-                          await notifyByEmail(u.id, messageTitle.trim(), messageBody.trim(), "https://edukaraib.com/dashboard", "Ouvrir le tableau de bord");
-                        }));
-                      }
-                      alert('Message envoyé à tous (hors admins).');
+                      const fails = await broadcastToUids(nonAdmins.map((u) => u.id), messageTitle.trim(), messageBody.trim(), "https://edukaraib.com/dashboard");
+                      alert(fails ? `Message envoyé, mais ${fails} email(s) en échec (notification in-app OK).` : 'Message envoyé à tous (hors admins).');
                       setMessageTitle('');
                       setMessageBody('');
                     } finally {
