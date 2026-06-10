@@ -10,6 +10,33 @@ const FROM_PRO = "EduKaraib <notifications@edukaraib.com>"; // pro (après véri
 
 const safe = (s = "") => String(s).replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+// URLs cliquables dans le texte (appliqué APRÈS échappement HTML)
+const linkify = (escaped) =>
+  escaped.replace(/(https?:\/\/[^\s<]+)/g, (u) => `<a href="${u}" style="color:#0ea5e9;text-decoration:underline;word-break:break-all;">${u}</a>`);
+
+// Texte brut → HTML structuré : paragraphes (ligne vide), <br/> (retour simple),
+// listes numérotées ("1. ...") et à puces ("- ..." / "• ...")
+const TXT_STYLE = "color:#334155;font-size:15px;line-height:1.65;";
+function renderMessage(message = "") {
+  const blocks = String(message).replace(/\r\n/g, "\n").split(/\n{2,}/);
+  return blocks
+    .map((block) => {
+      const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+      if (!lines.length) return "";
+      const isOl = lines.length > 1 && lines.every((l) => /^\d+[.)]\s/.test(l));
+      const isUl = lines.length > 1 && lines.every((l) => /^[-•*]\s/.test(l));
+      if (isOl || isUl) {
+        const items = lines
+          .map((l) => `<li style="margin:0 0 6px 0;">${linkify(safe(l.replace(/^(\d+[.)]|[-•*])\s/, "")))}</li>`)
+          .join("");
+        const tag = isOl ? "ol" : "ul";
+        return `<${tag} style="margin:0 0 14px 0;padding-left:22px;${TXT_STYLE}">${items}</${tag}>`;
+      }
+      return `<p style="margin:0 0 14px 0;${TXT_STYLE}">${linkify(safe(lines.join("\n"))).replace(/\n/g, "<br/>")}</p>`;
+    })
+    .join("");
+}
+
 // 🧩 nouveau template visuel
 const htmlTpl = ({
   title = "Notification",
@@ -39,8 +66,8 @@ const htmlTpl = ({
       <!-- Corps -->
       <tr>
         <td style="padding:26px 26px 8px 26px;">
-          <h1 style="margin:0 0 10px 0;font-size:20px;line-height:1.25;color:#0f172a;">${safe(title)}</h1>
-          <p style="margin:0;color:#334155;font-size:15px;line-height:1.65;">${safe(message)}</p>
+          <h1 style="margin:0 0 14px 0;font-size:20px;line-height:1.25;color:#0f172a;">${safe(title)}</h1>
+          ${renderMessage(message)}
 
           <!-- CTA -->
           <div style="margin-top:18px;">
