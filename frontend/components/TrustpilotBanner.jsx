@@ -1,9 +1,15 @@
 import React from 'react';
 
 const STARS = '★★★★★';
-const TRUSTPILOT_URL = 'https://fr.trustpilot.com/review/edukaraib.com';
+// URL "écrire un avis" — fonctionne même si la page entreprise est encore vide.
+// La page de consultation est https://fr.trustpilot.com/review/edukaraib.com
+const TRUSTPILOT_URL = 'https://fr.trustpilot.com/evaluate/edukaraib.com';
 
-export default function TrustpilotBanner() {
+export default function TrustpilotBanner({ role = 'family' }) {
+  const message = role === 'teacher'
+    ? "Votre avis sur la plateforme aide d'autres professeurs et familles à nous rejoindre. Cela prend 1 minute."
+    : "Votre avis aide d'autres familles à nous trouver. Cela prend 1 minute.";
+
   return (
     <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
       <div className="flex flex-col gap-1">
@@ -14,7 +20,7 @@ export default function TrustpilotBanner() {
           <span className="font-extrabold text-slate-900 text-base">Trustpilot</span>
         </div>
         <p className="text-slate-600 text-sm mt-1">
-          Votre avis aide d'autres familles à nous trouver. Cela prend 1 minute.
+          {message}
         </p>
         <div className="flex gap-0.5 text-[#00B67A] text-lg leading-none">{STARS}</div>
       </div>

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
+import TrustpilotBanner from '../components/TrustpilotBanner';
 import { auth, db } from '../lib/firebase';
 import {
   collection,
@@ -501,6 +502,11 @@ export default function TeacherDashboard() {
           ))}
           {reviews.length === 0 && <li>Aucun avis pour le moment.</li>}
         </ul>
+      </div>
+
+      {/* Trustpilot */}
+      <div className="mt-6">
+        <TrustpilotBanner role="teacher" />
       </div>
     </DashboardLayout>
   );
