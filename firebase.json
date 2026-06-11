@@ -14,5 +14,8 @@
         "npm --prefix functions run lint"
       ]
     }
-  ]
+  ],
+  "firestore": {
+    "indexes": "firestore.indexes.json"
+  }
 }

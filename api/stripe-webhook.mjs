@@ -28,7 +28,9 @@ export default async function handler(req, res) {
           await handleSubscriptionCreated(session);
         } else {
           await markPaymentHeldAndUpdateLesson({ sessionId: session.id, paymentIntentId: session.payment_intent }, session.metadata);
-          sendPaymentConfirmationEmail(session.metadata, session.amount_total || 0).catch(e =>
+          // await OBLIGATOIRE : Vercel gele la fonction des que la reponse part,
+          // un envoi fire-and-forget n'est jamais execute
+          await sendPaymentConfirmationEmail(session.metadata, session.amount_total || 0).catch(e =>
             console.warn('[webhook] confirmation email error:', e?.message)
           );
         }
@@ -293,8 +295,9 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
   }
 
   // 5) Parrainage étudiant — coupon -10€ pour les deux au premier paiement
+  // await OBLIGATOIRE : fire-and-forget jamais execute sur Vercel (fonction gelee apres la reponse)
   if (payerUid) {
-    triggerStudentReferralReward(payerUid).catch(e =>
+    await triggerStudentReferralReward(payerUid).catch(e =>
       console.warn('[webhook] student referral reward error:', e?.message)
     );
   }
