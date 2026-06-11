@@ -44,6 +44,7 @@ import StudentRoute from './components/StudentRoute';
 import RequireRole from './routes/RequireRole';
 import AdminDashboard from './pages/AdminDashboard';
 import AuthAction from './pages/AuthAction';
+import ForgotPassword from './pages/ForgotPassword';
 import InfluencerHome from './pages/InfluencerHome.jsx'
 import InfluencerDashboard from './pages/InfluencerDashboard.jsx'
 import InfluencerProfile from './pages/InfluencerProfile'
@@ -129,6 +130,7 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/smart-dashboard" element={<SmartDashboard />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/mot-de-passe-oublie" element={<ForgotPassword />} />
             <Route path="/register" element={<Register />} />
             <Route path="/profils/:teacherId" element={<TeacherProfile />} />
             <Route path="/unauthorized" element={<Unauthorized />} />

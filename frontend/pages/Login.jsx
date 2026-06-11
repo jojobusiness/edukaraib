@@ -9,11 +9,13 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState('');
   const navigate = useNavigate();
   const location = useLocation();
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setError('');
     setLoading(true);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -22,7 +24,7 @@ export default function Login() {
       // Récupération du rôle depuis Firestore
       const userDoc = await getDoc(doc(db, 'users', uid));
       if (!userDoc.exists()) {
-        alert("Aucun profil trouvé. Contactez l'administrateur.");
+        setError("Aucun profil trouvé. Contactez l'administrateur.");
         setLoading(false);
         return;
       }
@@ -65,8 +67,17 @@ export default function Login() {
             navigate('/', { replace: true });
         }
       }
-    } catch (error) {
-      alert('Erreur: ' + error.message);
+    } catch (err) {
+      const messages = {
+        'auth/invalid-credential': 'Email ou mot de passe incorrect.',
+        'auth/wrong-password': 'Email ou mot de passe incorrect.',
+        'auth/user-not-found': 'Email ou mot de passe incorrect.',
+        'auth/invalid-email': 'Adresse email invalide.',
+        'auth/user-disabled': "Ce compte a été désactivé. Contactez l'administrateur.",
+        'auth/too-many-requests': 'Trop de tentatives. Réessaie dans quelques minutes ou réinitialise ton mot de passe.',
+        'auth/network-request-failed': 'Problème de connexion internet. Vérifie ta connexion et réessaie.',
+      };
+      setError(messages[err?.code] || 'Une erreur est survenue. Réessaie ou réinitialise ton mot de passe.');
     }
     setLoading(false);
   };
@@ -78,7 +89,7 @@ export default function Login() {
           <img src="/edukaraib_logo.png" alt="Logo EduKaraib" className="h-14 mb-3" />
           <h2 className="text-2xl font-bold text-primary mb-1">Connexion</h2>
           <p className="text-gray-600 text-center text-sm">
-            Connecte-toi à ta plateforme d’accompagnement scolaire en au Caraïbe.
+            Connecte-toi à ta plateforme d’accompagnement scolaire aux Caraïbes.
           </p>
         </div>
         <form className="space-y-4" onSubmit={handleLogin}>
@@ -124,7 +135,17 @@ export default function Login() {
                 )}
               </button>
             </div>
+            <div className="mt-1 text-right">
+              <Link to="/mot-de-passe-oublie" className="text-sm text-primary font-medium hover:underline">
+                Mot de passe oublié ?
+              </Link>
+            </div>
           </div>
+          {error && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {error}
+            </p>
+          )}
           <button
             type="submit"
             className="w-full bg-primary text-white font-semibold py-2 rounded-lg shadow hover:bg-primary-dark transition disabled:opacity-60"
