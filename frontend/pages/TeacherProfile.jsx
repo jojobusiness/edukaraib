@@ -470,33 +470,27 @@ export default function TeacherProfile() {
       });
 
       // ➕ capacité par défaut pour les créneaux sans groupe
+      // Ancien ({ 'Lun': [9,10] }) et nouveau ({ 'YYYY-MM-DD': { 'Lun': [9,10] } })
+      // formats peuvent cohabiter — on route chaque entrée selon sa forme
       const avail = teacher.availability || {};
-      const hasWeekKeys = Object.keys(avail).some((k) => /^\d{4}-\d{2}-\d{2}$/.test(k));
-
-      if (!hasWeekKeys) {
-        // 🧷 Ancien format : { 'Lun': [9,10], ... }
-        Object.entries(avail).forEach(([day, hours]) => {
-          (hours || []).forEach((h) => {
-            const plainKey = `${day}:${h}`;
+      Object.entries(avail).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          value.forEach((h) => {
+            const plainKey = `${key}:${h}`;
             if (remaining[plainKey] == null) remaining[plainKey] = defaultCap;
           });
-        });
-      } else {
-        // 🆕 Nouveau format :
-        // { 'YYYY-MM-DD' (lundi): { 'Lun': [9,10], ... }, ... }
-        Object.entries(avail).forEach(([weekKey, days]) => {
-          if (!days || typeof days !== 'object' || Array.isArray(days)) return;
-
-          Object.entries(days).forEach(([day, hours]) => {
-            (hours || []).forEach((h) => {
+        } else if (value && typeof value === 'object') {
+          Object.entries(value).forEach(([day, hours]) => {
+            if (!Array.isArray(hours)) return;
+            hours.forEach((h) => {
               const plainKey = `${day}:${h}`;
-              const weekK = `${day}:${h}:${weekKey}`;
+              const weekK = `${day}:${h}:${key}`;
               if (remaining[plainKey] == null) remaining[plainKey] = defaultCap;
               if (remaining[weekK] == null) remaining[weekK] = defaultCap;
             });
           });
-        });
-      }
+        }
+      });
 
       setBookedSlots(booked);
       setRemainingBySlot(remaining);
@@ -779,23 +773,25 @@ export default function TeacherProfile() {
     : Math.max(1, Number(hoursWanted) || 1);
     
   // Creneaux disponibles du prof (pour le formulaire d'abonnement)
+  // Ancien format ({ Lun: [9,10] }) et nouveau ({ 'YYYY-MM-DD': { Lun: [9,10] } })
+  // peuvent cohabiter dans le meme objet — on route chaque entree selon sa forme
   const availableSlots = useMemo(() => {
     const avail = teacher?.availability || {};
     const slots = [];
     const seen = new Set();
-    const isNewFormat = Object.keys(avail).some(k => /^\d{4}-\d{2}-\d{2}$/.test(k));
     const addSlot = (day, h) => {
       const key = `${day}:${h}`;
       if (!seen.has(key)) { seen.add(key); slots.push({ day, hour: h }); }
     };
-    if (isNewFormat) {
-      Object.values(avail).forEach(days => {
-        if (!days || typeof days !== 'object') return;
-        Object.entries(days).forEach(([day, hours]) => (hours || []).forEach(h => addSlot(day, h)));
-      });
-    } else {
-      Object.entries(avail).forEach(([day, hours]) => (hours || []).forEach(h => addSlot(day, h)));
-    }
+    Object.entries(avail).forEach(([key, value]) => {
+      if (Array.isArray(value)) {
+        value.forEach(h => addSlot(key, h));
+      } else if (value && typeof value === 'object') {
+        Object.entries(value).forEach(([day, hours]) => {
+          if (Array.isArray(hours)) hours.forEach(h => addSlot(day, h));
+        });
+      }
+    });
     const dayOrder = { Lun: 0, Mar: 1, Mer: 2, Jeu: 3, Ven: 4, Sam: 5, Dim: 6 };
     return slots.sort((a, b) => {
       if ((dayOrder[a.day] ?? 9) !== (dayOrder[b.day] ?? 9)) return (dayOrder[a.day] ?? 9) - (dayOrder[b.day] ?? 9);
