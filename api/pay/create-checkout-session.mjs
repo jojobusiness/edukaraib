@@ -310,12 +310,8 @@ export default async function handler(req, res) {
           }
 
           const isPack = packMode;
-          if (usageSelf.size === 0 && isPack) {
-            return res.status(400).json({ error: 'COUPON_FIRST_USE_MUST_BE_SINGLE_LESSON' });
-          }
-          if (usageSelf.size === 1 && !isPack) {
-            return res.status(400).json({ error: 'COUPON_SECOND_USE_MUST_BE_PACK' });
-          }
+          // Pas de contrainte d'ordre cours/pack : la campagne /bac vend des packs
+          // directement avec code influenceur. Anti-abus conserve : 2 usages/payeur, 1/IP.
 
           let discountEur = 0;
           let commissionEur = 0;

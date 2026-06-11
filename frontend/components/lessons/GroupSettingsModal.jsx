@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { db } from '../../lib/firebase';
+import fetchWithAuth from '../../utils/fetchWithAuth';
 import {
   collection,
   doc,
@@ -202,9 +203,8 @@ async function sendEmailsToUsers(
 
   await Promise.all(
     Array.from(emails).map((to) =>
-      fetch('/api/notify-email', {
+      fetchWithAuth('/api/notify-email', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to,
           title,

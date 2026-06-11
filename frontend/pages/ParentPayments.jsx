@@ -159,6 +159,11 @@ const packHoursForChild = (l, sid) => {
 
 const packKeyForChild = (l, sid) => {
   if (!isPackForChild(l, sid)) return `lesson:${l.id}:${sid}`;
+  // Deux packs identiques (meme prof/mode/heures) ne doivent JAMAIS fusionner :
+  // on groupe par pack_id quand il existe. Valeur BRUTE obligatoire : l'API
+  // create-checkout-session compare packKey au pack_id pour retrouver les lecons.
+  const pid = entryForChild(l, sid)?.pack_id || l.pack_id;
+  if (pid) return String(pid);
   const hours = packHoursForChild(l, sid);
   const mode  = (String(l.mode) === 'visio' || l.is_visio) ? 'visio' : 'presentiel';
   return `STABLE:${l.teacher_id}|${sid}|${mode}|${hours}`;

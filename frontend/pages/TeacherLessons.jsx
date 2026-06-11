@@ -272,9 +272,8 @@ async function sendEmailsToUsers(userIds = [], { title, message, ctaUrl, ctaText
 
   await Promise.all(
     Array.from(emails).map((to) =>
-      fetch("/api/notify-email", {
+      fetchWithAuth("/api/notify-email", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ to, ...payload }),
       }).catch(() => {})
     )

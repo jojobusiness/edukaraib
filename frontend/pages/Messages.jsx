@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { auth, db } from "../lib/firebase";
+import fetchWithAuth from "../utils/fetchWithAuth";
 import { consumeChatDraft } from "../lib/bacCampaign";
 import {
   collection,
@@ -69,9 +70,8 @@ async function getUserEmail(uid) {
 async function notifyEmailUser(uid, { title, message, ctaUrl, ctaText = "Ouvrir" }) {
   const to = await getUserEmail(uid);
   if (!to) return;
-  await fetch("/api/notify-email", {
+  await fetchWithAuth("/api/notify-email", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       to,
       title: title || "Nouveau message sur EduKaraib",

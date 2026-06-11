@@ -105,18 +105,21 @@ export default async function handler(req, res) {
     const internalKey = req.headers["x-internal-key"];
     const hasInternalKey = internalKey && internalKey === process.env.INTERNAL_API_SECRET;
 
-    if (!hasInternalKey) {
-      const auth = await verifyAuth(req, res);
-      if (!auth) return; // verifyAuth a déjà envoyé le 401
-    }
-
-    // Body JSON sécurisé
+    // Body JSON sécurisé (parsé avant l'auth pour le cas formulaire contact)
     let data = req.body;
     if (!data || typeof data === "string") {
       try { data = JSON.parse(req.body || "{}"); } catch { data = {}; }
     }
 
     const { to, title, message, ctaUrl, ctaText } = data || {};
+
+    // Formulaire de contact public : autorisé sans auth UNIQUEMENT vers notre propre boîte
+    const isPublicContact = to === "contact@edukaraib.com";
+
+    if (!hasInternalKey && !isPublicContact) {
+      const auth = await verifyAuth(req, res);
+      if (!auth) return; // verifyAuth a déjà envoyé le 401
+    }
 
     if (!process.env.RESEND_API_KEY) {
       return res.status(500).json({ ok: false, error: "missing_RESEND_API_KEY" });

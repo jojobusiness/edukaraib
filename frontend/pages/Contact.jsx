@@ -28,7 +28,7 @@ export default function Contact() {
     e.preventDefault();
     setStatus('sending');
     try {
-      await fetch('/api/notify-email', {
+      const r = await fetch('/api/notify-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -39,6 +39,7 @@ export default function Contact() {
           ctaText: 'Répondre',
         }),
       });
+      if (!r.ok) throw new Error('send_failed');
       setStatus('ok');
       setForm({ name: '', email: '', subject: '', message: '' });
     } catch {

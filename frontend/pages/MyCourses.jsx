@@ -3,6 +3,7 @@ import DashboardLayout from '../components/DashboardLayout';
 import DocumentsModal from '../components/lessons/DocumentsModal';
 import ReviewModal from '../components/lessons/ReviewModal';
 import { auth, db } from '../lib/firebase';
+import fetchWithAuth from '../utils/fetchWithAuth';
 import {
   collection,
   query,
@@ -68,9 +69,8 @@ async function emailTeacherAboutInvite(lesson, { accepted }) {
     ? `${myName} a accepté l’invitation pour le cours ${lesson.subject_id || ''} (${lesson.slot_day ?? ''} ${String(lesson.slot_hour ?? '').padStart(2,'0')}h).`
     : `${myName} a refusé l’invitation pour le cours ${lesson.subject_id || ''} (${lesson.slot_day ?? ''} ${String(lesson.slot_hour ?? '').padStart(2,'0')}h).`;
 
-  await fetch("/api/notify-email", {
+  await fetchWithAuth("/api/notify-email", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       to: teacherEmail,
       title,
