@@ -382,11 +382,11 @@ export default function Register() {
       await setDoc(doc(db, 'users', activeUser.uid), baseData);
 
       // 🎟️ Coupon de bienvenue -5€ uniquement pour parents et élèves
-      // fetch simple (pas de token requis), sans await pour ne pas bloquer la navigation
+      // fetchWithAuth obligatoire : l'API exige verifyAuth depuis le sprint sécurité.
+      // Sans await pour ne pas bloquer la navigation.
       if (form.role === 'parent' || form.role === 'student') {
-        fetch('/api/create-welcome-coupon', {
+        fetchWithAuth('/api/create-welcome-coupon', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             uid: activeUser.uid,
             email: activeUser.email,
@@ -406,9 +406,8 @@ export default function Register() {
         await setDoc(doc(db, 'users', activeUser.uid), { referralCode: myReferralCode }, { merge: true });
 
         // Email de bienvenue (tous les profs, avec ou sans parrain)
-        fetch('/api/send-welcome-teacher', {
+        fetchWithAuth('/api/send-welcome-teacher', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             email: activeUser.email,
             firstName: form.firstName,
@@ -418,9 +417,8 @@ export default function Register() {
 
         // Appliquer le code parrain saisi si présent
         if (form.referralCode?.trim()) {
-          fetch('/api/apply-referral', {
+          fetchWithAuth('/api/apply-referral', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               referralCode: form.referralCode.trim().toUpperCase(),
               newTeacherUid: activeUser.uid,
@@ -442,9 +440,8 @@ export default function Register() {
         // Appliquer le code parrain reçu en URL si présent
         const refCode = (refCodeFromUrl || '').trim().toUpperCase();
         if (refCode.startsWith('REF-')) {
-          fetch('/api/apply-student-referral', {
+          fetchWithAuth('/api/apply-student-referral', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               referralCode: refCode,
               newUserUid: activeUser.uid,
