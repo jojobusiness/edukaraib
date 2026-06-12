@@ -18,5 +18,17 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     sourcemap: true, // requis pour que Sentry puisse afficher le code source dans les erreurs
+    rollupOptions: {
+      output: {
+        // Vendors stables dans des chunks dedies : leur hash ne change pas
+        // entre deploiements -> cache navigateur reutilise, seul le code
+        // de l'app est retelecharge
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/storage'],
+          'vendor-sentry': ['@sentry/react'],
+        },
+      },
+    },
   },
 });
