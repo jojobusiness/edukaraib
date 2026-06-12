@@ -30,7 +30,7 @@ export default async function handler(req, res) {
           await markPaymentHeldAndUpdateLesson({ sessionId: session.id, paymentIntentId: session.payment_intent }, session.metadata);
           // await OBLIGATOIRE : Vercel gele la fonction des que la reponse part,
           // un envoi fire-and-forget n'est jamais execute
-          await sendPaymentConfirmationEmail(session.metadata, session.amount_total || 0).catch(e =>
+          await sendPaymentConfirmationEmail(session.metadata, session.amount_total || 0, session.id).catch(e =>
             console.warn('[webhook] confirmation email error:', e?.message)
           );
         }
@@ -410,7 +410,7 @@ EduKaraib · <a href="mailto:contact@edukaraib.com" style="color:#00804B;">conta
 }
 
 // ── Email de confirmation de paiement ────────────────────────────────────────
-async function sendPaymentConfirmationEmail(md, amountTotalCents) {
+async function sendPaymentConfirmationEmail(md, amountTotalCents, sessionId = null) {
   if (!process.env.RESEND_API_KEY) return;
 
   const payerUid   = md.payer_uid  || md.payerUid  || null;
@@ -468,12 +468,10 @@ async function sendPaymentConfirmationEmail(md, amountTotalCents) {
   <tr>
     <td style="background:#00804B;padding:20px 24px;">
       <table width="100%" cellspacing="0" cellpadding="0"><tr>
-        <td style="vertical-align:middle;">
-          <span style="display:inline-flex;align-items:center;gap:10px;">
-            <img src="https://edukaraib.com/edukaraib_logo.png" alt="EduKaraib" style="width:40px;height:40px;border-radius:8px;background:#fff;display:block;" />
-            <span style="color:#fff;font-weight:700;font-size:17px;">EduKaraib</span>
-          </span>
+        <td style="vertical-align:middle;width:40px;">
+          <img src="https://edukaraib.com/edukaraib_logo.png" alt="EduKaraib" style="width:40px;height:40px;border-radius:8px;background:#fff;display:block;" />
         </td>
+        <td style="vertical-align:middle;padding-left:12px;color:#fff;font-weight:700;font-size:17px;">EduKaraib</td>
         <td align="right" style="color:#bbf7d0;font-size:13px;font-weight:600;">Confirmation de paiement</td>
       </tr></table>
     </td>
@@ -510,7 +508,8 @@ async function sendPaymentConfirmationEmail(md, amountTotalCents) {
 
     <!-- CTA -->
     <div style="text-align:center;margin-bottom:28px;">
-      <a href="${APP_BASE_URL}/smart-dashboard" style="display:inline-block;background:#facc15;color:#111827;text-decoration:none;font-weight:700;padding:13px 28px;border-radius:12px;font-size:15px;">Voir mes cours →</a>
+      ${sessionId ? `<a href="${APP_BASE_URL}/facture/${sessionId}" style="display:inline-block;background:#00804B;color:#ffffff;text-decoration:none;font-weight:700;padding:13px 28px;border-radius:12px;font-size:15px;margin:0 6px 10px;">📄 Télécharger ma facture</a>` : ''}
+      <a href="${APP_BASE_URL}/smart-dashboard" style="display:inline-block;background:#facc15;color:#111827;text-decoration:none;font-weight:700;padding:13px 28px;border-radius:12px;font-size:15px;margin:0 6px 10px;">Voir mes cours →</a>
     </div>
   </td></tr>
 
