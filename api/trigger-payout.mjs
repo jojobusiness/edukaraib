@@ -302,10 +302,12 @@ async function doPackSettlement({
   };
   await adminDb.collection('payments').doc(payDoc.id).set(settlementData, { merge: true });
 
-  // Email d'avis Google envoyé de façon non-bloquante après un pack terminé
+  // Email d'avis Google après un pack terminé
+  // await OBLIGATOIRE : Vercel gele la fonction apres la reponse, un
+  // fire-and-forget n'est jamais execute
   const payerUid = payDoc.data()?.payer_uid;
   if (payerUid) {
-    sendGoogleReviewEmail(payerUid, lessonId).catch(() => {});
+    await sendGoogleReviewEmail(payerUid, lessonId).catch(() => {});
   }
 
   return res.json({
@@ -366,7 +368,8 @@ async function doPayout({ res, stripeReady, stripeAccountId, teacherUid, amountC
     }
 
     // Rappel Stripe Connect : le prof n'a pas encore configuré son compte
-    sendStripeConnectReminderEmail(teacherUid, amountCents / 100).catch(() => {});
+    // await OBLIGATOIRE (Vercel gele la fonction apres la reponse)
+    await sendStripeConnectReminderEmail(teacherUid, amountCents / 100).catch(() => {});
 
     return res.json({ ok: true, type: 'pending_rib', amount_eur: amountCents / 100 });
   }
