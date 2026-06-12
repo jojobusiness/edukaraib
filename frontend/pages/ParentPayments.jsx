@@ -740,7 +740,8 @@ export default function ParentPayments() {
         onClose={() => setRefundModalRow(null)}
         resolvePaymentId={() => resolvePaymentId(refundModalRow?.lesson?.id, refundModalRow?.forStudent)}
         amountLabel={(() => {
-          const v = Number(refundModalRow?.amount ?? refundModalRow?.lesson?.total_amount ?? 0);
+          if (!refundModalRow?.lesson) return '';
+          const v = Number(getDisplayAmountForChild(refundModalRow.lesson, refundModalRow.forStudent) || 0);
           return v > 0 ? `${v.toFixed(2)} €` : '';
         })()}
       />

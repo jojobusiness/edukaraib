@@ -121,6 +121,18 @@ export default async function handler(req, res) {
       if (!auth) return; // verifyAuth a déjà envoyé le 401
     }
 
+    // Garde-fous du chemin public (anti-abus : pas de lien arbitraire injecté
+    // dans notre boîte, pas de payload demesure qui brule le quota Resend)
+    if (isPublicContact && !hasInternalKey) {
+      const okCta = !ctaUrl
+        || String(ctaUrl).startsWith("mailto:")
+        || String(ctaUrl).startsWith("https://edukaraib.com");
+      if (!okCta) return res.status(400).json({ ok: false, error: "invalid_cta_url" });
+      if (String(message || "").length > 5000 || String(title || "").length > 300) {
+        return res.status(400).json({ ok: false, error: "payload_too_large" });
+      }
+    }
+
     if (!process.env.RESEND_API_KEY) {
       return res.status(500).json({ ok: false, error: "missing_RESEND_API_KEY" });
     }

@@ -78,7 +78,10 @@ export default async function handler(req, res) {
         payment_intent: pay.payment_intent_id,
         // si amountCents null => remboursement total
         ...(amountCents ? { amount: amountCents } : {}),
-        ...(reason ? { reason } : {}),
+        // NE PAS passer `reason` a Stripe : il n'accepte que l'enum
+        // duplicate/fraudulent/requested_by_customer — un texte libre = 400.
+        // Le motif est conserve dans Firestore (refund_reason) et l'email client.
+        reason: 'requested_by_customer',
       };
       const refund = await stripe.refunds.create(refundParams);
 
@@ -139,7 +142,8 @@ export default async function handler(req, res) {
         const refundParams = {
           payment_intent: pay.payment_intent_id,
           ...(amountCents ? { amount: amountCents } : {}),
-          ...(reason ? { reason } : {}),
+          // enum Stripe uniquement — le motif texte reste dans Firestore/email
+          reason: 'requested_by_customer',
         };
         refund = await stripe.refunds.create(refundParams);
       }
