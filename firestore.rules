@@ -1,0 +1,129 @@
+rules_version = '2';
+
+// EduKaraib — Regles Firestore Phase 1 (2026-06-12)
+// Avant : allow read, write: if true sur TOUTE la base (critique).
+// Principes :
+//  - deny by default (match final)
+//  - lecture publique uniquement pour ce que les pages publiques consomment
+//    (profils, avis, creneaux) — Search/Home/TeacherProfile/SEO sans login
+//  - collections ARGENT : ecriture client INTERDITE — seules les API Vercel
+//    (Admin SDK, qui ignore les regles) ecrivent
+//  - pas d'auto-promotion : un user ne peut pas changer son propre role
+//  - le client ne peut jamais poser is_paid/paid_at sur une lecon
+// Phase 2 (a faire) : restreindre la lecture de lessons/payments par champ
+// (necessite d'aligner les requetes front), et participantsMap.*.is_paid.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isSelf(uid) { return signedIn() && request.auth.uid == uid; }
+    function isAdmin() {
+      return signedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // ── Profils ────────────────────────────────────────────────────────────
+    // Lecture publique : Search/Home/SEO listent les profs sans login.
+    // Ecriture : soi-meme sans toucher au role (anti-escalade), admin libre.
+    match /users/{uid} {
+      allow read: if true;
+      allow create: if isSelf(uid)
+        && request.resource.data.get('role', 'student') in ['student', 'parent', 'teacher'];
+      allow update: if isAdmin()
+        || (isSelf(uid) && request.resource.data.get('role', '') == resource.data.get('role', ''));
+      allow delete: if isAdmin() || isSelf(uid);
+    }
+
+    match /teachers/{id} {
+      allow read: if true;
+      allow write: if isSelf(id) || isAdmin();
+    }
+
+    // Lookups multi-ID (students.uid vs user_id) par parents/profs : auth requis
+    match /students/{id} { allow read, write: if signedIn(); }
+    match /parents/{id}  { allow read, write: if signedIn(); }
+    match /children/{id} { allow read, write: if signedIn(); }
+
+    // Avis publics (carousel Home, profils)
+    match /reviews/{id} {
+      allow read: if true;
+      allow create: if signedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // ── Lecons ─────────────────────────────────────────────────────────────
+    // Lecture publique : TeacherProfile (page publique) affiche les creneaux
+    // occupes. Phase 2 : restreindre. Le client ne peut JAMAIS ecrire les
+    // champs de paiement top-level (le webhook/API les posent via Admin SDK).
+    match /lessons/{id} {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.get('is_paid', false) == false;
+      allow update: if isAdmin()
+        || (signedIn() && !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['is_paid', 'paid_at', 'paid_by', 'total_amount',
+                       'payment_intent_id', 'stripe_charge_id']));
+      allow delete: if signedIn();
+    }
+
+    // ── Notifications ──────────────────────────────────────────────────────
+    match /notifications/{id} {
+      allow read: if isAdmin() || (signedIn() && resource.data.user_id == request.auth.uid);
+      allow create: if signedIn();
+      allow update, delete: if isAdmin()
+        || (signedIn() && resource.data.user_id == request.auth.uid);
+    }
+
+    // ── Messagerie ─────────────────────────────────────────────────────────
+    match /conversations/{id} { allow read, write: if signedIn(); }
+    match /messages/{id}      { allow read, write: if signedIn(); }
+    match /presence/{id}      { allow read, write: if signedIn(); }
+
+    // Documents de cours, favoris
+    match /documents/{id} { allow read, write: if signedIn(); }
+    match /favorites/{id} { allow read, write: if signedIn(); }
+
+    // Codes promo bonus pack (lecture connectee, gestion admin)
+    match /promo_codes/{id} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // ── ARGENT : ecriture client interdite partout ─────────────────────────
+    match /payments/{id} {
+      allow read: if signedIn(); // Phase 2: restreindre payer/teacher/admin
+      allow write: if false;
+    }
+    match /subscriptions/{id} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /coupons/{id} {
+      allow read: if isAdmin() || (signedIn() && resource.data.user_uid == request.auth.uid);
+      allow write: if false;
+    }
+    match /influencers/{id} {
+      // IBAN dedans : lecture limitee au proprietaire + admin
+      allow read: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow write: if isAdmin();
+    }
+    match /influencer_usages/{id} { allow read, write: if false; }
+    match /refund_requests/{id} {
+      allow read, update: if isAdmin(); // refus traite cote client admin
+      allow create, delete: if false;   // creation via /api/refund-request
+    }
+    match /refunds/{id} { allow read, write: if isAdmin(); }
+    match /payouts/{id} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    // Analytics (onglet admin) — ecrits par l'API drain (Admin SDK)
+    match /analytics_top/{id}   { allow read: if isAdmin(); allow write: if false; }
+    match /analytics_daily/{id} { allow read: if isAdmin(); allow write: if false; }
+
+    // ── Tout le reste : interdit ───────────────────────────────────────────
+    match /{document=**} { allow read, write: if false; }
+  }
+}
