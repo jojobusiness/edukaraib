@@ -8,6 +8,7 @@
 import { stripe } from './_stripe.mjs';
 import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
 import { captureError } from './_sentry.mjs';
+import { Resend } from 'resend';
 
 function readBody(req) {
   try {
@@ -22,18 +23,19 @@ function readBody(req) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
 
-  // Protège cet endpoint : admin OU élève/parent concerné (pour auto-remboursement)
+  // ADMIN UNIQUEMENT : le remboursement passe desormais par une demande
+  // (refund_requests via /api/refund-request) validee dans le dashboard admin.
   const auth = await verifyAuth(req, res);
   if (!auth) return;
   const adminUid = auth.uid;
 
-  // ✅ Vérification : admin ou appelant lié au paiement
-  // Un remboursement sans ce check peut être déclenché par n'importe quel utilisateur connecté
   const callerSnap = await adminDb.collection('users').doc(adminUid).get();
   const callerRole = callerSnap.exists ? callerSnap.data()?.role : null;
-  const isAdmin = callerRole === 'admin';
+  if (callerRole !== 'admin') {
+    return res.status(403).json({ error: 'ADMIN_ONLY' });
+  }
 
-  const { paymentId, amount_eur, reason } = readBody(req);
+  const { paymentId, amount_eur, reason, requestId } = readBody(req);
   if (!paymentId) return res.status(400).json({ error: 'MISSING_PAYMENT_ID' });
 
   // Charger le document payment
@@ -43,11 +45,6 @@ export default async function handler(req, res) {
 
   const pay = { id: paySnap.id, ...paySnap.data() };
   const amountCents = amount_eur ? Math.round(Number(amount_eur) * 100) : null;
-
-  // ✅ Non-admin : seul le payeur d'origine peut demander un remboursement
-  if (!isAdmin && String(pay.payer_uid || '') !== String(adminUid)) {
-    return res.status(403).json({ error: 'FORBIDDEN' });
-  }
 
   // ── Idempotence : réclamer le remboursement atomiquement ──────────────────
   // Sans ça, deux soumissions simultanées (ou un retry réseau) peuvent lancer
@@ -95,8 +92,9 @@ export default async function handler(req, res) {
         refunded_by: adminUid,
       }, { merge: true });
 
-      // Révoque le flag "is_paid" sur la leçon pour l'élève concerné
+      // Révoque le flag "is_paid" + passe la leçon en "rejected" (libère le créneau)
       await revokeLessonPaidFlag(lessonRef, lesson, pay.for_student);
+      await finalizeRefundSideEffects({ requestId, pay, adminUid, refundAmountEur: refund.amount / 100, reason });
 
       return res.json({ ok: true, type: 'refund', id: refund.id });
     }
@@ -158,6 +156,7 @@ export default async function handler(req, res) {
       }, { merge: true });
 
       await revokeLessonPaidFlag(lessonRef, lesson, pay.for_student);
+      await finalizeRefundSideEffects({ requestId, pay, adminUid, refundAmountEur: refund ? refund.amount / 100 : (amountCents ? amountCents / 100 : pay.gross_eur || 0), reason });
 
       return res.json({
         ok: true,
@@ -185,9 +184,11 @@ export default async function handler(req, res) {
 }
 
 /**
- * Révoque les drapeaux de paiement sur la leçon
- * - Groupé : participantsMap[forStudent].is_paid = false
- * - Individuel : is_paid = false
+ * Révoque les drapeaux de paiement sur la leçon ET la passe en "rejected"
+ * (le cours rembourse ne doit pas rester "confirmé" : le créneau est libéré,
+ * l'élève peut réserver ailleurs — demande explicite de Joseph 2026-06-12)
+ * - Groupé : participantsMap[forStudent] -> is_paid false + status rejected
+ * - Individuel : is_paid false + status rejected
  */
 async function revokeLessonPaidFlag(lessonRef, lesson, forStudent) {
   if (!lesson) return;
@@ -201,9 +202,14 @@ async function revokeLessonPaidFlag(lessonRef, lesson, forStudent) {
           is_paid: false,
           paid_at: null,
           paid_by: null,
+          status: 'rejected',
         }
       }
     }, { merge: true });
+    // Solo deguise en groupe (1 participant) : on rejette aussi la lecon
+    if ((lesson.participant_ids || []).length === 1) {
+      await lessonRef.set({ status: 'rejected', is_paid: false, paid_at: null, paid_by: null }, { merge: true });
+    }
     return;
   }
 
@@ -211,5 +217,57 @@ async function revokeLessonPaidFlag(lessonRef, lesson, forStudent) {
     is_paid: false,
     paid_at: null,
     paid_by: null,
+    status: 'rejected',
   }, { merge: true });
+}
+
+/**
+ * Apres remboursement Stripe reussi : clore la demande + email au client.
+ */
+async function finalizeRefundSideEffects({ requestId, pay, adminUid, refundAmountEur, reason }) {
+  if (requestId) {
+    await adminDb.collection('refund_requests').doc(String(requestId)).set({
+      status: 'approved',
+      processed_at: new Date(),
+      processed_by: adminUid,
+      refund_amount_eur: refundAmountEur,
+    }, { merge: true }).catch((e) => console.warn('[refund] request update failed:', e?.message));
+  }
+
+  // Email d'explication au payeur
+  try {
+    if (!process.env.RESEND_API_KEY || !pay.payer_uid) return;
+    const payerSnap = await adminDb.collection('users').doc(String(pay.payer_uid)).get();
+    const email = payerSnap.exists ? payerSnap.data()?.email : null;
+    if (!email) return;
+    const prenom = payerSnap.data()?.firstName || payerSnap.data()?.displayName?.split(' ')[0] || 'là';
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    await resend.emails.send({
+      from: 'EduKaraib <notifications@edukaraib.com>',
+      to: [email],
+      subject: `✅ Votre remboursement de ${Number(refundAmountEur || 0).toFixed(2)} € est validé`,
+      html: `<div style="font-family:Inter,system-ui,Arial,sans-serif;background:#f5f7fb;padding:24px;">
+<table width="100%" cellspacing="0" cellpadding="0" style="max-width:600px;margin:auto;background:#fff;border-radius:18px;overflow:hidden;border:1px solid #e2e8f0;">
+<tr><td style="background:#00804B;padding:18px 24px;"><span style="color:#fff;font-weight:700;font-size:17px;">EduKaraib</span></td></tr>
+<tr><td style="padding:28px;">
+<h1 style="margin:0 0 12px;font-size:21px;color:#0f172a;">Remboursement validé ✅</h1>
+<p style="color:#475569;font-size:15px;line-height:1.7;margin:0 0 16px;">
+Bonjour ${prenom},<br/><br/>
+Votre demande de remboursement a été acceptée. <strong>${Number(refundAmountEur || 0).toFixed(2)} €</strong> ont été renvoyés vers votre moyen de paiement — le montant apparaîtra sur votre compte sous <strong>5 à 10 jours ouvrés</strong> selon votre banque.
+${reason ? `<br/><br/>Motif retenu : ${String(reason).slice(0, 300).replace(/</g, '&lt;')}` : ''}
+</p>
+<p style="color:#64748b;font-size:13px;margin:0;">Le cours concerné a été annulé. Vous pouvez réserver un autre professeur à tout moment.</p>
+<div style="text-align:center;margin-top:20px;">
+<a href="https://edukaraib.com/search" style="background:#facc15;color:#111827;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:12px;display:inline-block;">Trouver un cours →</a>
+</div>
+</td></tr>
+<tr><td style="padding:12px 28px 20px;color:#94a3b8;font-size:12px;border-top:1px solid #f1f5f9;">
+EduKaraib · <a href="mailto:contact@edukaraib.com" style="color:#00804B;">contact@edukaraib.com</a>
+</td></tr>
+</table>
+</div>`,
+    });
+  } catch (e) {
+    console.warn('[refund] confirmation email failed:', e?.message);
+  }
 }

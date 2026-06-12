@@ -209,6 +209,146 @@ async function broadcastToUids(uids, title, message, ctaUrl) {
 // --- /helper ---
 
 /* ===========================
+   Onglet Remboursements — demandes a valider (anti-abus)
+=========================== */
+function RefundRequestsSection() {
+  const [requests, setRequests] = useState([]);
+  const [userInfo, setUserInfo] = useState({});
+  const [busyId, setBusyId] = useState(null);
+
+  useEffect(() => {
+    const qy = query(collection(db, 'refund_requests'), orderBy('created_at', 'desc'), limit(100));
+    const unsub = onSnapshot(qy, async (snap) => {
+      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      setRequests(rows);
+      const uids = [...new Set(rows.map((r) => r.requester_uid).filter(Boolean))];
+      const entries = await Promise.all(uids.map(async (u) => {
+        try {
+          const s = await getDoc(doc(db, 'users', u));
+          const d = s.exists() ? s.data() : {};
+          return [u, { name: [d.firstName, d.lastName].filter(Boolean).join(' ') || d.displayName || u.slice(0, 8), email: d.email || '' }];
+        } catch { return [u, { name: u.slice(0, 8), email: '' }]; }
+      }));
+      setUserInfo(Object.fromEntries(entries));
+    }, (e) => console.error('refund_requests snapshot:', e));
+    return () => unsub();
+  }, []);
+
+  const approve = async (r) => {
+    if (!window.confirm(`Rembourser ${Number(r.amount_eur || 0).toFixed(2)} € ? Le client recevra un email de confirmation.`)) return;
+    setBusyId(r.id);
+    try {
+      await fetchWithAuth('/api/refund', {
+        method: 'POST',
+        body: JSON.stringify({ paymentId: r.payment_id, requestId: r.id, reason: r.reason }),
+      });
+      alert('Remboursement effectue — email envoye au client, cours annule.');
+    } catch (e) {
+      alert('Erreur : ' + (e.message || 'remboursement impossible'));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const reject = async (r) => {
+    const note = window.prompt('Raison du refus (envoyee au client par email) :');
+    if (note === null) return;
+    if (!note.trim()) { alert('Indique une raison.'); return; }
+    setBusyId(r.id);
+    try {
+      await updateDoc(doc(db, 'refund_requests', r.id), {
+        status: 'rejected',
+        admin_note: note.trim(),
+        processed_at: serverTimestamp(),
+        processed_by: auth.currentUser?.uid || null,
+      });
+      await notifyByEmail(
+        r.requester_uid,
+        'Votre demande de remboursement',
+        `Bonjour,\n\nApres examen, votre demande de remboursement de ${Number(r.amount_eur || 0).toFixed(2)} € n'a pas pu etre acceptee.\n\nMotif : ${note.trim()}\n\nSi vous avez des elements supplementaires (justificatif, captures d'ecran), repondez-nous et nous reexaminerons votre demande.`,
+        'https://edukaraib.com/contact',
+        'Nous contacter'
+      );
+      alert('Demande refusee — email envoye au client.');
+    } catch (e) {
+      alert('Erreur : ' + (e.message || 'refus impossible'));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const badge = (st) => {
+    const map = {
+      pending:  ['En attente', 'bg-amber-100 text-amber-800 border-amber-200'],
+      approved: ['Remboursee', 'bg-green-100 text-green-800 border-green-200'],
+      rejected: ['Refusee', 'bg-red-100 text-red-700 border-red-200'],
+    };
+    const [label, cls] = map[st] || [st, 'bg-gray-100 text-gray-600 border-gray-200'];
+    return <span className={`text-xs px-2 py-0.5 rounded-full border font-semibold ${cls}`}>{label}</span>;
+  };
+
+  const pending = requests.filter((r) => r.status === 'pending');
+  const processed = requests.filter((r) => r.status !== 'pending');
+
+  const card = (r) => {
+    const u = userInfo[r.requester_uid] || {};
+    return (
+      <div key={r.id} className="border rounded-xl p-4 bg-white space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-bold text-gray-800">{Number(r.amount_eur || 0).toFixed(2)} €</span>
+          {badge(r.status)}
+          <span className="text-xs text-gray-500">{r.created_at?.toDate?.()?.toLocaleString?.('fr-FR') || ''}</span>
+          <span className="text-xs text-gray-600 md:ml-auto">{u.name}{u.email ? ` · ${u.email}` : ''}</span>
+        </div>
+        <div className="text-sm text-gray-700 bg-gray-50 rounded-lg px-3 py-2 whitespace-pre-wrap">{r.reason}</div>
+        <div className="flex items-center gap-3 flex-wrap text-sm">
+          {r.proof_url
+            ? <a href={r.proof_url} target="_blank" rel="noreferrer" className="text-sky-600 underline">📎 Voir le justificatif</a>
+            : <span className="text-gray-400">Aucun justificatif</span>}
+          <span className="text-xs text-gray-400">Paiement : {String(r.payment_id || '').slice(0, 28)}…</span>
+          {r.admin_note && <span className="text-xs text-red-600">Refus : {r.admin_note}</span>}
+        </div>
+        {r.status === 'pending' && (
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => reject(r)}
+              disabled={busyId === r.id}
+              className="px-3 py-1.5 rounded-lg border border-red-300 text-red-700 text-sm font-semibold hover:bg-red-50 disabled:opacity-60"
+            >
+              Refuser
+            </button>
+            <button
+              onClick={() => approve(r)}
+              disabled={busyId === r.id}
+              className="px-3 py-1.5 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-60"
+            >
+              {busyId === r.id ? 'Traitement…' : 'Approuver et rembourser'}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-semibold mb-3">Demandes en attente ({pending.length})</h3>
+        {pending.length === 0
+          ? <div className="text-sm text-gray-500 bg-white border rounded-xl p-4">Aucune demande en attente.</div>
+          : <div className="space-y-3">{pending.map(card)}</div>}
+      </div>
+      <div>
+        <h3 className="text-lg font-semibold mb-3">Historique ({processed.length})</h3>
+        {processed.length === 0
+          ? <div className="text-sm text-gray-500 bg-white border rounded-xl p-4">Aucune demande traitee.</div>
+          : <div className="space-y-3">{processed.map(card)}</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ===========================
    AdminDashboard (sans layout)
 =========================== */
 export default function AdminDashboard() {
@@ -648,6 +788,12 @@ export default function AdminDashboard() {
             onClick={() => setTab('influencers')}
           >
             🎤 Influenceurs
+          </button>
+          <button
+            className={`px-4 py-2 rounded-lg border ${tab === 'refunds' ? 'bg-primary text-white border-primary' : 'bg-white'}`}
+            onClick={() => setTab('refunds')}
+          >
+            💸 Remboursements
           </button>
           <button
             className={`px-4 py-2 rounded-lg border ${tab === 'analytics' ? 'bg-primary text-white border-primary' : 'bg-white'}`}
@@ -1545,6 +1691,8 @@ export default function AdminDashboard() {
         )}
 
         {/* === ANALYTICS TAB === */}
+        {tab === 'refunds' && <RefundRequestsSection />}
+
         {tab === 'analytics' && <AnalyticsTab />}
 
       </main>

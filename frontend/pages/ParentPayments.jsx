@@ -12,6 +12,7 @@ import {
   limit,
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
+import RefundRequestModal from '../components/RefundRequestModal';
 import fetchWithAuth from '../utils/fetchWithAuth';
 import { getCampaignCode } from '../lib/bacCampaign';
 
@@ -508,32 +509,10 @@ export default function ParentPayments() {
     }
   };
 
-  const handleRefund = async (row) => {
-    if (!window.confirm('Confirmer la demande de remboursement ?')) return;
-    const key = `${row.lesson.id}:${row.forStudent}`;
-    try {
-      setRefundingKey(key);
-      const paymentId = await resolvePaymentId(row.lesson.id, row.forStudent);
-      if (!paymentId) {
-        alert("Impossible de retrouver le paiement pour ce cours.");
-        return;
-      }
-
-      const resp = await fetchWithAuth('/api/refund', {
-        method: 'POST',
-        body: JSON.stringify({ paymentId }),
-      });
-      if (!resp || resp.error) {
-        throw new Error(resp?.error || 'Échec du remboursement');
-      }
-      alert('Demande de remboursement envoyée.');
-    } catch (e) {
-      console.error(e);
-      alert(e.message || 'Remboursement impossible.');
-    } finally {
-      setRefundingKey(null);
-    }
-  };
+  // Ouvre la modal de demande (motif + justificatif) — le remboursement
+  // n'est plus direct : il est validé par l'admin (anti-abus)
+  const [refundModalRow, setRefundModalRow] = useState(null);
+  const handleRefund = (row) => setRefundModalRow(row);
 
   return (
     <DashboardLayout role="parent">
@@ -755,6 +734,16 @@ export default function ParentPayments() {
           )}
         </div>
       </div>
+
+      <RefundRequestModal
+        open={!!refundModalRow}
+        onClose={() => setRefundModalRow(null)}
+        resolvePaymentId={() => resolvePaymentId(refundModalRow?.lesson?.id, refundModalRow?.forStudent)}
+        amountLabel={(() => {
+          const v = Number(refundModalRow?.amount ?? refundModalRow?.lesson?.total_amount ?? 0);
+          return v > 0 ? `${v.toFixed(2)} €` : '';
+        })()}
+      />
     </DashboardLayout>
   );
 }
