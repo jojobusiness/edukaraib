@@ -500,7 +500,9 @@ export default function ParentPayments() {
     try {
       const paymentId = await resolvePaymentId(row.lesson.id, row.forStudent);
       if (!paymentId) { alert('Facture introuvable.'); return; }
-      window.open(`/facture/${paymentId}`, '_blank');
+      // Navigation directe : window.open apres un await = bloque par les
+      // navigateurs mobiles (popup hors geste utilisateur)
+      window.location.assign(`/facture/${paymentId}`);
     } finally {
       setInvoiceLoadingKey(null);
     }

@@ -429,7 +429,9 @@ export default function StudentPayments() {
     try {
       const paymentId = await resolvePaymentId(lesson.id);
       if (!paymentId) { alert('Facture introuvable.'); return; }
-      window.open(`/facture/${paymentId}`, '_blank');
+      // Navigation directe : window.open apres un await = bloque par les
+      // navigateurs mobiles (popup hors geste utilisateur)
+      window.location.assign(`/facture/${paymentId}`);
     } finally {
       setInvoiceLoadingId(null);
     }
