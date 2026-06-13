@@ -78,7 +78,7 @@ function PageLoader() {
   return <div className="min-h-screen grid place-items-center text-gray-500">Chargement…</div>;
 }
 
-/* === Google Analytics PageView Tracker === */
+/* === PageView Tracker (Google Analytics + Meta Pixel) === */
 function PageViewTracker() {
   const location = useLocation();
   useEffect(() => {
@@ -86,6 +86,10 @@ function PageViewTracker() {
       window.gtag('config', 'G-32EG21Z538', {
         page_path: location.pathname + location.search,
       });
+    }
+    // Meta Pixel : PageView à chaque navigation SPA (le 1er part depuis index.html)
+    if (typeof window !== 'undefined' && typeof window.fbq === 'function') {
+      window.fbq('track', 'PageView');
     }
   }, [location]);
   return null;

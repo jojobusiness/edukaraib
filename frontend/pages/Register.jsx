@@ -15,6 +15,7 @@ import fetchWithAuth from '../utils/fetchWithAuth';
 import { getCampaignSubject } from '../lib/bacCampaign';
 import { signInWithGoogle, consumeGoogleRedirect } from '../lib/googleAuth';
 import { ensureUserDoc } from '../utils/ensureUserDoc';
+import { pixelTrack } from '../lib/metaPixel';
 
 // ————————————————————————————————
 // Villes des Caraïbes et au-delà (pour profs en visio du monde entier)
@@ -180,7 +181,8 @@ export default function Register() {
   // Redirection après auth Google (compte créé si nouveau)
   const finishGoogle = async (user) => {
     if (!user) return;
-    const { role } = await ensureUserDoc(user, { defaultRole: 'student' });
+    const { role, isNew } = await ensureUserDoc(user, { defaultRole: 'student' });
+    if (isNew) pixelTrack('CompleteRegistration', { content_name: role, status: 'google' });
     if (nextParam) return navigate(nextParam);
     if (isExpress) {
       const subj = getCampaignSubject();
@@ -436,6 +438,9 @@ export default function Register() {
       }
 
       setWaitingEmailVerify(false);
+
+      // Meta Pixel : inscription complétée (email)
+      pixelTrack('CompleteRegistration', { content_name: form.role, status: 'email' });
 
       if (form.role === 'teacher') {
         // Générer le code parrain unique pour ce nouveau prof

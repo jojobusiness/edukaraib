@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../../components/DashboardLayout';
 import { auth, db } from '../../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import fetchWithAuth from '../../utils/fetchWithAuth';
+import { pixelTrack } from '../../lib/metaPixel';
 
 const fmtEUR = (cents) =>
   new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' })
@@ -23,6 +24,7 @@ export default function PaySuccess() {
   const [status, setStatus] = useState(null); // réponse /api/pay/session-status
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+  const purchaseFired = useRef(false);
 
   // Rôle utilisateur (pour liens de retour)
   useEffect(() => {
@@ -53,6 +55,18 @@ export default function PaySuccess() {
           body: JSON.stringify({ sessionId }),
         });
         setStatus(data);
+
+        // Meta Pixel : Achat (eventID partagé avec le CAPI serveur pour la déduplication)
+        const isPaid = data?.paid === true || data?.payment_status === 'paid';
+        if (isPaid && !purchaseFired.current) {
+          purchaseFired.current = true;
+          pixelTrack('Purchase', {
+            value: Number(data?.amount_cents || 0) / 100,
+            currency: 'EUR',
+            content_type: 'product',
+            ...(data?.lesson_id ? { content_ids: [data.lesson_id] } : {}),
+          }, { eventID: 'purchase_' + sessionId });
+        }
       } catch (e) {
         setErr(e.message || 'Impossible de vérifier la session.');
       } finally {

@@ -5,6 +5,7 @@ import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { useSEO } from '../hooks/useSEO';
 import { saveCampaign, getCampaignCode } from '../lib/bacCampaign';
+import { pixelTrack } from '../lib/metaPixel';
 import {
   GraduationCap, Clock, ShieldCheck, CreditCard, Video, BadgeCheck,
   ChevronDown, ChevronUp, Star, ArrowRight, Ticket, Sparkles,
@@ -149,6 +150,11 @@ export default function Bac() {
       saveCampaign({ code });
     }
   }, [searchParams]);
+
+  // Meta Pixel : vue de la landing campagne
+  useEffect(() => {
+    pixelTrack('ViewContent', { content_name: 'Landing Bac', content_category: 'campagne' });
+  }, []);
 
   const choosePack = (pack) => {
     saveCampaign({ pack });

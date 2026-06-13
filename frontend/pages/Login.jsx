@@ -5,6 +5,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { useNavigate, Link, useLocation, useSearchParams } from 'react-router-dom';
 import { signInWithGoogle, consumeGoogleRedirect } from '../lib/googleAuth';
 import { ensureUserDoc } from '../utils/ensureUserDoc';
+import { pixelTrack } from '../lib/metaPixel';
 
 const dashboardFor = (role) => ({
   student: '/dashboard-eleve',
@@ -29,7 +30,8 @@ export default function Login() {
   // Connexion Google (compte créé si premier login Google sans doc Firestore)
   const finishGoogle = async (user) => {
     if (!user) return;
-    const { role } = await ensureUserDoc(user, { defaultRole: 'student' });
+    const { role, isNew } = await ensureUserDoc(user, { defaultRole: 'student' });
+    if (isNew) pixelTrack('CompleteRegistration', { content_name: role, status: 'google' });
     navigate(nextParam || dashboardFor(role), { replace: true });
   };
 

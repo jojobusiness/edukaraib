@@ -3,6 +3,7 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSEO } from '../hooks/useSEO';
+import { pixelTrack } from '../lib/metaPixel';
 
 const PAGE_SIZE = 10;
 
@@ -29,6 +30,12 @@ export default function Search() {
     if (subj) setSearch(subj);
     if (cityParam) setCity(cityParam);
     if (lvl) setLevel(lvl);
+    // Meta Pixel : vue de la liste de profs (intention forte)
+    pixelTrack('ViewContent', {
+      content_type: 'product_group',
+      content_name: 'Recherche profs',
+      content_category: subj || 'toutes matières',
+    });
   }, []);
 
   // Filtres

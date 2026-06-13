@@ -2,6 +2,7 @@ import { stripe } from './_stripe.mjs';
 import { adminDb, rawBody } from './_firebaseAdmin.mjs';
 import { Resend } from 'resend';
 import { captureError } from './_sentry.mjs';
+import { sendCapiEvent } from './_metaCapi.mjs';
 
 export const config = { api: { bodyParser: false } };
 
@@ -33,6 +34,16 @@ export default async function handler(req, res) {
           await sendPaymentConfirmationEmail(session.metadata, session.amount_total || 0, session.id).catch(e =>
             console.warn('[webhook] confirmation email error:', e?.message)
           );
+          // Meta CAPI — Achat côté serveur (no-op tant que META_CAPI_TOKEN n'est pas défini).
+          // eventId identique au pixel navigateur (Success.jsx) → déduplication automatique.
+          await sendCapiEvent({
+            eventName: 'Purchase',
+            eventId: 'purchase_' + session.id,
+            value: (session.amount_total || 0) / 100,
+            currency: (session.currency || 'eur').toUpperCase(),
+            email: session.customer_details?.email || session.metadata?.payer_email,
+            eventSourceUrl: 'https://www.edukaraib.com/pay/success',
+          }).catch(e => console.warn('[webhook] Meta CAPI error:', e?.message));
         }
         break;
       }

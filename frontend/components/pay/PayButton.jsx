@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import fetchWithAuth from '../../utils/fetchWithAuth';
+import { pixelTrack } from '../../lib/metaPixel';
 
 /**
  * Props
@@ -29,6 +30,12 @@ export default function PayButton({ lessonId, forStudent, couponCode, packKey })
       if (!data?.url) {
         throw new Error('Lien de paiement introuvable.');
       }
+      // Meta Pixel : paiement initié (juste avant la redirection Stripe)
+      pixelTrack('InitiateCheckout', {
+        content_ids: [lessonId],
+        content_type: 'product',
+        currency: 'EUR',
+      });
       window.location.href = data.url;
     } catch (e) {
       alert(e.message || 'Impossible de créer le paiement');
