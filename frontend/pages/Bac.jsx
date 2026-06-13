@@ -7,7 +7,7 @@ import { useSEO } from '../hooks/useSEO';
 import { saveCampaign, getCampaignCode } from '../lib/bacCampaign';
 import {
   GraduationCap, Clock, ShieldCheck, CreditCard, Video, BadgeCheck,
-  ChevronDown, ChevronUp, Star, ArrowRight, Ticket,
+  ChevronDown, ChevronUp, Star, ArrowRight, Ticket, Sparkles,
 } from 'lucide-react';
 
 /* ——— Réglages campagne (modifiable à la main) ——— */
@@ -392,15 +392,25 @@ export default function Bac() {
       </section>
 
       {/* ——— CTA collant mobile (82 % du trafic) ——— */}
-      <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-200 p-3 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
-        <button
-          onClick={scrollToPacks}
-          className="w-full bg-yellow-400 hover:bg-yellow-500 text-slate-900 font-bold py-3 rounded-xl"
-        >
-          Choisir mon pack{promoCode ? ` · code ${promoCode}` : ''}
-        </button>
+      <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/90 backdrop-blur border-t border-gray-100 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(0,0,0,0.12)]">
+        <div className="relative">
+          {/* halo qui respire (visible aussi sur mobile, sans hover) */}
+          <span className="pointer-events-none absolute inset-0 rounded-2xl bg-amber-400/50 blur-lg animate-pulse" aria-hidden="true" />
+          <button
+            onClick={scrollToPacks}
+            className="group relative w-full overflow-hidden rounded-2xl bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 text-slate-900 font-extrabold py-3.5 shadow-lg shadow-amber-500/40 active:scale-[0.97] transition-transform duration-150"
+          >
+            {/* reflet qui balaie (bonus desktop au survol) */}
+            <span className="pointer-events-none absolute inset-y-0 -left-10 w-10 skew-x-12 bg-white/50 blur-sm transition-transform duration-700 ease-out group-hover:translate-x-[320%]" aria-hidden="true" />
+            <span className="relative flex items-center justify-center gap-2 text-base">
+              <Sparkles size={18} className="animate-pulse" />
+              Choisir mon pack{promoCode ? ` · ${promoCode}` : ''}
+              <ArrowRight size={18} className="transition-transform group-active:translate-x-1" />
+            </span>
+          </button>
+        </div>
       </div>
-      <div className="md:hidden h-20" aria-hidden="true" />
+      <div className="md:hidden h-24" aria-hidden="true" />
 
       <Footer />
     </div>
