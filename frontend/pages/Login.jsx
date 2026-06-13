@@ -1,8 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
-import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { useNavigate, Link, useLocation, useSearchParams } from 'react-router-dom';
+import { signInWithGoogle, consumeGoogleRedirect } from '../lib/googleAuth';
+import { ensureUserDoc } from '../utils/ensureUserDoc';
+
+const dashboardFor = (role) => ({
+  student: '/dashboard-eleve',
+  parent: '/parent/dashboard',
+  teacher: '/prof/dashboard',
+  admin: '/admin/dashboard',
+}[role] || '/');
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -10,8 +19,40 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [googleLoading, setGoogleLoading] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  // Destination explicite (ex : /login?next=/chat/{uid} depuis la modal de Search)
+  const nextParam = searchParams.get('next') || '';
+
+  // Connexion Google (compte créé si premier login Google sans doc Firestore)
+  const finishGoogle = async (user) => {
+    if (!user) return;
+    const { role } = await ensureUserDoc(user, { defaultRole: 'student' });
+    navigate(nextParam || dashboardFor(role), { replace: true });
+  };
+
+  // Retour d'un fallback redirect mobile
+  useEffect(() => {
+    consumeGoogleRedirect().then((u) => { if (u) finishGoogle(u); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleGoogle = async () => {
+    setGoogleLoading(true);
+    setError('');
+    try {
+      const u = await signInWithGoogle();
+      if (u) await finishGoogle(u); // null => redirect déclenché, la page va naviguer
+    } catch (e) {
+      if (e?.code !== 'auth/popup-closed-by-user' && e?.code !== 'auth/cancelled-popup-request') {
+        setError('Connexion Google impossible. Réessaie.');
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -44,7 +85,9 @@ export default function Login() {
       // ⛔️ Ne renvoie pas vers login/register/unauthorized
       const isForbidden = (p) => !p || ['/login','/register','/unauthorized'].includes(p);
 
-      if (!isForbidden(fromState)) {
+      if (nextParam) {
+        navigate(nextParam, { replace: true });
+      } else if (!isForbidden(fromState)) {
         navigate(fromState, { replace: true });
       } else if (!isForbidden(last)) {
         navigate(last, { replace: true });
@@ -89,9 +132,22 @@ export default function Login() {
           <img src="/edukaraib_logo.png" alt="Logo EduKaraib" className="h-14 mb-3" />
           <h2 className="text-2xl font-bold text-primary mb-1">Connexion</h2>
           <p className="text-gray-600 text-center text-sm">
-            Connecte-toi à ta plateforme d’accompagnement scolaire aux Caraïbes.
+            Connecte-toi à ta plateforme d'accompagnement scolaire aux Caraïbes.
           </p>
         </div>
+        <button
+          type="button"
+          onClick={handleGoogle}
+          disabled={googleLoading}
+          className="w-full flex items-center justify-center gap-2 border border-gray-300 rounded-lg py-2.5 font-semibold text-gray-700 hover:bg-gray-50 transition disabled:opacity-60"
+        >
+          <img src="/google-icon.svg" alt="" className="h-5 w-5" />
+          {googleLoading ? 'Connexion…' : 'Continuer avec Google'}
+        </button>
+        <div className="flex items-center gap-3 my-4 text-xs text-gray-400">
+          <span className="flex-1 h-px bg-gray-200" /> ou par email <span className="flex-1 h-px bg-gray-200" />
+        </div>
+
         <form className="space-y-4" onSubmit={handleLogin}>
           <div>
             <label className="block mb-1 text-sm font-medium text-gray-700">Email</label>
@@ -160,7 +216,7 @@ export default function Login() {
         </div>
         <div className="mt-3 text-center">
           <Link to="/" className="inline-block bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-semibold hover:bg-gray-200 transition">
-            ⬅️ Retour à l’accueil
+            ⬅️ Retour à l'accueil
           </Link>
         </div>
       </div>

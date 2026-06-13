@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { auth, db } from '../lib/firebase';
 import {
   createUserWithEmailAndPassword,
@@ -13,6 +13,8 @@ import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
 import fetchWithAuth from '../utils/fetchWithAuth';
 import { getCampaignSubject } from '../lib/bacCampaign';
+import { signInWithGoogle, consumeGoogleRedirect } from '../lib/googleAuth';
+import { ensureUserDoc } from '../utils/ensureUserDoc';
 
 // ————————————————————————————————
 // Villes des Caraïbes et au-delà (pour profs en visio du monde entier)
@@ -170,6 +172,44 @@ export default function Register() {
   const refCodeFromUrl = searchParams.get('ref') || '';
   // Mode express (landing /bac) : email + mdp + prénom/nom + rôle, c'est tout
   const isExpress = searchParams.get('express') === '1';
+  // Destination après inscription (ex : /chat/{uid} depuis la modal de Search)
+  const nextParam = searchParams.get('next') || '';
+
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  // Redirection après auth Google (compte créé si nouveau)
+  const finishGoogle = async (user) => {
+    if (!user) return;
+    const { role } = await ensureUserDoc(user, { defaultRole: 'student' });
+    if (nextParam) return navigate(nextParam);
+    if (isExpress) {
+      const subj = getCampaignSubject();
+      return navigate(subj ? `/search?subject=${encodeURIComponent(subj)}` : '/search');
+    }
+    if (role === 'teacher') return navigate('/prof/dashboard');
+    if (role === 'parent') return navigate('/parent/dashboard');
+    return navigate('/dashboard-eleve');
+  };
+
+  // Retour d'un fallback redirect mobile : on récupère l'utilisateur au montage
+  useEffect(() => {
+    consumeGoogleRedirect().then((u) => { if (u) finishGoogle(u); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleGoogle = async () => {
+    setGoogleLoading(true);
+    try {
+      const u = await signInWithGoogle();
+      if (u) await finishGoogle(u); // u === null => redirect déclenché, la page va naviguer
+    } catch (e) {
+      if (e?.code !== 'auth/popup-closed-by-user' && e?.code !== 'auth/cancelled-popup-request') {
+        alert('Connexion Google impossible : ' + (e?.message || ''));
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   // ✅ Lien utilisé dans les emails Firebase (vérif email)
   const actionCodeSettings = {
@@ -201,7 +241,7 @@ export default function Register() {
     e.preventDefault();
 
     if (!acceptTerms) {
-      return alert("Tu dois accepter les Conditions Générales d’Utilisation pour créer un compte.");
+      return alert("Tu dois accepter les Conditions Générales d'Utilisation pour créer un compte.");
     }
 
     if (!NAME_MIN2_REGEX.test(form.firstName)) return alert("Prénom invalide.");
@@ -211,17 +251,17 @@ export default function Register() {
     if (form.password !== confirmPassword) return alert("Les mots de passe ne correspondent pas.");
 
     if (!isExpress) {
-      if (!form.city) return alert("Merci d’indiquer votre ville.");
+      if (!form.city) return alert("Merci d'indiquer votre ville.");
       if (!existsCity(form.city)) return alert("Ville inconnue : choisissez une ville proposée dans la liste, ou sélectionnez 'En ligne'.");
     }
     if (form.birth) {
-      if (form.birth > TODAY) return alert("La date de naissance ne peut pas dépasser la date d’aujourd’hui.");
+      if (form.birth > TODAY) return alert("La date de naissance ne peut pas dépasser la date d'aujourd'hui.");
     }
 
     // Validations spécifiques prof
     if (form.role === 'teacher') {
       if (!form.presentiel_enabled && !form.visio_enabled) {
-        return alert("Active au moins un mode d’enseignement : présentiel ou visio.");
+        return alert("Active au moins un mode d'enseignement : présentiel ou visio.");
       }
 
       // Présentiel
@@ -477,7 +517,7 @@ export default function Register() {
       await sendEmailVerification(pendingUser, actionCodeSettings);
       alert("Email de vérification renvoyé. Pense à vérifier tes spams.");
     } catch (e) {
-      alert("Impossible d’envoyer l’email de vérification pour le moment.");
+      alert("Impossible d'envoyer l'email de vérification pour le moment.");
     }
   };
 
@@ -508,6 +548,24 @@ export default function Register() {
               : 'Crée ton compte gratuitement et trouve le prof qu’il te faut en au Caraïbe !'}
           </p>
         </div>
+
+        {/* Connexion Google — 1 tap, supprime la friction mobile (82 % du trafic) */}
+        {!afterSignupTeacher && !waitingEmailVerify && (
+          <>
+            <button
+              type="button"
+              onClick={handleGoogle}
+              disabled={googleLoading}
+              className="w-full flex items-center justify-center gap-2 border border-gray-300 rounded-lg py-2.5 font-semibold text-gray-700 hover:bg-gray-50 transition disabled:opacity-60"
+            >
+              <img src="/google-icon.svg" alt="" className="h-5 w-5" />
+              {googleLoading ? 'Connexion…' : 'Continuer avec Google'}
+            </button>
+            <div className="flex items-center gap-3 my-4 text-xs text-gray-400">
+              <span className="flex-1 h-px bg-gray-200" /> ou par email <span className="flex-1 h-px bg-gray-200" />
+            </div>
+          </>
+        )}
 
         {/* Étape C (après finalisation prof) : Stripe immédiat */}
         {afterSignupTeacher ? (
@@ -802,7 +860,7 @@ export default function Register() {
                   <textarea
                     name="about_course"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                    placeholder="Déroulé d’un cours type, supports utilisés, suivi, devoirs, etc."
+                    placeholder="Déroulé d'un cours type, supports utilisés, suivi, devoirs, etc."
                     value={form.about_course}
                     onChange={handleChange}
                     rows={3}
@@ -839,7 +897,7 @@ export default function Register() {
                 {form.presentiel_enabled && (
                   <>
                     <div>
-                      <label className="block mb-1 text-sm font-medium text-gray-700">Prix à l’heure (présentiel) €</label>
+                      <label className="block mb-1 text-sm font-medium text-gray-700">Prix à l'heure (présentiel) €</label>
                       <input
                         type="number"
                         min={0}
@@ -983,9 +1041,9 @@ export default function Register() {
                 required
               />
               <label htmlFor="acceptTerms" className="text-sm text-gray-700">
-                J’ai lu et j’accepte les{' '}
+                J'ai lu et j'accepte les{' '}
                 <Link to="/cgu" className="text-primary font-semibold hover:underline">
-                  Conditions Générales d’Utilisation
+                  Conditions Générales d'Utilisation
                 </Link>.
               </label>
             </div>
@@ -995,7 +1053,7 @@ export default function Register() {
               className="w-full bg-primary text-white font-semibold py-2 rounded-lg shadow hover:bg-primary-dark transition disabled:opacity-60"
               disabled={loading}
             >
-              {loading ? "Inscription..." : "S’inscrire"}
+              {loading ? "Inscription..." : "S'inscrire"}
             </button>
           </form>
         )}
@@ -1010,7 +1068,7 @@ export default function Register() {
         )}
         <div className="mt-3 text-center">
           <Link to="/" className="inline-block bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-semibold hover:bg-gray-200 transition">
-            ⬅️ Retour à l’accueil
+            ⬅️ Retour à l'accueil
           </Link>
         </div>
       </div>

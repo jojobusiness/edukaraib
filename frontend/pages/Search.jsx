@@ -599,7 +599,7 @@ function TeacherCard({ teacher, navigate }) {
             Contactez {teacher.fullName?.split(' ')[0] || 'ce professeur'} gratuitement
           </h4>
           <p className="text-sm text-gray-600 max-w-[260px]">Créez un compte en 30 secondes pour envoyer un message.</p>
-          <button onClick={() => navigate(`/register?next=/chat/${teacher.id || teacher.uid}`)} className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-xl text-base transition">
+          <button onClick={() => navigate(`/register?express=1&next=/chat/${teacher.id || teacher.uid}`)} className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-xl text-base transition">
             Créer mon compte gratuitement →
           </button>
           <button onClick={() => navigate(`/login?next=/chat/${teacher.id || teacher.uid}`)} className="w-full border border-gray-300 text-gray-700 font-semibold py-2.5 rounded-xl text-sm hover:bg-gray-50 transition">

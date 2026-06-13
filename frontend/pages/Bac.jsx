@@ -159,11 +159,9 @@ export default function Bac() {
 
   const chooseSubject = (subject) => {
     saveCampaign({ subject });
-    if (auth.currentUser) {
-      navigate(`/search?subject=${encodeURIComponent(subject)}`);
-    } else {
-      navigate('/register?express=1');
-    }
+    // Toujours montrer les profs d'abord (valeur avant la barrière), connecté ou non.
+    // L'inscription n'est demandée qu'au clic « contacter le prof » (Search.jsx).
+    navigate(`/search?subject=${encodeURIComponent(subject)}`);
   };
 
   const scrollToPacks = () => {
@@ -392,6 +390,17 @@ export default function Bac() {
           </button>
         </div>
       </section>
+
+      {/* ——— CTA collant mobile (82 % du trafic) ——— */}
+      <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-gray-200 p-3 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
+        <button
+          onClick={scrollToPacks}
+          className="w-full bg-yellow-400 hover:bg-yellow-500 text-slate-900 font-bold py-3 rounded-xl"
+        >
+          Choisir mon pack{promoCode ? ` · code ${promoCode}` : ''}
+        </button>
+      </div>
+      <div className="md:hidden h-20" aria-hidden="true" />
 
       <Footer />
     </div>
