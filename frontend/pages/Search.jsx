@@ -592,7 +592,7 @@ function TeacherCard({ teacher, navigate }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-4 flex gap-4 relative">
       {showContactModal && (
-        <div className="absolute inset-0 z-20 bg-white/98 rounded-2xl flex flex-col items-center justify-center p-6 shadow-xl text-center gap-4">
+        <div className="absolute inset-0 z-20 bg-white rounded-2xl flex flex-col items-center justify-center p-6 shadow-xl text-center gap-4">
           <button onClick={() => setShowContactModal(false)} className="absolute top-3 right-4 text-gray-400 hover:text-gray-700 text-xl font-bold">✕</button>
           <div className="text-4xl">💬</div>
           <h4 className="font-extrabold text-gray-900 text-lg leading-snug">
