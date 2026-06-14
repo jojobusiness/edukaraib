@@ -103,28 +103,26 @@ const SECTIONS = [
       <div className="space-y-3">
         <p>
           <strong>Cookies strictement nécessaires</strong> : indispensables au fonctionnement de la
-          plateforme (session d'authentification Firebase). Ils sont déposés sans consentement car
-          sans eux le site ne peut pas fonctionner.
+          plateforme (session d'authentification Firebase).
         </p>
         <p>
-          <strong>Cookies de mesure d'audience et statistiques</strong> : sous réserve de votre
-          consentement (recueilli via le bandeau affiché à votre première visite), nous utilisons :
+          <strong>Cookies de mesure d'audience et statistiques</strong> : pour comprendre
+          l'utilisation du site, l'améliorer et mesurer la performance de nos campagnes, nous
+          utilisons :
         </p>
         <ul className="list-disc pl-5 space-y-1">
           <li>
-            <strong>Google Analytics</strong> (Google Ireland Ltd) — mesure d'audience anonymisée
-            pour comprendre l'utilisation du site et l'améliorer.
+            <strong>Google Analytics</strong> (Google Ireland Ltd) — mesure d'audience.
           </li>
           <li>
-            <strong>Meta Pixel</strong> (Meta Platforms Ireland Ltd) — mesure des performances de
-            nos campagnes et statistiques de conversion.
+            <strong>Meta Pixel</strong> (Meta Platforms Ireland Ltd) — statistiques de conversion
+            publicitaire.
           </li>
         </ul>
         <p>
-          Ces traceurs ne sont activés <strong>qu'après votre acceptation</strong>. Vous pouvez
-          refuser sans conséquence sur l'utilisation du site, et modifier votre choix à tout moment
-          en effaçant les cookies de votre navigateur. Aucune donnée n'est transmise à ces partenaires
-          tant que vous n'avez pas consenti.
+          Vous pouvez à tout moment désactiver ces traceurs via les paramètres de votre navigateur
+          (blocage des cookies tiers) ou des modules complémentaires dédiés
+          (ex. <em>Google Analytics Opt-out</em>).
         </p>
       </div>
     ),

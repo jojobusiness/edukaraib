@@ -7,7 +7,6 @@ import { auth } from './lib/firebase';
 import Home from './pages/Home';
 import Bac from './pages/Bac';
 import NotFound from './pages/NotFound';
-import CookieConsent from './components/CookieConsent';
 
 // Gardes de routes : legers, restent statiques
 import TeacherRoute from './components/TeacherRoute';
@@ -136,7 +135,6 @@ function App() {
   return (
     <Router>
       <PageViewTracker /> {/* ✅ Tracker INSIDE the Router */}
-      <CookieConsent /> {/* Bandeau RGPD — gère le consentement GA + Meta Pixel */}
       {!authReady ? (
         <div className="min-h-screen grid place-items-center text-gray-500">Chargement…</div>
       ) : (

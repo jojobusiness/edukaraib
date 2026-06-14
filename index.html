@@ -7,13 +7,6 @@
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
-      // Consent Mode v2 — tout refusé par défaut tant que l'utilisateur n'a pas accepté (RGPD)
-      gtag('consent', 'default', {
-        ad_storage: 'denied',
-        analytics_storage: 'denied',
-        ad_user_data: 'denied',
-        ad_personalization: 'denied'
-      });
       gtag('config', 'G-32EG21Z538');
     </script>
 
@@ -27,7 +20,6 @@
       t.src=v;s=b.getElementsByTagName(e)[0];
       s.parentNode.insertBefore(t,s)}(window,document,'script',
       'https://connect.facebook.net/en_US/fbevents.js');
-      fbq('consent', 'revoke'); // RGPD : rien n'est envoyé tant que l'utilisateur n'a pas accepté
       fbq('init', '902547262470626');
       fbq('track', 'PageView');
     </script>
