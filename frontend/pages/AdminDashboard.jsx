@@ -46,6 +46,23 @@ const nameOf = (u) =>
   [u?.firstName, u?.lastName].filter(Boolean).join(' ') ||
   'Sans nom';
 
+// Heure courte type messagerie : aujourd'hui → HH:MM, hier → "Hier", sinon JJ/MM
+const fmtConvTime = (ts) => {
+  try {
+    const d = ts?.toDate ? ts.toDate() : ts ? new Date(ts) : null;
+    if (!d) return '';
+    const now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    const yest = new Date(now);
+    yest.setDate(now.getDate() - 1);
+    if (sameDay) return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    if (d.toDateString() === yest.toDateString()) return 'Hier';
+    return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+  } catch {
+    return '';
+  }
+};
+
 /* ===========================
    Petite modale remboursement
 =========================== */
@@ -530,12 +547,21 @@ export default function AdminDashboard() {
             person?.photo_url ||
             '/avatar-default.png';
 
+          const lastSentMs = c.lastSentAt?.toMillis?.() ?? 0;
+          const myReadMs = c.reads?.[uid]?.toMillis?.() ?? 0;
+          const incoming = !!c.lastSender && c.lastSender !== uid; // l'autre a écrit en dernier
+          const unread = incoming && lastSentMs > myReadMs;        // pas encore lu de mon côté
+
           return {
             cid: c.id,
             otherUid,
             name,
             avatar,
             lastMessage: c.lastMessage || '',
+            lastSentAt: c.lastSentAt || null,
+            lastSentMs,
+            incoming,
+            unread,
           };
         })
       );
@@ -1378,28 +1404,67 @@ export default function AdminDashboard() {
               </div>
             ) : (
               <div className="bg-white border rounded-xl overflow-hidden">
+                {/* En-tête : nb de conversations en attente de réponse */}
+                {(() => {
+                  const pending = convs.filter((c) => c.unread).length;
+                  return (
+                    <div className="px-4 py-2.5 border-b bg-gray-50 text-sm flex items-center justify-between">
+                      <span className="font-semibold text-gray-700">
+                        {convs.length} conversation{convs.length > 1 ? 's' : ''}
+                      </span>
+                      {pending > 0 ? (
+                        <span className="inline-flex items-center gap-1.5 text-red-600 font-semibold">
+                          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                          {pending} à répondre
+                        </span>
+                      ) : (
+                        <span className="text-green-600 font-medium">✓ Tout est lu</span>
+                      )}
+                    </div>
+                  );
+                })()}
                 <ul className="divide-y divide-gray-100 max-h-[70vh] overflow-y-auto">
                   {convs.length === 0 && (
                     <li className="py-10 text-center text-gray-500">Aucune conversation.</li>
                   )}
                   {convs.map((c) => (
-                    <li key={c.cid} className="flex items-center gap-3 p-3">
-                      <img
-                        src={c.avatar}
-                        alt={c.name}
-                        className="w-10 h-10 rounded-full object-cover border"
-                      />
+                    <li
+                      key={c.cid}
+                      className={`flex items-center gap-3 p-3 ${c.unread ? 'bg-amber-50' : ''}`}
+                    >
+                      <div className="relative">
+                        <img
+                          src={c.avatar}
+                          alt={c.name}
+                          className="w-10 h-10 rounded-full object-cover border"
+                        />
+                        {c.unread && (
+                          <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-red-500 border-2 border-white" />
+                        )}
+                      </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-primary truncate">{c.name}</div>
-                        <div className="text-xs text-gray-500 truncate">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className={`truncate ${c.unread ? 'font-bold text-gray-900' : 'font-semibold text-primary'}`}>
+                            {c.name}
+                          </div>
+                          <span className="text-[11px] text-gray-400 shrink-0">
+                            {fmtConvTime(c.lastSentAt)}
+                          </span>
+                        </div>
+                        <div className={`text-xs truncate ${c.unread ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
+                          {c.incoming ? (
+                            <span className="text-red-500 mr-1">📨</span>
+                          ) : c.lastMessage ? (
+                            <span className="text-gray-400 mr-1">Vous :</span>
+                          ) : null}
                           {c.lastMessage || 'Aucun message'}
                         </div>
                       </div>
                       <Link
                         to={`/chat/${c.otherUid}?from=admin`}
-                        className="bg-primary text-white px-3 py-1.5 rounded hover:bg-primary-dark"
+                        className={`px-3 py-1.5 rounded text-white ${c.unread ? 'bg-red-500 hover:bg-red-600' : 'bg-primary hover:bg-primary-dark'}`}
                       >
-                        Discuter
+                        {c.unread ? 'Répondre' : 'Discuter'}
                       </Link>
                     </li>
                   ))}

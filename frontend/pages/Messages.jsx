@@ -231,6 +231,7 @@ export default function Messages(props) {
 
   const [cid, setCid] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [convMeta, setConvMeta] = useState(null); // doc conversation (pour les accusés de lecture)
   const [newMessage, setNewMessage] = useState("");
 
   // Tunnel /bac : brouillon pré-rempli (pack + matière) déposé par TeacherProfile
@@ -307,6 +308,29 @@ export default function Messages(props) {
     unsubRefs.current.msgs = unsub;
     return () => unsub();
   }, [cid]);
+
+  // 3bis) Abonnement au doc conversation (carte des lectures `reads`)
+  useEffect(() => {
+    if (!cid) return;
+    const unsub = onSnapshot(
+      doc(db, "conversations", cid),
+      (s) => setConvMeta(s.exists() ? { id: s.id, ...s.data() } : null),
+      () => {}
+    );
+    return () => unsub();
+  }, [cid]);
+
+  // 3ter) Marquer comme lu : dès qu'on voit la conversation, on note l'heure
+  // de lecture pour mon uid (sert aux accusés "Vu" et aux compteurs non-lus).
+  useEffect(() => {
+    const myUid = auth.currentUser?.uid;
+    if (!cid || !myUid || messages.length === 0) return;
+    const last = messages[messages.length - 1];
+    if (last?.sender_uid === myUid) return; // rien à marquer si j'ai écrit en dernier
+    updateDoc(doc(db, "conversations", cid), {
+      [`reads.${myUid}`]: serverTimestamp(),
+    }).catch(() => {});
+  }, [cid, messages]);
 
   // 4) Auto-scroll
   useEffect(() => {
@@ -466,12 +490,20 @@ export default function Messages(props) {
         {(() => {
           const myUid = auth.currentUser?.uid;
           let lastDayKey = null;
-          return messages.map((m) => {
+          // Index du dernier message que J'AI envoyé (pour l'accusé Vu/Envoyé)
+          let lastMineIdx = -1;
+          messages.forEach((m, i) => {
+            if (m.sender_uid === myUid) lastMineIdx = i;
+          });
+          const otherReadMs = convMeta?.reads?.[receiverId]?.toMillis?.() ?? 0;
+          return messages.map((m, idx) => {
             const isMine = m.sender_uid === myUid;
             const dayKey = getDayKey(m.sent_at);
             const showSeparator = dayKey && dayKey !== lastDayKey;
             if (showSeparator) lastDayKey = dayKey;
             const label = showSeparator ? dateSeparatorLabel(m.sent_at) : null;
+            const showStatus = isMine && idx === lastMineIdx;
+            const seen = otherReadMs >= (m.sent_at?.toMillis?.() ?? Infinity);
             return (
               <React.Fragment key={m.id}>
                 {/* ── Séparateur de date style WhatsApp ── */}
@@ -496,9 +528,14 @@ export default function Messages(props) {
                   >
                     {m.message}
                   </div>
-                  {/* Heure uniquement — pas de nom */}
+                  {/* Heure + accusé de lecture sur mon dernier message */}
                   <span className="text-xs text-gray-400 mt-0.5 px-1">
                     {formatTime(m.sent_at)}
+                    {showStatus && (
+                      <span className={seen ? "text-primary font-medium ml-1" : "ml-1"}>
+                        {" · "}{seen ? "Vu ✓✓" : "Envoyé ✓"}
+                      </span>
+                    )}
                   </span>
                 </div>
               </React.Fragment>
