@@ -215,45 +215,70 @@ export default function ChatList({ onSelectChat }) {
 
         <div className="bg-white p-6 rounded-xl shadow border">
           <ul className="divide-y divide-gray-100">
-            {/* ── Entrée admin fixe en tête ── */}
-            {adminEntry && (
-              <li className="flex items-center gap-4 py-4">
-                <div className="relative">
-                  <img
-                    src={adminEntry.avatar}
-                    alt="Admin"
-                    className="w-12 h-12 rounded-full object-cover border-2 border-primary"
-                  />
-                  {/* Admin toujours "disponible" */}
-                  <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold text-primary truncate">Administrateur EduKaraib</div>
-                  <div className="text-xs text-gray-500">Support &amp; assistance</div>
-                  <div className="text-sm text-emerald-600 truncate mt-1 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full inline-block" />
-                    Disponible — envoyez-nous un message !
+            {/* ── Entrée admin en tête (consciente de la vraie conversation) ── */}
+            {adminEntry && (() => {
+              const adminConv = items.find((c) => c.otherUid === adminEntry.uid);
+              const unread = !!adminConv?.unread;
+              return (
+                <li className={`flex items-center gap-4 py-4 px-2 -mx-2 rounded-lg ${unread ? "bg-amber-50" : ""}`}>
+                  <div className="relative">
+                    <img
+                      src={adminEntry.avatar}
+                      alt="Admin"
+                      className="w-12 h-12 rounded-full object-cover border-2 border-primary"
+                    />
+                    {/* Admin toujours "disponible" */}
+                    <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full" />
+                    {unread && (
+                      <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 border-2 border-white rounded-full" />
+                    )}
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {onSelectChat ? (
-                    <button
-                      onClick={() => onSelectChat(adminEntry.uid)}
-                      className="bg-primary text-white px-4 py-2 rounded shadow font-semibold hover:bg-primary-dark transition"
-                    >
-                      Discuter
-                    </button>
-                  ) : (
-                    <Link
-                      to={`/chat/${adminEntry.uid}`}
-                      className="bg-primary text-white px-4 py-2 rounded shadow font-semibold hover:bg-primary-dark transition"
-                    >
-                      Discuter
-                    </Link>
-                  )}
-                </div>
-              </li>
-            )}
+                  <div className="flex-1 min-w-0">
+                    <div className={`truncate ${unread ? "font-bold text-gray-900" : "font-bold text-primary"}`}>
+                      Administrateur EduKaraib
+                    </div>
+                    <div className="text-xs text-gray-500">Support &amp; assistance</div>
+                    {adminConv?.lastMessage ? (
+                      <div className={`text-sm truncate mt-1 ${unread ? "text-gray-900 font-semibold" : "text-gray-600"}`}>
+                        {adminConv.incoming ? (
+                          unread && <span className="text-red-500 mr-1">●</span>
+                        ) : (
+                          <span className="text-gray-400 mr-1">Vous :</span>
+                        )}
+                        {adminConv.lastMessage}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-emerald-600 truncate mt-1 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full inline-block" />
+                        Disponible — envoyez-nous un message !
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    {adminConv?.lastDate && (
+                      <div className={`text-xs ${unread ? "text-red-500 font-semibold" : "text-gray-400"}`}>
+                        {formatDate(adminConv.lastDate)}
+                      </div>
+                    )}
+                    {onSelectChat ? (
+                      <button
+                        onClick={() => onSelectChat(adminEntry.uid)}
+                        className={`text-white px-4 py-2 rounded shadow font-semibold transition ${unread ? "bg-red-500 hover:bg-red-600" : "bg-primary hover:bg-primary-dark"}`}
+                      >
+                        {unread ? "Répondre" : "Discuter"}
+                      </button>
+                    ) : (
+                      <Link
+                        to={`/chat/${adminEntry.uid}`}
+                        className={`text-white px-4 py-2 rounded shadow font-semibold transition ${unread ? "bg-red-500 hover:bg-red-600" : "bg-primary hover:bg-primary-dark"}`}
+                      >
+                        {unread ? "Répondre" : "Discuter"}
+                      </Link>
+                    )}
+                  </div>
+                </li>
+              );
+            })()}
             {/* ── Conversations existantes ── */}
             {items.length === 0 && !adminEntry ? (
               <li className="text-gray-500 text-center py-6">Aucune conversation récente.</li>
