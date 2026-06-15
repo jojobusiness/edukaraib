@@ -2,22 +2,32 @@ const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const postmark = require("postmark");
 const crypto = require("crypto");
+const {defineString, defineSecret} = require("firebase-functions/params");
 
 admin.initializeApp();
 
 const db = admin.firestore();
 const REGION = "europe-west1";
 
-// Secrets (config)
-const POSTMARK_KEY = functions.config().postmark?.key;
-const FROM_EMAIL = functions.config().mail?.from || "notifications@edukaraib.com";
-const FROM_NAME = functions.config().mail?.from_name || "EduKaraib";
-
-const client = POSTMARK_KEY ? new postmark.ServerClient(POSTMARK_KEY) : null;
-
+// Config via le module params (functions.config() supprimé en
+// firebase-functions v7). POSTMARK_KEY = secret (Cloud Secret Manager),
+// le reste = chaînes avec valeurs par défaut (aucune conf requise).
+const POSTMARK_KEY = defineSecret("POSTMARK_KEY");
+const FROM_EMAIL = defineString("MAIL_FROM", {
+  default: "notifications@edukaraib.com",
+});
+const FROM_NAME = defineString("MAIL_FROM_NAME", {default: "EduKaraib"});
 // Adresse qui reçoit une copie de TOUT message envoyé à l'admin
-const ADMIN_INBOX_EMAIL =
-  functions.config().admin?.inbox || "edukaraib@gmail.com";
+const ADMIN_INBOX_EMAIL = defineString("ADMIN_INBOX", {
+  default: "edukaraib@gmail.com",
+});
+
+// Client Postmark créé à la demande : la valeur d'un secret n'est
+// disponible qu'au runtime (jamais au chargement du module).
+function getPostmarkClient() {
+  const key = POSTMARK_KEY.value();
+  return key ? new postmark.ServerClient(key) : null;
+}
 
 /**
  * Helper: récupère l'email du destinataire à partir du user_id
@@ -63,7 +73,7 @@ function buildEmail({to, title, message, createdAt}) {
     </div>
   `;
   return {
-    From: `${FROM_NAME} <${FROM_EMAIL}>`,
+    From: `${FROM_NAME.value()} <${FROM_EMAIL.value()}>`,
     To: to,
     Subject: subject,
     TextBody: text,
@@ -96,11 +106,17 @@ async function markSent(notificationId) {
  */
 exports.onNotificationCreated = functions
     .region(REGION)
-    .runWith({timeoutSeconds: 60, memory: "256MB", maxInstances: 5})
+    .runWith({
+      timeoutSeconds: 60,
+      memory: "256MB",
+      maxInstances: 5,
+      secrets: [POSTMARK_KEY],
+    })
     .firestore.document("notifications/{notifId}")
     .onCreate(async (snap, context) => {
+      const client = getPostmarkClient();
       if (!client) {
-        console.error("POSTMARK_KEY missing in functions config.");
+        console.error("POSTMARK_KEY missing (secret non configuré).");
         return null;
       }
 
@@ -202,11 +218,17 @@ async function isAdminUser(uid) {
 
 exports.onMessageCreated = functions
     .region(REGION)
-    .runWith({timeoutSeconds: 60, memory: "256MB", maxInstances: 5})
+    .runWith({
+      timeoutSeconds: 60,
+      memory: "256MB",
+      maxInstances: 5,
+      secrets: [POSTMARK_KEY],
+    })
     .firestore.document("messages/{msgId}")
     .onCreate(async (snap, context) => {
+      const client = getPostmarkClient();
       if (!client) {
-        console.error("POSTMARK_KEY missing in functions config.");
+        console.error("POSTMARK_KEY missing (secret non configuré).");
         return null;
       }
 
@@ -231,10 +253,11 @@ exports.onMessageCreated = functions
 
       const chatUrl = `https://edukaraib.com/chat/${senderUid}?from=admin`;
       const subject = `💬 Nouveau message de ${senderName}`;
+      const adminEmail = ADMIN_INBOX_EMAIL.value();
       const mail = {
-        From: `${FROM_NAME} <${FROM_EMAIL}>`,
-        To: ADMIN_INBOX_EMAIL,
-        ReplyTo: ADMIN_INBOX_EMAIL,
+        From: `${FROM_NAME.value()} <${FROM_EMAIL.value()}>`,
+        To: adminEmail,
+        ReplyTo: adminEmail,
         Subject: subject,
         TextBody:
           `${senderName} vous a écrit sur EduKaraib :\n\n` +
