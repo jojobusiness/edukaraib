@@ -116,7 +116,9 @@ Un élève peut avoir deux IDs distincts dans Firestore (`students.uid` vs `stud
 | `CRON_SECRET` | Secret pour `/api/release-payouts` |
 | `ADMIN_COUPON_SECRET` | Secret pour `/api/create-manual-coupon` |
 
-Firebase Functions : configurer via `firebase functions:config:set postmark.key=XX mail.from=XX`
+Firebase Functions (firebase-functions v7 — `functions.config()` supprimé, on utilise le module `params`) :
+- **Secret** Postmark : `firebase functions:secrets:set POSTMARK_KEY` (stocké dans Cloud Secret Manager, lié aux fonctions via `runWith({ secrets: [POSTMARK_KEY] })`). Sans ce secret, le déploiement échoue.
+- **Variables** (optionnelles, ont des défauts) : `MAIL_FROM`, `MAIL_FROM_NAME`, `ADMIN_INBOX` via `defineString` — surchargeables par un fichier `functions/.env` si besoin.
 
 ---
 
