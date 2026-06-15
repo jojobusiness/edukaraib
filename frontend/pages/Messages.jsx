@@ -19,7 +19,6 @@ import {
   deleteDoc,
   writeBatch,
 } from "firebase/firestore";
-import Pusher from "pusher-js";
 
 // --- EMAIL HELPERS (Messages.jsx) ---
 
@@ -246,10 +245,8 @@ export default function Messages(props) {
   const navigate = useNavigate();
 
   const unsubRefs = useRef({ msgs: null });
-  const pusherRef = useRef(null);
-  const channelRef = useRef(null);
 
-  // 1) Résoudre/choisir la conversation (existante > serveur > fallback client)
+  // 1) Résoudre/choisir la conversation (existante > création client)
   useEffect(() => {
     (async () => {
       const myUid = auth.currentUser?.uid;
@@ -261,105 +258,19 @@ export default function Messages(props) {
       }
 
       // (A) Conversation existante ?
-      const existingByParticipants = await findExistingConversationByParticipants(
+      const existing = await findExistingConversationByParticipants(
         myUid,
         receiverId
       );
-      if (existingByParticipants) {
-        setCid(existingByParticipants);
-        // join room côté socket (sans recréer)
-        try {
-          const SERVER_URL =
-            import.meta.env.VITE_SOCKET_URL ||
-            "https://edukaraib-server.vercel.app";
-          if (!socketRef.current) {
-            const s = io(SERVER_URL, {
-              path: "/socket.io",
-              transports: ["polling"],
-              upgrade: false,
-              withCredentials: true,
-              reconnection: true,
-              reconnectionAttempts: Infinity,
-              reconnectionDelay: 1000,
-              reconnectionDelayMax: 5000,
-              timeout: 20000,
-            });
-            s.on("connect_error", (e) => {
-              if (!String(e?.message || "").includes("xhr poll error")) {
-                console.warn("socket connect_error", e?.message || e);
-              }
-            });
-            socketRef.current = s;
-          }
-          const idToken = await auth.currentUser?.getIdToken();
-          await new Promise((resolve) =>
-            socketRef.current.emit("auth", { idToken }, () => resolve())
-          );
-          await new Promise((resolve) =>
-            socketRef.current.emit(
-              "join_conversation",
-              { conversationId: existingByParticipants },
-              () => resolve()
-            )
-          );
-        } catch {}
-        return; // ✅ utilise l'existante
+      if (existing) {
+        setCid(existing);
+        return; // ✅ on réutilise l'existante
       }
 
-      // (B) Sinon, ESSAI serveur (join_dm crée si besoin côté admin)
-      try {
-        const SERVER_URL =
-          import.meta.env.VITE_SOCKET_URL ||
-          "https://edukaraib-server.vercel.app";
-        if (!socketRef.current) {
-          const s = io(SERVER_URL, {
-            path: "/socket.io",
-            transports: ["polling"],
-            upgrade: false,
-            withCredentials: true,
-            reconnection: true,
-            reconnectionAttempts: Infinity,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000,
-            timeout: 20000,
-          });
-          s.on("connect_error", (e) => {
-            if (!String(e?.message || "").includes("xhr poll error")) {
-              console.warn("socket connect_error", e?.message || e);
-            }
-          });
-          socketRef.current = s;
-        }
-        const idToken = await auth.currentUser?.getIdToken();
-        await new Promise((resolve) =>
-          socketRef.current.emit("auth", { idToken }, () => resolve())
-        );
-        const convId = await new Promise((resolve) => {
-          socketRef.current.emit(
-            "join_dm",
-            { otherUid: receiverId },
-            (res) => {
-              if (res?.ok && res.conversationId) resolve(res.conversationId);
-              else resolve(null);
-            }
-          );
-        });
-        if (convId) {
-          setCid(convId);
-          return; // ✅ serveur OK
-        }
-      } catch {
-        // continue sur (C)
-      }
-
-      // (C) Dernier recours : créer côté client
-      const convIdFallback = await ensureConversationClient(myUid, receiverId);
-      setCid(convIdFallback);
+      // (B) Sinon on la crée côté client
+      const convId = await ensureConversationClient(myUid, receiverId);
+      setCid(convId);
     })();
-
-    return () => {
-      // on garde la socket pour ce composant
-    };
   }, [receiverId]);
 
   // 2) Profil interlocuteur
@@ -397,68 +308,12 @@ export default function Messages(props) {
     return () => unsub();
   }, [cid]);
 
-  // 4) Pusher temps réel (optionnel)
-  useEffect(() => {
-    let mounted = true;
-
-    async function setupPusher() {
-      if (!cid) return;
-      const key = import.meta.env.VITE_PUSHER_KEY;
-      const cluster = import.meta.env.VITE_PUSHER_CLUSTER;
-      if (!key || !cluster) {
-        console.warn(
-          "Pusher env vars manquantes (VITE_PUSHER_KEY / VITE_PUSHER_CLUSTER)."
-        );
-        return;
-      }
-      const idToken = await auth.currentUser?.getIdToken();
-      if (!mounted) return;
-
-      const pusher = new Pusher(key, {
-        cluster,
-        authEndpoint: "/api/pusher/auth",
-        auth: {
-          headers: { Authorization: `Bearer ${idToken || ""}` },
-        },
-      });
-      pusherRef.current = pusher;
-
-      const channelName = `presence-conversation-${cid}`;
-      const channel = pusher.subscribe(channelName);
-      channelRef.current = channel;
-
-      channel.bind("message:new", () => {
-        // Firestore pousse déjà via onSnapshot; on peut ignorer
-      });
-    }
-
-    setupPusher();
-
-    return () => {
-      mounted = false;
-      try {
-        const ch = channelRef.current;
-        if (ch) {
-          ch.unbind_all();
-          const p = pusherRef.current;
-          if (p) p.unsubscribe(ch.name);
-        }
-      } catch {}
-      channelRef.current = null;
-      try {
-        const p = pusherRef.current;
-        if (p) p.disconnect();
-      } catch {}
-      pusherRef.current = null;
-    };
-  }, [cid]);
-
-  // 5) Auto-scroll
+  // 4) Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // 6) Envoi via API -> fallback Firestore si besoin
+  // 5) Envoi du message (source de vérité : Firestore)
   const handleSend = async (e) => {
     e.preventDefault();
     if (sending) return;
@@ -479,57 +334,33 @@ export default function Messages(props) {
         setCid(conversationId);
       }
 
-      // 1) tentative API
-      try {
-        const idToken = await auth.currentUser?.getIdToken();
-        const res = await fetch("/api/messages/send", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${idToken || ""}`,
-          },
-          body: JSON.stringify({ conversationId, toUid: receiverId, text }),
-        });
-        if (!res.ok) throw new Error("api_failed");
-        setNewMessage("");
-        // --- ENVOI EMAIL AU DESTINATAIRE ---
-        notifyEmailUser(receiverId, {
-          title: "Nouveau message sur EduKaraib",
-          message: text,
-          ctaUrl: `${window.location.origin}/messages`,
-          ctaText: "Ouvrir la conversation",
-        });
-        // --- /ENVOI EMAIL ---
-        return;
-      } catch {
-        // 2) fallback Firestore
-        await addDoc(collection(db, "messages"), {
-          conversationId,
-          sender_uid: myUid,
-          receiver_uid: receiverId,
-          participants_uids: [myUid, receiverId],
-          message: text,
-          sent_at: serverTimestamp(),
-        });
+      // Écriture Firestore. La Cloud Function onMessageCreated se charge de
+      // prévenir l'admin par email si le destinataire est l'admin.
+      await addDoc(collection(db, "messages"), {
+        conversationId,
+        sender_uid: myUid,
+        receiver_uid: receiverId,
+        participants_uids: [myUid, receiverId],
+        message: text,
+        sent_at: serverTimestamp(),
+      });
 
-        await updateDoc(doc(db, "conversations", conversationId), {
-          lastMessage: text,
-          lastSentAt: serverTimestamp(),
-          lastSender: myUid,
-        });
+      await updateDoc(doc(db, "conversations", conversationId), {
+        lastMessage: text,
+        lastSentAt: serverTimestamp(),
+        lastSender: myUid,
+      });
 
-        // --- ENVOI EMAIL AU DESTINATAIRE ---
-        notifyEmailUser(receiverId, {
-          title: "Nouveau message sur EduKaraib",
-          message: text,
-          ctaUrl: `${window.location.origin}/messages`,
-          ctaText: "Ouvrir la conversation",
-        });
-        // --- /ENVOI EMAIL ---
+      // --- ENVOI EMAIL AU DESTINATAIRE ---
+      notifyEmailUser(receiverId, {
+        title: "Nouveau message sur EduKaraib",
+        message: text,
+        ctaUrl: `${window.location.origin}/messages`,
+        ctaText: "Ouvrir la conversation",
+      });
+      // --- /ENVOI EMAIL ---
 
-        setNewMessage("");
-        return;
-      }
+      setNewMessage("");
     } catch (err) {
       console.warn("send failed:", err?.message || err);
       alert("Échec de l’envoi du message. Réessayez.");

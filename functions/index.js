@@ -15,6 +15,10 @@ const FROM_NAME = functions.config().mail?.from_name || "EduKaraib";
 
 const client = POSTMARK_KEY ? new postmark.ServerClient(POSTMARK_KEY) : null;
 
+// Adresse qui reçoit une copie de TOUT message envoyé à l'admin
+const ADMIN_INBOX_EMAIL =
+  functions.config().admin?.inbox || "edukaraib@gmail.com";
+
 /**
  * Helper: récupère l'email du destinataire à partir du user_id
  */
@@ -153,6 +157,109 @@ exports.onNotificationCreated = functions
             },
             {merge: true},
         );
+      }
+
+      return null;
+    });
+
+// -----------------------------------------------------------------------------
+// 📩 Message envoyé à l'admin => email de copie sur ADMIN_INBOX_EMAIL
+// -----------------------------------------------------------------------------
+
+/** Récupère un nom lisible pour un uid (users > teachers > students > parents) */
+async function getUserDisplayName(uid) {
+  if (!uid) return "Un utilisateur";
+  const cols = ["users", "teachers", "students", "parents"];
+  for (const col of cols) {
+    try {
+      const snap = await db.collection(col).doc(uid).get();
+      if (snap.exists) {
+        const d = snap.data() || {};
+        const byFL = [d.firstName, d.lastName].filter(Boolean).join(" ").trim();
+        const name =
+          d.fullName || d.full_name || byFL || d.name || d.displayName ||
+          (typeof d.email === "string" ? d.email.split("@")[0] : "");
+        if (name) return name;
+      }
+    } catch (e) {
+      console.error("getUserDisplayName error:", col, e?.message || e);
+    }
+  }
+  return `Utilisateur-${String(uid).slice(0, 6)}`;
+}
+
+/** Vrai si le user a le rôle admin */
+async function isAdminUser(uid) {
+  if (!uid) return false;
+  try {
+    const snap = await db.collection("users").doc(uid).get();
+    return snap.exists && String(snap.data()?.role || "") === "admin";
+  } catch (e) {
+    console.error("isAdminUser error:", e?.message || e);
+    return false;
+  }
+}
+
+exports.onMessageCreated = functions
+    .region(REGION)
+    .runWith({timeoutSeconds: 60, memory: "256MB", maxInstances: 5})
+    .firestore.document("messages/{msgId}")
+    .onCreate(async (snap, context) => {
+      if (!client) {
+        console.error("POSTMARK_KEY missing in functions config.");
+        return null;
+      }
+
+      const m = snap.data() || {};
+      const receiverUid = m.receiver_uid || m.receiverId;
+      const senderUid = m.sender_uid || m.senderId;
+      const text = m.message || m.text || "";
+
+      // On ne notifie que si le DESTINATAIRE est un admin
+      if (!(await isAdminUser(receiverUid))) return null;
+
+      const senderName = await getUserDisplayName(senderUid);
+      const sentAt = (() => {
+        try {
+          const ts = m.sent_at;
+          if (ts?.toDate) return ts.toDate().toLocaleString("fr-FR");
+          return new Date().toLocaleString("fr-FR");
+        } catch {
+          return "";
+        }
+      })();
+
+      const chatUrl = `https://edukaraib.com/chat/${senderUid}?from=admin`;
+      const subject = `💬 Nouveau message de ${senderName}`;
+      const mail = {
+        From: `${FROM_NAME} <${FROM_EMAIL}>`,
+        To: ADMIN_INBOX_EMAIL,
+        ReplyTo: ADMIN_INBOX_EMAIL,
+        Subject: subject,
+        TextBody:
+          `${senderName} vous a écrit sur EduKaraib :\n\n` +
+          `« ${text} »\n\n` +
+          `Date : ${sentAt}\n` +
+          `Répondre : ${chatUrl}\n`,
+        HtmlBody: `
+          <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;color:#111">
+            <h2 style="margin:0 0 12px">💬 Nouveau message de ${senderName}</h2>
+            <p style="margin:0 0 8px;padding:12px;background:#f3f4f6;border-radius:8px">${text || "(message vide)"}</p>
+            <p style="margin:0 0 8px;font-size:12px;color:#666">Date : ${sentAt}</p>
+            <p style="margin:16px 0">
+              <a href="${chatUrl}" style="display:inline-block;background:#2563EB;color:white;padding:10px 16px;border-radius:8px;text-decoration:none">
+                Répondre dans le chat
+              </a>
+            </p>
+          </div>`,
+        MessageStream: "outbound",
+      };
+
+      try {
+        const res = await client.sendEmail(mail);
+        console.log("Admin message email sent:", res?.MessageID || res);
+      } catch (e) {
+        console.error("Admin message email error:", e?.message || e);
       }
 
       return null;
