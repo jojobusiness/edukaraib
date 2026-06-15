@@ -59,7 +59,7 @@ Monorepo mixte : frontend SPA + API serverless Vercel + Firebase Cloud Functions
 │   ├── trigger-payout.mjs   ← virement prof via Stripe Connect
 │   └── ...
 ├── functions/          ← Firebase Cloud Functions (CommonJS)
-│   └── index.js        ← onNotificationCreated (email Postmark), onReviewCreatedGivePromo
+│   └── index.js        ← onNotificationCreated + onMessageCreated (email Resend), onReviewCreatedGivePromo
 ├── dist/               ← build Vite (ignoré git)
 └── vercel.json         ← routing : /api/* → serverless, reste → index.html
 ```
@@ -84,11 +84,12 @@ Un élève peut avoir deux IDs distincts dans Firestore (`students.uid` vs `stud
 - Les gardes de routes sont dans `frontend/components/[Role]Route.jsx` et `frontend/routes/RequireRole.jsx`
 - Les APIs vérifient le rôle via `verifyAuth()` → token Firebase → lookup `users/{uid}.role` dans Firestore
 
-### Notifications & Emails (double pipeline — attention aux doublons)
+### Notifications & Emails (tout sur Resend — attention aux doublons)
 
-- **Postmark** : Cloud Function `onNotificationCreated` (Firestore trigger) → email automatique à chaque document créé dans `notifications/`
-- **Resend** : API `/api/notify-email.js` pour les envois manuels/ponctuels
-- Le flag `email_sent: true` sur le document notification empêche le re-envoi. Si tu ajoutes un nouvel envoi d'email, vérifier que les deux pipelines ne se déclenchent pas sur le même événement.
+- **Resend (Cloud Functions)** : `onNotificationCreated` (trigger sur `notifications/`) + `onMessageCreated` (trigger sur `messages/`, alerte admin) → envoi via `sendEmailResend()` (API REST Resend, secret `RESEND_API_KEY`).
+- **Resend (API Vercel)** : `/api/notify-email.js` pour les envois manuels/ponctuels (et `notifyEmailUser` depuis le front au message).
+- ~~Postmark~~ : **abandonné** (compte jamais approuvé → blocage des envois hors `edukaraib.com`). Tout passe désormais par Resend.
+- Le flag `email_sent: true` sur le document notification empêche le re-envoi. Si tu ajoutes un nouvel envoi d'email, vérifier que les pipelines ne se déclenchent pas sur le même événement (le front met `email_disabled: true` sur les notifs qu'il maile déjà via Resend).
 
 ### Système influenceurs
 
@@ -117,8 +118,8 @@ Un élève peut avoir deux IDs distincts dans Firestore (`students.uid` vs `stud
 | `ADMIN_COUPON_SECRET` | Secret pour `/api/create-manual-coupon` |
 
 Firebase Functions (firebase-functions v7 — `functions.config()` supprimé, on utilise le module `params`) :
-- **Secret** Postmark : `firebase functions:secrets:set POSTMARK_KEY` (stocké dans Cloud Secret Manager, lié aux fonctions via `runWith({ secrets: [POSTMARK_KEY] })`). Sans ce secret, le déploiement échoue.
-- **Variables** (optionnelles, ont des défauts) : `MAIL_FROM`, `MAIL_FROM_NAME`, `ADMIN_INBOX` via `defineString` — surchargeables par un fichier `functions/.env` si besoin.
+- **Secret** Resend : `firebase functions:secrets:set RESEND_API_KEY` (stocké dans Cloud Secret Manager, lié aux fonctions via `runWith({ secrets: [RESEND_API_KEY] })`). Les emails partent via l'API REST Resend (`sendEmailResend()` dans `functions/index.js`), expéditeur `notifications@edukaraib.com` puis repli `onboarding@resend.dev`. **Postmark a été abandonné** (compte jamais approuvé → envois hors domaine bloqués).
+- **Variables** (optionnelles, ont des défauts dans le code ET dans `functions/.env`) : `MAIL_FROM`, `MAIL_FROM_NAME`, `ADMIN_INBOX` via `defineString`.
 
 ---
 
