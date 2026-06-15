@@ -1,6 +1,5 @@
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
-const postmark = require("postmark");
 const crypto = require("crypto");
 const {defineString, defineSecret} = require("firebase-functions/params");
 
@@ -10,9 +9,9 @@ const db = admin.firestore();
 const REGION = "europe-west1";
 
 // Config via le module params (functions.config() supprimé en
-// firebase-functions v7). POSTMARK_KEY = secret (Cloud Secret Manager),
+// firebase-functions v7). RESEND_API_KEY = secret (Cloud Secret Manager),
 // le reste = chaînes avec valeurs par défaut (aucune conf requise).
-const POSTMARK_KEY = defineSecret("POSTMARK_KEY");
+const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
 const FROM_EMAIL = defineString("MAIL_FROM", {
   default: "notifications@edukaraib.com",
 });
@@ -22,11 +21,53 @@ const ADMIN_INBOX_EMAIL = defineString("ADMIN_INBOX", {
   default: "edukaraib@gmail.com",
 });
 
-// Client Postmark créé à la demande : la valeur d'un secret n'est
-// disponible qu'au runtime (jamais au chargement du module).
-function getPostmarkClient() {
-  const key = POSTMARK_KEY.value();
-  return key ? new postmark.ServerClient(key) : null;
+// Repli sur le sender de test Resend si le domaine pro n'est pas vérifié
+// (livre au moins vers l'email du compte Resend, ex: edukaraib@gmail.com).
+const FROM_TEST = "EduKaraib <onboarding@resend.dev>";
+
+/**
+ * Envoie un email via l'API REST Resend (pas de SDK = pas de dépendance).
+ * Tente l'expéditeur pro (domaine vérifié) puis retombe sur le sender de
+ * test Resend. La valeur du secret n'est lisible qu'au runtime.
+ * @param {{to:string, subject:string, html:string, text:string}} m
+ * @return {Promise<boolean>} true si un email est bien parti.
+ */
+async function sendEmailResend(m) {
+  const key = RESEND_API_KEY.value();
+  if (!key) {
+    console.error("RESEND_API_KEY manquant (secret non configuré).");
+    return false;
+  }
+  const fromPro = `${FROM_NAME.value()} <${FROM_EMAIL.value()}>`;
+  for (const from of [fromPro, FROM_TEST]) {
+    try {
+      const resp = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from,
+          to: [m.to],
+          subject: m.subject,
+          html: m.html,
+          text: m.text,
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok && data && data.id) {
+        console.log("Resend email sent:", data.id, "from", from);
+        return true;
+      }
+      console.error("Resend refus:", from, resp.status,
+          data && (data.message || data.name) ? (data.message || data.name) :
+          JSON.stringify(data));
+    } catch (e) {
+      console.error("Resend fetch error:", from, e && e.message ? e.message : e);
+    }
+  }
+  return false;
 }
 
 /**
@@ -47,9 +88,9 @@ async function getUserEmail(userId) {
 }
 
 /**
- * Helper: fabrique l'objet email
+ * Helper: fabrique le contenu email {subject, html, text}
  */
-function buildEmail({to, title, message, createdAt}) {
+function buildEmail({title, message, createdAt}) {
   const subject = title || "Nouvelle notification EduKaraib";
   const text =
     (message || "Vous avez une nouvelle notification sur EduKaraib.") +
@@ -72,14 +113,7 @@ function buildEmail({to, title, message, createdAt}) {
       </p>
     </div>
   `;
-  return {
-    From: `${FROM_NAME.value()} <${FROM_EMAIL.value()}>`,
-    To: to,
-    Subject: subject,
-    TextBody: text,
-    HtmlBody: html,
-    MessageStream: "outbound", // (Postmark) stream par défaut
-  };
+  return {subject, html, text};
 }
 
 /**
@@ -110,16 +144,10 @@ exports.onNotificationCreated = functions
       timeoutSeconds: 60,
       memory: "256MB",
       maxInstances: 5,
-      secrets: [POSTMARK_KEY],
+      secrets: [RESEND_API_KEY],
     })
     .firestore.document("notifications/{notifId}")
     .onCreate(async (snap, context) => {
-      const client = getPostmarkClient();
-      if (!client) {
-        console.error("POSTMARK_KEY missing (secret non configuré).");
-        return null;
-      }
-
       const notifId = context.params.notifId;
       const data = snap.data() || {};
 
@@ -153,22 +181,18 @@ exports.onNotificationCreated = functions
       })();
 
       const mail = buildEmail({
-        to,
         title: data.title || data.type || "Notification EduKaraib",
         message: data.message || "",
         createdAt,
       });
 
-      try {
-        const res = await client.sendEmail(mail);
-        console.log("Email sent:", res?.MessageID || res);
+      const ok = await sendEmailResend({to, ...mail});
+      if (ok) {
         await markSent(notifId);
-      } catch (e) {
-        console.error("sendEmail error:", e?.message || e);
-        // trace l’erreur dans la notif pour debug
+      } else {
         await db.collection("notifications").doc(notifId).set(
             {
-              email_error: String(e?.message || e),
+              email_error: "resend_send_failed",
               email_last_try: admin.firestore.FieldValue.serverTimestamp(),
             },
             {merge: true},
@@ -222,16 +246,10 @@ exports.onMessageCreated = functions
       timeoutSeconds: 60,
       memory: "256MB",
       maxInstances: 5,
-      secrets: [POSTMARK_KEY],
+      secrets: [RESEND_API_KEY],
     })
     .firestore.document("messages/{msgId}")
     .onCreate(async (snap, context) => {
-      const client = getPostmarkClient();
-      if (!client) {
-        console.error("POSTMARK_KEY missing (secret non configuré).");
-        return null;
-      }
-
       const m = snap.data() || {};
       const receiverUid = m.receiver_uid || m.receiverId;
       const senderUid = m.sender_uid || m.senderId;
@@ -252,19 +270,15 @@ exports.onMessageCreated = functions
       })();
 
       const chatUrl = `https://edukaraib.com/chat/${senderUid}?from=admin`;
-      const subject = `💬 Nouveau message de ${senderName}`;
-      const adminEmail = ADMIN_INBOX_EMAIL.value();
-      const mail = {
-        From: `${FROM_NAME.value()} <${FROM_EMAIL.value()}>`,
-        To: adminEmail,
-        ReplyTo: adminEmail,
-        Subject: subject,
-        TextBody:
+      const ok = await sendEmailResend({
+        to: ADMIN_INBOX_EMAIL.value(),
+        subject: `💬 Nouveau message de ${senderName}`,
+        text:
           `${senderName} vous a écrit sur EduKaraib :\n\n` +
           `« ${text} »\n\n` +
           `Date : ${sentAt}\n` +
           `Répondre : ${chatUrl}\n`,
-        HtmlBody: `
+        html: `
           <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;color:#111">
             <h2 style="margin:0 0 12px">💬 Nouveau message de ${senderName}</h2>
             <p style="margin:0 0 8px;padding:12px;background:#f3f4f6;border-radius:8px">${text || "(message vide)"}</p>
@@ -275,15 +289,8 @@ exports.onMessageCreated = functions
               </a>
             </p>
           </div>`,
-        MessageStream: "outbound",
-      };
-
-      try {
-        const res = await client.sendEmail(mail);
-        console.log("Admin message email sent:", res?.MessageID || res);
-      } catch (e) {
-        console.error("Admin message email error:", e?.message || e);
-      }
+      });
+      if (!ok) console.error("Admin message email: échec Resend");
 
       return null;
     });
