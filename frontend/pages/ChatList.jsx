@@ -167,6 +167,12 @@ export default function ChatList({ onSelectChat }) {
 
           const lastDate = c.lastSentAt?.toDate ? c.lastSentAt.toDate() : null;
 
+          // Non-lu : l'autre a écrit en dernier ET je n'ai pas encore ouvert
+          const lastSentMs = c.lastSentAt?.toMillis?.() ?? 0;
+          const myReadMs = c.reads?.[myUid]?.toMillis?.() ?? 0;
+          const incoming = !!c.lastSender && c.lastSender !== myUid;
+          const unread = incoming && lastSentMs > myReadMs;
+
           return {
             cid: c.id,
             otherUid, // UID Firebase
@@ -176,9 +182,14 @@ export default function ChatList({ onSelectChat }) {
             isOnline,
             lastMessage: c.lastMessage || "",
             lastDate,
+            lastSentMs,
+            incoming,
+            unread,
           };
         })
       );
+      // Non-lus d'abord, puis du plus récent au plus ancien
+      list.sort((a, b) => (b.unread - a.unread) || (b.lastSentMs - a.lastSentMs));
       setItems(list);
     });
 
@@ -190,7 +201,17 @@ export default function ChatList({ onSelectChat }) {
   return (
     <DashboardLayout role={currentRole}>
       <div className="max-w-2xl mx-auto">
-        <h2 className="text-2xl font-bold text-primary mb-6">💬 Mes conversations</h2>
+        <h2 className="text-2xl font-bold text-primary mb-6 flex items-center gap-2">
+          💬 Mes conversations
+          {(() => {
+            const n = items.filter((c) => c.unread).length;
+            return n > 0 ? (
+              <span className="inline-flex items-center justify-center min-w-[1.5rem] h-6 px-2 text-sm font-bold text-white bg-red-500 rounded-full">
+                {n}
+              </span>
+            ) : null;
+          })()}
+        </h2>
 
         <div className="bg-white p-6 rounded-xl shadow border">
           <ul className="divide-y divide-gray-100">
@@ -240,7 +261,10 @@ export default function ChatList({ onSelectChat }) {
               items
                 .filter(c => adminEntry ? c.otherUid !== adminEntry.uid : true)
                 .map((c) => (
-                <li key={c.cid} className="flex items-center gap-4 py-4">
+                <li
+                  key={c.cid}
+                  className={`flex items-center gap-4 py-4 px-2 -mx-2 rounded-lg ${c.unread ? "bg-amber-50" : ""}`}
+                >
                   <div className="relative">
                     <img
                       src={c.avatar || "/avatar-default.png"}
@@ -250,10 +274,15 @@ export default function ChatList({ onSelectChat }) {
                     {c.isOnline && (
                       <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full" />
                     )}
+                    {c.unread && (
+                      <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 border-2 border-white rounded-full" />
+                    )}
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <div className="font-bold text-primary truncate">{c.name}</div>
+                    <div className={`truncate ${c.unread ? "font-bold text-gray-900" : "font-bold text-primary"}`}>
+                      {c.name}
+                    </div>
                     <div className="text-xs text-gray-500">
                       {c.role === "teacher"
                         ? "Professeur"
@@ -263,14 +292,19 @@ export default function ChatList({ onSelectChat }) {
                         ? "Élève"
                         : ""}
                     </div>
-                    <div className="text-sm text-gray-600 truncate mt-1">
+                    <div className={`text-sm truncate mt-1 ${c.unread ? "text-gray-900 font-semibold" : "text-gray-600"}`}>
+                      {c.incoming ? (
+                        c.unread && <span className="text-red-500 mr-1">●</span>
+                      ) : c.lastMessage ? (
+                        <span className="text-gray-400 mr-1">Vous :</span>
+                      ) : null}
                       {c.lastMessage || "Aucun message"}
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-col items-end gap-2">
                     {c.lastDate && (
-                      <div className="text-xs text-gray-400">
+                      <div className={`text-xs ${c.unread ? "text-red-500 font-semibold" : "text-gray-400"}`}>
                         {formatDate(c.lastDate)}
                       </div>
                     )}
@@ -278,16 +312,16 @@ export default function ChatList({ onSelectChat }) {
                     {onSelectChat ? (
                       <button
                         onClick={() => onSelectChat(c.otherUid)}
-                        className="bg-primary text-white px-4 py-2 rounded shadow font-semibold hover:bg-primary-dark transition"
+                        className={`text-white px-4 py-2 rounded shadow font-semibold transition ${c.unread ? "bg-red-500 hover:bg-red-600" : "bg-primary hover:bg-primary-dark"}`}
                       >
-                        Discuter
+                        {c.unread ? "Répondre" : "Discuter"}
                       </button>
                     ) : (
                       <Link
                         to={`/chat/${c.otherUid}`}
-                        className="bg-primary text-white px-4 py-2 rounded shadow font-semibold hover:bg-primary-dark transition"
+                        className={`text-white px-4 py-2 rounded shadow font-semibold transition ${c.unread ? "bg-red-500 hover:bg-red-600" : "bg-primary hover:bg-primary-dark"}`}
                       >
-                        Discuter
+                        {c.unread ? "Répondre" : "Discuter"}
                       </Link>
                     )}
                   </div>
