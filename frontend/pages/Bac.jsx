@@ -86,6 +86,8 @@ const PACKS = [
     pack: 0,
     name: 'SOS 1 matière',
     tagline: 'Une matière qui coince',
+    price: '≈ 30 €',
+    priceNote: 'l’heure',
     points: ['Cours à l’unité, sans engagement', 'Prof vérifié, visio ou présentiel', 'Idéal pour débloquer un chapitre'],
     discount: '-5 € avec ton code promo',
     highlight: false,
@@ -95,6 +97,8 @@ const PACKS = [
     pack: 5,
     name: 'Pack Intensif 5h',
     tagline: 'La dernière ligne droite',
+    price: '≈ 150 €',
+    priceNote: '6h de cours · soit ~25 €/h',
     points: ['+1h OFFERTE (6h au total)', 'Payable en 3x sans frais (Klarna)', 'Le format le plus choisi avant les épreuves'],
     discount: '-10 € avec ton code promo',
     highlight: true,
@@ -104,6 +108,8 @@ const PACKS = [
     pack: 10,
     name: 'Pack Prépa 10h',
     tagline: 'Je sécurise mon bac',
+    price: '≈ 300 €',
+    priceNote: '12h de cours · soit ~25 €/h',
     points: ['+2h OFFERTES (12h au total)', 'Payable en 3x sans frais (Klarna)', 'Suivi complet sur plusieurs matières'],
     discount: '-30 € avec ton code promo',
     highlight: false,
@@ -213,7 +219,7 @@ export default function Bac() {
         <div className="max-w-4xl mx-auto">
           <h2 className="text-2xl font-bold text-center text-slate-900 mb-2">Choisis ton format</h2>
           <p className="text-center text-gray-500 text-sm mb-8">
-            Le tarif horaire est fixé par chaque prof — affiché sur son profil. Le prof reçoit toujours 100 % de son tarif.
+            Prix estimés sur la base d’un tarif moyen de 30 €/h. Le tarif exact est fixé par chaque prof — affiché sur son profil. Le prof reçoit toujours 100 % de son tarif.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {PACKS.map((p) => (
@@ -230,6 +236,15 @@ export default function Bac() {
                 )}
                 <h3 className="text-lg font-bold text-slate-900">{p.name}</h3>
                 <p className="text-sm text-primary font-semibold mb-3">{p.tagline}</p>
+                <div className="mb-3 pb-3 border-b border-gray-100">
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-2xl font-extrabold text-slate-900">{p.price}</span>
+                    <span className="text-sm text-gray-500">{p.priceNote}</span>
+                  </div>
+                  {p.pack !== 0 && (
+                    <p className="text-xs text-gray-400 mt-0.5">ou en 3x sans frais avec Klarna</p>
+                  )}
+                </div>
                 <ul className="space-y-2 text-sm text-gray-700 flex-1">
                   {p.points.map((pt) => (
                     <li key={pt} className="flex items-start gap-2">
