@@ -195,21 +195,23 @@ function readRawBody(req) {
   });
 }
 
-// ── Vérification signature Vercel (HMAC-SHA256) ───────
+// ── Vérification signature Vercel Log Drain (HMAC-SHA1) ───────
+// ⚠️ Vercel signe les log drains en HMAC-SHA1 (hex brut, header `x-vercel-signature`),
+// PAS en SHA256. Toute autre variante => 401 « Signature invalide ». Ne pas changer.
 async function verifySignature(rawBody, signature, secret) {
   if (!signature) return false;
   try {
     const enc = new TextEncoder();
     const key = await crypto.subtle.importKey(
       'raw', enc.encode(secret),
-      { name: 'HMAC', hash: 'SHA-256' },
+      { name: 'HMAC', hash: 'SHA-1' },
       false, ['sign']
     );
     const sigBuffer = await crypto.subtle.sign('HMAC', key, enc.encode(rawBody));
     const expected = Array.from(new Uint8Array(sigBuffer))
       .map(b => b.toString(16).padStart(2, '0')).join('');
     // Comparaison en temps constant pour éviter les timing attacks
-    const sig = signature.replace(/^sha256=/, '');
+    const sig = signature.replace(/^sha1=/, '').trim().toLowerCase();
     if (sig.length !== expected.length) return false;
     let diff = 0;
     for (let i = 0; i < expected.length; i++) diff |= sig.charCodeAt(i) ^ expected.charCodeAt(i);
