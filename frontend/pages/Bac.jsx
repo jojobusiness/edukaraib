@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { auth } from '../lib/firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { auth, db } from '../lib/firebase';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { useSEO } from '../hooks/useSEO';
@@ -137,7 +138,10 @@ export default function Bac() {
   const [searchParams] = useSearchParams();
   const [selectedPack, setSelectedPack] = useState(null);
   const [openFaq, setOpenFaq] = useState(null);
+  const [profs, setProfs] = useState([]);
+  const [profsLoading, setProfsLoading] = useState(true);
   const subjectsRef = useRef(null);
+  const profsRef = useRef(null);
 
   const phase = useMemo(() => getPhase(), []);
   const hero = HEROES[phase];
@@ -162,6 +166,74 @@ export default function Bac() {
     pixelTrack('ViewContent', { content_name: 'Landing Bac', content_category: 'campagne' });
   }, []);
 
+  // ——— Profs dispo cette semaine (valeur AVANT la barrière prix) ———
+  // On réutilise la logique de Search.jsx : profs + enrichissement note moyenne.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const snap = await getDocs(query(collection(db, 'users'), where('role', '==', 'teacher')));
+        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+        const ids = data.map((t) => t.id).filter(Boolean);
+        const stats = {};
+        for (let i = 0; i < ids.length; i += 10) {
+          const chunk = ids.slice(i, i + 10);
+          try {
+            const rs = await getDocs(query(collection(db, 'reviews'), where('teacher_id', 'in', chunk)));
+            rs.docs.forEach((d) => {
+              const r = d.data();
+              const tid = r.teacher_id;
+              const rating = Number(r.rating || 0);
+              if (!tid || rating <= 0) return;
+              if (!stats[tid]) stats[tid] = { sum: 0, count: 0 };
+              stats[tid].sum += rating;
+              stats[tid].count += 1;
+            });
+          } catch (_) {}
+        }
+
+        const enriched = data.map((t) => {
+          const s = stats[t.id];
+          const reviewsCount = s ? s.count : Number(t.reviewsCount ?? 0);
+          const avgRating = s ? s.sum / s.count : Number(t.avgRating ?? 0);
+          return { ...t, reviewsCount, avgRating };
+        });
+
+        // Filtre QUALITÉ (volontairement plus strict que offer_enabled seul) :
+        // un prof "fantôme" (avatar par défaut + 0 avis) détruit la confiance autant
+        // que le mur de prix. On exige une vraie photo OU au moins un avis.
+        const showable = enriched.filter((t) => {
+          if (t.offer_enabled === false) return false;
+          const hasPhoto = !!t.avatarUrl;
+          const hasReview = (t.reviewsCount ?? 0) >= 1;
+          return hasPhoto || hasReview;
+        });
+
+        // Tri : certifiés (≥5 avis) d'abord, puis meilleure note, puis profs de matière bac.
+        const teachesBac = (t) => {
+          const subj = Array.isArray(t.subjects) ? t.subjects : [t.subjects || t.subject || ''];
+          const txt = subj.join(' ').toLowerCase();
+          return SUBJECTS_BAC.some((s) => txt.includes(s.toLowerCase()));
+        };
+        showable.sort((a, b) => {
+          const certA = (a.reviewsCount ?? 0) >= 5 ? 1 : 0;
+          const certB = (b.reviewsCount ?? 0) >= 5 ? 1 : 0;
+          if (certA !== certB) return certB - certA;
+          if ((b.avgRating ?? 0) !== (a.avgRating ?? 0)) return (b.avgRating ?? 0) - (a.avgRating ?? 0);
+          return (teachesBac(b) ? 1 : 0) - (teachesBac(a) ? 1 : 0);
+        });
+
+        if (alive) setProfs(showable.slice(0, 6));
+      } catch (_) {
+        if (alive) setProfs([]);
+      } finally {
+        if (alive) setProfsLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
   const choosePack = (pack) => {
     saveCampaign({ pack });
     setSelectedPack(pack);
@@ -179,6 +251,14 @@ export default function Bac() {
   const scrollToPacks = () => {
     document.getElementById('packs')?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  const scrollToProfs = () => {
+    const el = document.getElementById('profs-dispo');
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
+    else navigate('/search'); // secours si la section est masquée (< 3 profs)
+  };
+
+  const showProfsSection = profsLoading || profs.length >= 3;
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
@@ -201,18 +281,62 @@ export default function Bac() {
             {hero.subtitle}
           </p>
           <div className="flex flex-col items-center gap-4">
-            <button
-              onClick={scrollToPacks}
-              className="bg-yellow-400 hover:bg-yellow-500 text-slate-900 font-bold px-8 py-3.5 rounded-xl shadow-lg transition text-lg inline-flex items-center gap-2"
-            >
-              Choisir mon pack <ArrowRight size={18} />
-            </button>
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <button
+                onClick={scrollToPacks}
+                className="bg-yellow-400 hover:bg-yellow-500 text-slate-900 font-bold px-8 py-3.5 rounded-xl shadow-lg transition text-lg inline-flex items-center gap-2"
+              >
+                Choisir mon pack <ArrowRight size={18} />
+              </button>
+              {showProfsSection && (
+                <button
+                  onClick={scrollToProfs}
+                  className="border border-white/30 text-white font-semibold px-6 py-3.5 rounded-xl hover:bg-white/10 transition inline-flex items-center gap-2"
+                >
+                  Voir les profs dispo <ArrowRight size={16} />
+                </button>
+              )}
+            </div>
             {hero.countdownTarget && (
               <Countdown target={hero.countdownTarget} label={hero.countdownLabel} />
             )}
           </div>
         </div>
       </section>
+
+      {/* ——— PROFS DISPO CETTE SEMAINE (valeur avant la barrière prix) ——— */}
+      {showProfsSection && (
+        <section id="profs-dispo" ref={profsRef} className="px-4 py-12">
+          <div className="max-w-5xl mx-auto">
+            <h2 className="text-2xl font-bold text-center text-slate-900 mb-1">
+              Des profs dispo cette semaine
+            </h2>
+            <p className="text-center text-gray-500 text-sm mb-8">
+              Caribéens, vérifiés — visio ou près de chez toi. Choisis, puis réserve tes heures.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {profsLoading
+                ? Array.from({ length: 3 }).map((_, i) => <ProfCardSkeleton key={i} />)
+                : profs.map((t) => (
+                    <ProfPreviewCard key={t.id} teacher={t} navigate={navigate} />
+                  ))}
+            </div>
+
+            <div className="text-center mt-8">
+              <button
+                onClick={() => {
+                  pixelTrack('ViewContent', { content_name: 'Profs preview Bac — voir tous', content_category: 'campagne' });
+                  navigate('/search');
+                }}
+                className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white font-bold px-7 py-3 rounded-xl transition"
+              >
+                Voir tous les profs <ArrowRight size={18} />
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ——— PACKS ——— */}
       <section id="packs" className="px-4 py-12 bg-gray-50">
@@ -434,6 +558,97 @@ export default function Bac() {
       <div className="md:hidden h-24" aria-hidden="true" />
 
       <Footer />
+    </div>
+  );
+}
+
+/* ——— Carte prof compacte (sous-ensemble de TeacherCard de Search.jsx) ——— */
+function ProfPreviewCard({ teacher, navigate }) {
+  const parsePrice = (raw) => {
+    const n = typeof raw === 'string' ? Number(raw.replace(',', '.')) : Number(raw);
+    return Number.isFinite(n) ? n : null;
+  };
+  const presEnabled = !!(teacher.presentiel_enabled ?? teacher.presentiel ?? teacher.mode_inperson ?? teacher.in_person);
+  const visioEnabled = !!(teacher.visio_enabled ?? teacher.visio ?? teacher.mode_online ?? teacher.online);
+  const presBase = presEnabled ? parsePrice(teacher.price_per_hour ?? teacher.price) : null;
+  const visioRaw = teacher.visio_same_rate ? (teacher.price_per_hour ?? teacher.price) : teacher.visio_price_per_hour;
+  const visioBase = visioEnabled ? parsePrice(visioRaw) : null;
+  const prices = [presBase, visioBase].filter((p) => typeof p === 'number').map((p) => p + 10);
+  const fromPrice = prices.length ? Math.min(...prices) : null;
+
+  const firstName = (teacher.fullName || '').trim().split(' ')[0] || 'Professeur';
+  const subjectsText = Array.isArray(teacher.subjects)
+    ? teacher.subjects.slice(0, 3).join(', ')
+    : (teacher.subjects || teacher.subject || teacher.matiere || 'Matières variées');
+  const rating = Number(teacher.avgRating ?? 0);
+  const reviewsCount = Number(teacher.reviewsCount ?? 0);
+  const certified = reviewsCount >= 5;
+
+  const goProfile = () => {
+    pixelTrack('ViewContent', { content_name: 'Profs preview Bac — carte prof', content_category: 'campagne' });
+    navigate(`/profils/${teacher.id || teacher.uid}`);
+  };
+
+  return (
+    <div
+      onClick={goProfile}
+      className="cursor-pointer bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition p-4 flex flex-col"
+    >
+      <div className="flex items-center gap-3">
+        <img
+          src={teacher.avatarUrl || '/avatar-default.png'}
+          alt={firstName}
+          className="w-16 h-16 rounded-xl object-cover border border-gray-100 shrink-0"
+        />
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <h3 className="font-bold text-slate-900 truncate">{firstName}</h3>
+            {certified && (
+              <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-1.5 py-0.5">
+                <BadgeCheck size={12} /> Certifié
+              </span>
+            )}
+          </div>
+          {rating > 0 && (
+            <span className="inline-flex items-center gap-1 text-sm text-amber-600 font-semibold">
+              <Star size={13} className="fill-amber-400 text-amber-400" />
+              {rating.toFixed(1)} <span className="text-gray-400 font-normal">({reviewsCount})</span>
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="text-sm text-gray-700 font-medium mt-3 line-clamp-1">{subjectsText}</div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {visioEnabled && <span className="px-2 py-0.5 rounded-full text-xs border border-gray-200 bg-gray-50 text-gray-600">📹 Visio</span>}
+        {presEnabled && <span className="px-2 py-0.5 rounded-full text-xs border border-gray-200 bg-gray-50 text-gray-600">📍 Présentiel</span>}
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
+        <span className="text-sm font-bold text-primary">
+          {fromPrice != null ? `à partir de ${fromPrice.toFixed(0)} €/h` : 'Prix sur demande'}
+        </span>
+        <span className="text-sm font-semibold text-primary inline-flex items-center gap-1">
+          Voir <ArrowRight size={14} />
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ProfCardSkeleton() {
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 p-4 animate-pulse">
+      <div className="flex items-center gap-3">
+        <div className="w-16 h-16 rounded-xl bg-gray-200 shrink-0" />
+        <div className="flex-1 space-y-2">
+          <div className="h-4 bg-gray-200 rounded w-1/2" />
+          <div className="h-3 bg-gray-200 rounded w-1/3" />
+        </div>
+      </div>
+      <div className="h-3 bg-gray-200 rounded w-2/3 mt-4" />
+      <div className="h-3 bg-gray-200 rounded w-1/3 mt-3" />
     </div>
   );
 }
