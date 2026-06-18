@@ -6,8 +6,12 @@ import './styles/index.css';
 import { inject } from '@vercel/analytics';
 import { AuthProvider } from './contexts/AuthContext';
 import { AppGuards } from './setup/mobile-and-errors';
+import { initAmplitude } from './lib/amplitude';
 
-if (import.meta.env.PROD) inject();
+if (import.meta.env.PROD) {
+  inject();
+  initAmplitude(); // funnels/rétention — PROD only pour ne pas polluer avec le dev local
+}
 
 // Apres un deploiement, les chunks de l'ancien build n'existent plus (404)
 // -> page blanche pour les onglets restes ouverts. On recharge une fois
