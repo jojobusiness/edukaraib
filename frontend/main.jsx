@@ -37,6 +37,20 @@ Sentry.init({
       blockAllMedia: false,
     }),
   ],
+  // Bruit tiers : erreurs injectées par les navigateurs in-app (Instagram, Facebook,
+  // TikTok...). Ex : "Java object is gone" vient du logger de perf d'Instagram quand
+  // l'utilisateur quitte la page — aucun rapport avec notre code, mais Sentry les capte
+  // via son wrapper addEventListener. On les ignore pour ne pas polluer + faux pings.
+  ignoreErrors: [
+    'Java object is gone',
+    'Error invoking postMessage',
+    'ResizeObserver loop',
+  ],
+  denyUrls: [
+    /iabjs:\/\//i,                       // scripts injectés par les in-app browsers
+    /navigation_performance_logger/i,    // logger interne Instagram/Meta
+    /graph\.(instagram|facebook)\.com/i,
+  ],
   tracesSampleRate: 0.2,       // 20% des transactions (performances)
   replaysSessionSampleRate: 0.05,
   replaysOnErrorSampleRate: 1.0, // 100% des sessions avec erreur
