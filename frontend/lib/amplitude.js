@@ -27,6 +27,8 @@ export function initAmplitude() {
     try {
       amp = await import('@amplitude/analytics-browser');
       amp.init(AMPLITUDE_API_KEY, {
+        serverZone: 'EU', // ⚠️ projet EU (app.eu.amplitude.com) — sans ça le SDK poste
+                          // vers l'endpoint US api2.amplitude.com → 400 "Invalid API key".
         autocapture: true, // pages vues, clics, formulaires, sessions — zéro code en plus
         defaultTracking: { sessions: true },
       });

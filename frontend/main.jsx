@@ -42,8 +42,9 @@ Sentry.init({
   // l'utilisateur quitte la page — aucun rapport avec notre code, mais Sentry les capte
   // via son wrapper addEventListener. On les ignore pour ne pas polluer + faux pings.
   ignoreErrors: [
-    'Java object is gone',
+    'Java object is gone',            // navigateur in-app Instagram/Meta (Android)
     'Error invoking postMessage',
+    "window.webkit.messageHandlers",  // navigateur in-app Facebook/Meta (iOS WKWebView)
     'ResizeObserver loop',
   ],
   denyUrls: [
