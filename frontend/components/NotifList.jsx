@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { db } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
-// notifications : array [{ id, type, withName?, with_id?, created_at }]
+// notifications : array [{ id, type, withName?, with_id?, created_at }]
 export default function NotifList({ notifications }) {
   const [names, setNames] = useState({});
 

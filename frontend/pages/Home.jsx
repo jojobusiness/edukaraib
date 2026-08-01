@@ -991,7 +991,11 @@ export default function Home() {
                       <div>
                         <div className="text-3xl mb-1">{group.label.match(/[\u{1F1E0}-\u{1F1FF}][\u{1F1E0}-\u{1F1FF}]|\u{1F30D}|\u{1F30E}|\u{1F30F}|\u{1F310}|\u{1F5FA}|\u{1F3DD}/u)?.[0] || '🌍'}</div>
                         <div className="font-extrabold text-white text-base leading-tight">
-                          {group.label.replace(/^[\u{1F1E0}-\u{1F1FF}\u{1F30D}-\u{1F5FA}🌐🏝️\s]+/u, '').trim() || group.label}
+                          {/* \u{FE0F} = sélecteur de variante emoji, à retirer explicitement :
+                              il était auparavant introduit sans le vouloir par le « 🏝️ » littéral,
+                              que la classe décomposait en 🏝 + FE0F. 🌐 et 🏝 sont déjà couverts
+                              par la plage \u{1F30D}-\u{1F5FA}. */}
+                          {group.label.replace(/^[\u{1F1E0}-\u{1F1FF}\u{1F30D}-\u{1F5FA}\u{FE0F}\s]+/u, '').trim() || group.label}
                         </div>
                       </div>
                       <div className="shrink-0 bg-white/20 text-white text-[11px] font-bold px-2 py-0.5 rounded-full mt-0.5">

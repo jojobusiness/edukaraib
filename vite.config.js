@@ -5,6 +5,18 @@ import { sentryVitePlugin } from '@sentry/vite-plugin';
 export default defineConfig({
   root: '.',
   base: '/',
+  test: {
+    // Les pages sont rendues dans un DOM simulé, sans navigateur ni réseau.
+    environment: 'jsdom',
+    // jsdom embarque des dépendances ESM que le pool 'forks' (require) ne sait
+    // pas charger : les threads les gèrent nativement.
+    pool: 'threads',
+    globals: false,
+    setupFiles: ['./frontend/test/setup.js'],
+    include: ['frontend/**/*.test.{js,jsx}'],
+    // Un test de rendu qui traîne signale presque toujours une boucle infinie.
+    testTimeout: 15000,
+  },
   plugins: [
     react(),
     sentryVitePlugin({
