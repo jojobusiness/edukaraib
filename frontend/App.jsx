@@ -6,6 +6,7 @@ import { auth } from './lib/firebase';
 // Pages d'atterrissage : chargement immediat (LCP — accueil + landing campagne)
 import Home from './pages/Home';
 import Bac from './pages/Bac';
+import Rentree from './pages/Rentree';
 import NotFound from './pages/NotFound';
 
 // Gardes de routes : legers, restent statiques
@@ -253,6 +254,11 @@ function App() {
             {/* 🎯 Landing campagne bac (influenceurs : /bac?code=XXX) */}
             <Route path="/bac" element={<Bac />} />
             <Route path="/rattrapage" element={<Bac />} />
+
+            {/* 🎒 Landing campagne rentree (influenceurs : /rentree?code=XXX)
+                Meme moteur que /bac, contenu et voix differents. Eager comme
+                /bac : c'est une landing d'acquisition, le LCP compte. */}
+            <Route path="/rentree" element={<Rentree />} />
             <Route path="/about" element={<About />} />
             <Route path="/blog" element={<Blog />} />
             <Route path="/blog/:slug" element={<BlogPost />} />

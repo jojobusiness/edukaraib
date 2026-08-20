@@ -4,6 +4,7 @@ import { db, auth } from '../lib/firebase';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSEO } from '../hooks/useSEO';
 import { pixelTrack } from '../lib/metaPixel';
+import { subjectMatches } from '../lib/subjectMatch';
 
 const PAGE_SIZE = 10;
 
@@ -193,10 +194,16 @@ export default function Search() {
     if (!q) return [];
     return baseFiltered.filter(t => {
       const name = (t.fullName || '').toLowerCase();
-      const subs = getSubjectsText(t.subjects).toLowerCase();
+      const subsRaw = getSubjectsText(t.subjects);
+      const subs = subsRaw.toLowerCase();
       const tc   = (t.city || t.location || '').toLowerCase();
       const bio  = (t.bio || '').toLowerCase();
-      return name.includes(q) || subs.includes(q) || tc.includes(q) || bio.includes(q);
+      // La sous-chaine brute ne suffit pas : les profs saisissent leurs matieres
+      // en texte libre (« Mathematiques », « Physique, Chimie », « Francais »),
+      // alors que les landings envoient ?subject=Maths / Physique-Chimie.
+      // subjectMatches normalise accents + ponctuation et gere les synonymes.
+      return name.includes(q) || subs.includes(q) || tc.includes(q) || bio.includes(q)
+        || subjectMatches(q, `${subsRaw} ${t.bio || ''}`);
     });
   }, [baseFiltered, q]);
 
