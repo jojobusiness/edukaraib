@@ -28,6 +28,24 @@ import {
 
 const ICONES = { GraduationCap, Video, CreditCard, ShieldCheck };
 
+/**
+ * Nombre de créneaux de disponibilité cochés par un prof.
+ * `availability` mélange l’ancien et le nouveau format dans la même base (cf.
+ * le crash profil prof du 12/06) : on route par type plutôt que de supposer.
+ * Aucune requête supplémentaire — le champ est déjà dans le document `users`.
+ */
+export function nbCreneaux(availability) {
+  if (!availability) return 0;
+  if (Array.isArray(availability)) return availability.length;
+  if (typeof availability === 'object') {
+    return Object.values(availability).reduce(
+      (n, v) => n + (Array.isArray(v) ? v.length : (v ? 1 : 0)),
+      0,
+    );
+  }
+  return 0;
+}
+
 function Countdown({ target, label }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -57,6 +75,8 @@ export default function CampaignLanding({ config }) {
   const [openFaq, setOpenFaq] = useState(null);
   const [profs, setProfs] = useState([]);
   const [profsTotal, setProfsTotal] = useState(0);
+  const [profsReservables, setProfsReservables] = useState(0);
+  const [allProfs, setAllProfs] = useState([]);
   const [profsLoading, setProfsLoading] = useState(true);
   const subjectsRef = useRef(null);
   const profsRef = useRef(null);
@@ -112,7 +132,7 @@ export default function CampaignLanding({ config }) {
           const s = stats[t.id];
           const reviewsCount = s ? s.count : Number(t.reviewsCount ?? 0);
           const avgRating = s ? s.sum / s.count : Number(t.avgRating ?? 0);
-          return { ...t, reviewsCount, avgRating };
+          return { ...t, reviewsCount, avgRating, reservable: nbCreneaux(t.availability) > 0 };
         });
 
         // Filtre QUALITÉ (volontairement plus strict que offer_enabled seul) :
@@ -125,15 +145,24 @@ export default function CampaignLanding({ config }) {
           return hasPhoto || hasReview;
         });
 
-        // Tri : certifiés (≥5 avis) d'abord, puis meilleure note, puis profs
-        // enseignant une matière de la campagne (correspondance tolérante aux
-        // accents et aux libellés libres — cf. lib/subjectMatch.js).
+        // Tri : RÉSERVABLES D'ABORD (créneaux cochés), puis certifiés (≥5 avis),
+        // puis meilleure note, puis profs enseignant une matière de la campagne.
+        //
+        // Pourquoi les créneaux passent devant tout le reste (mesure du 26/08) :
+        // sur « Maths », 9 profs s'affichaient et 3 seulement étaient
+        // réservables — le parent avait 2 chances sur 3 de cliquer sur un
+        // planning vide, au moment où il est le plus décidé à réserver.
+        //
+        // ⚠️ On ne MASQUE pas les profs sans créneau : ce sont les mieux notés
+        // de la plateforme (34 avis cumulés à 5,0) et un parent peut vouloir les
+        // contacter pour convenir d'un horaire. On les fait descendre.
         const teachesCampaignSubject = (t) => {
           const subj = Array.isArray(t.subjects) ? t.subjects : [t.subjects || t.subject || ''];
           const txt = subj.join(' ');
           return config.subjects.some((s) => subjectMatches(s, txt));
         };
         showable.sort((a, b) => {
+          if (a.reservable !== b.reservable) return a.reservable ? -1 : 1;
           const certA = (a.reviewsCount ?? 0) >= 5 ? 1 : 0;
           const certB = (b.reviewsCount ?? 0) >= 5 ? 1 : 0;
           if (certA !== certB) return certB - certA;
@@ -143,6 +172,8 @@ export default function CampaignLanding({ config }) {
 
         if (alive) {
           setProfsTotal(showable.length);
+          setProfsReservables(showable.filter((t) => t.reservable).length);
+          setAllProfs(showable);
           setProfs(showable.slice(0, 6));
         }
       } catch (_) {
@@ -180,9 +211,35 @@ export default function CampaignLanding({ config }) {
 
   const showProfsSection = profsLoading || profs.length >= 3;
 
-  // Rareté affichée : on annonce le nombre RÉEL de profs affichables, jamais un
-  // chiffre codé en dur. Un chiffre gonflé se démonte au clic suivant.
-  const profsAnnonces = profsTotal > 0 ? profsTotal : config.profsFallback;
+  // ——— Matières réellement couvertes ———
+  // Un bouton de matière sans aucun prof correspondant envoie l'utilisateur sur
+  // une liste sans rapport (mesuré le 26/08 : /bac proposait Philosophie, SVT,
+  // SES et Histoire-Géo alors qu'AUCUN prof ne les enseigne).
+  // On filtre à l'affichage plutôt que dans la config : ces matières restent
+  // légitimes pour le bac 2027 et le bouton réapparaîtra tout seul le jour où un
+  // prof de la matière s'inscrit. Zéro maintenance.
+  // Filet : si le filtre laisse moins de 3 matières — chargement en cours,
+  // requête échouée, base vide — on retombe sur la liste complète configurée
+  // plutôt que d'afficher une étape de tunnel vide.
+  const subjectsAffichees = useMemo(() => {
+    if (profsLoading || allProfs.length === 0) return config.subjects;
+    const couvertes = config.subjects.filter((s) =>
+      allProfs.some((t) => {
+        const subj = Array.isArray(t.subjects) ? t.subjects : [t.subjects || t.subject || ''];
+        return subjectMatches(s, subj.join(' '));
+      }),
+    );
+    return couvertes.length >= 3 ? couvertes : config.subjects;
+  }, [config.subjects, allProfs, profsLoading]);
+
+  // Rareté affichée : on annonce les nombres RÉELS, jamais un chiffre codé en
+  // dur. Un chiffre gonflé se démonte au clic suivant. On distingue les profs
+  // vérifiés (affichables) de ceux qui ont réellement des créneaux ouverts —
+  // annoncer les premiers comme « disponibles » serait faux.
+  const profsAnnonces = {
+    verifies: profsTotal > 0 ? profsTotal : config.profsFallback,
+    disponibles: profsReservables,
+  };
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
@@ -334,7 +391,7 @@ export default function CampaignLanding({ config }) {
               {copy.subjectsNote}
             </p>
             <div className="flex flex-wrap justify-center gap-2">
-              {config.subjects.map((s) => (
+              {subjectsAffichees.map((s) => (
                 <button
                   key={s}
                   onClick={() => chooseSubject(s)}
@@ -548,6 +605,16 @@ function ProfPreviewCard({ teacher, navigate, campaignId }) {
               </span>
             )}
           </div>
+          {/* « Créneaux ouverts » et non « Disponible cette semaine » :
+              `availability` est une grille hebdomadaire de disponibilités, pas
+              un agenda de créneaux libres — un créneau ouvert peut déjà être
+              réservé. On affirme ce qui est vrai : le prof a ouvert des
+              créneaux, donc il est réservable. */}
+          {teacher.reservable && (
+            <span className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+              <Clock size={11} /> Créneaux ouverts
+            </span>
+          )}
           {rating > 0 && (
             <span className="inline-flex items-center gap-1 text-sm text-amber-600 font-semibold">
               <Star size={13} className="fill-amber-400 text-amber-400" />

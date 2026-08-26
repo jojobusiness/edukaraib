@@ -14,6 +14,7 @@ import { screen } from '@testing-library/react';
 import { rendre } from './rendre';
 import { BAC_CAMPAIGN, RENTREE_CAMPAIGN } from '../config/campaigns';
 import { subjectMatches, normalizeSubject } from '../lib/subjectMatch';
+import { nbCreneaux } from '../components/CampaignLanding';
 import Rentree from '../pages/Rentree';
 import Bac from '../pages/Bac';
 
@@ -55,13 +56,31 @@ describe.each(CAMPAGNES)('config campagne « %s »', (nom, config) => {
 });
 
 describe('campagne rentrée — alignement sur l’offre réelle', () => {
-  it('ne propose aucune matière sans prof (constat du 20/08/2026)', () => {
-    // SVT, Histoire-Géo et « Aide aux devoirs » : zéro prof dans la base au
-    // moment du lancement. Les rouvrir suppose d'avoir recruté d'abord.
-    const sansProf = ['SVT', 'Histoire-Géo', 'Aide aux devoirs'];
-    for (const matiere of sansProf) {
+  it('ne propose aucune matière sans prof réservable (constats 20/08 et 26/08)', () => {
+    // Règle : une matière ne reste dans la config que si au moins un prof qui la
+    // couvre est RÉSERVABLE (affichable + au moins un créneau coché).
+    //   20/08 : SVT, Histoire-Géo, « Aide aux devoirs » — aucun prof.
+    //   26/08 : Informatique — un prof la déclare depuis ce jour, mais sans
+    //           aucun créneau, donc 0 réservable.
+    // Le contrôle vivant est `node scripts/diag-offre-profs.mjs`.
+    const sansProfReservable = ['SVT', 'Histoire-Géo', 'Aide aux devoirs', 'Informatique'];
+    for (const matiere of sansProfReservable) {
       expect(RENTREE_CAMPAIGN.subjects).not.toContain(matiere);
     }
+  });
+
+  it('annonce des profs disponibles sans jamais gonfler le chiffre', () => {
+    // Le compteur reçoit deux nombres réels et ne doit pas présenter des profs
+    // simplement « vérifiés » comme étant disponibles.
+    const avecDispos = RENTREE_CAMPAIGN.copy.scarcity({ verifies: 12, disponibles: 5 });
+    expect(avecDispos).toContain('12');
+    expect(avecDispos).toContain('5');
+
+    // Cas limite : aucun prof avec créneau → ne rien affirmer sur la dispo.
+    const sansDispo = RENTREE_CAMPAIGN.copy.scarcity({ verifies: 12, disponibles: 0 });
+    expect(sansDispo).toContain('12');
+    expect(sansDispo).not.toMatch(/disponible|créneau/i);
+    expect(sansDispo).not.toContain('0 ');
   });
 
   it('met en avant le pack 10h (marge plateforme doublée vs le 5h)', () => {
@@ -107,12 +126,44 @@ describe('campagne rentrée — alignement sur l’offre réelle', () => {
     ].join(' | ');
 
     for (const matiere of RENTREE_CAMPAIGN.subjects) {
-      if (matiere === 'Informatique') continue; // couvert par la recherche libre, pas par la base actuelle
       expect(
         subjectMatches(matiere, libellesReels),
         `« ${matiere} » ne correspond à aucun libellé prof connu`,
       ).toBe(true);
     }
+  });
+});
+
+describe('classement des profs par disponibilité réelle', () => {
+  it('compte les créneaux quel que soit le format d’availability', () => {
+    // Le champ mélange l'ancien et le nouveau format dans la même base.
+    expect(nbCreneaux(undefined)).toBe(0);
+    expect(nbCreneaux(null)).toBe(0);
+    expect(nbCreneaux([])).toBe(0);
+    expect(nbCreneaux(['lundi-18h', 'mardi-18h'])).toBe(2);
+    expect(nbCreneaux({ lundi: ['18h', '19h'], mardi: ['18h'] })).toBe(3);
+    expect(nbCreneaux({ lundi: true, mardi: false })).toBe(1);
+  });
+
+  it('fait remonter les profs réservables avant les mieux notés', () => {
+    // Mesure du 26/08 : sur « Maths », 9 profs affichés pour 3 réservables. Un
+    // prof très bien noté mais sans créneau ne doit plus passer devant un prof
+    // réservable — le parent est décidé, il ne doit pas tomber sur un mur.
+    const profs = [
+      { id: 'a', reviewsCount: 8, avgRating: 5, reservable: false },
+      { id: 'b', reviewsCount: 0, avgRating: 0, reservable: true },
+      { id: 'c', reviewsCount: 10, avgRating: 5, reservable: true },
+    ];
+    const trie = [...profs].sort((x, y) => {
+      if (x.reservable !== y.reservable) return x.reservable ? -1 : 1;
+      const cx = x.reviewsCount >= 5 ? 1 : 0;
+      const cy = y.reviewsCount >= 5 ? 1 : 0;
+      if (cx !== cy) return cy - cx;
+      return y.avgRating - x.avgRating;
+    });
+    expect(trie.map((p) => p.id)).toEqual(['c', 'b', 'a']);
+    // Et surtout : personne n'a disparu.
+    expect(trie).toHaveLength(profs.length);
   });
 });
 
@@ -132,6 +183,10 @@ describe('correspondance des matières (lib/subjectMatch)', () => {
     ['Économie-Droit', 'Economie, droit, management', true],
     ['SVT', 'Maths', false],
     ['Anglais', 'Maths, Français', false],
+    // jeton '=rh' : mot entier obligatoire (sigle trop court pour un includes nu)
+    ['Économie-Droit', 'Anglais, comptabilité, RH, contrôle de gestion', true],
+    ['Économie-Droit', 'rhétorique et rhinoplastie', false],
+    ['Économie-Droit', 'marché du rhum', false],
   ])('« %s » vs « %s » → %s', (requete, libelle, attendu) => {
     expect(subjectMatches(requete, libelle)).toBe(attendu);
   });

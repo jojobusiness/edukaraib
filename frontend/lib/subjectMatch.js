@@ -29,8 +29,15 @@ export function normalizeSubject(value) {
 
 /**
  * Jetons de recherche par matière canonique (clés déjà normalisées).
- * Un jeton doit être assez long pour ne pas provoquer de faux positifs :
- * « eco » est volontairement absent (il matcherait « école »).
+ *
+ * Deux formes de jetons :
+ *   - `'math'`  → correspondance par sous-chaîne (trouve « mathématiques »)
+ *   - `'=rh'`   → correspondance par MOT ENTIER (trouve « RH », jamais
+ *                 « rhétorique »)
+ *
+ * La forme `=` existe pour les sigles courts, qu'un `includes()` nu ferait
+ * matcher n'importe où. C'est la raison pour laquelle « eco » reste absent :
+ * il matcherait « école ». Tout jeton de moins de 4 lettres doit être en `=`.
  */
 const SYNONYMES = {
   'maths': ['math'],                                  // math, maths, mathematiques…
@@ -46,7 +53,10 @@ const SYNONYMES = {
   'philosophie': ['philosophie', 'philo'],
   'ses': ['ses', 'sciences economiques', 'sciences eco'],
   'comptabilite': ['comptabilite', 'compta', 'gestion'],
-  'economie droit': ['economie', 'droit', 'management', 'marketing', 'ressources humaines'],
+  // '=rh' en mot entier : Marie-Christine écrit « RH » et non « ressources
+  // humaines ». Sans ce jeton elle n'était pas trouvée par Économie-Droit alors
+  // qu'elle couvre la matière ET qu'elle est la mieux dotée en créneaux.
+  'economie droit': ['economie', 'droit', 'management', 'marketing', 'ressources humaines', '=rh'],
   'informatique': ['informatique', 'bureautique', 'numerique'],
   'creole': ['creole'],
   'musique': ['musique'],
@@ -67,6 +77,13 @@ export function subjectTokens(query) {
 export function subjectMatches(query, haystack) {
   const hay = normalizeSubject(haystack);
   if (!hay) return false;
-  const tokens = subjectTokens(query);
-  return tokens.some((t) => t && hay.includes(t));
+  const mots = hay.split(' ');
+  return subjectTokens(query).some((t) => {
+    if (!t) return false;
+    // `=jeton` : mot entier. La normalisation ayant déjà réduit toute la
+    // ponctuation à des espaces, comparer aux mots suffit — pas besoin de regex
+    // (et surtout pas de `\b`, qui coupe sur les lettres accentuées en JS).
+    if (t.startsWith('=')) return mots.includes(t.slice(1));
+    return hay.includes(t);
+  });
 }

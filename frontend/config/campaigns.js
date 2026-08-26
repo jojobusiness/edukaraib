@@ -151,7 +151,9 @@ export const BAC_CAMPAIGN = {
     ],
     proofPoints: null,
     faqTitle: 'Questions fréquentes',
-    scarcity: (n) => `🔥 ${n} profs disponibles cette semaine`,
+    scarcity: ({ verifies, disponibles }) => (disponibles > 0
+      ? `🔥 ${verifies} profs vérifiés · ${disponibles} avec des créneaux ouverts`
+      : `🔥 ${verifies} profs caribéens vérifiés`),
     finalCta: (phase) => (phase === 'rattrapage'
       ? 'Le rattrapage ne t’attendra pas.'
       : 'Chaque jour compte avant les épreuves.'),
@@ -173,17 +175,25 @@ export const RENTREE_CAMPAIGN = {
   id: 'rentree',
   profsFallback: 12,
 
-  /* ⚠️ Liste alignée sur l’OFFRE RÉELLE mesurée le 20/08/2026 (15 profs) :
-     SVT, Histoire-Géo et « Aide aux devoirs » ont été retirés du plan initial
-     car AUCUN prof ne les couvre — un bouton qui mène à une liste sans prof de
-     la matière coûte plus cher qu’un bouton absent.
-     Comptabilité et Économie-Droit sont ajoutés : c’est la vraie force de la
-     base (6 profs sur 15 en compta / finance / droit / éco / RH / gestion), et
-     le supérieur fait sa rentrée en septembre lui aussi.
-     À rouvrir dès que des profs de ces matières sont recrutés. */
+  /* ⚠️ RÈGLE : une matière ne reste dans cette liste que si AU MOINS UN prof
+     qui la couvre est RÉSERVABLE (affichable ET avec au moins un créneau
+     coché). Un bouton dont aucun prof n’est réservable envoie le parent sur des
+     profils qu’il ne peut pas réserver, au moment précis où il est décidé.
+     Le contrôle est automatisé : `node scripts/diag-offre-profs.mjs` croise
+     cette liste avec la base réelle et signale les matières orphelines.
+
+     Historique des retraits (mesures réelles) :
+     - 20/08 : SVT, Histoire-Géo, « Aide aux devoirs » — aucun prof.
+     - 26/08 : « Informatique » — un seul prof la déclare (ajoutée à son profil
+       le 26/08) et il n’a aucun créneau → 0 réservable. À rouvrir dès qu’il
+       coche des créneaux.
+
+     Comptabilité et Économie-Droit sont là parce que c’est la vraie force de la
+     base : 6 profs sur 15 en compta / finance / droit / éco / RH / gestion, et
+     le supérieur fait sa rentrée en septembre lui aussi. */
   subjects: [
     'Maths', 'Français', 'Anglais', 'Physique-Chimie',
-    'Espagnol', 'Comptabilité', 'Économie-Droit', 'Informatique',
+    'Espagnol', 'Comptabilité', 'Économie-Droit',
   ],
 
   seo: {
@@ -342,7 +352,9 @@ export const RENTREE_CAMPAIGN = {
       { t: 'Remboursement en 1 clic sur la première séance', d: 'Sans justification à fournir, depuis votre espace.' },
     ],
     faqTitle: 'Questions fréquentes',
-    scarcity: (n) => `🔥 ${n} profs vérifiés prêts pour la rentrée`,
+    scarcity: ({ verifies, disponibles }) => (disponibles > 0
+      ? `🔥 ${verifies} profs vérifiés · ${disponibles} avec des créneaux ouverts cette semaine`
+      : `🔥 ${verifies} profs caribéens vérifiés pour la rentrée`),
     finalCta: (phase) => (phase === 'notes'
       ? 'Une note qui décroche se rattrape maintenant.'
       : 'L’année se joue dans les premières semaines.'),

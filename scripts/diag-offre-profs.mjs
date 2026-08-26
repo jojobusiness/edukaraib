@@ -110,10 +110,50 @@ console.log(`--- Ont au moins un créneau coché               : ${avecCreneaux}
 console.log(`--- RÉELLEMENT RÉSERVABLES (filtre + créneaux)  : ${reservables}`
   + `  ${reservables >= 8 ? '' : '→ ⚠️ relancer les profs AVANT de payer du trafic'}`);
 
-console.log('\n=== MATIÈRES DÉCLARÉES (libellés exacts saisis par les profs) ===');
-console.log('    À croiser avec `subjects` dans frontend/config/campaigns.js.\n');
+console.log('\n=== MATIÈRES DÉCLARÉES (libellés exacts saisis par les profs) ===\n');
 Object.entries(matieres)
   .sort((a, b) => b[1] - a[1])
   .forEach(([m, n]) => console.log(`  ${n}× "${m}"`));
+
+/* ——— Garde-fou : chaque bouton de matière mène-t-il à un prof RÉSERVABLE ? ———
+   C'est le contrôle qui manquait. Le 26/08, deux boutons de `/rentree`
+   affichaient des profs que personne ne pouvait réserver : « Informatique »
+   (un prof, aucun créneau) et « Économie-Droit » (idem). Vu de la page, rien ne
+   le signalait. Ici, c'est mesuré et affiché. */
+const { BAC_CAMPAIGN, RENTREE_CAMPAIGN } = await import('../frontend/config/campaigns.js');
+const { subjectMatches } = await import('../frontend/lib/subjectMatch.js');
+
+const texteMatieres = (t) => {
+  const s = Array.isArray(t.subjects) ? t.subjects : [t.subjects || t.subject || t.matiere || ''];
+  return s.join(' ');
+};
+
+let orphelines = 0;
+for (const campagne of [RENTREE_CAMPAIGN, BAC_CAMPAIGN]) {
+  console.log(`\n=== BOUTONS DE MATIÈRE — campagne « ${campagne.id} » ===`);
+  console.log('    Affichés = passent le filtre qualité · Réservables = + au moins un créneau\n');
+  for (const matiere of campagne.subjects) {
+    const correspond = profs.filter((t) => subjectMatches(matiere, texteMatieres(t)));
+    const s = (t) => stats[t.id];
+    const affiches = correspond.filter((t) => {
+      const nb = s(t) ? s(t).n : Number(t.reviewsCount ?? 0);
+      return t.offer_enabled !== false && (!!t.avatarUrl || nb >= 1);
+    });
+    const reservables = affiches.filter((t) => nbCreneaux(t.availability) > 0);
+    const alerte = reservables.length === 0 ? '  🔴 ORPHELIN — à retirer de campaigns.js' : '';
+    if (reservables.length === 0) orphelines += 1;
+    console.log(
+      `  ${matiere.padEnd(18)} affichés:${String(affiches.length).padStart(2)}`
+      + `  réservables:${String(reservables.length).padStart(2)}`
+      + `  ${reservables.map((t) => (t.fullName || '?').split(' ')[0]).join(', ')}${alerte}`,
+    );
+  }
+}
+
+console.log(
+  orphelines === 0
+    ? '\n✅ Aucun bouton de matière orphelin.'
+    : `\n🔴 ${orphelines} bouton(s) orphelin(s) : le parent clique et ne peut rien réserver.`,
+);
 
 process.exit(0);
