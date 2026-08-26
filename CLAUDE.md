@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Objectif business
 
-**Maximiser le chiffre d'affaires d'EduKaraib.** Chaque décision technique doit servir cet objectif : conversion, rétention des profs, fidélisation des familles, ou acquisition. Avant d'implémenter quoi que ce soit, demande-toi quel impact ça a sur le GMV (Gross Merchandise Value). Le fichier `../AUDIT_EDUKARAIB.md` contient l'audit complet avec la roadmap priorisée.
+**Maximiser le chiffre d'affaires d'EduKaraib.** Chaque décision technique doit servir cet objectif : conversion, rétention des profs, fidélisation des familles, ou acquisition. Avant d'implémenter quoi que ce soit, demande-toi quel impact ça a sur le GMV (Gross Merchandise Value). Le fichier `docs/AUDIT_EDUKARAIB.md` contient l'audit complet avec la roadmap priorisée.
 
 ---
 
@@ -26,13 +26,22 @@ npm --prefix functions run lint
 firebase deploy --only functions
 
 # Générer les codes parrain profs (one-shot, ne relancer qu'une seule fois)
-node generate-referral-codes.mjs
+node scripts/generate-referral-codes.mjs
 
 # Cron de release des payouts (à lancer manuellement ou via Vercel Cron)
-node release-payouts-cron.mjs
+node scripts/release-payouts-cron.mjs
+
+# Tests (vitest) — 91 tests : fumée sur toutes les pages + campagnes
+npm test
+
+# Diagnostic de l'offre profs — À RELANCER AVANT TOUT ENVOI DE TRAFIC
+node scripts/diag-offre-profs.mjs
 ```
 
-Pas de suite de tests dans ce projet. La validation se fait par test manuel sur le site.
+Le projet a une suite de tests depuis le 01/08/2026 (`npm test`). Elle monte
+automatiquement **chaque** page de `frontend/pages/**` : un composant qui exige des
+props ne doit donc pas vivre dans `pages/` (cf. `components/CampaignLanding.jsx`).
+Un build vert ne prouve pas qu'une page s'affiche — lancer `npm test` avant de livrer.
 
 ---
 
@@ -47,10 +56,12 @@ Monorepo mixte : frontend SPA + API serverless Vercel + Firebase Cloud Functions
 ├── frontend/           ← React 18 + React Router 6 + Tailwind
 │   ├── pages/          ← une page = une route (40+ pages)
 │   ├── components/     ← composants réutilisables
+│   ├── config/         ← campaigns.js (configs des landings /bac et /rentree)
 │   ├── contexts/       ← AuthContext (état user global)
 │   ├── hooks/          ← useSEO (meta tags dynamiques)
-│   ├── lib/            ← firebase.js (client), paymentNotifications.js
-│   └── routes/         ← RequireRole (garde multi-rôles)
+│   ├── lib/            ← firebase.js (client), paymentNotifications.js, subjectMatch.js
+│   ├── routes/         ← RequireRole (garde multi-rôles)
+│   └── test/           ← vitest : pages.test.jsx (fumée), campagnes.test.jsx
 ├── api/                ← Vercel Serverless Functions (Node, ESM .mjs)
 │   ├── _firebaseAdmin.mjs   ← singleton Admin SDK + verifyAuth()
 │   ├── _stripe.mjs          ← singleton Stripe
@@ -60,9 +71,23 @@ Monorepo mixte : frontend SPA + API serverless Vercel + Firebase Cloud Functions
 │   └── ...
 ├── functions/          ← Firebase Cloud Functions (CommonJS)
 │   └── index.js        ← onNotificationCreated + onMessageCreated (email Resend), onReviewCreatedGivePromo
-├── dist/               ← build Vite (ignoré git)
+├── scripts/            ← scripts hors-build (diag offre profs, codes parrain, cron payouts)
+├── docs/               ← TOUTE la doc du repo (rangée le 26/08/2026)
+│   ├── plans/          ← PLAN_*.md — un plan par chantier, c'est ici qu'on en écrit un nouveau
+│   ├── conception/     ← specs d'origine (.odt, MCD) — legacy, lecture seule
+│   ├── business/       ← stratégie/marketing (doublons du dossier parent, voir ci-dessous)
+│   ├── AUDIT_EDUKARAIB.md, ROADMAP_INSTITUTION_EDUKARIB.md, TUTO_PIXEL_META.md
+├── dist/               ← build Vite (ignoré git, plus suivi depuis le 26/08)
 └── vercel.json         ← routing : /api/* → serverless, reste → index.html
 ```
+
+**Règle de rangement** : la racine ne contient que `CLAUDE.md`, `README.md` et des
+fichiers de configuration. Toute doc va dans `docs/`, tout script hors-build dans
+`scripts/`. Ne pas redéposer de `PLAN_*.md` ou d'audit à la racine.
+
+⚠️ `scripts/release-payouts-cron.mjs` **n'est pas un simple script** : il est importé
+par `api/release-payouts.mjs`, donc par une fonction serverless de production. Le
+déplacer impose de corriger les imports des deux côtés.
 
 ### Flux de paiement (critique)
 
@@ -184,7 +209,7 @@ Cette règle s'applique à :
 
 ---
 
-## Priorités CA (référence AUDIT_EDUKARAIB.md)
+## Priorités CA (référence docs/AUDIT_EDUKARAIB.md)
 
 Les features à plus fort impact sur le chiffre d'affaires, dans l'ordre :
 

@@ -1,4 +1,4 @@
-import { releaseDuePayouts } from '../release-payouts-cron.mjs';
+import { releaseDuePayouts } from '../scripts/release-payouts-cron.mjs';
 
 export default async function handler(req, res) {
   // ✅ CRON_SECRET obligatoire — si non configuré on bloque tout
