@@ -1,5 +1,51 @@
 # PLAN — modifications du site pour la rentrée
 
+---
+
+## ✅ MODIF 1 À 5 TOUTES APPLIQUÉES LE 26/08/2026 — commit `01812783`
+
+Mesures refaites avant d'agir : **le plan était déjà périmé sur un point**. Durock Jean Louis
+a ajouté « informatique, créole, espagnol » à ses matières le 26/08. « Informatique » n'était
+donc plus « 0 prof » mais « 1 prof affiché, 0 réservable » — même cas qu'Économie-Droit.
+
+| MODIF | Décision prise | Résultat |
+|---|---|---|
+| 1 — Informatique | **Retirée** (1 prof, 0 créneau) | à rouvrir dès qu'il coche des créneaux |
+| 2 — Économie-Droit | **Sauvée**, pas supprimée | 0 → **1 réservable** grâce à la MODIF 4 |
+| 3 — Tri par dispo | **Fait** + badge « Créneaux ouverts » | profs sans créneau descendus, jamais masqués |
+| 4 — Jeton RH | **Fait avec mot entier** (`'=rh'`) | aucun faux positif (« rhétorique », « rhum ») |
+| 5 — Hygiène du dépôt | **Fait** (voir plus bas) | working tree propre |
+
+**L'ordre a compté** : la MODIF 4 a été faite en premier, et elle a résolu la MODIF 2 toute
+seule — Marie-Christine (5 créneaux, la mieux dotée) écrit « RH » et n'était pas trouvée.
+Aucune relance d'Hervé n'a donc été nécessaire.
+
+### Trouvé en plus, par le garde-fou ajouté au diagnostic
+
+`scripts/diag-offre-profs.mjs` croise désormais les matières de **chaque** campagne avec la
+base. Il a immédiatement révélé que **`/bac`, également en production, avait 4 boutons
+orphelins** : Philosophie, SVT, SES, Histoire-Géo — aucun prof ne les enseigne.
+Traités par un **filtre à l'affichage** plutôt qu'un retrait de la config : ces matières
+restent légitimes pour le bac 2027 et le bouton réapparaîtra tout seul quand un prof
+s'inscrira.
+
+### État mesuré après correctifs
+
+```
+rentree : 7 boutons, 0 orphelin ✅
+  Maths 3 réservables · Français 2 · Anglais 1 · Physique-Chimie 1
+  Espagnol 1 · Comptabilité 2 · Économie-Droit 1
+bac     : 4 boutons masqués à l'affichage (Philosophie, SVT, SES, Histoire-Géo)
+```
+
+Vérifié : 97 tests (91 → 97), lint 0 erreur, build OK.
+
+⚠️ **Le prérequis du bas de ce document reste entier : 5 profs réservables.** Aucune de ces
+modifications ne l'améliore — elles empêchent seulement de perdre les visiteurs qui arrivent.
+
+---
+
+
 **Écrit le 26/08/2026. Rentrée le 01/09 (dans 6 jours).**
 Tout ce qui suit est **vérifié dans le code et contre la base réelle**, pas déduit.
 
