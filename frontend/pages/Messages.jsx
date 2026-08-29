@@ -1,8 +1,24 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { auth, db } from "../lib/firebase";
+import { ArrowLeft, Trash2 } from "lucide-react";
+import { auth, db, storage } from "../lib/firebase";
 import fetchWithAuth from "../utils/fetchWithAuth";
 import { consumeChatDraft } from "../lib/bacCampaign";
+import AttachmentGrid from "../components/chat/AttachmentGrid";
+import MediaLightbox from "../components/chat/MediaLightbox";
+import Composer from "../components/chat/Composer";
+import {
+  kindDepuisMime,
+  messageErreurUpload,
+  nomSur,
+  resumeAttachments,
+} from "../lib/chatAttachments";
+import {
+  ref as sRef,
+  uploadBytesResumable,
+  getDownloadURL,
+  deleteObject,
+} from "firebase/storage";
 import {
   collection,
   query,
@@ -205,6 +221,41 @@ async function ensureConversationClient(myUid, otherUid) {
   return ref.id;
 }
 
+/**
+ * Envoie un fichier vers Firebase Storage et retourne la fiche d'attachement
+ * stockée dans le document message.
+ * @param {File} file
+ * @param {string} conversationId
+ * @param {string} uid
+ * @param {(pct:number)=>void} onProgress
+ */
+async function uploadAttachment(file, conversationId, uid, onProgress) {
+  const path = `chat/${conversationId}/${uid}/${Date.now()}_${nomSur(file.name)}`;
+  const fileRef = sRef(storage, path);
+  const task = uploadBytesResumable(fileRef, file, { contentType: file.type || undefined });
+
+  await new Promise((resolve, reject) => {
+    task.on(
+      "state_changed",
+      (snap) => {
+        if (snap.totalBytes) onProgress?.((snap.bytesTransferred / snap.totalBytes) * 100);
+      },
+      reject,
+      resolve
+    );
+  });
+
+  const url = await getDownloadURL(fileRef);
+  return {
+    url,
+    storage_path: path,
+    kind: kindDepuisMime(file.type),
+    name: file.name || "fichier",
+    size: file.size || 0,
+    mime: file.type || "",
+  };
+}
+
 /** Trouve une conversation EXISTANTE entre myUid et otherUid via participants */
 async function findExistingConversationByParticipants(myUid, otherUid) {
   const qMine = query(
@@ -240,6 +291,9 @@ export default function Messages(props) {
     if (draft) setNewMessage((cur) => cur || draft);
   }, []);
   const [sending, setSending] = useState(false);
+  const [progress, setProgress] = useState(0);
+  // Visionneuse plein écran : { items, index } ou null
+  const [lightbox, setLightbox] = useState(null);
   const [receiverName, setReceiverName] = useState("");
   const [receiverAvatar, setReceiverAvatar] = useState("/avatar-default.png");
   const messagesEndRef = useRef(null);
@@ -338,15 +392,15 @@ export default function Messages(props) {
   }, [messages]);
 
   // 5) Envoi du message (source de vérité : Firestore)
-  const handleSend = async (e) => {
-    e.preventDefault();
-    if (sending) return;
+  //    `pieces` = brouillons du Composer : [{ file, kind, durationSec }]
+  const handleSend = async (text, pieces = []) => {
+    if (sending) return false;
     const myUid = auth.currentUser?.uid;
-    const text = newMessage.trim();
-    if (!text) return;
+    if (!text && pieces.length === 0) return false;
 
     try {
       setSending(true);
+      setProgress(0);
 
       // s’assurer d’un conversationId
       let conversationId = cid;
@@ -358,6 +412,26 @@ export default function Messages(props) {
         setCid(conversationId);
       }
 
+      // Upload des pièces jointes (séquentiel : progression lisible + moins de
+      // pression réseau sur mobile). Un échec annule tout l'envoi.
+      const attachments = [];
+      for (let i = 0; i < pieces.length; i += 1) {
+        const p = pieces[i];
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const fiche = await uploadAttachment(p.file, conversationId, myUid, (pct) => {
+            setProgress(Math.round(((i + pct / 100) / pieces.length) * 100));
+          });
+          if (p.durationSec) fiche.durationSec = p.durationSec;
+          attachments.push(fiche);
+        } catch (err) {
+          alert(messageErreurUpload(err));
+          return false;
+        }
+      }
+
+      const apercu = resumeAttachments(attachments, text);
+
       // Écriture Firestore. La Cloud Function onMessageCreated se charge de
       // prévenir l'admin par email si le destinataire est l'admin.
       await addDoc(collection(db, "messages"), {
@@ -366,11 +440,12 @@ export default function Messages(props) {
         receiver_uid: receiverId,
         participants_uids: [myUid, receiverId],
         message: text,
+        attachments,
         sent_at: serverTimestamp(),
       });
 
       await updateDoc(doc(db, "conversations", conversationId), {
-        lastMessage: text,
+        lastMessage: apercu,
         lastSentAt: serverTimestamp(),
         lastSender: myUid,
       });
@@ -378,18 +453,21 @@ export default function Messages(props) {
       // --- ENVOI EMAIL AU DESTINATAIRE ---
       notifyEmailUser(receiverId, {
         title: "Nouveau message sur EduKaraib",
-        message: text,
+        message: apercu,
         ctaUrl: `${window.location.origin}/messages`,
         ctaText: "Ouvrir la conversation",
       });
       // --- /ENVOI EMAIL ---
 
       setNewMessage("");
+      return true;
     } catch (err) {
       console.warn("send failed:", err?.message || err);
       alert("Échec de l’envoi du message. Réessayez.");
+      return false;
     } finally {
       setSending(false);
+      setProgress(0);
     }
   };
 
@@ -413,6 +491,19 @@ export default function Messages(props) {
       );
       const snap = await getDocs(qMsgs);
       if (snap.empty) break;
+
+      // Les fichiers Storage ne disparaissent pas avec le document Firestore :
+      // sans ça, chaque suppression laisserait des photos/vidéos payantes
+      // orphelines dans le bucket.
+      const suppressions = [];
+      snap.docs.forEach((d) => {
+        (d.data()?.attachments || []).forEach((a) => {
+          if (a?.storage_path) {
+            suppressions.push(deleteObject(sRef(storage, a.storage_path)).catch(() => {}));
+          }
+        });
+      });
+      await Promise.all(suppressions);
 
       const batch = writeBatch(db);
       snap.docs.forEach((d) => batch.delete(d.ref));
@@ -456,37 +547,42 @@ export default function Messages(props) {
   if (!receiverId) return <div className="p-4">Chargement…</div>;
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="flex flex-col h-screen bg-[#f4f1ea]">
       {/* Header */}
-      <div className="bg-white p-4 shadow flex items-center gap-3">
+      <div className="bg-white/95 backdrop-blur px-3 sm:px-4 py-2.5 shadow-sm border-b border-gray-100 flex items-center gap-2 sm:gap-3 z-10">
         <button
           onClick={props.onBack || (() => navigate("/dashboard"))}
-          className="text-sm px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50"
+          aria-label="Retour"
+          className="shrink-0 w-9 h-9 rounded-full grid place-items-center text-gray-600 hover:bg-gray-100 transition"
         >
-          ← Retour
+          <ArrowLeft size={20} />
         </button>
 
         <img
           src={receiverAvatar || "/avatar-default.png"}
           alt="Avatar"
-          className="w-10 h-10 rounded-full object-cover ml-2"
+          className="w-10 h-10 rounded-full object-cover ring-2 ring-primary/20"
         />
-        <h2 className="text-lg font-semibold flex-1">
-          {receiverName || "Utilisateur"}
-        </h2>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-[15px] font-semibold text-gray-900 truncate leading-tight">
+            {receiverName || "Utilisateur"}
+          </h2>
+          <span className="text-[11px] text-gray-400">EduKaraib</span>
+        </div>
 
         <button
           onClick={handleDeleteConversation}
-          className="text-sm px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
+          className="shrink-0 w-9 h-9 rounded-full grid place-items-center text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
           title="Supprimer la discussion"
+          aria-label="Supprimer la discussion"
           disabled={sending}
         >
-          Supprimer
+          <Trash2 size={18} />
         </button>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-1">
+      <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 space-y-1">
         {(() => {
           const myUid = auth.currentUser?.uid;
           let lastDayKey = null;
@@ -504,6 +600,13 @@ export default function Messages(props) {
             const label = showSeparator ? dateSeparatorLabel(m.sent_at) : null;
             const showStatus = isMine && idx === lastMineIdx;
             const seen = otherReadMs >= (m.sent_at?.toMillis?.() ?? Infinity);
+            const attachments = Array.isArray(m.attachments) ? m.attachments : [];
+            const medias = attachments.filter(
+              (a) => a?.kind === "image" || a?.kind === "video"
+            );
+            const texte = (m.message || "").trim();
+            // Média seul = bulle sans marge intérieure (rendu « photo pleine »).
+            const bulleNue = attachments.length > 0 && !texte;
             return (
               <React.Fragment key={m.id}>
                 {/* ── Séparateur de date style WhatsApp ── */}
@@ -515,21 +618,36 @@ export default function Messages(props) {
                   </div>
                 )}
                 <div
-                  className={`flex flex-col max-w-xs mb-1 ${
+                  className={`flex flex-col max-w-[85%] sm:max-w-md mb-1.5 ${
                     isMine ? "ml-auto items-end" : "mr-auto items-start"
                   }`}
                 >
                   <div
-                    className={`px-4 py-2 rounded-2xl shadow-sm ${
+                    className={`${bulleNue ? "p-1" : "px-3.5 py-2"} rounded-2xl shadow-sm ${
                       isMine
-                        ? "bg-primary text-white rounded-br-none"
-                        : "bg-white text-gray-900 rounded-bl-none border border-gray-100"
+                        ? "bg-primary text-white rounded-br-md"
+                        : "bg-white text-gray-900 rounded-bl-md border border-gray-100"
                     }`}
                   >
-                    {m.message}
+                    {attachments.length > 0 && (
+                      <AttachmentGrid
+                        attachments={attachments}
+                        isMine={isMine}
+                        onOpenMedia={(i) => setLightbox({ items: medias, index: i })}
+                      />
+                    )}
+                    {texte && (
+                      <div
+                        className={`whitespace-pre-wrap break-words text-[15px] leading-relaxed ${
+                          attachments.length > 0 ? "mt-1.5" : ""
+                        }`}
+                      >
+                        {texte}
+                      </div>
+                    )}
                   </div>
                   {/* Heure + accusé de lecture sur mon dernier message */}
-                  <span className="text-xs text-gray-400 mt-0.5 px-1">
+                  <span className="text-[11px] text-gray-400 mt-0.5 px-1">
                     {formatTime(m.sent_at)}
                     {showStatus && (
                       <span className={seen ? "text-primary font-medium ml-1" : "ml-1"}>
@@ -545,26 +663,23 @@ export default function Messages(props) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Formulaire */}
-      <form
-        onSubmit={handleSend}
-        className="p-3 bg-white border-t flex gap-2 items-center"
-      >
-        <input
-          type="text"
-          placeholder="Votre message..."
-          value={newMessage}
-          onChange={(e) => setNewMessage(e.target.value)}
-          className="flex-1 border rounded-full px-4 py-2 outline-none"
+      {/* Barre de saisie : texte + photos/vidéos + message vocal */}
+      <Composer
+        value={newMessage}
+        onChange={setNewMessage}
+        onSend={handleSend}
+        sending={sending}
+        progress={progress}
+      />
+
+      {lightbox && (
+        <MediaLightbox
+          items={lightbox.items}
+          index={lightbox.index}
+          onClose={() => setLightbox(null)}
+          onIndex={(i) => setLightbox((l) => ({ ...l, index: i }))}
         />
-        <button
-          type="submit"
-          disabled={sending || !newMessage.trim()}
-          className="bg-primary text-white px-4 py-2 rounded-full shadow hover:bg-primary-dark transition disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Envoyer
-        </button>
-      </form>
+      )}
     </div>
   );
 }

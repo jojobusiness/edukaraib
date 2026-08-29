@@ -253,7 +253,21 @@ exports.onMessageCreated = functions
       const m = snap.data() || {};
       const receiverUid = m.receiver_uid || m.receiverId;
       const senderUid = m.sender_uid || m.senderId;
-      const text = m.message || m.text || "";
+      const rawText = m.message || m.text || "";
+      const attachments = Array.isArray(m.attachments) ? m.attachments : [];
+      // Un message peut n'être QUE des pièces jointes (photo, vidéo, vocal) :
+      // sans ce résumé l'email admin arriverait vide.
+      const resumePieces = attachments.length ?
+        attachments
+            .map((a) => {
+              if (a?.kind === "image") return "📷 Photo";
+              if (a?.kind === "video") return "🎥 Vidéo";
+              if (a?.kind === "audio") return "🎤 Message vocal";
+              return `📎 ${a?.name || "Pièce jointe"}`;
+            })
+            .join(" · ") :
+        "";
+      const text = rawText || resumePieces;
 
       // On ne notifie que si le DESTINATAIRE est un admin
       if (!(await isAdminUser(receiverUid))) return null;
@@ -270,18 +284,30 @@ exports.onMessageCreated = functions
       })();
 
       const chatUrl = `https://edukaraib.com/chat/${senderUid}?from=admin`;
+      const piecesTexte = attachments.length ?
+        `\nPièces jointes :\n${attachments.map((a) => `- ${a?.name || a?.kind || "fichier"} : ${a?.url || ""}`).join("\n")}\n` :
+        "";
+      const piecesHtml = attachments.length ?
+        `<p style="margin:0 0 8px;font-size:13px">Pièces jointes :<br>${
+          attachments
+              .map((a) => `<a href="${a?.url || "#"}" style="color:#2563EB">${a?.name || a?.kind || "fichier"}</a>`)
+              .join("<br>")
+        }</p>` :
+        "";
       const ok = await sendEmailResend({
         to: ADMIN_INBOX_EMAIL.value(),
         subject: `💬 Nouveau message de ${senderName}`,
         text:
           `${senderName} vous a écrit sur EduKaraib :\n\n` +
-          `« ${text} »\n\n` +
-          `Date : ${sentAt}\n` +
+          `« ${text} »\n` +
+          piecesTexte +
+          `\nDate : ${sentAt}\n` +
           `Répondre : ${chatUrl}\n`,
         html: `
           <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;color:#111">
             <h2 style="margin:0 0 12px">💬 Nouveau message de ${senderName}</h2>
             <p style="margin:0 0 8px;padding:12px;background:#f3f4f6;border-radius:8px">${text || "(message vide)"}</p>
+            ${piecesHtml}
             <p style="margin:0 0 8px;font-size:12px;color:#666">Date : ${sentAt}</p>
             <p style="margin:16px 0">
               <a href="${chatUrl}" style="display:inline-block;background:#2563EB;color:white;padding:10px 16px;border-radius:8px;text-decoration:none">
