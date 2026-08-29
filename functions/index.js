@@ -25,6 +25,23 @@ const ADMIN_INBOX_EMAIL = defineString("ADMIN_INBOX", {
 // (livre au moins vers l'email du compte Resend, ex: edukaraib@gmail.com).
 const FROM_TEST = "EduKaraib <onboarding@resend.dev>";
 
+// -----------------------------------------------------------------------------
+// ⚙️ Réglages d'exécution communs aux 3 fonctions (MAJ 29/08/2026)
+//
+// - memory 512MB : en gen1 le CPU est INDEXÉ sur la mémoire (256MB = 0,167 vCPU,
+//   512MB = 0,333 vCPU). Il n'existe pas d'option `cpu` : la seule façon de
+//   donner plus de CPU à ces fonctions est de monter la mémoire. 512MB divise
+//   par ~2 le démarrage à froid (boot Node 22 + init firebase-admin), donc le
+//   délai avant que l'email parte. Coût : ces fonctions tournent quelques
+//   dizaines de fois par jour, on reste très loin du quota gratuit.
+// - maxInstances 5 : garde-fou volontaire, Resend limite à 5 requêtes/seconde.
+//   Ne pas monter sans throttling côté envoi.
+// - minInstances : laissé à 0 (défaut). Payer des instances chaudes n'a aucun
+//   sens tant que le trafic est faible ; un email n'est pas temps réel.
+// - timeoutSeconds 60 : large pour un appel HTTP Resend (+ retry).
+// -----------------------------------------------------------------------------
+const EXEC = {timeoutSeconds: 60, memory: "512MB", maxInstances: 5};
+
 /**
  * Envoie un email via l'API REST Resend (pas de SDK = pas de dépendance).
  * Tente l'expéditeur pro (domaine vérifié) puis retombe sur le sender de
@@ -140,12 +157,7 @@ async function markSent(notificationId) {
  */
 exports.onNotificationCreated = functions
     .region(REGION)
-    .runWith({
-      timeoutSeconds: 60,
-      memory: "256MB",
-      maxInstances: 5,
-      secrets: [RESEND_API_KEY],
-    })
+    .runWith({...EXEC, secrets: [RESEND_API_KEY]})
     .firestore.document("notifications/{notifId}")
     .onCreate(async (snap, context) => {
       const notifId = context.params.notifId;
@@ -242,12 +254,7 @@ async function isAdminUser(uid) {
 
 exports.onMessageCreated = functions
     .region(REGION)
-    .runWith({
-      timeoutSeconds: 60,
-      memory: "256MB",
-      maxInstances: 5,
-      secrets: [RESEND_API_KEY],
-    })
+    .runWith({...EXEC, secrets: [RESEND_API_KEY]})
     .firestore.document("messages/{msgId}")
     .onCreate(async (snap, context) => {
       const m = snap.data() || {};
@@ -332,7 +339,7 @@ function genFirstReviewCode() {
 
 exports.onReviewCreatedGivePromo = functions
     .region(REGION)
-    .runWith({timeoutSeconds: 60, memory: "256MB", maxInstances: 5})
+    .runWith(EXEC)
     .firestore.document("reviews/{reviewId}")
     .onCreate(async (snap, context) => {
       const r = snap.data() || {};
