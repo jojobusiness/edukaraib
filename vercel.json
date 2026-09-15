@@ -21,6 +21,7 @@
   ],
   "crons": [
     { "path": "/api/lesson-reminders", "schedule": "*/30 * * * *" },
-    { "path": "/api/subscription-renewal-cron", "schedule": "0 6 * * *" }
+    { "path": "/api/subscription-renewal-cron", "schedule": "0 6 * * *" },
+    { "path": "/api/partner-payouts-cron", "schedule": "0 13 * * *" }
   ]
 }

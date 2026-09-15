@@ -43,7 +43,7 @@ const AVANTAGES = [
   { icon: '🤝', title: 'Rien à gérer', desc: 'Vous transmettez un lien ou un message tout prêt. Le reste est automatique.' },
   { icon: '👨‍👩‍👧', title: 'Toute la famille', desc: 'Le code s’enregistre sur le compte de la famille : tous ses enfants, tous ses achats de l’année.' },
   { icon: '📋', title: 'Un relevé clair', desc: 'Votre espace affiche les familles rattachées, les cours payés et les sommes à reverser.' },
-  { icon: '🏦', title: 'Virement sur votre compte', desc: 'Indiquez l’IBAN de votre structure : les reversements arrivent par virement.' },
+  { icon: '🏦', title: 'Reversements automatiques', desc: 'Connectez le compte bancaire de votre structure : chaque cours payé vous est reversé, 7 jours après le paiement.' },
 ];
 
 export default function PartnerHome() {
@@ -257,9 +257,9 @@ export default function PartnerHome() {
                   </Field>
                 </div>
                 <button type="submit" disabled={loading} className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3.5 rounded-xl disabled:opacity-50 text-sm">
-                  {loading ? 'Envoi…' : 'Demander mon code partenaire'}
+                  {loading ? 'Création…' : 'Créer mon code partenaire'}
                 </button>
-                <p className="text-center text-xs text-gray-400">Nous validons chaque demande sous 24 h. Votre code est actif dès la validation.</p>
+                <p className="text-center text-xs text-gray-400">Votre code est actif tout de suite. Vos reversements arrivent automatiquement, 7 jours après chaque cours payé.</p>
               </form>
             )}
           </div>

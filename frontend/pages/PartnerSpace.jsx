@@ -27,15 +27,42 @@ async function copy(text, label) {
   }
 }
 
-function Card({ title, children, right }) {
+function Card({ title, children }) {
   return (
     <section className="bg-white rounded-xl shadow p-5 mb-6">
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <h3 className="font-bold text-primary">{title}</h3>
-        {right}
-      </div>
+      <h3 className="font-bold text-primary mb-4">{title}</h3>
       {children}
     </section>
+  );
+}
+
+/** Reversements : compte Stripe Connect du partenaire (comme les profs). */
+function PayoutSetup({ stripe, pending, onOpen, opening }) {
+  let text;
+  let label;
+  if (stripe?.transfers_active) {
+    text = 'Compte bancaire connecté. Vos reversements partent automatiquement, 7 jours après chaque cours payé.';
+    label = 'Gérer mon compte Stripe';
+  } else if (stripe?.connected && !stripe?.details_submitted) {
+    text = 'Votre configuration Stripe n’est pas terminée : vos reversements ne peuvent pas encore partir.';
+    label = 'Terminer ma configuration';
+  } else if (stripe?.connected) {
+    text = 'Stripe vérifie vos informations (de quelques minutes à 2 jours). Les reversements partiront dès la vérification terminée.';
+    label = 'Ouvrir mon compte Stripe';
+  } else {
+    text = 'Pour recevoir vos reversements, connectez le compte bancaire de votre structure. Cela prend 2 minutes, via Stripe, notre prestataire de paiement (le même que pour nos professeurs).';
+    label = 'Recevoir mes reversements';
+  }
+  return (
+    <div className="space-y-3">
+      <p className={`text-sm ${stripe?.transfers_active ? 'text-emerald-700 font-medium' : 'text-gray-600'}`}>{text}</p>
+      {!stripe?.transfers_active && pending > 0 && (
+        <p className="text-sm font-semibold text-amber-700">{fmtEur(pending)} vous attendent déjà.</p>
+      )}
+      <button type="button" onClick={onOpen} disabled={opening} className="bg-primary hover:bg-primary-dark text-white font-bold px-5 py-2.5 rounded-xl text-sm disabled:opacity-50">
+        {opening ? 'Ouverture de Stripe…' : label}
+      </button>
+    </div>
   );
 }
 
@@ -44,10 +71,8 @@ export default function PartnerSpace() {
   const [authLoading, setAuthLoading] = useState(true);
   const [uid, setUid] = useState(null);
   const [partner, setPartner] = useState(null);
-
-  const [ibanInput, setIbanInput] = useState('');
-  const [ibanEdit, setIbanEdit] = useState(false);
-  const [ibanSaving, setIbanSaving] = useState(false);
+  const [stripe, setStripe] = useState(null);
+  const [stripeOpening, setStripeOpening] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -71,26 +96,24 @@ export default function PartnerSpace() {
       const q = await getDocs(query(collection(db, 'influencers'), where('uid', '==', currentUid)));
       if (!q.empty) snap = q.docs[0];
     }
-    if (snap?.exists()) {
-      const data = { id: snap.id, ...snap.data() };
-      setPartner(data);
-      setIbanInput(data.rib || '');
-    }
+    if (snap?.exists()) setPartner({ id: snap.id, ...snap.data() });
   }, []);
 
-  useEffect(() => { if (uid) loadPartner(uid); }, [uid, loadPartner]);
+  useEffect(() => {
+    if (!uid) return;
+    loadPartner(uid);
+    fetchWithAuth('/api/partner-connect').then(setStripe).catch(() => setStripe(null));
+  }, [uid, loadPartner]);
 
-  const saveIban = async () => {
-    setIbanSaving(true);
+  const openStripe = async () => {
+    setStripeOpening(true);
     try {
-      const data = await fetchWithAuth('/api/partner-iban', { method: 'POST', body: JSON.stringify({ iban: ibanInput }) });
-      setPartner((p) => ({ ...p, rib: data.rib }));
-      setIbanEdit(false);
-      toast.success('IBAN enregistré.');
+      const data = await fetchWithAuth('/api/partner-connect', { method: 'POST' });
+      // location.assign et pas window.open : après un await, window.open est bloqué sur mobile
+      window.location.assign(data.url);
     } catch (e) {
-      toast.error(e.message === 'INVALID_IBAN' ? 'IBAN invalide : vérifiez les chiffres.' : `Erreur : ${e.message}`);
-    } finally {
-      setIbanSaving(false);
+      toast.error(`Impossible d’ouvrir Stripe : ${e.message}`);
+      setStripeOpening(false);
     }
   };
 
@@ -106,12 +129,11 @@ export default function PartnerSpace() {
   const name = partner?.name || '';
   const conversions = partner?.conversions || [];
   const payouts = partner?.payoutHistory || [];
-  const pending = Number(partner?.pendingPayout || 0);
-  const alreadyPaid = Math.max(0, Number(partner?.totalEarned || 0) - pending);
+  const pending = Math.max(0, Number(partner?.pendingPayout || 0));
+  const alreadyPaid = payouts.reduce((s, p) => s + Number(p.amount_eur || 0), 0);
   const families = partner?.familiesCount ?? new Set(conversions.map((c) => c.payer_uid).filter(Boolean)).size;
   const link = partnerShareLink(code);
   const message = partnerShareMessage({ code, structureName: name });
-  const newModel = isPartnerModel(partner);
 
   return (
     <DashboardLayout role="influencer">
@@ -120,12 +142,7 @@ export default function PartnerSpace() {
         <p className="text-gray-600">{name}</p>
       </div>
 
-      {partner?.pending_review && partner?.active !== true && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-4 mb-6 text-sm">
-          Votre demande est en cours de validation (sous 24 h). Votre code sera actif dès la validation ; vous recevrez un mail.
-        </div>
-      )}
-      {!partner?.pending_review && partner && partner.active !== true && (
+      {partner && partner.active !== true && (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 mb-6 text-sm">
           Votre code est suspendu. Écrivez-nous à contact@edukaraib.com.
         </div>
@@ -158,12 +175,16 @@ export default function PartnerSpace() {
             </div>
             <p className="text-xs text-gray-500">
               La famille qui passe par ce lien, ou qui saisit le code au paiement, y reste rattachée : la remise s’applique ensuite toute seule, pour tous ses enfants.
-              {newModel && partner?.expires_at && <> Valable jusqu’au {fmtDate(partner.expires_at)}.</>}
+              {isPartnerModel(partner) && partner?.expires_at && <> Valable jusqu’au {fmtDate(partner.expires_at)}.</>}
             </p>
           </div>
         ) : (
           <p className="text-gray-400 text-sm">Code en cours de création : rechargez la page dans un instant.</p>
         )}
+      </Card>
+
+      <Card title="Recevoir vos reversements">
+        <PayoutSetup stripe={stripe} pending={pending} onOpen={openStripe} opening={stripeOpening} />
       </Card>
 
       {code && (
@@ -203,8 +224,8 @@ export default function PartnerSpace() {
                 {[...conversions].reverse().map((c, i) => (
                   <tr key={c.session_id || `${i}`}>
                     <td className="py-2.5 text-gray-500">{fmtDate(c.paid_at)}</td>
-                    <td className="py-2.5">{TYPE_LABELS[c.type] || c.type || '—'}</td>
-                    <td className="py-2.5 text-right font-bold text-primary">+{fmtEur(c.amount_eur)}</td>
+                    <td className="py-2.5">{TYPE_LABELS[c.type] || c.type || '—'}{c.refunded_eur ? ' (remboursé)' : ''}</td>
+                    <td className="py-2.5 text-right font-bold text-primary">+{fmtEur(Number(c.amount_eur || 0) - Number(c.refunded_eur || 0))}</td>
                   </tr>
                 ))}
               </tbody>
@@ -220,47 +241,17 @@ export default function PartnerSpace() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="text-left border-b border-gray-100 text-xs uppercase tracking-wider text-gray-400">
-                <th className="pb-2">Date</th><th className="pb-2">Montant</th><th className="pb-2">Compte</th>
+                <th className="pb-2">Date</th><th className="pb-2">Montant</th>
               </tr></thead>
               <tbody className="divide-y divide-gray-50">
                 {[...payouts].reverse().map((p, i) => (
-                  <tr key={`${i}-${p.amount_eur}`}>
+                  <tr key={p.transfer_id || `${i}-${p.amount_eur}`}>
                     <td className="py-2.5 text-gray-500">{fmtDate(p.triggered_at)}</td>
                     <td className="py-2.5 font-bold">{fmtEur(p.amount_eur)}</td>
-                    <td className="py-2.5 font-mono text-xs text-gray-500">{p.iban_masked || (p.iban ? `${p.iban.slice(0, 4)} •••• ${p.iban.slice(-4)}` : '—')}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
-        )}
-      </Card>
-
-      <Card
-        title="IBAN de votre structure"
-        right={partner?.rib && !ibanEdit && (
-          <button type="button" onClick={() => setIbanEdit(true)} className="text-xs text-primary hover:underline font-semibold">Modifier</button>
-        )}
-      >
-        <p className="text-gray-500 text-sm mb-3">Les reversements sont faits par virement sur ce compte.</p>
-        {partner?.rib && !ibanEdit ? (
-          <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 font-mono text-sm text-gray-700 inline-block">
-            {partner.rib.replace(/(.{4})/g, '$1 ').trim()}
-          </div>
-        ) : (
-          <div className="flex gap-2 flex-wrap">
-            <input
-              value={ibanInput}
-              onChange={(e) => setIbanInput(e.target.value)}
-              placeholder="FR76 XXXX XXXX XXXX XXXX XXXX XXX"
-              className="border border-gray-200 rounded-xl px-4 py-2.5 font-mono text-sm flex-1 min-w-0"
-            />
-            <button type="button" onClick={saveIban} disabled={ibanSaving || !ibanInput.trim()} className="bg-primary text-white font-bold px-5 py-2.5 rounded-xl text-sm disabled:opacity-50">
-              {ibanSaving ? 'Enregistrement…' : 'Enregistrer'}
-            </button>
-            {ibanEdit && (
-              <button type="button" onClick={() => { setIbanEdit(false); setIbanInput(partner?.rib || ''); }} className="border border-gray-200 text-gray-500 font-semibold px-4 py-2.5 rounded-xl text-sm">Annuler</button>
-            )}
           </div>
         )}
       </Card>

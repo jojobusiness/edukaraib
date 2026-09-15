@@ -6,7 +6,7 @@
 //  - Anciens codes (LHATIEN81…) : grille et limites historiques.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
-  partnerAmounts, partnerRefusalReason, isValidIban, linkFamilyToPartner, PARTNER_MODEL,
+  partnerAmounts, partnerRefusalReason, partnerTransferDue, linkFamilyToPartner, PARTNER_MODEL,
 } from '../../api/_partners.mjs';
 
 const h = vi.hoisted(() => {
@@ -225,10 +225,20 @@ describe('règles partenaires (module pur)', () => {
     expect(partnerRefusalReason({ partner: { model: PARTNER_MODEL }, partnerId: 'a', payerUid: 'b' })).toBeNull();
   });
 
-  it('valide un IBAN par sa clé de contrôle', () => {
-    expect(isValidIban('GB82 WEST 1234 5698 7654 32')).toBe(true);
-    expect(isValidIban('GB82WEST12345698765433')).toBe(false);
-    expect(isValidIban('pas un iban')).toBe(false);
+  it('reverse les cours payés il y a plus de 7 jours, remboursements déduits', () => {
+    const now = new Date('2026-10-20T12:00:00Z');
+    const ilYa = (jours) => new Date(now.getTime() - jours * 86400000);
+    const conversions = [
+      { amount_eur: 20, paid_at: ilYa(10) },                  // pack 10 h : reversable
+      { amount_eur: 2, paid_at: ilYa(8), refunded_eur: 2 },   // remboursé
+      { amount_eur: 10, paid_at: ilYa(3) },                   // trop récent (délai de remboursement)
+    ];
+    expect(partnerTransferDue({ conversions, pendingPayout: 30, now }).amountCents).toBe(2000);
+    // Déjà transféré jusqu'à J-9 : plus rien de mûr
+    expect(partnerTransferDue({ conversions, transferredUntil: ilYa(9), pendingPayout: 30, now }).amountCents).toBe(0);
+    // Un remboursement après transfert a réduit le solde : on ne vire jamais plus que le dû
+    expect(partnerTransferDue({ conversions, pendingPayout: 5, now }).amountCents).toBe(500);
+    expect(partnerTransferDue({ conversions, pendingPayout: -3, now }).amountCents).toBe(0);
   });
 });
 

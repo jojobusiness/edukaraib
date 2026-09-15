@@ -722,7 +722,7 @@ async function sendPartnerConversionEmail(partnerUid, data) {
         <div style="font-size:26px;font-weight:800;color:#15803d;">${pendingTotal} €</div>
       </td>
     </tr></table>
-    <p style="margin:0 0 18px;font-size:13px;color:#64748b;">Les reversements sont faits par virement sur l’IBAN indiqué dans votre espace. Les packs de 10 h rapportent le plus : 20 € pour votre structure à chaque pack.</p>
+    <p style="margin:0 0 18px;font-size:13px;color:#64748b;">Ce montant vous est reversé automatiquement, 7 jours après le paiement, sur le compte bancaire connecté dans votre espace. Les packs de 10 h rapportent le plus : 20 € pour votre structure à chaque pack.</p>
     <table cellspacing="0" cellpadding="0"><tr><td style="background:#00804B;border-radius:10px;">
       <a href="${APP_BASE_URL}/partenaire/espace" style="display:inline-block;padding:12px 22px;color:#fff;text-decoration:none;font-weight:700;font-size:15px;">Voir mon espace partenaire</a>
     </td></tr></table>

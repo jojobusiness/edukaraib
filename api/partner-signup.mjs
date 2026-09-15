@@ -1,8 +1,10 @@
-// Demande de partenariat depuis /partenaire (association, établissement, groupe…).
+// Inscription d'un partenaire depuis /partenaire (association, établissement, groupe…).
+// Tout passe par le site : le code est ACTIF dès l'inscription, sans validation
+// manuelle. Garde-fous automatiques : un partenaire ne peut pas utiliser son
+// propre code, les reversements ne partent que vers un compte Stripe Connect
+// dont Stripe vérifie l'identité, et seulement 7 jours après chaque paiement.
 // Le compte de connexion est créé côté client (Firebase Auth) ; cette API crée
 // la fiche partenaire et le rôle, que le client ne peut pas s'attribuer seul.
-// Le code reste INACTIF jusqu'à la validation par l'admin : on ne reverse pas
-// d'argent à une structure non vérifiée.
 import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
 import {
   PARTNERS_COLLECTION, PARTNER_ROLE, PARTNER_MODEL, PARTNER_KINDS, PARTNER_CODE_REGEX,
@@ -36,10 +38,7 @@ export default async function handler(req, res) {
   // Idempotent : une 2e soumission renvoie la fiche existante
   const partnerRef = adminDb.collection(PARTNERS_COLLECTION).doc(uid);
   const existing = await partnerRef.get();
-  if (existing.exists) {
-    const d = existing.data();
-    return res.status(200).json({ uid, code: d.code, pending: d.active !== true });
-  }
+  if (existing.exists) return res.status(200).json({ uid, code: existing.data().code });
 
   // Un compte parent / élève / prof ne devient pas partenaire par ce formulaire
   const userRef = adminDb.collection('users').doc(uid);
@@ -84,10 +83,10 @@ export default async function handler(req, res) {
     contact_name: contactName,
     email,
     phone,
-    rib: '',
-    active: false,
-    pending_review: true,
+    active: true,
     expires_at: defaultPartnerExpiry(),
+    stripe_account_id: null,
+    transferred_until: null,
     totalEarned: 0,
     pendingPayout: 0,
     usageCount: 0,
@@ -99,9 +98,9 @@ export default async function handler(req, res) {
 
   // await obligatoire : Vercel gèle la fonction dès la réponse envoyée
   await Promise.all([
-    sendPartnerWelcomeEmail({ to: email, structureName, contactName, code, pending: true }),
+    sendPartnerWelcomeEmail({ to: email, structureName, contactName, code }),
     sendAdminNewPartnerEmail({ structureName, kind: PARTNER_KINDS[kind], email, code }),
   ]);
 
-  return res.status(201).json({ uid, code, pending: true });
+  return res.status(201).json({ uid, code });
 }

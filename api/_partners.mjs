@@ -98,25 +98,34 @@ export function codeFromName(name) {
   return base + String(Math.floor(Math.random() * 90) + 10);
 }
 
-export const normalizeIban = (raw) => String(raw || '').replace(/\s/g, '').toUpperCase();
+/** Un cours est reversé au partenaire 7 jours après son paiement (délai de remboursement). */
+export const PARTNER_TRANSFER_DELAY_DAYS = 7;
+/** En dessous d'1 €, on cumule jusqu'au passage suivant du cron. */
+export const PARTNER_MIN_TRANSFER_CENTS = 100;
 
-/** Format + clé de contrôle mod97. */
-export function isValidIban(raw) {
-  const iban = normalizeIban(raw);
-  if (!/^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/.test(iban)) return false;
-  const rearranged = iban.slice(4) + iban.slice(0, 4);
-  let remainder = 0;
-  for (const c of rearranged) {
-    const n = c >= 'A' && c <= 'Z' ? String(c.charCodeAt(0) - 55) : c;
-    for (const digit of n) remainder = (remainder * 10 + Number(digit)) % 97;
+/**
+ * Montant à transférer au partenaire maintenant : les reversements des cours
+ * payés depuis le dernier transfert et d'au moins 7 jours, remboursements
+ * déduits, sans jamais dépasser le solde dû (`pendingPayout`, qui intègre les
+ * remboursements survenus après un transfert).
+ * @returns {{ amountCents: number, cutoff: Date }}
+ */
+export function partnerTransferDue({
+  conversions = [], transferredUntil = null, pendingPayout = 0, now = new Date(),
+  delayDays = PARTNER_TRANSFER_DELAY_DAYS,
+}) {
+  const cutoff = new Date(now.getTime() - delayDays * 24 * 60 * 60 * 1000);
+  const from = toDate(transferredUntil);
+  let eligibleCents = 0;
+  for (const c of conversions || []) {
+    const at = toDate(c?.paid_at);
+    if (!at || at.getTime() > cutoff.getTime()) continue;
+    if (from && at.getTime() <= from.getTime()) continue;
+    eligibleCents += Math.max(0, Math.round((Number(c.amount_eur || 0) - Number(c.refunded_eur || 0)) * 100));
   }
-  return remainder === 1;
+  const pendingCents = Math.round(Number(pendingPayout || 0) * 100);
+  return { amountCents: Math.max(0, Math.min(eligibleCents, pendingCents)), cutoff };
 }
-
-export const maskIban = (iban) => {
-  const s = normalizeIban(iban);
-  return s ? `${s.slice(0, 4)} •••• •••• ${s.slice(-4)}` : '';
-};
 
 /**
  * Rattache la famille (le payeur) au partenaire, une fois pour toutes :

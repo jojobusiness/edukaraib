@@ -369,71 +369,6 @@ function RefundRequestsSection() {
 /* ===========================
    AdminDashboard (sans layout)
 =========================== */
-/* ----- Programme partenaires : création en un seul formulaire ----- */
-function CreatePartnerForm({ onCreated }) {
-  const empty = { structureName: '', kind: 'association', contactName: '', email: '', code: '', iban: '' };
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState(empty);
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState(null);
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-  const ERRORS = {
-    CODE_TAKEN: 'Ce code est déjà pris.',
-    INVALID_CODE: 'Code : 4 à 20 caractères, lettres, chiffres ou tirets.',
-    INVALID_IBAN: 'IBAN invalide.',
-    INVALID_EMAIL: 'Email invalide.',
-    INVALID_STRUCTURE_NAME: 'Nom de la structure manquant.',
-    EMAIL_ALREADY_PARTNER: 'Cet email est déjà celui d’un partenaire.',
-    EMAIL_USED_BY_OTHER_ACCOUNT: 'Cet email appartient à un compte parent, élève ou prof : utilisez l’adresse de la structure.',
-  };
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    setMsg(null);
-    try {
-      const data = await fetchWithAuth('/api/create-partner', { method: 'POST', body: JSON.stringify(form) });
-      setMsg({ ok: true, text: `Partenaire créé : code ${data.code}. ${data.emailSent ? 'Mail de bienvenue envoyé.' : 'Mail NON envoyé : transmettez le code vous-même.'}` });
-      setForm(empty);
-      onCreated?.();
-    } catch (err) {
-      setMsg({ ok: false, text: ERRORS[err.message] || `Erreur : ${err.message}` });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (!open) {
-    return (
-      <button type="button" className="bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold" onClick={() => setOpen(true)}>
-        + Nouveau partenaire
-      </button>
-    );
-  }
-  const cls = 'border rounded-lg px-3 py-2 text-sm w-full';
-  return (
-    <form onSubmit={submit} className="bg-white border rounded-xl p-4 space-y-3">
-      <div className="font-semibold">Nouveau partenaire</div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <input className={cls} placeholder="Nom de la structure *" value={form.structureName} onChange={set('structureName')} required />
-        <select className={cls} value={form.kind} onChange={set('kind')}>
-          {Object.entries(PARTNER_KINDS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-        </select>
-        <input className={cls} placeholder="Nom du contact" value={form.contactName} onChange={set('contactName')} />
-        <input className={cls} type="email" placeholder="Email du contact *" value={form.email} onChange={set('email')} required />
-        <input className={`${cls} uppercase`} placeholder="Code (ex. APEL973) — vide = automatique" value={form.code} onChange={set('code')} maxLength={20} />
-        <input className={`${cls} font-mono`} placeholder="IBAN (facultatif)" value={form.iban} onChange={set('iban')} />
-      </div>
-      <p className="text-xs text-gray-500">Grille : 2 €/h de remise pour la famille + 2 €/h reversés, sur tous les achats de la famille jusqu’au 31/07/2027. Le partenaire reçoit un mail avec son code et le lien pour choisir son mot de passe.</p>
-      <div className="flex gap-2">
-        <button type="submit" disabled={saving} className="bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50">{saving ? 'Création…' : 'Créer le partenaire'}</button>
-        <button type="button" className="border px-4 py-2 rounded-lg text-sm" onClick={() => { setOpen(false); setMsg(null); }}>Fermer</button>
-      </div>
-      {msg && <p className={`text-sm ${msg.ok ? 'text-emerald-700' : 'text-red-600'}`}>{msg.text}</p>}
-    </form>
-  );
-}
-
 export default function AdminDashboard() {
   const [tab, setTab] = useState('stats'); // stats | accounts | payments | messages | discussions | influencers | analytics
   const [meRole, setMeRole] = useState(null);
@@ -477,9 +412,7 @@ export default function AdminDashboard() {
   const [influLoading, setInfluLoading] = useState(false);
   const [influFilter, setInfluFilter] = useState("all"); // all | pending | inactive
   const [influSearch, setInfluSearch] = useState("");
-  const [influPayoutLoading, setInfluPayoutLoading] = useState(null);
   const [influToggleLoading, setInfluToggleLoading] = useState(null);
-  const [influReload, setInfluReload] = useState(0);
 
   // --- Modification du code partenaire ---
   const [influCodeEdit, setInfluCodeEdit] = useState(null);   // id de la ligne en cours d'édition
@@ -647,7 +580,7 @@ export default function AdminDashboard() {
         setInfluLoading(false);
       })
       .catch(() => setInfluLoading(false));
-  }, [tab, influReload]);
+  }, [tab]);
 
   /* ----- Derived: account filters ----- */
   const filteredUsers = useMemo(() => {
@@ -1544,7 +1477,6 @@ export default function AdminDashboard() {
         {/* === PARTENAIRES TAB === */}
         {tab === 'influencers' && (
           <div className="space-y-6">
-            <CreatePartnerForm onCreated={() => setInfluReload((n) => n + 1)} />
 
             {/* ── KPIs ── */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1569,13 +1501,13 @@ export default function AdminDashboard() {
                 value={influSearch}
                 onChange={e => setInfluSearch(e.target.value)}
               />
-              {['all', 'review', 'pending', 'inactive'].map(f => (
+              {['all', 'pending', 'inactive'].map(f => (
                 <button
                   key={f}
                   className={`px-3 py-1.5 rounded-lg border text-sm ${influFilter === f ? 'bg-primary text-white border-primary' : 'bg-white'}`}
                   onClick={() => setInfluFilter(f)}
                 >
-                  {f === 'all' ? 'Tous' : f === 'review' ? '🕓 À valider' : f === 'pending' ? '💶 Reversement dû' : '🔴 Inactifs'}
+                  {f === 'all' ? 'Tous' : f === 'pending' ? '💶 Reversement dû' : '🔴 Inactifs'}
                 </button>
               ))}
             </div>
@@ -1600,7 +1532,6 @@ export default function AdminDashboard() {
                   <tbody>
                     {influencers
                       .filter(i => {
-                        if (influFilter === 'review' && !i.pending_review) return false;
                         if (influFilter === 'pending' && !(i.pendingPayout > 0)) return false;
                         if (influFilter === 'inactive' && i.active !== false) return false;
                         if (influSearch) {
@@ -1749,43 +1680,18 @@ export default function AdminDashboard() {
                           </td>
                           <td className="p-3 text-center">
                             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${influ.active !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
-                              {influ.active !== false ? 'Actif' : influ.pending_review ? 'À valider' : 'Inactif'}
+                              {influ.active !== false ? 'Actif' : 'Inactif'}
                             </span>
                           </td>
                           <td className="p-3">
                             <div className="flex items-center justify-center gap-2">
-                              {/* Reversement : virement fait à la main depuis la banque, puis enregistré ici */}
-                              <button
-                                disabled={!(influ.pendingPayout > 0) || !influ.rib || influPayoutLoading === influ.id}
-                                className="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg disabled:opacity-40 hover:bg-emerald-700"
-                                title={!influ.rib ? "Pas d'IBAN enregistré" : `Marquer ${(influ.pendingPayout || 0).toFixed(2)} € comme reversés`}
-                                onClick={async () => {
-                                  const _maskedRib = influ.rib ? influ.rib.slice(0,4) + '••••' + influ.rib.slice(-4) : 'N/A';
-                                  if (!window.confirm(`Avez-vous fait le virement de ${(influ.pendingPayout || 0).toFixed(2)} € à ${influ.name} depuis votre banque ?\nIBAN : ${_maskedRib}\n\nCliquez sur OK seulement après le virement : le partenaire reçoit un mail de confirmation.`)) return;
-                                  const _ref = window.prompt('Référence du virement (facultatif) :') || '';
-                                  setInfluPayoutLoading(influ.id);
-                                  try {
-                                    const data = await fetchWithAuth('/api/mark-partner-payout', {
-                                      method: 'POST',
-                                      body: JSON.stringify({ partnerUid: influ.id, reference: _ref }),
-                                    });
-                                    if (!data?.success) {
-                                      const detail = data?.detail ? '\n\nDétail : ' + data.detail : '';
-                                      throw new Error((data?.error || 'Erreur') + detail);
-                                    }
-                                    alert(`Reversement de ${data.amount_eur} € enregistré pour ${data.name}.${data.email_sent ? ' Mail de confirmation envoyé.' : ''}`);
-                                    setInfluencers(prev => prev.map(i =>
-                                      i.id === influ.id ? { ...i, pendingPayout: Math.max(0, (i.pendingPayout || 0) - data.amount_eur) } : i
-                                    ));
-                                  } catch (e) {
-                                    alert('❌ ' + e.message);
-                                  } finally {
-                                    setInfluPayoutLoading(null);
-                                  }
-                                }}
+                              {/* Reversements automatiques : cron quotidien vers le compte Stripe Connect du partenaire */}
+                              <span
+                                className={`text-xs px-2 py-1 rounded-lg ${influ.stripe_account_id ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}
+                                title="Les reversements partent automatiquement vers le compte Stripe du partenaire, 7 jours après chaque paiement"
                               >
-                                {influPayoutLoading === influ.id ? '…' : 'Virement fait'}
-                              </button>
+                                {influ.stripe_account_id ? 'Stripe connecté' : 'Stripe non connecté'}
+                              </span>
 
                               {/* Bouton activer/désactiver */}
                               <button
@@ -1795,22 +1701,9 @@ export default function AdminDashboard() {
                                   setInfluToggleLoading(influ.id);
                                   try {
                                     const newActive = influ.active === false ? true : false;
-                                    await updateDoc(doc(db, 'influencers', influ.id), { active: newActive, ...(newActive ? { pending_review: false } : {}) });
-                                    // Validation d'une demande : le partenaire est prévenu que son code est actif
-                                    if (newActive && influ.pending_review && influ.email) {
-                                      await fetchWithAuth('/api/notify-email', {
-                                        method: 'POST',
-                                        body: JSON.stringify({
-                                          to: influ.email,
-                                          title: 'Votre code partenaire est actif',
-                                          message: `Bonjour,\n\nLe partenariat entre ${influ.name || 'votre structure'} et EduKaraib est validé. Votre code ${influ.code} est actif : vos familles bénéficient de 2 € de remise par heure de cours, et votre structure reçoit 2 € par heure.\n\nVotre espace partenaire contient le lien et un message prêts à transférer aux familles.`,
-                                          ctaUrl: 'https://edukaraib.com/partenaire/espace',
-                                          ctaText: 'Ouvrir mon espace partenaire',
-                                        }),
-                                      }).catch(() => {});
-                                    }
+                                    await updateDoc(doc(db, 'influencers', influ.id), { active: newActive });
                                     setInfluencers(prev => prev.map(i =>
-                                      i.id === influ.id ? { ...i, active: newActive, ...(newActive ? { pending_review: false } : {}) } : i
+                                      i.id === influ.id ? { ...i, active: newActive } : i
                                     ));
                                   } catch (e) {
                                     alert('Erreur: ' + e.message);
@@ -1819,15 +1712,14 @@ export default function AdminDashboard() {
                                   }
                                 }}
                               >
-                                {influ.active !== false ? 'Désactiver' : influ.pending_review ? 'Valider' : 'Réactiver'}
+                                {influ.active !== false ? 'Désactiver' : 'Réactiver'}
                               </button>
                             </div>
                           </td>
                         </tr>
                       ))}
                     {influencers.filter(i => {
-                      if (influFilter === 'review' && !i.pending_review) return false;
-                        if (influFilter === 'pending' && !(i.pendingPayout > 0)) return false;
+                      if (influFilter === 'pending' && !(i.pendingPayout > 0)) return false;
                       if (influFilter === 'inactive' && i.active !== false) return false;
                       return true;
                     }).length === 0 && (

@@ -65,23 +65,10 @@ async function send({ to, subject, html }) {
   }
 }
 
-/** Bienvenue — compte créé par l'admin (actif) ou demande reçue (pending). */
-export function sendPartnerWelcomeEmail({ to, structureName, contactName, code, passwordLink, pending }) {
+/** Bienvenue — le code est actif dès l'inscription. */
+export function sendPartnerWelcomeEmail({ to, structureName, contactName, code }) {
   const hello = contactName ? `Bonjour ${esc(contactName)},` : 'Bonjour,';
   const who = esc(structureName);
-  if (pending) {
-    return send({
-      to,
-      subject: 'Votre demande de partenariat EduKaraib est bien reçue',
-      html: layout('Demande reçue', `
-        <p>${hello}</p>
-        <p>Merci pour votre demande de partenariat au nom de <strong>${who}</strong>. Nous la validons sous 24 h ; votre code sera actif dès la validation et vous recevrez un mail de confirmation.</p>
-        ${codeBox(code)}
-        <p>Une fois le code actif, chaque famille qui l’utilise bénéficie de <strong>2 € de remise par heure de cours</strong>, et <strong>${who}</strong> reçoit <strong>2 € par heure</strong>, sur tous les achats de la famille pendant l’année scolaire.</p>
-        ${gridTable()}`,
-      { url: `${appUrl()}/partenaire/espace`, label: 'Accéder à mon espace partenaire' }),
-    });
-  }
   return send({
     to,
     subject: `Votre code partenaire EduKaraib : ${code}`,
@@ -92,39 +79,34 @@ export function sendPartnerWelcomeEmail({ to, structureName, contactName, code, 
       <p>Chaque famille qui utilise ce code bénéficie de <strong>2 € de remise par heure de cours</strong>, et <strong>${who}</strong> reçoit <strong>2 € par heure</strong>, sur tous les achats de la famille pendant l’année scolaire :</p>
       ${gridTable()}
       <p>Le code s’enregistre sur le compte de la famille dès son premier paiement : ensuite la remise s’applique toute seule, pour tous ses enfants. Il est valable jusqu’au 31 juillet 2027.</p>
-      <p>Vous n’avez rien à gérer : votre espace partenaire affiche le lien à partager, un message prêt à transférer aux familles, les familles rattachées et les sommes à reverser. Les reversements sont faits par virement sur l’IBAN indiqué dans votre espace.</p>
-      ${passwordLink ? '<p>Le bouton ci-dessous vous permet de choisir votre mot de passe, puis de vous connecter sur edukaraib.com/partenaire.</p>' : ''}`,
-    passwordLink
-      ? { url: passwordLink, label: 'Créer mon mot de passe' }
-      : { url: `${appUrl()}/partenaire/espace`, label: 'Accéder à mon espace partenaire' }),
+      <p><strong>Pour recevoir vos reversements</strong>, connectez le compte bancaire de votre structure depuis votre espace partenaire (2 minutes, via Stripe, notre prestataire de paiement). Chaque cours payé vous est ensuite reversé automatiquement, 7 jours après le paiement.</p>
+      <p>Votre espace contient aussi le lien et un message prêts à transférer aux familles.</p>`,
+    { url: `${appUrl()}/partenaire/espace`, label: 'Ouvrir mon espace partenaire' }),
   });
 }
 
-export function sendPartnerPayoutEmail({ to, structureName, amountEur, maskedIban, reference }) {
+/** Reversement automatique effectué (transfert Stripe vers le compte du partenaire). */
+export function sendPartnerPayoutEmail({ to, structureName, amountEur, reference }) {
   const amount = Number(amountEur).toFixed(2).replace('.', ',');
   return send({
     to,
-    subject: `Reversement de ${amount} € effectué — EduKaraib`,
+    subject: `Reversement de ${amount} € — EduKaraib`,
     html: layout('Votre reversement est parti', `
       <p>Bonjour,</p>
-      <p>Nous avons effectué un virement de <strong>${amount} €</strong> au bénéfice de <strong>${esc(structureName)}</strong>, au titre des cours payés par vos familles.</p>
-      <table width="100%" cellspacing="0" cellpadding="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;margin:14px 0;font-size:14px;">
-        <tr><td style="padding:10px 12px;color:#64748b;">Compte</td><td style="padding:10px 12px;text-align:right;font-family:monospace;">${esc(maskedIban)}</td></tr>
-        ${reference ? `<tr><td style="padding:10px 12px;color:#64748b;border-top:1px solid #e2e8f0;">Référence</td><td style="padding:10px 12px;text-align:right;border-top:1px solid #e2e8f0;">${esc(reference)}</td></tr>` : ''}
-      </table>
-      <p>Délai de réception : 1 à 2 jours ouvrés. Si rien n’est arrivé sous 3 jours, écrivez-nous à contact@edukaraib.com.</p>`,
+      <p>Nous venons de reverser <strong>${amount} €</strong> à <strong>${esc(structureName)}</strong>, au titre des cours payés par vos familles.</p>
+      <p>Stripe, notre prestataire de paiement, vire ce montant sur le compte bancaire que vous avez indiqué, en général sous 1 à 3 jours ouvrés.</p>
+      ${reference ? `<p style="font-size:13px;color:#64748b;">Référence : ${esc(reference)}</p>` : ''}`,
     { url: `${appUrl()}/partenaire/espace`, label: 'Voir mon espace partenaire' }),
   });
 }
 
-/** Alerte admin : une structure a demandé à devenir partenaire. */
+/** Information admin : une structure vient de s'inscrire (aucune action requise). */
 export function sendAdminNewPartnerEmail({ structureName, kind, email, code }) {
   return send({
     to: process.env.ADMIN_INBOX || 'contact@edukaraib.com',
-    subject: `Nouvelle demande de partenariat : ${structureName}`,
-    html: layout('Nouvelle demande de partenariat', `
+    subject: `Nouveau partenaire inscrit : ${structureName}`,
+    html: layout('Nouveau partenaire inscrit', `
       <p><strong>${esc(structureName)}</strong> (${esc(kind)}) — ${esc(email)}</p>
-      <p>Code demandé : <strong>${esc(code)}</strong>. Le code reste inactif tant que vous ne l’avez pas validé dans l’onglet Partenaires de l’admin.</p>`,
-    { url: `${appUrl()}/admin`, label: 'Ouvrir l’admin' }),
+      <p>Code : <strong>${esc(code)}</strong>. Il est actif. Aucune action de votre part ; vous pouvez le désactiver dans l’onglet Partenaires de l’admin en cas d’abus.</p>`),
   });
 }

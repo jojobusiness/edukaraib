@@ -7,6 +7,7 @@
 
 import { stripe } from './_stripe.mjs';
 import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
+import { PARTNERS_COLLECTION } from './_partners.mjs';
 import { captureError } from './_sentry.mjs';
 import { Resend } from 'resend';
 
@@ -228,7 +229,40 @@ async function revokeLessonPaidFlag(lessonRef, lesson, forStudent) {
 /**
  * Apres remboursement Stripe reussi : clore la demande + email au client.
  */
+// Partenaire : on lui retire sa part du cours remboursé (au prorata si le
+// remboursement est partiel). Avant le transfert, elle ne partira pas ; après,
+// le solde devient négatif et se déduit des reversements suivants.
+async function cancelPartnerCommission(pay, refundAmountEur) {
+  const commission = Number(pay.partner_commission_eur || 0);
+  if (!pay.partner_uid || !(commission > 0)) return;
+  const gross = Number(pay.gross_eur || 0);
+  const ratio = gross > 0 ? Math.min(1, Number(refundAmountEur || gross) / gross) : 1;
+  const amount = Math.round(commission * ratio * 100) / 100;
+  if (!(amount > 0)) return;
+
+  const round2 = (n) => Math.round(n * 100) / 100;
+  const sessionId = pay.session_id || pay.id;
+  const ref = adminDb.collection(PARTNERS_COLLECTION).doc(String(pay.partner_uid));
+  await adminDb.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return;
+    const data = snap.data() || {};
+    tx.update(ref, {
+      pendingPayout: round2(Number(data.pendingPayout || 0) - amount),
+      totalEarned: round2(Number(data.totalEarned || 0) - amount),
+      conversions: (data.conversions || []).map((c) => (
+        c.session_id && c.session_id === sessionId
+          ? { ...c, refunded_eur: round2(Number(c.refunded_eur || 0) + amount) }
+          : c
+      )),
+    });
+  });
+}
+
 async function finalizeRefundSideEffects({ requestId, pay, adminUid, refundAmountEur, reason }) {
+  await cancelPartnerCommission(pay, refundAmountEur)
+    .catch((e) => console.warn('[refund] partner commission update failed:', e?.message));
+
   if (requestId) {
     await adminDb.collection('refund_requests').doc(String(requestId)).set({
       status: 'approved',

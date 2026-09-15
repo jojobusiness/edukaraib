@@ -122,9 +122,9 @@ Associations de parents, établissements, groupes, créateurs. **Aucun texte vis
 - **Modèle `partenaire`** (`model: 'partenaire'` sur la fiche) : **2 €/h de remise famille + 2 €/h reversés**, sur **tous** les achats, sans limite d'usage ni d'IP, jusqu'à `expires_at` (31/07/2027 par défaut). Au 1ᵉʳ paiement, la famille est **rattachée** (`users/{uid}.partner_uid`, posé par le webhook, interdit en écriture client) : ensuite la remise s'applique sans code, pour tous ses enfants. Premier partenaire gagne ; un partenaire ne peut pas utiliser son propre code.
 - **Anciens codes** (sans `model`, ex. `LHATIEN81`) : grille historique −5/−10/−30 € et +5/+10/+20 €, 2 usages par payeur, 1 par IP, 6 mois.
 - Remise + reversement ne dépassent jamais la commission du site (10 €/h).
-- Pages : `/partenaire` (présentation + demande, code inactif jusqu'à validation admin), `/partenaire/espace` (code, lien, message à transférer, familles, reversements, IBAN), `/partenaire/profil`. Les anciennes URL `/influencer/*` redirigent.
-- API : `create-partner.mjs` (admin, formulaire unique + mail avec lien de mot de passe), `partner-signup.mjs` (demande publique), `partner-iban.mjs`, `mark-partner-payout.mjs`.
-- **Reversements = virement bancaire fait à la main**, puis bouton « Virement fait » dans l'admin (mail au partenaire). ⛔ Ne pas revenir à `stripe.payouts.create` : Stripe ne vire que vers les comptes de la plateforme, jamais vers l'IBAN d'un tiers.
+- **Tout passe par le site, rien par l'admin** (décision de Joseph, 15/09/2026) : inscription sur `/partenaire` → code actif immédiatement ; `/partenaire/espace` (code, lien, message à transférer, familles, reversements, connexion Stripe) ; `/partenaire/profil`. Les anciennes URL `/influencer/*` redirigent. L'onglet admin ne sert qu'à surveiller et à désactiver un code en cas d'abus.
+- API : `partner-signup.mjs` (inscription), `partner-connect.mjs` (compte Stripe Connect Express du partenaire : GET état, POST lien), `partner-payouts-cron.mjs` (cron quotidien déclaré dans `vercel.json`).
+- **Reversements automatiques par Stripe Connect** : transfert vers le compte connecté du partenaire 7 jours après chaque paiement (`partnerTransferDue`), puis Stripe vire sur sa banque. Un remboursement retire la part du partenaire (`refund.mjs`, via `partner_uid` / `partner_commission_eur` posés sur le paiement). ⛔ Jamais `stripe.payouts.create` vers un IBAN : Payouts ne vise que les comptes de la plateforme ; payer un tiers = Connect + `transfers.create` (comme les profs).
 
 ---
 

@@ -470,6 +470,9 @@ export default async function handler(req, res) {
     created_at: new Date(),
     billed_hours: String(billedHours),
     is_pack: !!packMode,
+    // Partenaire crédité sur ce paiement : un remboursement lui retire sa part
+    partner_uid: partnerUid || null,
+    partner_commission_eur: partnerUid ? partnerCommissionCents / 100 : 0,
   }, { merge: true });
 
   return res.json(couponIgnored.length ? { url: session.url, couponIgnored } : { url: session.url });

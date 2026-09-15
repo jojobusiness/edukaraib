@@ -9,8 +9,8 @@
 > **Ticket 7 — ce qui a été livré, et les écarts avec le plan :**
 > - Grille **2 €/h famille + 2 €/h partenaire VALIDÉE par Joseph le 15/09**, sur tous les achats, sans limite d'usage ni d'IP, jusqu'au 31/07/2027. Famille rattachée au 1ᵉʳ paiement (`users/{uid}.partner_uid`, posé par le webhook, règles Firestore déployées pour l'interdire en écriture client).
 > - Tout le texte visible dit « partenaire » (pages `/partenaire`, `/partenaire/espace`, `/partenaire/profil`, mails, admin, landings). Les noms techniques (`influencers`, rôle `influencer`) restent pour ne pas migrer les comptes ; les URL `/influencer/*` redirigent.
-> - **Écart 1** : en plus du formulaire admin, une **demande publique** sur `/partenaire` ; le code reste inactif jusqu'à la validation admin (bouton « Valider » + mail d'activation).
-> - **Écart 2** : les reversements ne passent plus par Stripe. L'ancien bouton « Virer » appelait `stripe.payouts.create` vers l'IBAN du partenaire, ce que Stripe ne permet pas. Désormais : virement bancaire fait à la main, puis « Virement fait » dans l'admin (mail au partenaire).
+> - **Écart 1 — tout passe par le site (Joseph, 15/09)** : pas de formulaire admin. La structure s'inscrit seule sur `/partenaire` et son code est actif tout de suite. L'admin ne fait que surveiller (désactivation en cas d'abus).
+> - **Écart 2 — reversements automatiques par Stripe Connect** : l'ancien bouton « Virer » appelait `stripe.payouts.create` vers l'IBAN du partenaire (impossible). Désormais le partenaire connecte son compte Stripe Express depuis son espace (comme les profs) et `api/partner-payouts-cron.mjs` lui transfère sa part chaque jour, 7 jours après chaque paiement ; un remboursement la lui retire.
 > - **Écart 3** : les anciens codes (`LHATIEN81`) gardent leur grille et leurs limites, sans rattachement de famille.
 > - Bug corrigé au passage : le mail au partenaire après un achat n'était pas awaité dans le webhook, donc jamais envoyé.
 
