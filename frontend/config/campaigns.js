@@ -20,10 +20,12 @@ export const BAC_CAMPAIGN = {
   id: 'bac',
   /* Repli si le comptage réel des profs échoue (cf. `scarcity` plus bas). */
   profsFallback: 12,
-  subjects: [
-    'Maths', 'Français', 'Philosophie', 'Physique-Chimie',
-    'SVT', 'SES', 'Anglais', 'Histoire-Géo',
-  ],
+  /* Même règle que RENTREE_CAMPAIGN : une matière ne reste ici que si au moins
+     un prof qui la couvre est RÉSERVABLE (`node scripts/diag-offre-profs.mjs`).
+
+     Historique des retraits (mesures réelles) :
+     - 14/09 : Philosophie, SVT, SES, Histoire-Géo — aucun prof réservable. */
+  subjects: ['Maths', 'Français', 'Physique-Chimie', 'Anglais'],
   seo: {
     title: 'Soutien scolaire Bac — Guyane & Antilles | EduKaraib',
     description: 'Révisions intensives et rattrapage du bac avec des profs caribéens vérifiés. Visio ou présentiel, payable en 3x, satisfait ou remboursé.',

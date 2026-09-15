@@ -55,6 +55,16 @@ describe.each(CAMPAGNES)('config campagne « %s »', (nom, config) => {
   });
 });
 
+describe('campagne bac — alignement sur l’offre réelle', () => {
+  it('ne propose aucune matière sans prof réservable (diag du 14/09)', () => {
+    // 14/09 : `diag-offre-profs.mjs` signale 4 boutons orphelins sur /bac.
+    const sansProfReservable = ['Philosophie', 'SVT', 'SES', 'Histoire-Géo'];
+    for (const matiere of sansProfReservable) {
+      expect(BAC_CAMPAIGN.subjects).not.toContain(matiere);
+    }
+  });
+});
+
 describe('campagne rentrée — alignement sur l’offre réelle', () => {
   it('ne propose aucune matière sans prof réservable (constats 20/08 et 26/08)', () => {
     // Règle : une matière ne reste dans la config que si au moins un prof qui la
