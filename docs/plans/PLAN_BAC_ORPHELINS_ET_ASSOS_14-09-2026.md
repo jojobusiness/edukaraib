@@ -5,7 +5,14 @@
 
 ---
 
-> ✅ **15/09/2026 — Tickets 1 et 4 LIVRÉS** (113 tests verts, build OK, diag sans orphelin) : ticket 4 = commit `31888f9e`, ticket 1 = commit suivant. Reste le ticket 7, qui attend la validation de la grille par Joseph.
+> ✅ **15/09/2026 — Tickets 1, 4 et 7 LIVRÉS** (124 tests verts, build OK, diag sans orphelin) : ticket 4 = `31888f9e`, ticket 1 = `101ab298`, ticket 7 = commit « feat(partenaires) » du 15/09.
+> **Ticket 7 — ce qui a été livré, et les écarts avec le plan :**
+> - Grille **2 €/h famille + 2 €/h partenaire VALIDÉE par Joseph le 15/09**, sur tous les achats, sans limite d'usage ni d'IP, jusqu'au 31/07/2027. Famille rattachée au 1ᵉʳ paiement (`users/{uid}.partner_uid`, posé par le webhook, règles Firestore déployées pour l'interdire en écriture client).
+> - Tout le texte visible dit « partenaire » (pages `/partenaire`, `/partenaire/espace`, `/partenaire/profil`, mails, admin, landings). Les noms techniques (`influencers`, rôle `influencer`) restent pour ne pas migrer les comptes ; les URL `/influencer/*` redirigent.
+> - **Écart 1** : en plus du formulaire admin, une **demande publique** sur `/partenaire` ; le code reste inactif jusqu'à la validation admin (bouton « Valider » + mail d'activation).
+> - **Écart 2** : les reversements ne passent plus par Stripe. L'ancien bouton « Virer » appelait `stripe.payouts.create` vers l'IBAN du partenaire, ce que Stripe ne permet pas. Désormais : virement bancaire fait à la main, puis « Virement fait » dans l'admin (mail au partenaire).
+> - **Écart 3** : les anciens codes (`LHATIEN81`) gardent leur grille et leurs limites, sans rattachement de famille.
+> - Bug corrigé au passage : le mail au partenaire après un achat n'était pas awaité dans le webhook, donc jamais envoyé.
 
 ## Ticket 1 — Retirer Philosophie, SVT, SES, Histoire-Géo de `BAC_CAMPAIGN` (≈ 15 min) — ✅ FAIT 15/09
 

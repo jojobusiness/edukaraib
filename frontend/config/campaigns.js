@@ -75,7 +75,7 @@ export const BAC_CAMPAIGN = {
       price: '≈ 30 €',
       priceNote: 'l’heure',
       points: ['Cours à l’unité, sans engagement', 'Prof vérifié, visio ou présentiel', 'Idéal pour débloquer un chapitre'],
-      discount: '-5 € avec ton code promo',
+      discount: '-2 € avec ton code partenaire',
       highlight: false,
       cta: 'Choisir ce format',
     },
@@ -86,7 +86,7 @@ export const BAC_CAMPAIGN = {
       price: '≈ 150 €',
       priceNote: '6h de cours · soit ~25 €/h',
       points: ['+1h OFFERTE (6h au total)', 'Payable en 3x sans frais (Klarna)', 'Le format le plus choisi avant les épreuves'],
-      discount: '-10 € avec ton code promo',
+      discount: '-10 € avec ton code partenaire',
       highlight: true,
       cta: 'Choisir le Pack 5h',
     },
@@ -97,7 +97,7 @@ export const BAC_CAMPAIGN = {
       price: '≈ 300 €',
       priceNote: '12h de cours · soit ~25 €/h',
       points: ['+2h OFFERTES (12h au total)', 'Payable en 3x sans frais (Klarna)', 'Suivi complet sur plusieurs matières'],
-      discount: '-30 € avec ton code promo',
+      discount: '-20 € avec ton code partenaire',
       highlight: false,
       cta: 'Choisir le Pack 10h',
     },
@@ -105,8 +105,8 @@ export const BAC_CAMPAIGN = {
 
   faq: [
     {
-      q: 'Comment mon code promo est-il appliqué ?',
-      a: 'Si tu es arrivé(e) ici avec un code (lien d’un créateur), il est enregistré automatiquement : la remise s’applique toute seule au moment du paiement, tu n’as rien à taper.',
+      q: 'Comment mon code partenaire est-il appliqué ?',
+      a: 'Si tu es arrivé(e) ici avec le code d’un partenaire (ton association, ton établissement, un créateur), il est enregistré automatiquement : la remise s’applique toute seule au moment du paiement, tu n’as rien à taper.',
     },
     {
       q: 'Je peux vraiment payer en 3 fois ?',
@@ -260,7 +260,7 @@ export const RENTREE_CAMPAIGN = {
       price: '≈ 30 €',
       priceNote: 'l’heure',
       points: ['Cours à l’unité, sans engagement', 'Prof vérifié, visio ou présentiel', 'Pour débloquer un chapitre précis'],
-      discount: '-5 € avec votre code promo',
+      discount: '-2 € avec votre code partenaire',
       highlight: false,
       cta: 'Choisir ce format',
     },
@@ -271,7 +271,7 @@ export const RENTREE_CAMPAIGN = {
       price: '≈ 150 €',
       priceNote: '6h de cours · soit ~25 €/h',
       points: ['+1h OFFERTE (6h au total)', 'Payable en 3x sans frais (Klarna)', 'De quoi remettre les bases à niveau'],
-      discount: '-10 € avec votre code promo',
+      discount: '-10 € avec votre code partenaire',
       highlight: false,
       cta: 'Choisir le Pack 5h',
     },
@@ -286,7 +286,7 @@ export const RENTREE_CAMPAIGN = {
         'Le rythme qui fait progresser : 1h par semaine',
         'Payable en 3x sans frais (Klarna)',
       ],
-      discount: '-30 € avec votre code promo',
+      discount: '-20 € avec votre code partenaire',
       highlight: true,
       cta: 'Choisir le Pack Trimestre',
     },
@@ -294,8 +294,8 @@ export const RENTREE_CAMPAIGN = {
 
   faq: [
     {
-      q: 'Comment mon code promo est-il appliqué ?',
-      a: 'Si vous êtes arrivé(e) ici avec un code (lien d’un créateur), il est enregistré automatiquement : la remise s’applique toute seule au moment du paiement, vous n’avez rien à taper.',
+      q: 'Comment mon code partenaire est-il appliqué ?',
+      a: 'Si vous êtes arrivé(e) ici avec le code d’un partenaire (votre association de parents, l’établissement, un créateur), il est enregistré automatiquement : la remise s’applique toute seule au moment du paiement. Avec le code d’une association ou d’un établissement, elle reste ensuite attachée à votre compte, pour tous vos enfants.',
     },
     {
       q: 'À quelle fréquence faut-il prendre des cours ?',

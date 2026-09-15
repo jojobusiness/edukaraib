@@ -3,7 +3,7 @@
  * landing → inscription express → recherche → profil prof → paiement.
  *
  * Tout passe par localStorage avec une expiration (14 jours) pour que le code
- * promo influenceur (ex: LHATIEN81) soit auto-appliqué au paiement même si
+ * partenaire (ex: APEL973, LHATIEN81) soit auto-appliqué au paiement même si
  * l'élève paie plusieurs jours après avoir cliqué le lien TikTok.
  */
 
@@ -35,7 +35,7 @@ export function saveCampaign(partial) {
   } catch {}
 }
 
-/** Code promo influenceur capté via /bac?code=XXX (ou null) */
+/** Code partenaire capté via /bac?code=XXX ou /rentree?code=XXX (ou null) */
 export function getCampaignCode() {
   const c = readCampaign();
   const code = (c?.code || '').trim().toUpperCase();

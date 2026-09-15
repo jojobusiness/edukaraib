@@ -24,7 +24,7 @@ export default function SmartDashboard() {
         if (role === "teacher")    return navigate("/prof/dashboard",       { replace: true });
         if (role === "parent")     return navigate("/parent/dashboard",     { replace: true });
         if (role === "admin")      return navigate("/admin/dashboard",      { replace: true });
-        if (role === "influencer") return navigate("/influencer/dashboard", { replace: true });
+        if (role === "influencer") return navigate("/partenaire/espace", { replace: true });
 
         // Élève (ou fallback)
         return navigate("/dashboard-eleve", { replace: true });

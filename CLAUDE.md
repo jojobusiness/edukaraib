@@ -116,13 +116,15 @@ Un élève peut avoir deux IDs distincts dans Firestore (`students.uid` vs `stud
 - ~~Postmark~~ : **abandonné** (compte jamais approuvé → blocage des envois hors `edukaraib.com`). Tout passe désormais par Resend.
 - Le flag `email_sent: true` sur le document notification empêche le re-envoi. Si tu ajoutes un nouvel envoi d'email, vérifier que les pipelines ne se déclenchent pas sur le même événement (le front met `email_disabled: true` sur les notifs qu'il maile déjà via Resend).
 
-### Système influenceurs
+### Programme partenaires (refonte du 15/09/2026 — ex-« influenceurs »)
 
-- Collection `influencers` : code unique, IBAN, `pendingPayout`, `conversions`
-- Limite : 2 utilisations max par payeur (`influencer_usages`), 1 par IP (vérifiée au checkout seulement — voir bug connu)
-- Remise client : -5€ (leçon solo), -10€ (pack 5h), -30€ (pack 10h)
-- Commission influenceur : +5€, +10€, +20€ respectivement
-- Payout via `trigger-influencer-payout.mjs` (admin uniquement, virement SEPA Stripe)
+Associations de parents, établissements, groupes, créateurs. **Aucun texte visible ne dit plus « influenceur »** ; seuls les noms techniques historiques restent, pour ne pas migrer les comptes existants : collection `influencers`, `influencer_usages`, rôle `influencer`. Toutes les règles vivent dans **`api/_partners.mjs`** (module pur, importé aussi par le front).
+- **Modèle `partenaire`** (`model: 'partenaire'` sur la fiche) : **2 €/h de remise famille + 2 €/h reversés**, sur **tous** les achats, sans limite d'usage ni d'IP, jusqu'à `expires_at` (31/07/2027 par défaut). Au 1ᵉʳ paiement, la famille est **rattachée** (`users/{uid}.partner_uid`, posé par le webhook, interdit en écriture client) : ensuite la remise s'applique sans code, pour tous ses enfants. Premier partenaire gagne ; un partenaire ne peut pas utiliser son propre code.
+- **Anciens codes** (sans `model`, ex. `LHATIEN81`) : grille historique −5/−10/−30 € et +5/+10/+20 €, 2 usages par payeur, 1 par IP, 6 mois.
+- Remise + reversement ne dépassent jamais la commission du site (10 €/h).
+- Pages : `/partenaire` (présentation + demande, code inactif jusqu'à validation admin), `/partenaire/espace` (code, lien, message à transférer, familles, reversements, IBAN), `/partenaire/profil`. Les anciennes URL `/influencer/*` redirigent.
+- API : `create-partner.mjs` (admin, formulaire unique + mail avec lien de mot de passe), `partner-signup.mjs` (demande publique), `partner-iban.mjs`, `mark-partner-payout.mjs`.
+- **Reversements = virement bancaire fait à la main**, puis bouton « Virement fait » dans l'admin (mail au partenaire). ⛔ Ne pas revenir à `stripe.payouts.create` : Stripe ne vire que vers les comptes de la plateforme, jamais vers l'IBAN d'un tiers.
 
 ---
 
@@ -184,7 +186,8 @@ Ne jamais livrer une page sans avoir validé ces 3 points. Les pages non routée
 8. **Vercel Log Drain — ne pas utiliser le domaine custom** — `edukaraib.com` redirige vers `www.edukaraib.com` (307), ce qui casse le drain. Utiliser `https://edukaraib.vercel.app/api/analytics-drain` comme URL du drain.
 9. **`tab` non défini dans les sous-composants de AdminDashboard** — `tab` est un état local de `AdminDashboard`. Les sous-composants (`StatsTab`, `SiteVisitsSection`, etc.) n'y ont pas accès. Toujours placer les conditions `{tab === 'xxx' && ...}` dans le JSX retourné par `AdminDashboard` directement, jamais dans un sous-composant.
 10. **IBAN mal formé** — `trigger-influencer-payout.mjs` valide maintenant l'IBAN via mod97 avant tout virement. Ne jamais supprimer cette validation.
-11. **Code influenceur refusé = paiement bloqué** ✅ CORRIGÉ 15/09/2026 — un code influenceur expiré, à 2 usages ou sur une IP déjà vue est **ignoré** au checkout (pas de remise, pas de commission, `couponIgnored` dans la réponse). Ne JAMAIS renvoyer de 400 pour un code influenceur : le code de campagne est pré-rempli 14 jours et la famille ne pourrait plus payer. Règle dans `api/pay/_influencerRules.mjs`, protégée par `frontend/test/paiement-coupon.test.js`. Les coupons nominatifs (`BIENVENUE-`…) gardent leur 400.
+11. **Code partenaire refusé = paiement bloqué** ✅ CORRIGÉ 15/09/2026 — un code partenaire expiré, à 2 usages ou sur une IP déjà vue (anciens codes), ou utilisé par le partenaire lui-même, est **ignoré** au checkout (pas de remise, pas de reversement, `couponIgnored` dans la réponse). Ne JAMAIS renvoyer de 400 pour un code partenaire : le code de campagne est pré-rempli 14 jours et la famille ne pourrait plus payer. Règles dans `api/_partners.mjs`, protégées par `frontend/test/partenaires.test.js`. Les coupons nominatifs (`BIENVENUE-`…) gardent leur 400.
+12. **Mail envoyé sans `await` dans le webhook** ✅ CORRIGÉ 15/09/2026 — le mail au partenaire après un achat partait en fire-and-forget : Vercel gèle la fonction dès la réponse, il ne partait donc jamais. Tout envoi dans une fonction serverless doit être awaité.
 
 ---
 

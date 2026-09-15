@@ -1,7 +1,10 @@
 import { stripe } from '../_stripe.mjs';
 import { adminDb, verifyAuth } from '../_firebaseAdmin.mjs';
 import { captureError } from '../_sentry.mjs';
-import { influencerRefusalReason } from './_influencerRules.mjs';
+import {
+  PARTNERS_COLLECTION, PARTNER_USAGES_COLLECTION, isPartnerModel, needsUsageChecks,
+  normalizePartnerCode, partnerAmounts, partnerRefusalReason,
+} from '../_partners.mjs';
 
 // -- helpers lecture corps & num
 function readBody(req) {
@@ -251,92 +254,97 @@ export default async function handler(req, res) {
   let totalCents = teacherAmountCents + siteFeeCents;
   if (!(totalCents > 0)) return res.status(400).json({ error: 'INVALID_AMOUNT' });
 
-  // ── Coupons (cumul possible) ──────────────────────────────────────────
+  // ── Réductions : partenaire + coupons nominatifs (cumul possible) ──────
   let couponDiscountCents = 0;
   let couponDocIds = [];
   let appliedCouponCodes = [];
-  const couponIgnored = []; // codes influenceurs refusés mais non bloquants
-  let influencerUid = null;
-  let influencerCommissionCents = 0;
+  const couponIgnored = []; // codes partenaires refusés mais non bloquants
+  let partnerUid = null;
+  let partnerCommissionCents = 0;
+  let partnerLink = false; // rattacher la famille au partenaire après paiement
   let clientIp =
     req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
     req.socket?.remoteAddress ||
     '';
 
-  if (rawCouponCodes.length > 0) {
-    const maxDiscountCents = siteFeeCents; // cours=1000, pack5=5000, pack10=10000
-
-    for (const rawCode of rawCouponCodes) {
-      if (!rawCode || typeof rawCode !== 'string') continue;
-      const code = rawCode.trim().toUpperCase();
-      if (appliedCouponCodes.includes(code)) continue;
-
-      // 1) Chercher dans influencers (max 1 code influenceur par checkout)
-      if (!influencerUid) {
-        const influSnap = await adminDb
-          .collection('influencers')
-          .where('code', '==', code)
-          .where('active', '==', true)
+  // Applique un partenaire si son code est valable. Un code refusé est IGNORÉ :
+  // on encaisse sans remise ni reversement. Jamais de 400 ici — le code de
+  // campagne est pré-rempli et la famille ne pourrait plus payer.
+  const applyPartner = async (partnerId, partner, code) => {
+    let usageSelfCount = 0;
+    let ipAlreadyUsed = false;
+    if (needsUsageChecks(partner)) {
+      const usageSelf = await adminDb
+        .collection(PARTNER_USAGES_COLLECTION)
+        .where('influencer_uid', '==', partnerId)
+        .where('payer_uid', '==', payerUid)
+        .get();
+      usageSelfCount = usageSelf.size;
+      if (clientIp) {
+        const usageIp = await adminDb
+          .collection(PARTNER_USAGES_COLLECTION)
+          .where('influencer_uid', '==', partnerId)
+          .where('client_ip', '==', clientIp)
           .limit(1)
           .get();
+        ipAlreadyUsed = !usageIp.empty;
+      }
+    }
 
-        if (!influSnap.empty) {
-          const influDoc = influSnap.docs[0];
-          const influ = influDoc.data();
+    const refusal = partnerRefusalReason({ partner, partnerId, payerUid, usageSelfCount, ipAlreadyUsed });
+    if (refusal) {
+      couponIgnored.push({ code, reason: refusal });
+      console.warn('partner code ignored:', code, refusal, payerUid);
+      return false;
+    }
 
-          const createdAt = influ.created_at?.toDate?.() || new Date(influ.created_at);
+    const { discountCents, commissionCents } = partnerAmounts({ partner, packMode, billedHours });
+    partnerUid = partnerId;
+    partnerCommissionCents = commissionCents;
+    couponDiscountCents += discountCents;
+    couponDocIds.push(partnerId);
+    appliedCouponCodes.push(code);
+    return true;
+  };
 
-          const usageSelf = await adminDb
-            .collection('influencer_usages')
-            .where('influencer_uid', '==', influDoc.id)
-            .where('payer_uid', '==', payerUid)
-            .get();
+  // 1) Famille déjà rattachée à un partenaire : la remise s'applique toute
+  //    seule, sur tous ses achats et pour tous ses enfants.
+  const payerSnap = await adminDb.collection('users').doc(String(payerUid)).get();
+  const linkedPartnerId = payerSnap.exists ? (payerSnap.data()?.partner_uid || null) : null;
+  if (linkedPartnerId) {
+    const linkedSnap = await adminDb.collection(PARTNERS_COLLECTION).doc(String(linkedPartnerId)).get();
+    const linked = linkedSnap.exists ? linkedSnap.data() : null;
+    if (linked?.active === true) await applyPartner(linkedSnap.id, linked, linked.code || '');
+  }
 
-          let ipAlreadyUsed = false;
-          if (clientIp) {
-            const usageIp = await adminDb
-              .collection('influencer_usages')
-              .where('influencer_uid', '==', influDoc.id)
-              .where('client_ip', '==', clientIp)
-              .limit(1)
-              .get();
-            ipAlreadyUsed = !usageIp.empty;
-          }
+  // 2) Codes saisis au paiement (ou pré-remplis par la landing)
+  {
+    for (const rawCode of rawCouponCodes) {
+      if (!rawCode || typeof rawCode !== 'string') continue;
+      const code = normalizePartnerCode(rawCode);
+      if (appliedCouponCodes.includes(code)) continue;
 
-          // Code refusé (expiré, 2 usages, IP déjà vue) → on l'IGNORE et on
-          // encaisse sans remise ni commission. Ne jamais renvoyer de 400 ici :
-          // le code de campagne est pré-rempli et la famille ne pourrait plus payer.
-          const refusal = influencerRefusalReason({
-            createdAt,
-            usageSelfCount: usageSelf.size,
-            ipAlreadyUsed,
-          });
-          if (refusal) {
-            couponIgnored.push({ code, reason: refusal });
-            console.warn('influencer coupon ignored:', code, refusal, payerUid);
-            continue;
-          }
+      const partnerSnap = await adminDb
+        .collection(PARTNERS_COLLECTION)
+        .where('code', '==', code)
+        .where('active', '==', true)
+        .limit(1)
+        .get();
 
-          const isPack = packMode;
-          // Pas de contrainte d'ordre cours/pack : la campagne /bac vend des packs
-          // directement avec code influenceur. Anti-abus conserve : 2 usages/payeur, 1/IP.
-
-          let discountEur = 0;
-          let commissionEur = 0;
-          if (!isPack) { discountEur = 5; commissionEur = 5; }
-          else if (billedHours === 5) { discountEur = 10; commissionEur = 10; }
-          else if (billedHours === 10) { discountEur = 30; commissionEur = 20; }
-
-          influencerUid = influDoc.id;
-          influencerCommissionCents = commissionEur * 100;
-          couponDiscountCents += discountEur * 100;
-          couponDocIds.push(influDoc.id);
-          appliedCouponCodes.push(code);
+      if (!partnerSnap.empty) {
+        const pDoc = partnerSnap.docs[0];
+        if (pDoc.id === partnerUid) continue; // déjà appliqué (famille rattachée)
+        if (partnerUid) {
+          // Un seul partenaire par achat : celui de la famille garde la main.
+          couponIgnored.push({ code, reason: 'ONE_PARTNER_PER_FAMILY' });
           continue;
         }
+        const applied = await applyPartner(pDoc.id, pDoc.data(), code);
+        if (applied && isPartnerModel(pDoc.data()) && !linkedPartnerId) partnerLink = true;
+        continue;
       }
 
-      // 2) Chercher dans coupons classiques
+      // Coupons nominatifs (BIENVENUE-, AVIS-…) : tapés par l'utilisateur, erreur visible
       const couponSnap = await adminDb
         .collection('coupons')
         .where('code', '==', code)
@@ -361,12 +369,16 @@ export default async function handler(req, res) {
       appliedCouponCodes.push(code);
     }
 
-    // Plafond : la remise totale ne peut JAMAIS depasser la commission plateforme
-    if (couponDiscountCents > maxDiscountCents) {
-      couponDiscountCents = maxDiscountCents;
-    }
+  }
 
-    effectiveSiteFeeCents = Math.max(0, siteFeeCents - couponDiscountCents);
+  if (couponDiscountCents > 0) {
+    // Plafond : la remise totale ne peut JAMAIS dépasser la commission plateforme
+    // (cours = 10 €, pack 5 h = 50 €, pack 10 h = 100 €) : le prof n'est jamais touché.
+    couponDiscountCents = Math.min(couponDiscountCents, siteFeeCents);
+    // …et remise + reversement partenaire non plus : EduKaraib ne paie jamais pour vendre.
+    partnerCommissionCents = Math.min(partnerCommissionCents, siteFeeCents - couponDiscountCents);
+
+    effectiveSiteFeeCents = siteFeeCents - couponDiscountCents;
     totalCents = teacherAmountCents + effectiveSiteFeeCents;
     if (totalCents < 50) totalCents = 50;
   }
@@ -404,8 +416,9 @@ export default async function handler(req, res) {
     coupon_code: appliedCouponCodes.join(','),
     coupon_doc_id: couponDocIds.join(','),
     coupon_discount_cents: String(couponDiscountCents),
-    influencer_uid: influencerUid || '',
-    influencer_commission_cents: String(influencerCommissionCents),
+    partner_uid: partnerUid || '',
+    partner_commission_cents: String(partnerCommissionCents),
+    partner_link: partnerLink ? '1' : '', // le webhook rattache la famille au partenaire
     client_ip: clientIp,
   };
 

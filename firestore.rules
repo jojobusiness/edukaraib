@@ -26,12 +26,18 @@ service cloud.firestore {
     // ── Profils ────────────────────────────────────────────────────────────
     // Lecture publique : Search/Home/SEO listent les profs sans login.
     // Ecriture : soi-meme sans toucher au role (anti-escalade), admin libre.
+    // partner_uid : partenaire auquel la famille est rattachée (remise + reversement
+    // sur tous ses achats). Posé par le webhook de paiement uniquement : une
+    // famille ne peut ni se rattacher elle-même, ni changer de partenaire.
     match /users/{uid} {
       allow read: if true;
       allow create: if isSelf(uid)
-        && request.resource.data.get('role', 'student') in ['student', 'parent', 'teacher'];
+        && request.resource.data.get('role', 'student') in ['student', 'parent', 'teacher']
+        && !('partner_uid' in request.resource.data);
       allow update: if isAdmin()
-        || (isSelf(uid) && request.resource.data.get('role', '') == resource.data.get('role', ''));
+        || (isSelf(uid) && request.resource.data.get('role', '') == resource.data.get('role', '')
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                 .hasAny(['partner_uid', 'partner_linked_at']));
       allow delete: if isAdmin() || isSelf(uid);
     }
 

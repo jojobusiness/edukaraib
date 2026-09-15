@@ -10,7 +10,7 @@ const ROLE_PATH = {
   parent:     '/parent/dashboard',
   teacher:    '/prof/dashboard',
   admin:      '/admin/dashboard',
-  influencer: '/influencer/dashboard',
+  influencer: '/partenaire/espace', // rôle historique des partenaires
 };
 
 async function getUserRole(uid) {

@@ -3,6 +3,7 @@ import { adminDb, rawBody } from './_firebaseAdmin.mjs';
 import { Resend } from 'resend';
 import { captureError } from './_sentry.mjs';
 import { sendCapiEvent } from './_metaCapi.mjs';
+import { PARTNERS_COLLECTION, PARTNER_USAGES_COLLECTION, linkFamilyToPartner } from './_partners.mjs';
 
 export const config = { api: { bodyParser: false } };
 
@@ -200,10 +201,12 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
   }
 
   // 3) Marquer les coupons comme utilises (supporte le cumul)
+  // `influencer_*` : métadonnées des sessions créées avant la refonte partenaires (15/09/2026)
+  const partnerUid = md.partner_uid || md.influencer_uid;
   const couponDocIdStr = md.coupon_doc_id || '';
   const couponDocIds = couponDocIdStr.split(',').map(s => s.trim()).filter(Boolean);
   for (const docId of couponDocIds) {
-    if (docId === md.influencer_uid) continue;
+    if (docId === partnerUid) continue;
     try {
       await adminDb.collection('coupons').doc(docId).update({
         used: true,
@@ -216,33 +219,32 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
     }
   }
 
-  // 4) Créditer la commission influenceur si un code influ était appliqué
-  const influencerUid = md.influencer_uid;
-  const influencerCommissionCents = Number(md.influencer_commission_cents || 0);
+  // 4) Créditer le reversement du partenaire si un code partenaire était appliqué
+  const partnerCommissionCents = Number(md.partner_commission_cents || md.influencer_commission_cents || 0);
   const isPack = String(md.is_pack) === '1';
   const billedHoursWh = Number(md.billed_hours || 1);
 
-  if (influencerUid && influencerCommissionCents > 0) {
-    const influRef = adminDb.collection('influencers').doc(influencerUid);
+  if (partnerUid && partnerCommissionCents > 0) {
+    const partnerRef = adminDb.collection(PARTNERS_COLLECTION).doc(partnerUid);
     try {
       await adminDb.runTransaction(async (tx) => {
-        const influSnap = await tx.get(influRef);
-        if (!influSnap.exists) return;
-        const data = influSnap.data() || {};
-        const newPending = (data.pendingPayout || 0) + influencerCommissionCents / 100;
-        const newTotal   = (data.totalEarned  || 0) + influencerCommissionCents / 100;
+        const partnerSnap = await tx.get(partnerRef);
+        if (!partnerSnap.exists) return;
+        const data = partnerSnap.data() || {};
+        const newPending = (data.pendingPayout || 0) + partnerCommissionCents / 100;
+        const newTotal   = (data.totalEarned  || 0) + partnerCommissionCents / 100;
         const newCount   = (data.usageCount   || 0) + 1;
 
         const conversionEntry = {
           lesson_id:    lessonId || null,
           payer_uid:    payerUid || null,
-          amount_eur:   influencerCommissionCents / 100,
+          amount_eur:   partnerCommissionCents / 100,
           type:         !isPack ? 'unitaire' : billedHoursWh === 10 ? 'pack10' : 'pack5',
           paid_at:      new Date(),
           session_id:   refs.sessionId || null,
         };
 
-        tx.update(influRef, {
+        tx.update(partnerRef, {
           pendingPayout: newPending,
           totalEarned:   newTotal,
           usageCount:    newCount,
@@ -250,30 +252,34 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
         });
       });
 
-      // Enregistre l'usage dans influencer_usages (pour limites IP + compte)
+      // Historique des usages (sert aussi aux limites des anciens codes)
       const clientIp = md.client_ip || '';
-      await adminDb.collection('influencer_usages').add({
-        influencer_uid:  influencerUid,
+      await adminDb.collection(PARTNER_USAGES_COLLECTION).add({
+        influencer_uid:  partnerUid,
         payer_uid:       payerUid || null,
         client_ip:       clientIp,
         is_pack:         isPack,
         lesson_id:       lessonId || null,
-        commission_eur:  influencerCommissionCents / 100,
+        commission_eur:  partnerCommissionCents / 100,
         created_at:      new Date(),
       });
 
-      // Email de transparence a l'influenceur
-      sendInfluencerConversionEmail(influencerUid, {
-        commissionEur: influencerCommissionCents / 100,
-        siteFeeCents: Number(md.site_fee_cents || 0),
+      // Rattache la famille au partenaire : ses prochains achats auront la
+      // remise automatiquement, pour tous ses enfants.
+      if (md.partner_link === '1' && payerUid) {
+        await linkFamilyToPartner(adminDb, String(payerUid), partnerUid);
+      }
+
+      // Mail au partenaire — await obligatoire : Vercel gèle la fonction après
+      // la réponse, un envoi non attendu ne part jamais.
+      await sendPartnerConversionEmail(partnerUid, {
+        commissionEur: partnerCommissionCents / 100,
         totalCents: grossCents || Number(md.teacher_amount_cents || 0) + Number(md.site_fee_cents || 0),
-        teacherAmountCents: Number(md.teacher_amount_cents || 0),
-        type: !isPack ? 'Cours unitaire' : billedHoursWh === 10 ? 'Pack 10h' : 'Pack 5h',
-        couponCode: md.coupon_code || '',
-      }).catch(e => console.warn('[webhook] influencer email failed:', e?.message));
+        type: !isPack ? 'cours' : billedHoursWh === 10 ? 'pack de 10 h' : 'pack de 5 h',
+      }).catch(e => console.warn('[webhook] partner email failed:', e?.message));
 
     } catch (e) {
-      console.warn('[webhook] influencer commission credit failed:', e?.message);
+      console.warn('[webhook] partner commission credit failed:', e?.message);
     }
   }
 
@@ -669,85 +675,63 @@ function row(label, value) {
   </tr>`;
 }
 
-// ── Email transparence influenceur ─────────────────────────────────────────
-async function sendInfluencerConversionEmail(influencerUid, data) {
+// ── Mail au partenaire après chaque achat d'une de ses familles ─────────────
+async function sendPartnerConversionEmail(partnerUid, data) {
   if (!process.env.RESEND_API_KEY) return;
 
-  const influSnap = await adminDb.collection('influencers').doc(influencerUid).get();
-  if (!influSnap.exists) return;
-  const influ = influSnap.data();
-  const email = influ.email;
+  const partnerSnap = await adminDb.collection(PARTNERS_COLLECTION).doc(partnerUid).get();
+  if (!partnerSnap.exists) return;
+  const partner = partnerSnap.data();
+  const email = partner.email;
   if (!email) return;
 
-  const name = influ.name || influ.firstName || '';
-  const prenom = name ? `, ${name.split(' ')[0]}` : '';
-
-  const clientPaidEur = fmt(data.totalCents / 100);
-  const platformFeeEur = fmt(data.siteFeeCents / 100);
-  const teacherEur = fmt(data.teacherAmountCents / 100);
+  const who = partner.name || 'votre structure';
+  const familyPaidEur = fmt(data.totalCents / 100);
   const commissionEur = fmt(data.commissionEur);
-  const pendingTotal = fmt((influ.pendingPayout || 0));
+  const pendingTotal = fmt(partner.pendingPayout || 0);
 
   const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
   const resend = new Resend(process.env.RESEND_API_KEY);
 
-  await resend.emails.send({
+  // Resend v6 renvoie { data, error } au lieu de lever une exception
+  const { error } = await resend.emails.send({
     from: 'EduKaraib <notifications@edukaraib.com>',
     to: [email],
-    subject: `Nouvelle conversion avec votre code ${esc(data.couponCode)} — +${commissionEur} €`,
-    html: `<div style="font-family:Inter,system-ui,sans-serif;background:#f5f7fb;padding:24px;">
-<table width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;margin:auto;background:#fff;border-radius:18px;overflow:hidden;border:1px solid #e2e8f0;">
-  <tr><td style="background:#0ea5e9;padding:18px 24px;">
+    subject: `Une famille vient de payer un ${data.type} : +${commissionEur} € pour ${who}`,
+    html: `<div style="font-family:Arial,Helvetica,sans-serif;background:#f5f7fb;padding:24px;">
+<table width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;margin:auto;background:#fff;border-radius:16px;border:1px solid #e2e8f0;">
+  <tr><td style="background:#00804B;padding:18px 24px;border-radius:16px 16px 0 0;">
     <span style="color:#fff;font-weight:700;font-size:17px;">EduKaraib</span>
   </td></tr>
-  <tr><td style="padding:28px;">
-    <h1 style="margin:0 0 12px;font-size:20px;color:#0f172a;">Nouvelle vente${prenom} !</h1>
-    <p style="color:#475569;font-size:15px;line-height:1.7;margin:0 0 20px;">
-      Quelqu'un vient d'utiliser votre code <strong>${esc(data.couponCode)}</strong> pour un <strong>${esc(data.type)}</strong>.
-      Voici le detail complet de cette transaction :
-    </p>
-
-    <table width="100%" cellspacing="0" cellpadding="0" style="background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:20px;">
-      <tr><td style="padding:16px 18px;">
-        <p style="margin:0 0 12px;font-weight:700;color:#0f172a;font-size:14px;">Ventilation de la transaction</p>
-        <table width="100%" cellspacing="0" cellpadding="0">
-          <tr>
-            <td style="padding:8px 0;color:#64748b;font-size:13px;border-bottom:1px solid #e2e8f0;">Prix paye par le client</td>
-            <td style="padding:8px 0;color:#0f172a;font-size:14px;font-weight:700;text-align:right;border-bottom:1px solid #e2e8f0;">${clientPaidEur} €</td>
-          </tr>
-          <tr>
-            <td style="padding:8px 0;color:#64748b;font-size:13px;border-bottom:1px solid #e2e8f0;">Part du professeur</td>
-            <td style="padding:8px 0;color:#0f172a;font-size:14px;font-weight:500;text-align:right;border-bottom:1px solid #e2e8f0;">${teacherEur} €</td>
-          </tr>
-          <tr>
-            <td style="padding:8px 0;color:#64748b;font-size:13px;border-bottom:1px solid #e2e8f0;">Commission EduKaraib</td>
-            <td style="padding:8px 0;color:#0f172a;font-size:14px;font-weight:500;text-align:right;border-bottom:1px solid #e2e8f0;">${platformFeeEur} €</td>
-          </tr>
-          <tr>
-            <td style="padding:10px 0 4px;color:#0f172a;font-size:14px;font-weight:700;">Votre commission</td>
-            <td style="padding:10px 0 4px;color:#16a34a;font-size:18px;font-weight:800;text-align:right;">+${commissionEur} €</td>
-          </tr>
-        </table>
-      </td></tr>
+  <tr><td style="padding:26px;color:#334155;font-size:15px;line-height:1.65;">
+    <h1 style="margin:0 0 12px;font-size:20px;color:#0f172a;">Nouvel achat d’une de vos familles</h1>
+    <p style="margin:0 0 18px;">Une famille vient de payer un <strong>${esc(data.type)}</strong> avec le code <strong>${esc(partner.code)}</strong>.</p>
+    <table width="100%" cellspacing="0" cellpadding="0" style="background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0;margin-bottom:18px;font-size:14px;">
+      <tr>
+        <td style="padding:10px 14px;color:#64748b;">Payé par la famille (remise déduite)</td>
+        <td style="padding:10px 14px;text-align:right;font-weight:700;color:#0f172a;">${familyPaidEur} €</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 14px;color:#0f172a;font-weight:700;border-top:1px solid #e2e8f0;">Pour ${esc(who)}</td>
+        <td style="padding:10px 14px;text-align:right;font-weight:800;font-size:18px;color:#15803d;border-top:1px solid #e2e8f0;">+${commissionEur} €</td>
+      </tr>
     </table>
-
-    <div style="background:#f0fdf4;border:2px solid #22c55e;border-radius:12px;padding:16px;text-align:center;margin-bottom:24px;">
-      <div style="font-size:13px;color:#166534;font-weight:600;">Solde en attente de virement</div>
-      <div style="font-size:28px;font-weight:800;color:#15803d;margin-top:4px;">${pendingTotal} €</div>
-    </div>
-
-    <p style="color:#64748b;font-size:13px;margin:0 0 20px;">
-      Ce montant sera inclus dans votre prochain virement. Continuez a partager votre code pour augmenter vos gains !
-    </p>
-
-    <div style="text-align:center;">
-      <a href="${APP_BASE_URL}/influencer/dashboard" style="display:inline-block;background:#facc15;color:#111827;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:12px;font-size:15px;">Voir mon tableau de bord</a>
-    </div>
+    <table width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:18px;"><tr>
+      <td style="background:#f0fdf4;border:2px solid #22c55e;border-radius:12px;padding:14px;text-align:center;">
+        <div style="font-size:13px;color:#166534;font-weight:600;">Total à vous reverser</div>
+        <div style="font-size:26px;font-weight:800;color:#15803d;">${pendingTotal} €</div>
+      </td>
+    </tr></table>
+    <p style="margin:0 0 18px;font-size:13px;color:#64748b;">Les reversements sont faits par virement sur l’IBAN indiqué dans votre espace. Les packs de 10 h rapportent le plus : 20 € pour votre structure à chaque pack.</p>
+    <table cellspacing="0" cellpadding="0"><tr><td style="background:#00804B;border-radius:10px;">
+      <a href="${APP_BASE_URL}/partenaire/espace" style="display:inline-block;padding:12px 22px;color:#fff;text-decoration:none;font-weight:700;font-size:15px;">Voir mon espace partenaire</a>
+    </td></tr></table>
   </td></tr>
-  <tr><td style="padding:12px 28px 20px;color:#94a3b8;font-size:12px;border-top:1px solid #f1f5f9;">
-    EduKaraib · <a href="mailto:contact@edukaraib.com" style="color:#0ea5e9;">contact@edukaraib.com</a>
+  <tr><td style="padding:12px 26px 20px;color:#94a3b8;font-size:12px;border-top:1px solid #f1f5f9;">
+    EduKaraib · <a href="mailto:contact@edukaraib.com" style="color:#00804B;">contact@edukaraib.com</a>
   </td></tr>
 </table>
 </div>`,
   });
+  if (error) throw new Error(error.message || String(error));
 }

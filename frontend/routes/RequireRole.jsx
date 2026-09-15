@@ -7,7 +7,7 @@ const ROLE_HOME = {
   parent:     "/parent/dashboard",
   teacher:    "/prof/dashboard",
   admin:      "/admin/dashboard",
-  influencer: "/influencer/dashboard",
+  influencer: "/partenaire/espace", // rôle historique des partenaires
 };
 
 export default function RequireRole({ roles, children }) {

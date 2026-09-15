@@ -88,9 +88,9 @@ export default function CampaignLanding({ config }) {
 
   useSEO(config.seo);
 
-  // Capte le code influenceur (?code=XXX) dès l'arrivée → survie jusqu'au paiement
+  // Capte le code partenaire (?code=XXX ou ?partenaire=XXX) dès l'arrivée → survie jusqu'au paiement
   useEffect(() => {
-    const code = (searchParams.get('code') || '').trim().toUpperCase();
+    const code = (searchParams.get('code') || searchParams.get('partenaire') || '').trim().toUpperCase();
     if (code && /^[A-Z0-9-]{4,20}$/.test(code)) {
       saveCampaign({ code });
     }

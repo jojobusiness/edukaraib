@@ -16,7 +16,7 @@ import RefundRequestModal from '../components/RefundRequestModal';
 import fetchWithAuth from '../utils/fetchWithAuth';
 import { getCampaignCode } from '../lib/bacCampaign';
 
-// Codes à remise fixe -5€ (front) — les autres (codes influenceurs) sont validés côté serveur
+// Codes à remise fixe -5€ (front) — les autres (codes partenaires) sont validés côté serveur
 const FIXED5_PREFIX = /^(BIENVENUE|AVIS|FILLEUL|PARRAIN)-/;
 const GENERIC_CODE = /^[A-Z0-9-]{4,20}$/;
 
@@ -539,7 +539,7 @@ export default function StudentPayments() {
                           onClick={() => {
                             const code = couponCode.trim();
                             if (!code) return;
-                            // Accepte les coupons -5€ ET les codes influenceurs (ex: LHATIEN81)
+                            // Accepte les coupons -5€ ET les codes partenaires (ex: APEL973)
                             // La vraie validation se fait côté serveur au checkout
                             if (FIXED5_PREFIX.test(code) || GENERIC_CODE.test(code)) {
                               setCouponValid(true);

@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { useEffect, useState, lazy, Suspense } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './lib/firebase';
@@ -54,10 +54,9 @@ const VisioRoom = lazy(() => import('./pages/VisioRoom.jsx'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const AuthAction = lazy(() => import('./pages/AuthAction'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
-const InfluencerHome = lazy(() => import('./pages/InfluencerHome.jsx'));
-const InfluencerDashboard = lazy(() => import('./pages/InfluencerDashboard.jsx'));
-const InfluencerProfile = lazy(() => import('./pages/InfluencerProfile'));
-const InfluencerCommissions = lazy(() => import('./pages/InfluencerCommissions'));
+const PartnerHome = lazy(() => import('./pages/PartnerHome.jsx'));
+const PartnerSpace = lazy(() => import('./pages/PartnerSpace.jsx'));
+const PartnerProfile = lazy(() => import('./pages/PartnerProfile.jsx'));
 const CoursMathsMartinique = lazy(() => import('./pages/seo/CoursMathsMartinique'));
 const CoursAnglaisGuadeloupe = lazy(() => import('./pages/seo/CoursAnglaisGuadeloupe'));
 const CoursFrancaisGuyane = lazy(() => import('./pages/seo/CoursFrancaisGuyane'));
@@ -225,11 +224,13 @@ function App() {
             <Route path="/prof/planning" element={<TeacherRoute><TeacherCalendar /></TeacherRoute>} />
             <Route path="/prof/reviews" element={<PrivateRoute role="teacher"><TeacherReviews /></PrivateRoute>} />
             
-            {/* Influenceur */}
-            <Route path="/influencer" element={<InfluencerHome />} />
-            <Route path="/influencer/dashboard" element={<InfluencerDashboard />} />
-            <Route path="/influencer/profile" element={<InfluencerProfile />} />
-            <Route path="/influencer/commissions" element={<InfluencerCommissions />} />
+            {/* Partenaires (associations, établissements, créateurs) */}
+            <Route path="/partenaire" element={<PartnerHome />} />
+            <Route path="/partenaire/espace" element={<PartnerSpace />} />
+            <Route path="/partenaire/profil" element={<PartnerProfile />} />
+            {/* Anciennes adresses, déjà envoyées dans des mails */}
+            <Route path="/influencer" element={<Navigate to="/partenaire" replace />} />
+            <Route path="/influencer/*" element={<Navigate to="/partenaire/espace" replace />} />
 
             {/* 🛠️ Administrateur */}
             <Route path="/admin/dashboard" element={<RequireRole roles={['admin']}><AdminDashboard /></RequireRole>} />
@@ -251,11 +252,11 @@ function App() {
             <Route path="/cours-anglais" element={<CoursAnglais />} />
             <Route path="/cours-francais" element={<CoursFrancais />} />
 
-            {/* 🎯 Landing campagne bac (influenceurs : /bac?code=XXX) */}
+            {/* 🎯 Landing campagne bac (partenaires : /bac?code=XXX) */}
             <Route path="/bac" element={<Bac />} />
             <Route path="/rattrapage" element={<Bac />} />
 
-            {/* 🎒 Landing campagne rentree (influenceurs : /rentree?code=XXX)
+            {/* 🎒 Landing campagne rentree (partenaires : /rentree?code=XXX)
                 Meme moteur que /bac, contenu et voix differents. Eager comme
                 /bac : c'est une landing d'acquisition, le LCP compte. */}
             <Route path="/rentree" element={<Rentree />} />

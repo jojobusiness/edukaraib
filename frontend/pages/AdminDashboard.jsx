@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PARTNER_KINDS } from '../lib/partner';
 import { auth, db } from '../lib/firebase';
 import {
   addDoc,
@@ -368,6 +369,71 @@ function RefundRequestsSection() {
 /* ===========================
    AdminDashboard (sans layout)
 =========================== */
+/* ----- Programme partenaires : création en un seul formulaire ----- */
+function CreatePartnerForm({ onCreated }) {
+  const empty = { structureName: '', kind: 'association', contactName: '', email: '', code: '', iban: '' };
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState(empty);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const ERRORS = {
+    CODE_TAKEN: 'Ce code est déjà pris.',
+    INVALID_CODE: 'Code : 4 à 20 caractères, lettres, chiffres ou tirets.',
+    INVALID_IBAN: 'IBAN invalide.',
+    INVALID_EMAIL: 'Email invalide.',
+    INVALID_STRUCTURE_NAME: 'Nom de la structure manquant.',
+    EMAIL_ALREADY_PARTNER: 'Cet email est déjà celui d’un partenaire.',
+    EMAIL_USED_BY_OTHER_ACCOUNT: 'Cet email appartient à un compte parent, élève ou prof : utilisez l’adresse de la structure.',
+  };
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setMsg(null);
+    try {
+      const data = await fetchWithAuth('/api/create-partner', { method: 'POST', body: JSON.stringify(form) });
+      setMsg({ ok: true, text: `Partenaire créé : code ${data.code}. ${data.emailSent ? 'Mail de bienvenue envoyé.' : 'Mail NON envoyé : transmettez le code vous-même.'}` });
+      setForm(empty);
+      onCreated?.();
+    } catch (err) {
+      setMsg({ ok: false, text: ERRORS[err.message] || `Erreur : ${err.message}` });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button type="button" className="bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold" onClick={() => setOpen(true)}>
+        + Nouveau partenaire
+      </button>
+    );
+  }
+  const cls = 'border rounded-lg px-3 py-2 text-sm w-full';
+  return (
+    <form onSubmit={submit} className="bg-white border rounded-xl p-4 space-y-3">
+      <div className="font-semibold">Nouveau partenaire</div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <input className={cls} placeholder="Nom de la structure *" value={form.structureName} onChange={set('structureName')} required />
+        <select className={cls} value={form.kind} onChange={set('kind')}>
+          {Object.entries(PARTNER_KINDS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+        </select>
+        <input className={cls} placeholder="Nom du contact" value={form.contactName} onChange={set('contactName')} />
+        <input className={cls} type="email" placeholder="Email du contact *" value={form.email} onChange={set('email')} required />
+        <input className={`${cls} uppercase`} placeholder="Code (ex. APEL973) — vide = automatique" value={form.code} onChange={set('code')} maxLength={20} />
+        <input className={`${cls} font-mono`} placeholder="IBAN (facultatif)" value={form.iban} onChange={set('iban')} />
+      </div>
+      <p className="text-xs text-gray-500">Grille : 2 €/h de remise pour la famille + 2 €/h reversés, sur tous les achats de la famille jusqu’au 31/07/2027. Le partenaire reçoit un mail avec son code et le lien pour choisir son mot de passe.</p>
+      <div className="flex gap-2">
+        <button type="submit" disabled={saving} className="bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50">{saving ? 'Création…' : 'Créer le partenaire'}</button>
+        <button type="button" className="border px-4 py-2 rounded-lg text-sm" onClick={() => { setOpen(false); setMsg(null); }}>Fermer</button>
+      </div>
+      {msg && <p className={`text-sm ${msg.ok ? 'text-emerald-700' : 'text-red-600'}`}>{msg.text}</p>}
+    </form>
+  );
+}
+
 export default function AdminDashboard() {
   const [tab, setTab] = useState('stats'); // stats | accounts | payments | messages | discussions | influencers | analytics
   const [meRole, setMeRole] = useState(null);
@@ -406,15 +472,16 @@ export default function AdminDashboard() {
   const [lessons, setLessons] = useState([]);
   const [lessonsLoading, setLessonsLoading] = useState(false);
 
-  // --- Influenceurs state ---
+  // --- Partenaires (collection historique `influencers`) ---
   const [influencers, setInfluencers] = useState([]);
   const [influLoading, setInfluLoading] = useState(false);
   const [influFilter, setInfluFilter] = useState("all"); // all | pending | inactive
   const [influSearch, setInfluSearch] = useState("");
   const [influPayoutLoading, setInfluPayoutLoading] = useState(null);
   const [influToggleLoading, setInfluToggleLoading] = useState(null);
+  const [influReload, setInfluReload] = useState(0);
 
-  // --- Modification code promo influenceur ---
+  // --- Modification du code partenaire ---
   const [influCodeEdit, setInfluCodeEdit] = useState(null);   // id de la ligne en cours d'édition
   const [influCodeInput, setInfluCodeInput] = useState('');   // valeur saisie
   const [influCodeSaving, setInfluCodeSaving] = useState(false);
@@ -570,7 +637,7 @@ export default function AdminDashboard() {
     return () => unsub();
   }, [tab, users]);
 
-  /* ----- Influenceurs : load on tab open ----- */
+  /* ----- Partenaires : load on tab open ----- */
   useEffect(() => {
     if (tab !== 'influencers') return;
     setInfluLoading(true);
@@ -580,7 +647,7 @@ export default function AdminDashboard() {
         setInfluLoading(false);
       })
       .catch(() => setInfluLoading(false));
-  }, [tab]);
+  }, [tab, influReload]);
 
   /* ----- Derived: account filters ----- */
   const filteredUsers = useMemo(() => {
@@ -813,7 +880,7 @@ export default function AdminDashboard() {
             className={`px-4 py-2 rounded-lg border ${tab === 'influencers' ? 'bg-primary text-white border-primary' : 'bg-white'}`}
             onClick={() => setTab('influencers')}
           >
-            🎤 Influenceurs
+            🤝 Partenaires
           </button>
           <button
             className={`px-4 py-2 rounded-lg border ${tab === 'refunds' ? 'bg-primary text-white border-primary' : 'bg-white'}`}
@@ -848,7 +915,7 @@ export default function AdminDashboard() {
                 <option value="student">Élève</option>
                 <option value="parent">Parent</option>
                 <option value="teacher">Professeur</option>
-                <option value="influencer">Influenceur</option>
+                <option value="influencer">Partenaire</option>
                 <option value="admin">Admin</option>
                 <option value="disabled">Désactivés</option>
               </select>
@@ -919,7 +986,7 @@ export default function AdminDashboard() {
                             <option value="student">student</option>
                             <option value="parent">parent</option>
                             <option value="teacher">teacher</option>
-                            <option value="influencer">influencer</option>
+                            <option value="influencer">partenaire</option>
                             <option value="admin">admin</option>
                           </select>
                         </span>
@@ -1474,17 +1541,18 @@ export default function AdminDashboard() {
           </>
         )}
 
-        {/* === INFLUENCEURS TAB === */}
+        {/* === PARTENAIRES TAB === */}
         {tab === 'influencers' && (
           <div className="space-y-6">
+            <CreatePartnerForm onCreated={() => setInfluReload((n) => n + 1)} />
 
             {/* ── KPIs ── */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                { label: 'Total influenceurs', value: influencers.length, color: 'text-blue-700' },
+                { label: 'Total partenaires', value: influencers.length, color: 'text-blue-700' },
                 { label: 'Actifs', value: influencers.filter(i => i.active !== false).length, color: 'text-emerald-700' },
-                { label: 'En attente paiement', value: influencers.filter(i => (i.pendingPayout || 0) > 0).length, color: 'text-orange-600' },
-                { label: 'Total commissions versées', value: influencers.reduce((s, i) => s + (i.totalEarned || 0), 0).toFixed(2) + ' €', color: 'text-purple-700' },
+                { label: 'Reversement dû', value: influencers.filter(i => (i.pendingPayout || 0) > 0).length, color: 'text-orange-600' },
+                { label: 'Total gagné par les partenaires', value: influencers.reduce((s, i) => s + (i.totalEarned || 0), 0).toFixed(2) + ' €', color: 'text-purple-700' },
               ].map(k => (
                 <div key={k.label} className="bg-white border rounded-xl p-4">
                   <div className="text-xs text-gray-500">{k.label}</div>
@@ -1501,13 +1569,13 @@ export default function AdminDashboard() {
                 value={influSearch}
                 onChange={e => setInfluSearch(e.target.value)}
               />
-              {['all', 'pending', 'inactive'].map(f => (
+              {['all', 'review', 'pending', 'inactive'].map(f => (
                 <button
                   key={f}
                   className={`px-3 py-1.5 rounded-lg border text-sm ${influFilter === f ? 'bg-primary text-white border-primary' : 'bg-white'}`}
                   onClick={() => setInfluFilter(f)}
                 >
-                  {f === 'all' ? 'Tous' : f === 'pending' ? '⏳ En attente' : '🔴 Inactifs'}
+                  {f === 'all' ? 'Tous' : f === 'review' ? '🕓 À valider' : f === 'pending' ? '💶 Reversement dû' : '🔴 Inactifs'}
                 </button>
               ))}
             </div>
@@ -1521,10 +1589,10 @@ export default function AdminDashboard() {
                   <thead className="bg-gray-50 text-left">
                     <tr>
                       <th className="p-3">Nom / Email</th>
-                      <th className="p-3">Code promo</th>
+                      <th className="p-3">Code</th>
                       <th className="p-3 text-right">Utilisations</th>
                       <th className="p-3 text-right">Total gagné</th>
-                      <th className="p-3 text-right">En attente</th>
+                      <th className="p-3 text-right">À reverser</th>
                       <th className="p-3 text-center">Statut</th>
                       <th className="p-3 text-center">Actions</th>
                     </tr>
@@ -1532,6 +1600,7 @@ export default function AdminDashboard() {
                   <tbody>
                     {influencers
                       .filter(i => {
+                        if (influFilter === 'review' && !i.pending_review) return false;
                         if (influFilter === 'pending' && !(i.pendingPayout > 0)) return false;
                         if (influFilter === 'inactive' && i.active !== false) return false;
                         if (influSearch) {
@@ -1550,6 +1619,7 @@ export default function AdminDashboard() {
                           {/* Nom / Email / IBAN */}
                           <td className="p-3">
                             <div className="font-medium">{influ.name || '—'}</div>
+                            <div className="text-xs text-gray-500">{influ.model === 'partenaire' ? `${PARTNER_KINDS[influ.kind] || 'Partenaire'} · ${influ.familiesCount || 0} famille(s)` : 'Ancien code (grille historique)'}</div>
                             <div className="text-xs text-gray-400">{influ.email || '—'}</div>
                             {influ.rib && (
                               <div className="text-xs text-gray-400 font-mono mt-0.5">IBAN: {influ.rib?.slice(0,4)}••••{influ.rib?.slice(-4)}</div>
@@ -1577,16 +1647,16 @@ export default function AdminDashboard() {
                                         setInfluencers(prev => prev.map(i =>
                                           i.id === influ.id ? { ...i, code: newCode } : i
                                         ));
-                                        // ✉️ Email de notification à l'influenceur
+                                        // ✉️ Email de notification au partenaire
                                         if (influ.email) {
                                           await fetchWithAuth('/api/notify-email', {
                                             method: 'POST',
                                             body: JSON.stringify({
                                               to: influ.email,
-                                              title: 'Votre code promo a été modifié',
-                                              message: `Bonjour ${influ.name || ''},\n\nVotre code promo a été mis à jour par l'équipe EduKaraib.\n\nNouveau code : ${newCode}\n\nUtilisez ce nouveau code pour vos prochaines recommandations.`,
-                                              ctaUrl: 'https://edukaraib.com/influencer/dashboard',
-                                              ctaText: 'Voir mon tableau de bord',
+                                              title: 'Votre code partenaire a été modifié',
+                                              message: `Bonjour ${influ.name || ''},\n\nVotre code partenaire a été mis à jour par l'équipe EduKaraib.\n\nNouveau code : ${newCode}\n\nLes familles déjà rattachées gardent leur remise ; transmettez ce nouveau code aux prochaines.`,
+                                              ctaUrl: 'https://edukaraib.com/partenaire/espace',
+                                              ctaText: 'Voir mon espace partenaire',
                                             }),
                                           });
                                         }
@@ -1613,16 +1683,16 @@ export default function AdminDashboard() {
                                       setInfluencers(prev => prev.map(i =>
                                         i.id === influ.id ? { ...i, code: newCode } : i
                                       ));
-                                      // ✉️ Email de notification à l'influenceur
+                                      // ✉️ Email de notification au partenaire
                                       if (influ.email) {
                                         await fetchWithAuth('/api/notify-email', {
                                           method: 'POST',
                                           body: JSON.stringify({
                                             to: influ.email,
-                                            title: 'Votre code promo a été modifié',
-                                            message: `Bonjour ${influ.name || ''},\n\nVotre code promo a été mis à jour par l'équipe EduKaraib.\n\nNouveau code : ${newCode}\n\nUtilisez ce nouveau code pour vos prochaines recommandations.`,
-                                            ctaUrl: 'https://edukaraib.com/influencer/dashboard',
-                                            ctaText: 'Voir mon tableau de bord',
+                                            title: 'Votre code partenaire a été modifié',
+                                            message: `Bonjour ${influ.name || ''},\n\nVotre code partenaire a été mis à jour par l'équipe EduKaraib.\n\nNouveau code : ${newCode}\n\nLes familles déjà rattachées gardent leur remise ; transmettez ce nouveau code aux prochaines.`,
+                                            ctaUrl: 'https://edukaraib.com/partenaire/espace',
+                                            ctaText: 'Voir mon espace partenaire',
                                           }),
                                         });
                                       }
@@ -1679,32 +1749,33 @@ export default function AdminDashboard() {
                           </td>
                           <td className="p-3 text-center">
                             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${influ.active !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
-                              {influ.active !== false ? 'Actif' : 'Inactif'}
+                              {influ.active !== false ? 'Actif' : influ.pending_review ? 'À valider' : 'Inactif'}
                             </span>
                           </td>
                           <td className="p-3">
                             <div className="flex items-center justify-center gap-2">
-                              {/* Bouton virer */}
+                              {/* Reversement : virement fait à la main depuis la banque, puis enregistré ici */}
                               <button
                                 disabled={!(influ.pendingPayout > 0) || !influ.rib || influPayoutLoading === influ.id}
                                 className="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg disabled:opacity-40 hover:bg-emerald-700"
-                                title={!influ.rib ? "Pas d'IBAN enregistré" : `Virer ${(influ.pendingPayout || 0).toFixed(2)} €`}
+                                title={!influ.rib ? "Pas d'IBAN enregistré" : `Marquer ${(influ.pendingPayout || 0).toFixed(2)} € comme reversés`}
                                 onClick={async () => {
                                   const _maskedRib = influ.rib ? influ.rib.slice(0,4) + '••••' + influ.rib.slice(-4) : 'N/A';
-                                  if (!window.confirm(`Virer ${(influ.pendingPayout || 0).toFixed(2)} € à ${influ.name} ?\nIBAN: ${_maskedRib}`)) return;
+                                  if (!window.confirm(`Avez-vous fait le virement de ${(influ.pendingPayout || 0).toFixed(2)} € à ${influ.name} depuis votre banque ?\nIBAN : ${_maskedRib}\n\nCliquez sur OK seulement après le virement : le partenaire reçoit un mail de confirmation.`)) return;
+                                  const _ref = window.prompt('Référence du virement (facultatif) :') || '';
                                   setInfluPayoutLoading(influ.id);
                                   try {
-                                    const data = await fetchWithAuth('/api/trigger-influencer-payout', {
+                                    const data = await fetchWithAuth('/api/mark-partner-payout', {
                                       method: 'POST',
-                                      body: JSON.stringify({ influencerUid: influ.id }),
+                                      body: JSON.stringify({ partnerUid: influ.id, reference: _ref }),
                                     });
                                     if (!data?.success) {
-                                      const detail = data?.detail ? '\n\nDétail Stripe : ' + data.detail : '';
+                                      const detail = data?.detail ? '\n\nDétail : ' + data.detail : '';
                                       throw new Error((data?.error || 'Erreur') + detail);
                                     }
-                                    alert(`✅ Virement de ${data.amount_eur} € déclenché pour ${data.name}\nStripe ID : ${data.stripe_payout_id}`);
+                                    alert(`Reversement de ${data.amount_eur} € enregistré pour ${data.name}.${data.email_sent ? ' Mail de confirmation envoyé.' : ''}`);
                                     setInfluencers(prev => prev.map(i =>
-                                      i.id === influ.id ? { ...i, pendingPayout: 0 } : i
+                                      i.id === influ.id ? { ...i, pendingPayout: Math.max(0, (i.pendingPayout || 0) - data.amount_eur) } : i
                                     ));
                                   } catch (e) {
                                     alert('❌ ' + e.message);
@@ -1713,7 +1784,7 @@ export default function AdminDashboard() {
                                   }
                                 }}
                               >
-                                {influPayoutLoading === influ.id ? '…' : '💸 Virer'}
+                                {influPayoutLoading === influ.id ? '…' : 'Virement fait'}
                               </button>
 
                               {/* Bouton activer/désactiver */}
@@ -1724,9 +1795,22 @@ export default function AdminDashboard() {
                                   setInfluToggleLoading(influ.id);
                                   try {
                                     const newActive = influ.active === false ? true : false;
-                                    await updateDoc(doc(db, 'influencers', influ.id), { active: newActive });
+                                    await updateDoc(doc(db, 'influencers', influ.id), { active: newActive, ...(newActive ? { pending_review: false } : {}) });
+                                    // Validation d'une demande : le partenaire est prévenu que son code est actif
+                                    if (newActive && influ.pending_review && influ.email) {
+                                      await fetchWithAuth('/api/notify-email', {
+                                        method: 'POST',
+                                        body: JSON.stringify({
+                                          to: influ.email,
+                                          title: 'Votre code partenaire est actif',
+                                          message: `Bonjour,\n\nLe partenariat entre ${influ.name || 'votre structure'} et EduKaraib est validé. Votre code ${influ.code} est actif : vos familles bénéficient de 2 € de remise par heure de cours, et votre structure reçoit 2 € par heure.\n\nVotre espace partenaire contient le lien et un message prêts à transférer aux familles.`,
+                                          ctaUrl: 'https://edukaraib.com/partenaire/espace',
+                                          ctaText: 'Ouvrir mon espace partenaire',
+                                        }),
+                                      }).catch(() => {});
+                                    }
                                     setInfluencers(prev => prev.map(i =>
-                                      i.id === influ.id ? { ...i, active: newActive } : i
+                                      i.id === influ.id ? { ...i, active: newActive, ...(newActive ? { pending_review: false } : {}) } : i
                                     ));
                                   } catch (e) {
                                     alert('Erreur: ' + e.message);
@@ -1735,18 +1819,19 @@ export default function AdminDashboard() {
                                   }
                                 }}
                               >
-                                {influ.active !== false ? 'Désactiver' : 'Réactiver'}
+                                {influ.active !== false ? 'Désactiver' : influ.pending_review ? 'Valider' : 'Réactiver'}
                               </button>
                             </div>
                           </td>
                         </tr>
                       ))}
                     {influencers.filter(i => {
-                      if (influFilter === 'pending' && !(i.pendingPayout > 0)) return false;
+                      if (influFilter === 'review' && !i.pending_review) return false;
+                        if (influFilter === 'pending' && !(i.pendingPayout > 0)) return false;
                       if (influFilter === 'inactive' && i.active !== false) return false;
                       return true;
                     }).length === 0 && (
-                      <tr><td colSpan={7} className="p-8 text-center text-gray-400">Aucun influenceur trouvé.</td></tr>
+                      <tr><td colSpan={7} className="p-8 text-center text-gray-400">Aucun partenaire trouvé.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -2053,7 +2138,7 @@ function StatsTab({ users, payments, lessons, lessonsLoading }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: 'Utilisateurs', value: totalUsers, sub: `+${newThisMonth} ce mois`, color: 'text-blue-600' },
-          { label: 'Profs', value: totalTeachers, sub: `${totalStudents} élèves · ${totalParents} parents · ${totalInfluencers} influenceurs`, color: 'text-emerald-600' },
+          { label: 'Profs', value: totalTeachers, sub: `${totalStudents} élèves · ${totalParents} parents · ${totalInfluencers} partenaires`, color: 'text-emerald-600' },
           { label: 'Cours créés', value: totalLessons, sub: `${completedLessons} terminés · ${paidLessons} payés`, color: 'text-purple-600' },
           { label: 'Revenu plateforme', value: `${totalFees.toFixed(0)} €`, sub: `Brut total ${totalRevenue.toFixed(0)} €`, color: 'text-green-700' },
         ].map(k => (
@@ -2073,7 +2158,7 @@ function StatsTab({ users, payments, lessons, lessonsLoading }) {
             { label: 'Profs',        count: totalTeachers,    color: 'bg-emerald-500' },
             { label: 'Élèves',       count: totalStudents,    color: 'bg-blue-500'    },
             { label: 'Parents',      count: totalParents,     color: 'bg-purple-500'  },
-            { label: 'Influenceurs', count: totalInfluencers, color: 'bg-pink-500'    },
+            { label: 'Partenaires', count: totalInfluencers, color: 'bg-pink-500'    },
           ].map(r => (
             <div key={r.label} className="flex items-center gap-2">
               <div className={`w-3 h-3 rounded-full ${r.color}`} />
