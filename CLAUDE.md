@@ -184,6 +184,7 @@ Ne jamais livrer une page sans avoir validé ces 3 points. Les pages non routée
 8. **Vercel Log Drain — ne pas utiliser le domaine custom** — `edukaraib.com` redirige vers `www.edukaraib.com` (307), ce qui casse le drain. Utiliser `https://edukaraib.vercel.app/api/analytics-drain` comme URL du drain.
 9. **`tab` non défini dans les sous-composants de AdminDashboard** — `tab` est un état local de `AdminDashboard`. Les sous-composants (`StatsTab`, `SiteVisitsSection`, etc.) n'y ont pas accès. Toujours placer les conditions `{tab === 'xxx' && ...}` dans le JSX retourné par `AdminDashboard` directement, jamais dans un sous-composant.
 10. **IBAN mal formé** — `trigger-influencer-payout.mjs` valide maintenant l'IBAN via mod97 avant tout virement. Ne jamais supprimer cette validation.
+11. **Code influenceur refusé = paiement bloqué** ✅ CORRIGÉ 15/09/2026 — un code influenceur expiré, à 2 usages ou sur une IP déjà vue est **ignoré** au checkout (pas de remise, pas de commission, `couponIgnored` dans la réponse). Ne JAMAIS renvoyer de 400 pour un code influenceur : le code de campagne est pré-rempli 14 jours et la famille ne pourrait plus payer. Règle dans `api/pay/_influencerRules.mjs`, protégée par `frontend/test/paiement-coupon.test.js`. Les coupons nominatifs (`BIENVENUE-`…) gardent leur 400.
 
 ---
 
