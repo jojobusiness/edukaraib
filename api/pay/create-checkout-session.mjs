@@ -1,6 +1,7 @@
 import { stripe } from '../_stripe.mjs';
 import { adminDb, verifyAuth } from '../_firebaseAdmin.mjs';
 import { captureError } from '../_sentry.mjs';
+import { influencerRefusalReason } from './_influencerRules.mjs';
 
 // -- helpers lecture corps & num
 function readBody(req) {
@@ -254,6 +255,7 @@ export default async function handler(req, res) {
   let couponDiscountCents = 0;
   let couponDocIds = [];
   let appliedCouponCodes = [];
+  const couponIgnored = []; // codes influenceurs refusés mais non bloquants
   let influencerUid = null;
   let influencerCommissionCents = 0;
   let clientIp =
@@ -283,20 +285,14 @@ export default async function handler(req, res) {
           const influ = influDoc.data();
 
           const createdAt = influ.created_at?.toDate?.() || new Date(influ.created_at);
-          const expiresAt = new Date(createdAt.getTime() + 6 * 30 * 24 * 60 * 60 * 1000);
-          if (expiresAt < new Date()) {
-            return res.status(400).json({ error: 'COUPON_EXPIRED', code });
-          }
 
           const usageSelf = await adminDb
             .collection('influencer_usages')
             .where('influencer_uid', '==', influDoc.id)
             .where('payer_uid', '==', payerUid)
             .get();
-          if (usageSelf.size >= 2) {
-            return res.status(400).json({ error: 'COUPON_MAX_USAGE_REACHED', code });
-          }
 
+          let ipAlreadyUsed = false;
           if (clientIp) {
             const usageIp = await adminDb
               .collection('influencer_usages')
@@ -304,9 +300,21 @@ export default async function handler(req, res) {
               .where('client_ip', '==', clientIp)
               .limit(1)
               .get();
-            if (!usageIp.empty) {
-              return res.status(400).json({ error: 'COUPON_IP_LIMIT_REACHED', code });
-            }
+            ipAlreadyUsed = !usageIp.empty;
+          }
+
+          // Code refusé (expiré, 2 usages, IP déjà vue) → on l'IGNORE et on
+          // encaisse sans remise ni commission. Ne jamais renvoyer de 400 ici :
+          // le code de campagne est pré-rempli et la famille ne pourrait plus payer.
+          const refusal = influencerRefusalReason({
+            createdAt,
+            usageSelfCount: usageSelf.size,
+            ipAlreadyUsed,
+          });
+          if (refusal) {
+            couponIgnored.push({ code, reason: refusal });
+            console.warn('influencer coupon ignored:', code, refusal, payerUid);
+            continue;
           }
 
           const isPack = packMode;
@@ -451,5 +459,5 @@ export default async function handler(req, res) {
     is_pack: !!packMode,
   }, { merge: true });
 
-  return res.json({ url: session.url });
+  return res.json(couponIgnored.length ? { url: session.url, couponIgnored } : { url: session.url });
 }
