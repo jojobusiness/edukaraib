@@ -11,6 +11,7 @@ import {
   normalizePartnerCode, codeFromName, defaultPartnerExpiry,
 } from './_partners.mjs';
 import { sendPartnerWelcomeEmail, sendAdminNewPartnerEmail } from './_partnerEmails.mjs';
+import { acquisitionRecord } from './_acquisition.mjs';
 
 async function codeIsFree(code) {
   const snap = await adminDb.collection(PARTNERS_COLLECTION).where('code', '==', code).limit(1).get();
@@ -72,6 +73,7 @@ export default async function handler(req, res) {
     role: PARTNER_ROLE,
     partner_structure: structureName,
     createdAt: new Date(),
+    acquisition: acquisitionRecord(body.acquisition),
   }, { merge: true });
 
   await partnerRef.set({

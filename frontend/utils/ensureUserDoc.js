@@ -1,6 +1,7 @@
 import { db } from '../lib/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import fetchWithAuth from './fetchWithAuth';
+import { getAcquisitionRecord } from '../lib/acquisition';
 
 const REF_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function randomSuffix(n = 6) {
@@ -15,7 +16,7 @@ function randomSuffix(n = 6) {
  * existant (donc pas de coupon de bienvenue en double).
  * @returns {Promise<{ role: string, isNew: boolean }>}
  */
-export async function ensureUserDoc(user, { defaultRole = 'student' } = {}) {
+export async function ensureUserDoc(user, { defaultRole = 'student', heardFrom = '' } = {}) {
   const ref = doc(db, 'users', user.uid);
   const snap = await getDoc(ref);
   if (snap.exists()) return { role: snap.data().role || defaultRole, isNew: false };
@@ -31,6 +32,7 @@ export async function ensureUserDoc(user, { defaultRole = 'student' } = {}) {
     avatarUrl: user.photoURL || '',
     city: 'En ligne',
     createdAt: serverTimestamp(),
+    acquisition: getAcquisitionRecord(heardFrom),
   };
 
   // Code de parrainage étudiant (comme à l'inscription email)

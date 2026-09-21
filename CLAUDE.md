@@ -36,6 +36,9 @@ npm test
 
 # Diagnostic de l'offre profs — À RELANCER AVANT TOUT ENVOI DE TRAFIC
 node scripts/diag-offre-profs.mjs
+
+# D'où viennent les inscrits (source par semaine / rôle) — relevé du dimanche
+node scripts/diag-acquisition.mjs
 ```
 
 Le projet a une suite de tests depuis le 01/08/2026 (`npm test`). Elle monte
@@ -125,6 +128,13 @@ Associations de parents, établissements, groupes, créateurs. **Aucun texte vis
 - **Tout passe par le site, rien par l'admin** (décision de Joseph, 15/09/2026) : inscription sur `/partenaire` → code actif immédiatement ; `/partenaire/espace` (code, lien, message à transférer, familles, reversements, connexion Stripe) ; `/partenaire/profil`. Les anciennes URL `/influencer/*` redirigent. L'onglet admin ne sert qu'à surveiller et à désactiver un code en cas d'abus.
 - API : `partner-signup.mjs` (inscription), `partner-connect.mjs` (compte Stripe Connect Express du partenaire : GET état, POST lien), `partner-payouts-cron.mjs` (cron quotidien déclaré dans `vercel.json`).
 - **Reversements automatiques par Stripe Connect** : transfert vers le compte connecté du partenaire 7 jours après chaque paiement (`partnerTransferDue`), puis Stripe vire sur sa banque. Un remboursement retire la part du partenaire (`refund.mjs`, via `partner_uid` / `partner_commission_eur` posés sur le paiement). ⛔ Jamais `stripe.payouts.create` vers un IBAN : Payouts ne vise que les comptes de la plateforme ; payer un tiers = Connect + `transfers.create` (comme les profs).
+
+### Attribution des inscrits (21/09/2026)
+
+Chaque compte créé porte `users/{uid}.acquisition` : `source`, `medium`, `campaign`, `content`, `referrer` (sans query string), `landing`, `code`, `premierContact`, `declared` (réponse à « Comment avez-vous connu EduKaraib ? »). Règles pures dans **`api/_acquisition.mjs`**, capture navigateur dans `frontend/lib/acquisition.js` (appelée au démarrage dans `main.jsx`, gardée 90 jours).
+- **Trois chemins de création de compte, les trois doivent écrire `acquisition`** : `Register.jsx` (email), `utils/ensureUserDoc.js` (Google, Login + Register), `api/partner-signup.mjs` (partenaire, re-nettoyé côté serveur). Un nouveau chemin d'inscription qui l'oublie rend le compte invisible dans `diag-acquisition.mjs`.
+- La première source gagne, sauf « direct » qu'une vraie source remplace. `acquisitionRecord()` ne lève jamais : une inscription ne doit jamais échouer à cause du suivi.
+- Liens sortants : toujours avec `utm_source` / `utm_medium` / `utm_campaign`.
 
 ---
 

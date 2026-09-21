@@ -15,6 +15,8 @@ import fetchWithAuth from '../utils/fetchWithAuth';
 import { getCampaignSubject } from '../lib/bacCampaign';
 import { signInWithGoogle, consumeGoogleRedirect } from '../lib/googleAuth';
 import { ensureUserDoc } from '../utils/ensureUserDoc';
+import { getAcquisitionRecord } from '../lib/acquisition';
+import { HEARD_FROM_OPTIONS } from '../../api/_acquisition.mjs';
 import { pixelTrack } from '../lib/metaPixel';
 
 // ————————————————————————————————
@@ -151,6 +153,9 @@ export default function Register() {
 
     // Parrainage (optionnel, profs uniquement)
     referralCode: '',
+
+    // « Comment avez-vous connu EduKaraib ? » (obligatoire hors mode express)
+    heardFrom: '',
   });
   const [photo, setPhoto] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -181,7 +186,7 @@ export default function Register() {
   // Redirection après auth Google (compte créé si nouveau)
   const finishGoogle = async (user) => {
     if (!user) return;
-    const { role, isNew } = await ensureUserDoc(user, { defaultRole: 'student' });
+    const { role, isNew } = await ensureUserDoc(user, { defaultRole: 'student', heardFrom: form.heardFrom });
     if (isNew) pixelTrack('CompleteRegistration', { content_name: role, status: 'google' });
     if (nextParam) return navigate(nextParam);
     if (isExpress) {
@@ -253,6 +258,7 @@ export default function Register() {
     if (form.password !== confirmPassword) return alert("Les mots de passe ne correspondent pas.");
 
     if (!isExpress) {
+      if (!form.heardFrom) return alert('Dites-nous comment vous avez connu EduKaraib.');
       if (!form.city) return alert("Merci d'indiquer votre ville.");
       if (!existsCity(form.city)) return alert("Ville inconnue : choisissez une ville proposée dans la liste, ou sélectionnez 'En ligne'.");
     }
@@ -352,6 +358,8 @@ export default function Register() {
         city: form.city || (isExpress ? 'En ligne' : ''),
         avatarUrl,
         createdAt: serverTimestamp(),
+        // Source d'arrivée + réponse déclarée ; ne lève jamais (valeur 'inconnu')
+        acquisition: getAcquisitionRecord(form.heardFrom),
       };
 
       if (form.role === 'student') {
@@ -1034,6 +1042,25 @@ export default function Register() {
                 />
               </div>
             )}
+
+            {/* Comment avez-vous connu EduKaraib ? */}
+            <div>
+              <label className="block mb-1 text-sm font-medium text-gray-700">
+                Comment avez-vous connu EduKaraib ?{isExpress && <span className="font-normal text-gray-500"> (facultatif)</span>}
+              </label>
+              <select
+                name="heardFrom"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                value={form.heardFrom}
+                onChange={handleChange}
+                required={!isExpress}
+              >
+                <option value="">Sélectionner…</option>
+                {HEARD_FROM_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
 
             {/* CGU obligatoires */}
             <div className="flex items-start gap-2 mt-2">
