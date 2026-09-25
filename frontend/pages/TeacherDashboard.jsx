@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import TrustpilotBanner from '../components/TrustpilotBanner';
+import EtatProfilProf from '../components/EtatProfilProf';
 import { auth, db } from '../lib/firebase';
 import {
   collection,
@@ -163,6 +164,9 @@ export default function TeacherDashboard() {
   const [openGroupId, setOpenGroupId] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [stats, setStats] = useState({ profileViews: 0, activeStudents: 0, completedThisMonth: 0 });
+  // Ce qui empêche ce prof d'être réservable (bandeau d'état, plan du 25/09)
+  const [profil, setProfil] = useState(null);
+  const [nbAvis, setNbAvis] = useState(0);
 
   // ✅ tick horaire pour faire « expirer » visuellement les notifs à J+2
   const [nowTick, setNowTick] = useState(Date.now());
@@ -300,10 +304,14 @@ export default function TeacherDashboard() {
         query(collection(db, 'reviews'), where('teacher_id', '==', userId))
       );
       setReviews(reviewsSnap.docs.map(d => d.data()).slice(0, 3));
+      // Le nombre d'avis vient de cette requête déjà faite : c'est la même règle
+      // que le filtre des landings (photo OU >= 1 avis), sans lecture en plus.
+      setNbAvis(reviewsSnap.size);
 
-      // 8) Stats : vues profil + élèves actifs + cours complétés ce mois
+      // 8) Profil (bandeau d'état) + stats : vues, élèves actifs, cours du mois
       try {
         const userSnap = await getDoc(doc(db, 'users', userId));
+        setProfil(userSnap.data() || {});
         const profileViews = Number(userSnap.data()?.profileViews || 0);
 
         const studentIds = new Set();
@@ -362,6 +370,9 @@ export default function TeacherDashboard() {
         </h2>
         <p className="text-gray-600">Bienvenue sur votre espace professeur, retrouvez ici vos infos clés.</p>
       </div>
+
+      {/* Dit au prof ce qui le rend introuvable — rien si tout est en ordre */}
+      {profil && <EtatProfilProf profil={profil} nbAvis={nbAvis} />}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
         {/* Prochain cours (gros bloc conservé) */}

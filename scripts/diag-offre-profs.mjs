@@ -22,6 +22,8 @@
 
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, getDocs, query, where } from 'firebase/firestore';
+// Règle partagée avec le produit (bandeau d'état du prof) : une seule source.
+import { nbCreneaux } from '../frontend/lib/offreProf.js';
 
 const app = initializeApp({
   apiKey: 'AIzaSyDoPTDEtgcROB-PkLehddqr3Lpy_nM5P4A',
@@ -32,20 +34,6 @@ const app = initializeApp({
   appId: '1:827164038836:web:8f0ce9776e18d1b03da9e1',
 });
 const db = getFirestore(app);
-
-/** Nombre de créneaux cochés, tous formats d'`availability` confondus.
-    Le champ mélange l'ancien et le nouveau format dans la même base. */
-function nbCreneaux(availability) {
-  if (!availability) return 0;
-  if (Array.isArray(availability)) return availability.length;
-  if (typeof availability === 'object') {
-    return Object.values(availability).reduce(
-      (n, v) => n + (Array.isArray(v) ? v.length : (v ? 1 : 0)),
-      0,
-    );
-  }
-  return 0;
-}
 
 const snap = await getDocs(query(collection(db, 'users'), where('role', '==', 'teacher')));
 const profs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
