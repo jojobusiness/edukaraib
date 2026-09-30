@@ -1,14 +1,24 @@
 import React, { useState } from 'react';
 import { useSEO } from '../hooks/useSEO';
+import { EMAIL_CONTACT, WHATSAPP_AFFICHE, lienWhatsapp } from '../components/BandeauContact';
 
 const MOYENS = [
   {
     icon: '✉️',
     titre: 'Email',
-    detail: 'contact@edukaraib.com',
-    href: 'mailto:contact@edukaraib.com',
+    detail: EMAIL_CONTACT,
+    href: `mailto:${EMAIL_CONTACT}`,
     label: 'Écrire un email',
     delay: 'reply-time: sous 48h',
+  },
+  // La page annonçait « email ou WhatsApp » sans jamais donner le WhatsApp (30/09).
+  {
+    icon: '💬',
+    titre: 'WhatsApp',
+    detail: WHATSAPP_AFFICHE,
+    href: lienWhatsapp(),
+    label: 'Écrire sur WhatsApp',
+    delay: 'réponse le jour même, en général',
   },
 ];
 

@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, collection, query, where, limit, getDocs } from 'firebase/firestore';
+import BandeauContact, { lienWhatsapp } from './BandeauContact';
 
 // 👉 MAPPING vers tes routes réelles (depuis ton DashboardLayout)
 const ROLE_PATH = {
@@ -67,10 +68,30 @@ export default function Navbar() {
   }, [user, dashPath, resolving, navigate]);
 
   return (
+    <>
+    {/* Mail + WhatsApp en tout premier : un parent au téléphone ne doit pas
+        avoir à chercher comment nous joindre. */}
+    <BandeauContact />
+
     <nav className="bg-white shadow-md py-4 px-6 flex justify-between items-center">
       <Link to="/" className="text-xl font-bold text-primary">EduKaraib</Link>
 
       <div className="flex gap-2 sm:gap-4 items-center">
+
+        {/* Nous écrire, à côté de « Connexion » comme de « Mon compte » :
+            c'est le geste d'un parent qui hésite, il doit être au même endroit
+            que les autres actions, pas seulement dans le bandeau du haut. */}
+        <a
+          href={lienWhatsapp()}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Nous écrire sur WhatsApp"
+          className="flex items-center gap-1.5 rounded-lg border border-[#25D366] px-2.5 py-1.5 text-sm font-semibold text-[#0b6b3a] hover:bg-[#25D366]/10 sm:px-3"
+        >
+          <span role="img" aria-hidden="true">💬</span>
+          <span className="hidden sm:inline">Nous écrire</span>
+          <span className="sr-only sm:hidden">Nous écrire sur WhatsApp</span>
+        </a>
 
         {user ? (
           <button
@@ -92,5 +113,6 @@ export default function Navbar() {
         
       </div>
     </nav>
+    </>
   );
 }
