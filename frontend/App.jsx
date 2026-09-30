@@ -95,6 +95,28 @@ function PageViewTracker() {
   return null;
 }
 
+/**
+ * Remonte en haut à chaque changement de page (30/09/2026).
+ * Sans ça, une navigation SPA garde la position de défilement de la page
+ * précédente : on arrivait au milieu, voire en bas, d'une page qu'on n'avait
+ * jamais vue. `scrollRestoration = 'manual'` empêche en plus le navigateur de
+ * refaire la même chose après un rafraîchissement.
+ * Une ancre (#tarifs) reste respectée : on va à l'élément, pas en haut.
+ */
+function RemonteEnHaut() {
+  const { pathname, hash } = useLocation();
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try { window.history.scrollRestoration = 'manual'; } catch {}
+    if (hash) {
+      const cible = document.getElementById(hash.slice(1));
+      if (cible) return cible.scrollIntoView({ behavior: 'instant', block: 'start' });
+    }
+    window.scrollTo(0, 0);
+  }, [pathname, hash]);
+  return null;
+}
+
 /** Mémorise la dernière route visitée (pour revenir exactement au même endroit) */
 function RouteMemory() {
   const location = useLocation();
@@ -135,6 +157,7 @@ function App() {
   return (
     <Router>
       <PageViewTracker /> {/* ✅ Tracker INSIDE the Router */}
+      <RemonteEnHaut />
       {!authReady ? (
         <div className="min-h-screen grid place-items-center text-gray-500">Chargement…</div>
       ) : (

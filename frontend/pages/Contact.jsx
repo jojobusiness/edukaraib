@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useSEO } from '../hooks/useSEO';
-import { EMAIL_CONTACT, WHATSAPP_AFFICHE, lienWhatsapp } from '../components/BandeauContact';
+import { EMAIL_CONTACT, WHATSAPP_AFFICHE, lienWhatsapp } from '../lib/contact';
 
 const MOYENS = [
   {
