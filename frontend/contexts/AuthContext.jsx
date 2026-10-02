@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { auth } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { marquerVenue } from '../lib/derniereVenue';
 import { onAuthStateChanged, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { toast } from 'sonner';
 
@@ -26,6 +28,11 @@ export function AuthProvider({ children }) {
         prevUserRef.current = u;
         setUser(u);
         setAuthReady(true);
+        // Trace de passage, au plus une par jour : sans elle, on ne sait pas
+        // distinguer « il a vu l'écran et n'a rien fait » de « il n'est jamais
+        // revenu ». Volontairement non attendue et silencieuse : une statistique
+        // ne doit jamais retarder ni bloquer une connexion.
+        marquerVenue(u, (uid) => updateDoc(doc(db, 'users', uid), { lastSeenAt: serverTimestamp() }));
       });
       return () => unsub();
     });
