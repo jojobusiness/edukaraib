@@ -67,6 +67,7 @@ export function statsDemandes({ demandes = [], users = [], lessons = [], jours =
     const repondu = toDate(d.prof_repondu_at);
     lignes.push({
       id: d.id || `${eleveUid}_${profUid}`,
+      conversationId: d.conversation_id || null,
       eleveUid,
       profUid,
       eleve: nom(eleveUid, d.eleve_prenom),

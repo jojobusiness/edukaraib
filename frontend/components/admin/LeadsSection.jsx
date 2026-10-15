@@ -16,6 +16,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
+import fetchWithAuth from '../../utils/fetchWithAuth';
 import { statsDemandes, dureeLisible, COLLECTION_DEMANDES } from '../../lib/statsMessages';
 
 const FENETRES = [7, 30, 90, 3650];
@@ -71,6 +72,49 @@ export default function LeadsSection() {
     () => statsDemandes({ ...(brut || { demandes: [], users: [], lessons: [] }), jours }),
     [brut, jours],
   );
+
+  // ⚖️ Ouvrir une conversation ne se fait pas d'un clic : motif obligatoire,
+  // trace dans acces_journal, et la conversation est gelée (plus de purge).
+  const exporter = async (l) => {
+    const motif = window.prompt(
+      [
+        `Ouvrir la conversation entre ${l.eleve} et ${l.prof} ?`,
+        '',
+        "EduKaraib ne lit pas les conversations. Ouvrir celle-ci n'est justifié",
+        'que pour un signalement, un litige ou une réquisition judiciaire.',
+        'Votre accès sera enregistré, avec ce motif.',
+        '',
+        'Motif (10 caractères minimum) :',
+      ].join(String.fromCharCode(10)),
+    );
+    if (!motif) return;
+    try {
+      const r = await fetchWithAuth('/api/admin-export-conversation', {
+        method: 'POST',
+        body: JSON.stringify({ conversationId: l.conversationId || l.id, motif }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error === 'MOTIF_TROP_COURT' ? 'Motif trop court (10 caractères minimum).' : (j?.message || j?.error));
+      const texte = [
+        `Conversation ${j.conversationId}`,
+        `Motif : ${j.motif}`,
+        `Participants : ${j.participants.map((p) => `${p.nom} (${p.role})`).join(' · ')}`,
+        "Données personnelles — à détruire dès que l'affaire est close.",
+        ''.padEnd(60, '='),
+        '',
+        ...j.messages.map((m) => `${(m.quand || '').replace('T', ' ').slice(0, 19)}  ${m.auteur} : ${m.texte}`
+          + (m.pieces.length ? ` [${m.pieces.map((p) => p.url).join(' ')}]` : '')),
+      ].join(String.fromCharCode(10));
+      const url = URL.createObjectURL(new Blob([texte], { type: 'text/plain;charset=utf-8' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `conversation_${j.conversationId}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert("Export impossible : " + (e?.message || ''));
+    }
+  };
 
   if (erreur) return <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-red-800">Erreur : {erreur}</div>;
   if (!brut) return <div className="rounded-xl border bg-white p-6 text-slate-500">Chargement des demandes…</div>;
@@ -144,8 +188,18 @@ export default function LeadsSection() {
                     </span>
                   </td>
                   <td className="px-3 py-2 text-slate-500">{l.source}</td>
-                  <td className="px-3 py-2">
+                  <td className="whitespace-nowrap px-3 py-2">
                     <Link to={`/profils/${l.profUid}`} className="text-primary underline">Voir le prof</Link>
+                    {(l.conversationId || l.id) && (
+                      <button
+                        type="button"
+                        onClick={() => exporter(l)}
+                        className="ml-3 text-slate-500 underline hover:text-red-700"
+                        title="Pour un signalement, un litige ou une réquisition — motif obligatoire et accès enregistré"
+                      >
+                        Litige
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
