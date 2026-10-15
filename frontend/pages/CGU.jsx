@@ -295,15 +295,25 @@ export default function CGU() {
                 <li>Sécurité et bon fonctionnement de la plateforme ;</li>
                 <li>Amélioration de la qualité de service.</li>
               </ul>
-              <h3>7.2 bis Messagerie entre utilisateurs</h3>
+              <h3>7.2 bis Messagerie : secret des correspondances</h3>
               <p>
-                Les échanges de la messagerie sont conservés sur la plateforme. L'équipe EduKaraib peut en
-                consulter le contenu, ou en recevoir un extrait par notification interne, dans trois cas
-                seulement : <strong>s'assurer qu'une demande reçoit une réponse</strong> (suivi de la qualité
-                du service), <strong>traiter un signalement ou un litige</strong>, et <strong>protéger les
-                utilisateurs mineurs</strong>. Ces échanges ne sont jamais vendus, ni utilisés à des fins
-                publicitaires, ni transmis à des tiers en dehors des prestataires techniques mentionnés au
-                point 7.3.
+                <strong>EduKaraib ne lit pas vos messages.</strong> Vos échanges avec un professeur sont
+                couverts par le secret des correspondances (article L. 32-3 du code des postes et des
+                communications électroniques) : ni leur contenu, ni leurs pièces jointes ne sont consultés
+                par l'équipe, ni transmis à qui que ce soit, ni utilisés à des fins publicitaires ou
+                statistiques.
+              </p>
+              <p>
+                La plateforme enregistre en revanche la <strong>demande de mise en relation</strong>
+                elle-même — qui a contacté quel professeur, quand, et si le professeur a répondu — parce que
+                c'est l'objet même du service que vous utilisez, et que cela nous permet de relancer un
+                professeur qui laisse une demande sans réponse. Cet enregistrement ne contient aucun extrait
+                de vos messages.
+              </p>
+              <p>
+                Si un message vous paraît inapproprié, dangereux ou illégal, chaque message comporte un lien
+                <strong> « Signaler »</strong> : vous transmettez alors vous-même ce message à l'équipe, qui
+                l'examine. C'est la seule situation dans laquelle le contenu d'un échange nous parvient.
               </p>
               <h3>7.3 Hébergement et sécurité des données (Firebase)</h3>
               <p>

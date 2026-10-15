@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PARTNER_KINDS } from '../lib/partner';
+import LeadsSection from '../components/admin/LeadsSection';
 import { auth, db } from '../lib/firebase';
 import {
   addDoc,
@@ -802,6 +803,12 @@ export default function AdminDashboard() {
             onClick={() => setTab('messages')}
           >
             Messages
+          </button>
+          <button
+            className={`px-4 py-2 rounded-lg border ${tab === 'leads' ? 'bg-primary text-white border-primary' : 'bg-white'}`}
+            onClick={() => setTab('leads')}
+          >
+            🔥 Leads
           </button>
           <button
             className={`px-4 py-2 rounded-lg border ${tab === 'discussions' ? 'bg-primary text-white border-primary' : 'bg-white'}`}
@@ -1733,6 +1740,10 @@ export default function AdminDashboard() {
         )}
 
         {/* === ANALYTICS TAB === */}
+        {/* Bug connu n°9 : `tab` est un état local d'AdminDashboard, la
+            condition reste donc ICI et le sous-composant ne la connaît pas. */}
+        {tab === 'leads' && <LeadsSection />}
+
         {tab === 'refunds' && <RefundRequestsSection />}
 
         {tab === 'analytics' && <AnalyticsTab />}

@@ -392,6 +392,36 @@ export default function Messages(props) {
   }, [messages]);
 
   // 5) Envoi du message (source de vérité : Firestore)
+  // ⚖️ Signalement (15/10/2026) — EduKaraib ne lit pas les conversations
+  //    (secret des correspondances, CPCE art. L32-3). Le seul cas où un
+  //    contenu arrive légalement à l'équipe est celui-ci : l'utilisateur le
+  //    transmet LUI-MÊME (DSA art. 16). Le doc créé déclenche l'email admin
+  //    (functions/index.js, onSignalementCreated).
+  const handleSignaler = async (m) => {
+    const myUid = auth.currentUser?.uid;
+    if (!myUid) return;
+    const motif = window.prompt(
+      ["Signaler ce message à l'équipe EduKaraib.", "", "En confirmant, vous transmettez ce message à l'équipe.", "Pourquoi le signalez-vous ?"].join(String.fromCharCode(10)),
+    );
+    if (motif === null) return;
+    try {
+      await addDoc(collection(db, "signalements"), {
+        auteur_uid: myUid,
+        message_id: m.id,
+        conversation_id: cid || null,
+        expediteur_uid: m.sender_uid || null,
+        contenu_signale: (m.message || "").slice(0, 2000),
+        pieces_jointes: Array.isArray(m.attachments) ? m.attachments.map((a) => a?.url).filter(Boolean) : [],
+        motif: String(motif || "").slice(0, 500),
+        traite: false,
+        created_at: serverTimestamp(),
+      });
+      alert("Merci. L'équipe EduKaraib a reçu votre signalement et va l'examiner.");
+    } catch (e) {
+      alert("Le signalement n'a pas pu être envoyé : " + (e?.message || ""));
+    }
+  };
+
   //    `pieces` = brouillons du Composer : [{ file, kind, durationSec }]
   const handleSend = async (text, pieces = []) => {
     if (sending) return false;
@@ -646,6 +676,16 @@ export default function Messages(props) {
                       </div>
                     )}
                   </div>
+                  {!isMine && (
+                    <button
+                      type="button"
+                      onClick={() => handleSignaler(m)}
+                      className="text-[11px] text-gray-400 hover:text-red-600 underline mt-0.5 px-1"
+                      title="Signaler ce message à l'équipe"
+                    >
+                      Signaler
+                    </button>
+                  )}
                   {/* Heure + accusé de lecture sur mon dernier message */}
                   <span className="text-[11px] text-gray-400 mt-0.5 px-1">
                     {formatTime(m.sent_at)}

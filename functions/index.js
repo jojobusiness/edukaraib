@@ -292,72 +292,87 @@ exports.onMessageCreated = functions
       const text = rawText || resumePieces;
 
       // ───────────────────────────────────────────────────────────────────
-      // 🔥 ALERTE LEAD (15/10/2026) — élève/parent qui écrit à un prof.
-      // Avant : personne ne le voyait. Le prof recevait un email ; s'il ne se
-      // connectait pas (aucun prof n'est revenu sur le site entre le 02 et le
-      // 15/10), le lead mourait en silence. On prévient Joseph tout de suite.
-      // Un seul email par conversation : les suivants seraient illisibles.
+      // 🔥 DEMANDE DE MISE EN RELATION (15/10/2026, corrigé le jour même)
+      //
+      // ⚖️ Secret des correspondances (CPCE art. L32-3) : l'alerte envoyée ce
+      // matin contenait un EXTRAIT du message. Retiré. Le secret couvre le
+      // contenu ET l'identité des correspondants ; seule l'exécution du
+      // contrat de mise en relation justifie de tracer l'événement lui-même.
+      //
+      // On enregistre donc un objet distinct de la correspondance :
+      // demandes_contact/{eleveUid_profUid} — qui a demandé quel prof, quand,
+      // et si le prof a répondu. Jamais ce qui a été écrit.
       // ───────────────────────────────────────────────────────────────────
       const conversationId = m.conversationId || m.conversation_id || null;
-      if (conversationId) {
+      {
         const [expediteur, destinataire] = await Promise.all([
           getUserDoc(senderUid),
           getUserDoc(receiverUid),
         ]);
-        const estLead = ["student", "parent"].includes(expediteur?.role) &&
-          destinataire?.role === "teacher";
-        if (estLead) {
-          const convRef = db.collection("conversations").doc(conversationId);
-          // Transaction : deux messages envoyés coup sur coup ne doivent pas
-          // produire deux alertes.
-          const premier = await db.runTransaction(async (tx) => {
-            const conv = await tx.get(convRef);
-            if (conv.exists && conv.data()?.lead_alerte_at) return false;
-            tx.set(convRef, {lead_alerte_at: new Date()}, {merge: true});
+
+        // a) Élève/parent → prof : c'est une demande de mise en relation
+        if (["student", "parent"].includes(expediteur?.role) && destinataire?.role === "teacher") {
+          const demandeRef = db.collection("demandes_contact").doc(`${senderUid}_${receiverUid}`);
+          const prenom = (expediteur?.firstName ||
+            (expediteur?.fullName || "").split(" ")[0] || "Un élève").trim();
+          const profNom = destinataire?.fullName || "le professeur";
+          const matiere = destinataire?.subjects ? String(destinataire.subjects) : "";
+          const acq = expediteur?.acquisition || {};
+
+          // Transaction : deux messages coup sur coup ne font qu'une demande.
+          const nouvelle = await db.runTransaction(async (tx) => {
+            const snapD = await tx.get(demandeRef);
+            if (snapD.exists) return false;
+            tx.set(demandeRef, {
+              eleve_uid: senderUid,
+              prof_uid: receiverUid,
+              eleve_prenom: prenom,
+              prof_nom: profNom,
+              role: expediteur?.role || null,
+              source: acq.source || null,
+              campagne: acq.campaign || null,
+              matiere_profil: matiere || null,
+              conversation_id: conversationId,
+              created_at: new Date(),
+              prof_repondu_at: null,
+              alerte_sans_reponse_at: null,
+            });
             return true;
           }).catch((e) => {
-            console.error("lead transaction:", e?.message || e);
+            console.error("demande_contact transaction:", e?.message || e);
             return false;
           });
 
-          if (premier) {
-            const prenom = (expediteur?.firstName ||
-              (expediteur?.fullName || "").split(" ")[0] || "Un élève").trim();
-            const profNom = destinataire?.fullName || "le professeur";
-            const acq = expediteur?.acquisition || {};
+          if (nouvelle) {
+            const ville = expediteur?.city ? ` · ${expediteur.city}` : "";
             const source = [acq.source, acq.campaign && `campagne ${acq.campaign}`]
                 .filter(Boolean).join(" · ") || "source inconnue";
-            const matiere = (destinataire?.subjects && String(destinataire.subjects)) || "";
-            const ville = expediteur?.city ? ` · ${expediteur.city}` : "";
-            // Extrait court : juste de quoi juger le sérieux du lead.
-            // Les CGU et la politique de confidentialité le prévoient (15/10/2026).
-            const extrait = (text || "").slice(0, 120) + ((text || "").length > 120 ? "…" : "");
             const lienProf = `https://edukaraib.com/profils/${receiverUid}`;
+            // ⛔ Aucun extrait du message : on annonce l'événement, pas son contenu.
             const okLead = await sendEmailResend({
               to: ADMIN_INBOX_EMAIL.value(),
               subject: `🔥 Nouveau lead : ${prenom} → ${profNom}` +
                 `${matiere ? ` (${matiere})` : ""} — via ${acq.source || "source inconnue"}`,
               text:
-                `${prenom} (${expediteur?.role || "?"}${ville}) vient d'écrire à ${profNom}.
+                `${prenom} (${expediteur?.role || "?"}${ville}) vient de demander à être mis en relation avec ${profNom}.
 ` +
                 `Source : ${source}
 ` +
                 `${matiere ? `Matières du prof : ${matiere}
 ` : ""}` +
                 `
-« ${extrait} »
-
+Profil du prof : ${lienProf}
 ` +
-                `Profil du prof : ${lienProf}
+                `Le contenu du message n'est pas communiqué : secret des correspondances.
 ` +
                 `⚠️ Si le prof ne répond pas, relance-le toi-même : un lead qui attend est un lead perdu.
 `,
               html: `
           <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;color:#111">
             <h2 style="margin:0 0 12px">🔥 Nouveau lead : ${prenom} → ${profNom}</h2>
-            <p style="margin:0 0 8px"><strong>${prenom}</strong> (${expediteur?.role || "?"}${ville}) vient d'écrire à <strong>${profNom}</strong>.</p>
+            <p style="margin:0 0 8px"><strong>${prenom}</strong> (${expediteur?.role || "?"}${ville}) vient de demander à être mis en relation avec <strong>${profNom}</strong>.</p>
             <p style="margin:0 0 8px;font-size:13px;color:#555">Source : ${source}${matiere ? ` · Matières du prof : ${matiere}` : ""}</p>
-            <p style="margin:0 0 12px;padding:12px;background:#f3f4f6;border-radius:8px">${extrait || "(message sans texte)"}</p>
+            <p style="margin:0 0 12px;font-size:12px;color:#888">Le contenu du message n'est pas communiqué : secret des correspondances.</p>
             <p style="margin:16px 0">
               <a href="${lienProf}" style="display:inline-block;background:#00804B;color:white;padding:10px 16px;border-radius:8px;text-decoration:none">
                 Voir le professeur
@@ -368,6 +383,14 @@ exports.onMessageCreated = functions
             });
             if (!okLead) console.error("Alerte lead : échec Resend");
           }
+        }
+
+        // b) Prof → élève/parent : la réponse. Horodater est de l'acheminement
+        //    (L32-3 III), pas de l'analyse de contenu.
+        if (expediteur?.role === "teacher" && ["student", "parent"].includes(destinataire?.role)) {
+          const demandeRef = db.collection("demandes_contact").doc(`${receiverUid}_${senderUid}`);
+          await demandeRef.set({prof_repondu_at: new Date()}, {merge: true})
+              .catch((e) => console.error("prof_repondu_at:", e?.message || e));
         }
       }
 
@@ -420,6 +443,58 @@ exports.onMessageCreated = functions
       });
       if (!ok) console.error("Admin message email: échec Resend");
 
+      return null;
+    });
+
+// -----------------------------------------------------------------------------
+// 🚩 Signalement d'un message par un utilisateur (15/10/2026)
+//
+// ⚖️ C'est la SEULE voie par laquelle un contenu de conversation arrive
+// légitimement sous les yeux de l'équipe : l'utilisateur le transmet lui-même
+// (DSA art. 16). Le secret des correspondances interdit la lecture d'office.
+// -----------------------------------------------------------------------------
+exports.onSignalementCreated = functions
+    .region(REGION)
+    .runWith({...EXEC, secrets: [RESEND_API_KEY]})
+    .firestore.document("signalements/{id}")
+    .onCreate(async (snap, context) => {
+      const sg = snap.data() || {};
+      const [auteur, expediteur] = await Promise.all([
+        getUserDisplayName(sg.auteur_uid),
+        getUserDisplayName(sg.expediteur_uid),
+      ]);
+      const pieces = Array.isArray(sg.pieces_jointes) ? sg.pieces_jointes : [];
+      const ok = await sendEmailResend({
+        to: ADMIN_INBOX_EMAIL.value(),
+        subject: `🚩 Message signalé par ${auteur}`,
+        text:
+          `${auteur} signale un message de ${expediteur}.
+
+` +
+          `Motif : ${sg.motif || "(non précisé)"}
+
+` +
+          `Message signalé :
+« ${sg.contenu_signale || "(sans texte)"} »
+` +
+          (pieces.length ? `
+Pièces jointes :
+${pieces.join(String.fromCharCode(10))}
+` : "") +
+          `
+Conversation : ${sg.conversation_id || "?"}
+`,
+        html: `
+          <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;color:#111">
+            <h2 style="margin:0 0 12px">🚩 Message signalé par ${auteur}</h2>
+            <p style="margin:0 0 8px">Expéditeur du message : <strong>${expediteur}</strong></p>
+            <p style="margin:0 0 8px"><strong>Motif :</strong> ${sg.motif || "(non précisé)"}</p>
+            <p style="margin:0 0 12px;padding:12px;background:#fef2f2;border-radius:8px">${sg.contenu_signale || "(sans texte)"}</p>
+            ${pieces.length ? `<p style="margin:0 0 8px;font-size:13px">Pièces jointes :<br>${pieces.map((u) => `<a href="${u}">${u}</a>`).join("<br>")}</p>` : ""}
+            <p style="margin:0;font-size:12px;color:#666">Signalement transmis par l'utilisateur lui-même (DSA art. 16).</p>
+          </div>`,
+      });
+      if (!ok) console.error("Signalement : échec Resend");
       return null;
     });
 

@@ -82,6 +82,23 @@ service cloud.firestore {
     }
 
     // ── Messagerie ─────────────────────────────────────────────────────────
+    // ⚖️ Secret des correspondances (15/10/2026) : la DEMANDE de mise en
+    // relation est un événement du service, distinct du contenu échangé. Écrite
+    // uniquement par le serveur (Admin SDK, qui ignore ces règles) ; l'admin la
+    // lit pour relancer un prof qui ne répond pas. Personne d'autre.
+    match /demandes_contact/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // Signalement : c'est l'UTILISATEUR qui transmet lui-même un message à
+    // l'équipe (DSA art. 16). C'est la seule voie par laquelle un contenu de
+    // conversation arrive légalement sous les yeux de l'équipe.
+    match /signalements/{id} {
+      allow create: if signedIn() && request.resource.data.auteur_uid == request.auth.uid;
+      allow read, update, delete: if isAdmin();
+    }
+
     match /conversations/{id} { allow read, write: if signedIn(); }
     match /messages/{id}      { allow read, write: if signedIn(); }
     match /presence/{id}      { allow read, write: if signedIn(); }

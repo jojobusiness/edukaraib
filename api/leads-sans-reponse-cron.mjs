@@ -1,14 +1,15 @@
-// Cron horaire (vercel.json) — prévient Joseph quand un prof laisse un lead
-// sans réponse. Plan docs/plans/PLAN_PAGE_METHODE_15-10-2026.md (15/10/2026).
+// Cron horaire (vercel.json) — prévient Joseph quand un prof laisse une demande
+// de mise en relation sans réponse. Plan PLAN_PAGE_METHODE_15-10-2026.md,
+// corrigé le jour même par PLAN_MESSAGES_SECRET_CORRESPONDANCES_15-10-2026.md.
+//
+// ⚖️ Ce cron ne lit AUCUN message : il lit `demandes_contact`, un événement du
+// service (qui a demandé quel prof, quand, et si le prof a répondu). Le secret
+// des correspondances (CPCE art. L32-3) couvre le contenu ET l'identité des
+// correspondants ; suivre l'exécution d'une mise en relation relève du contrat.
 //
 // Pourquoi ça existe : entre le 02 et le 15/10, AUCUN prof n'est revenu sur le
-// site (scripts/diag-retours.mjs). Un élève qui écrit peut donc attendre des
-// jours. Le mail au prof part déjà ; ce cron dit à Joseph quand il doit
-// décrocher son téléphone — c'est lui le rattrapage, pas le produit.
-//
-// Une seule alerte par conversation (`admin_alerte_sans_reponse_at`), et
-// uniquement entre 8 h et 21 h, heure de Paris : une alerte à 3 h du matin ne
-// sert personne et apprend à ignorer les suivantes.
+// site (scripts/diag-retours.mjs). Le rattrapage, c'est le coup de fil de
+// Joseph — ce cron lui dit quand décrocher.
 import { adminDb } from './_firebaseAdmin.mjs';
 import { captureError } from './_sentry.mjs';
 
@@ -51,60 +52,43 @@ export default async function handler(req, res) {
 
   const rapport = { checked: 0, alertes: 0, repondu: 0, trop_recent: 0, errors: 0 };
   try {
-    // orderBy plutôt que where('!=', null) : Firestore n'accepte l'égalité
-    // que sur null, et un tri exclut déjà les conversations sans le champ.
-    const snap = await adminDb.collection('conversations')
-      .orderBy('lead_alerte_at', 'asc')
+    const snap = await adminDb.collection('demandes_contact')
+      .orderBy('created_at', 'asc')
       .limit(200)
       .get();
 
     for (const docSnap of snap.docs) {
-      const conv = docSnap.data();
+      const d = docSnap.data();
       rapport.checked += 1;
-      if (conv.admin_alerte_sans_reponse_at) continue;
+      if (d.alerte_sans_reponse_at) continue;
+      if (d.prof_repondu_at) { rapport.repondu += 1; continue; }
 
-      const depuis = toDate(conv.lead_alerte_at);
+      const depuis = toDate(d.created_at);
       if (!depuis || maintenant - depuis < DELAI_MS) { rapport.trop_recent += 1; continue; }
 
       try {
-        // Le prof a-t-il écrit depuis ? `lastSender` suffit : s'il a répondu,
-        // c'est lui le dernier à avoir parlé (ou l'élève a relancé après lui,
-        // et dans ce cas on cherche un message du prof dans la conversation).
-        const messages = await adminDb.collection('messages')
-          .where('conversationId', '==', docSnap.id)
-          .get();
-        const expediteurs = new Set(messages.docs.map((d) => d.data()?.sender_uid).filter(Boolean));
-
-        const participants = Array.isArray(conv.participants) ? conv.participants : [];
-        const profils = await Promise.all(participants.map(async (uid) => {
-          const u = await adminDb.collection('users').doc(uid).get();
-          return { uid, ...(u.exists ? u.data() : {}) };
-        }));
-        const prof = profils.find((p) => p.role === 'teacher');
-        const eleve = profils.find((p) => ['student', 'parent'].includes(p.role));
-        if (!prof || !eleve) continue;
-
-        if (expediteurs.has(prof.uid)) { rapport.repondu += 1; continue; }
-
+        const profSnap = await adminDb.collection('users').doc(d.prof_uid).get();
+        const prof = profSnap.exists ? profSnap.data() : {};
         const heures = Math.floor((maintenant - depuis) / 3600000);
-        const prenom = eleve.firstName || (eleve.fullName || '').split(' ')[0] || 'Un élève';
+        const prenom = d.eleve_prenom || 'Un élève';
+        const profNom = prof.fullName || d.prof_nom || 'un professeur';
         const tel = prof.phone ? ` · ☎️ ${prof.phone}` : ' (aucun téléphone en base)';
         await envoyer({
           to: process.env.ADMIN_INBOX || 'edukaraib@gmail.com',
-          subject: `⏰ ${prenom} attend ${prof.fullName || 'un prof'} depuis ${heures} h`,
+          subject: `⏰ ${prenom} attend ${profNom} depuis ${heures} h`,
           html: `<div style="font-family:Arial,Helvetica,sans-serif;line-height:1.55;color:#222">
-  <h2 style="margin:0 0 12px">⏰ Un lead attend une réponse</h2>
-  <p><strong>${prenom}</strong> a écrit à <strong>${prof.fullName || 'un professeur'}</strong> il y a ${heures} heures, et le professeur n'a pas encore répondu.</p>
-  <p style="font-size:14px;color:#555">Professeur : ${prof.fullName || prof.uid}${tel}</p>
-  <p style="margin:16px 0"><a href="https://edukaraib.com/profils/${prof.uid}" style="display:inline-block;background:#00804B;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">Voir le professeur</a></p>
+  <h2 style="margin:0 0 12px">⏰ Une demande attend une réponse</h2>
+  <p><strong>${prenom}</strong> a demandé à être mis en relation avec <strong>${profNom}</strong> il y a ${heures} heures, et le professeur n'a pas encore répondu.</p>
+  <p style="font-size:14px;color:#555">Professeur : ${profNom}${tel}</p>
+  <p style="margin:16px 0"><a href="https://edukaraib.com/profils/${d.prof_uid}" style="display:inline-block;background:#00804B;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">Voir le professeur</a></p>
   <p style="font-size:13px;color:#666">Appelle-le : à ce stade, c'est toi le rattrapage.</p>
 </div>`,
         });
-        await docSnap.ref.set({ admin_alerte_sans_reponse_at: new Date() }, { merge: true });
+        await docSnap.ref.set({ alerte_sans_reponse_at: new Date() }, { merge: true });
         rapport.alertes += 1;
       } catch (e) {
         rapport.errors += 1;
-        captureError(e, { where: 'leads-sans-reponse-cron', conversation: docSnap.id });
+        captureError(e, { where: 'leads-sans-reponse-cron', demande: docSnap.id });
       }
     }
   } catch (e) {

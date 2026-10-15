@@ -32,9 +32,11 @@ const SECTIONS = [
           <li>Envoyer des notifications liées à votre activité (confirmation de cours, rappels, virements).</li>
           <li>Améliorer la qualité et la fiabilité de la plateforme.</li>
           <li>
-            Vérifier qu'un message envoyé à un professeur reçoit bien une réponse : l'équipe est alertée
-            des nouvelles demandes, avec un court extrait du message, et peut consulter les échanges en cas
-            de signalement, de litige, ou pour la protection des utilisateurs mineurs.
+            Vérifier qu'une demande de mise en relation adressée à un professeur reçoit bien une réponse.
+            L'équipe est alertée qu'une demande a été envoyée (qui, quel professeur, quand), <strong>jamais
+            de son contenu</strong> : vos messages sont couverts par le secret des correspondances et ne
+            sont pas lus. Un message que vous signalez vous-même, via le lien « Signaler », est la seule
+            exception.
           </li>
         </ul>
         <p className="mt-3">Aucune donnée n'est utilisée à des fins publicitaires ou vendue à des tiers.</p>
