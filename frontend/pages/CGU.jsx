@@ -313,7 +313,22 @@ export default function CGU() {
               <p>
                 Si un message vous paraît inapproprié, dangereux ou illégal, chaque message comporte un lien
                 <strong> « Signaler »</strong> : vous transmettez alors vous-même ce message à l'équipe, qui
-                l'examine. C'est la seule situation dans laquelle le contenu d'un échange nous parvient.
+                l'examine. C'est la seule situation dans laquelle le contenu d'un échange nous parvient, avec
+                la demande d'une autorité judiciaire et le litige dans lequel vous nous le produisez.
+              </p>
+              <h3>7.2 ter Conservation des conversations</h3>
+              <p>
+                Vos conversations sont conservées <strong>12 mois après le dernier message</strong>, puis
+                supprimées automatiquement, pièces jointes comprises. Cette durée existe pour une raison
+                précise : en cas de <strong>harcèlement, de menace, d'arnaque ou de litige</strong>, l'échange
+                doit pouvoir être produit — devant nous, ou devant une autorité.
+              </p>
+              <p>
+                C'est pourquoi le bouton de la messagerie <strong>masque</strong> une discussion au lieu de
+                l'effacer : elle disparaît de votre liste, votre correspondant garde la sienne, et
+                <strong> personne ne peut détruire un échange qui le mettrait en cause</strong>. Une
+                conversation signalée est conservée au-delà des 12 mois, le temps que le signalement soit
+                traité. Chaque consultation par l'équipe, dans les cas prévus ci-dessus, est enregistrée.
               </p>
               <h3>7.3 Hébergement et sécurité des données (Firebase)</h3>
               <p>

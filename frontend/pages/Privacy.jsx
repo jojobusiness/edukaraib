@@ -48,7 +48,13 @@ const SECTIONS = [
     titre: '3. Durée de conservation',
     contenu: (
       <p>
-        Vos données sont conservées pendant toute la durée d'activité de votre compte, puis supprimées
+        Les <strong>conversations</strong> sont conservées <strong>12 mois après le dernier message</strong>,
+        puis supprimées automatiquement avec leurs pièces jointes — sauf celles qui font l'objet d'un
+        signalement ou d'un litige, gardées le temps du traitement. Cette durée permet de produire un échange
+        en cas de harcèlement, de menace ou d'arnaque ; c'est aussi pourquoi « masquer » une discussion la
+        retire de votre liste sans l'effacer pour votre correspondant.
+        <br /><br />
+        Vos autres données sont conservées pendant toute la durée d'activité de votre compte, puis supprimées
         dans un délai de <strong>3 mois</strong> après sa fermeture, sauf obligation légale contraire
         (ex : données comptables conservées 10 ans conformément au Code de commerce).
       </p>

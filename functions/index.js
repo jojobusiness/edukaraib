@@ -464,6 +464,15 @@ exports.onSignalementCreated = functions
         getUserDisplayName(sg.expediteur_uid),
       ]);
       const pieces = Array.isArray(sg.pieces_jointes) ? sg.pieces_jointes : [];
+
+      // Une conversation signalée est GELÉE : la purge des 12 mois ne la
+      // touchera pas. C'est exactement le dossier qu'on voudra produire.
+      if (sg.conversation_id) {
+        await db.collection("conversations").doc(sg.conversation_id)
+            .set({conservation_litige: true, litige_depuis: new Date()}, {merge: true})
+            .catch((e) => console.error("gel conversation:", e?.message || e));
+      }
+
       const ok = await sendEmailResend({
         to: ADMIN_INBOX_EMAIL.value(),
         subject: `🚩 Message signalé par ${auteur}`,

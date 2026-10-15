@@ -23,6 +23,7 @@
     { "path": "/api/lesson-reminders", "schedule": "*/30 * * * *" },
     { "path": "/api/subscription-renewal-cron", "schedule": "0 6 * * *" },
     { "path": "/api/partner-payouts-cron", "schedule": "0 13 * * *" },
-    { "path": "/api/leads-sans-reponse-cron", "schedule": "0 * * * *" }
+    { "path": "/api/leads-sans-reponse-cron", "schedule": "0 * * * *" },
+    { "path": "/api/purge-conversations-cron", "schedule": "30 3 * * *" }
   ]
 }

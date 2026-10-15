@@ -17,7 +17,6 @@ import {
   ref as sRef,
   uploadBytesResumable,
   getDownloadURL,
-  deleteObject,
 } from "firebase/storage";
 import {
   collection,
@@ -32,8 +31,6 @@ import {
   getDocs,
   updateDoc,
   limit,
-  deleteDoc,
-  writeBatch,
 } from "firebase/firestore";
 
 // --- EMAIL HELPERS (Messages.jsx) ---
@@ -506,48 +503,9 @@ export default function Messages(props) {
     }
   };
 
-  // Suppression (hard/soft) — complet
-  async function tryHardDeleteConversation(conversationId, myUid) {
-    const convSnap = await getDoc(doc(db, "conversations", conversationId));
-    if (!convSnap.exists()) throw new Error("Conversation introuvable.");
-    const conv = convSnap.data();
-    if (
-      !Array.isArray(conv.participants) ||
-      !conv.participants.includes(myUid)
-    ) {
-      throw new Error("Accès refusé.");
-    }
-
-    while (true) {
-      const qMsgs = query(
-        collection(db, "messages"),
-        where("participants_uids", "array-contains", myUid),
-        where("conversationId", "==", conversationId),
-        limit(400)
-      );
-      const snap = await getDocs(qMsgs);
-      if (snap.empty) break;
-
-      // Les fichiers Storage ne disparaissent pas avec le document Firestore :
-      // sans ça, chaque suppression laisserait des photos/vidéos payantes
-      // orphelines dans le bucket.
-      const suppressions = [];
-      snap.docs.forEach((d) => {
-        (d.data()?.attachments || []).forEach((a) => {
-          if (a?.storage_path) {
-            suppressions.push(deleteObject(sRef(storage, a.storage_path)).catch(() => {}));
-          }
-        });
-      });
-      await Promise.all(suppressions);
-
-      const batch = writeBatch(db);
-      snap.docs.forEach((d) => batch.delete(d.ref));
-      await batch.commit();
-    }
-
-    await deleteDoc(doc(db, "conversations", conversationId));
-  }
+  // ⛔ La suppression définitive a été retirée le 15/10/2026 : seul le serveur
+  //    purge, au bout de 12 mois (api/purge-conversations-cron.mjs). Les règles
+  //    Firestore refusent désormais toute suppression depuis le site.
 
   async function softDeleteForUser(conversationId, myUid) {
     await updateDoc(doc(db, "conversations", conversationId), {
@@ -561,8 +519,16 @@ export default function Messages(props) {
     const myUid = auth.currentUser?.uid;
     if (!myUid || !cid) return;
 
+    // 15/10/2026 : on MASQUE, on ne détruit plus. Un participant ne peut plus
+    // effacer la copie de l'autre — ni les preuves d'un harcèlement ou d'une
+    // arnaque. Conservation 12 mois, puis purge par le serveur.
     const ok = window.confirm(
-      "Supprimer cette discussion ?\nTous les messages seront définitivement effacés (ou masqués si la suppression est refusée)."
+      [
+        "Masquer cette discussion ?",
+        "",
+        "Elle disparaîtra de votre liste. Les messages sont conservés 12 mois,",
+        "puis supprimés automatiquement. Votre correspondant garde sa copie.",
+      ].join(String.fromCharCode(10)),
     );
     if (!ok) return;
 
@@ -570,11 +536,7 @@ export default function Messages(props) {
       unsubRefs.current.msgs?.();
     } catch {}
 
-    try {
-      await tryHardDeleteConversation(cid, myUid);
-    } catch {
-      await softDeleteForUser(cid, myUid);
-    }
+    await softDeleteForUser(cid, myUid);
 
     if (typeof props.onBack === "function") props.onBack();
     else navigate("/chat-list");
@@ -609,8 +571,8 @@ export default function Messages(props) {
         <button
           onClick={handleDeleteConversation}
           className="shrink-0 w-9 h-9 rounded-full grid place-items-center text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
-          title="Supprimer la discussion"
-          aria-label="Supprimer la discussion"
+          title="Masquer la discussion"
+          aria-label="Masquer la discussion"
           disabled={sending}
         >
           <Trash2 size={18} />

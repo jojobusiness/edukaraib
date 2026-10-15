@@ -520,8 +520,10 @@ export default function AdminDashboard() {
     );
 
     const unsub = onSnapshot(qConvs, async (snap) => {
+      // Les conversations que j'ai masquées ne remontent plus (15/10/2026)
+      const visibles = snap.docs.filter((d) => !(d.data()?.hiddenFor || []).includes(uid));
       const arr = await Promise.all(
-        snap.docs.map(async (d) => {
+        visibles.map(async (d) => {
           const c = { id: d.id, ...d.data() };
           const otherUid = (c.participants || []).find((p) => p !== uid);
 

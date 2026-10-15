@@ -138,8 +138,11 @@ export default function ChatList({ onSelectChat }) {
     );
 
     const unsub = onSnapshot(qConvs, async (snap) => {
+      // « Masquer » (15/10/2026) : la conversation reste en base pour un
+      // éventuel litige, mais disparaît de la liste de celui qui l'a masquée.
+      const visibles = snap.docs.filter((d) => !(d.data()?.hiddenFor || []).includes(myUid));
       const list = await Promise.all(
-        snap.docs.map(async (d) => {
+        visibles.map(async (d) => {
           const c = { id: d.id, ...d.data() };
           const otherUid = (c.participants || []).find((u) => u !== myUid);
 
