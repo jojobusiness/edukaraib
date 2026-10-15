@@ -99,8 +99,33 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
-    match /conversations/{id} { allow read, write: if signedIn(); }
-    match /messages/{id}      { allow read, write: if signedIn(); }
+    // ⚖️ 15/10/2026 — AVANT, c'était `allow read, write: if signedIn()` :
+    // n'importe quel compte connecté pouvait lire TOUTES les conversations du
+    // site. Secret des correspondances (CPCE art. L32-3) : seuls les deux
+    // correspondants accèdent à leur échange. L'admin n'y échappe pas — il ne
+    // voit que les conversations auxquelles il participe.
+    // ⚠️ Une requête doit prouver qu'elle ne lit que des documents autorisés :
+    // tout `get`/`list` sur ces collections doit porter un
+    // `array-contains` sur participants / participants_uids.
+    match /conversations/{id} {
+      allow read: if signedIn() && request.auth.uid in resource.data.participants;
+      allow create: if signedIn() && request.auth.uid in request.resource.data.participants;
+      // Accusés de lecture et dernier message : la liste des participants ne bouge jamais
+      allow update: if signedIn()
+        && request.auth.uid in resource.data.participants
+        && request.resource.data.participants == resource.data.participants;
+      allow delete: if signedIn() && request.auth.uid in resource.data.participants;
+    }
+    match /messages/{id} {
+      allow read: if signedIn() && request.auth.uid in resource.data.participants_uids;
+      // On n'écrit qu'en son propre nom, et seulement dans une conversation dont on fait partie
+      allow create: if signedIn()
+        && request.resource.data.sender_uid == request.auth.uid
+        && request.auth.uid in request.resource.data.participants_uids;
+      // ⛔ Un message ne se réécrit pas : l'historique d'un échange doit rester intact
+      allow update: if false;
+      allow delete: if signedIn() && request.auth.uid in resource.data.participants_uids;
+    }
     match /presence/{id}      { allow read, write: if signedIn(); }
 
     // Documents de cours, favoris

@@ -202,8 +202,11 @@ async function fetchUserProfile(uid) {
 /** Trouve / crée une conversation unique entre myUid et otherUid (fallback client) */
 async function ensureConversationClient(myUid, otherUid) {
   const key = pairKey(myUid, otherUid);
+  // array-contains obligatoire : sans lui, les règles refusent la requête
+  // (elles ne peuvent pas prouver que `key` ne vise que mes conversations).
   const qConv = query(
     collection(db, "conversations"),
+    where("participants", "array-contains", myUid),
     where("key", "==", key),
     limit(1)
   );
@@ -340,9 +343,11 @@ export default function Messages(props) {
 
   // 3) Flux messages Firestore (source de vérité)
   useEffect(() => {
-    if (!cid) return;
+    const myUid = auth.currentUser?.uid;
+    if (!cid || !myUid) return;
     const qMsg = query(
       collection(db, "messages"),
+      where("participants_uids", "array-contains", myUid),
       where("conversationId", "==", cid),
       orderBy("sent_at", "asc")
     );
@@ -516,6 +521,7 @@ export default function Messages(props) {
     while (true) {
       const qMsgs = query(
         collection(db, "messages"),
+        where("participants_uids", "array-contains", myUid),
         where("conversationId", "==", conversationId),
         limit(400)
       );
