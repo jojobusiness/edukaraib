@@ -24,6 +24,7 @@ const Register = lazy(() => import('./pages/Register'));
 const Profile = lazy(() => import('./pages/Profile'));
 const StudentDashboard = lazy(() => import('./pages/StudentDashboard'));
 const Search = lazy(() => import('./pages/Search'));
+const Methode = lazy(() => import('./pages/Methode'));
 const MyCourses = lazy(() => import('./pages/MyCourses'));
 const ParentDashboard = lazy(() => import('./pages/ParentDashboard'));
 const ParentChildren = lazy(() => import('./pages/ParentChildren'));
@@ -176,6 +177,11 @@ function App() {
             <Route path="/unauthorized" element={<Unauthorized />} />
             <Route path="/contact" element={<Contact />} />
             <Route path="/faq" element={<FAQ />} />
+            {/* Guide de révision : adresse tapée de mémoire depuis les Shorts
+                (aucun lien cliquable sous un Short), d'où les deux alias. */}
+            <Route path="/methode" element={<Methode />} />
+            <Route path="/guide" element={<Navigate to="/methode" replace />} />
+            <Route path="/methode-revision" element={<Navigate to="/methode" replace />} />
             <Route path="/cgu" element={<CGU />} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/pay/success" element={<PaySuccess />} />

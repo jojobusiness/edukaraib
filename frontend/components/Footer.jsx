@@ -36,6 +36,7 @@ export default function Footer() {
             <Link to="/about" className="hover:underline">À propos</Link>
             <Link to="/contact" className="hover:underline">Contact</Link>
             <Link to="/faq" className="hover:underline">FAQ</Link>
+            <Link to="/methode" className="hover:underline">Méthode de révision</Link>
             <Link to="/cgu" className="hover:underline">Conditions</Link>
             <Link to="/privacy" className="hover:underline">Confidentialité</Link>
           </div>

@@ -37,6 +37,18 @@ describe('touchFromArrival', () => {
     expect(t.referrer).toBe('');
   });
 
+  it('une arrivée directe sur /methode est attribuée aux vidéos', () => {
+    const t = touchFromArrival({ pathname: '/methode' });
+    expect(t.source).toBe('video');
+    expect(t.campaign).toBe('methode');
+  });
+
+  it('mais un utm explicite sur /methode gagne toujours', () => {
+    const t = touchFromArrival({ search: '?utm_source=youtube&utm_campaign=chaine', pathname: '/methode' });
+    expect(t.source).toBe('youtube');
+    expect(t.campaign).toBe('chaine');
+  });
+
   it('garde le code partenaire de l’URL', () => {
     expect(touchFromArrival({ search: '?code=lhatien81' }).code).toBe('LHATIEN81');
   });

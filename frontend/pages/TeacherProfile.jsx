@@ -189,19 +189,35 @@ export default function TeacherProfile() {
     if (p === 5 || p === 10) setPackChoice(p);
   }, []);
 
-  // Tunnel /bac : message pré-rempli pour le prof (pack + matière), injecté dans la messagerie
-  const handleContactTeacher = () => {
-    if (!auth.currentUser) return navigate('/login');
+  // Message pré-rempli : l'élève n'a plus qu'à appuyer sur Envoyer. Le tunnel
+  // /bac a sa formulation (pack + matière) ; partout ailleurs on demande les
+  // disponibilités, ce qui marche aussi pour un prof sans créneau en ligne.
+  const prepareBrouillon = () => {
     const pack = getCampaignPack();
     const subject = getCampaignSubject();
+    const firstName = (teacher?.fullName || teacher?.firstName || '').split(' ')[0];
+    const bonjour = `Bonjour${firstName ? ` ${firstName}` : ''}`;
     if (pack !== null || subject) {
       const packLabel = pack === 5 ? 'Pack Intensif 5h' : pack === 10 ? 'Pack Prépa 10h' : 'un cours';
-      const firstName = (teacher?.fullName || teacher?.firstName || '').split(' ')[0];
       setChatDraft(
-        `Bonjour${firstName ? ` ${firstName}` : ''}, je suis intéressé(e) par le ${packLabel}` +
+        `${bonjour}, je suis intéressé(e) par le ${packLabel}` +
         `${subject ? ` pour préparer le bac en ${subject}` : ' pour préparer le bac'}. ` +
         `Quels créneaux avez-vous cette semaine ? Merci !`
       );
+      return;
+    }
+    setChatDraft(
+      `${bonjour}, j'aimerais des cours particuliers avec vous. ` +
+      `Quelles sont vos disponibilités cette semaine ? Merci !`
+    );
+  };
+
+  // ⛔ Ne JAMAIS renvoyer un visiteur sans compte vers /login : il n'en a pas,
+  //    il repart. Inscription express, puis retour direct dans la conversation.
+  const handleContactTeacher = () => {
+    prepareBrouillon();
+    if (!auth.currentUser) {
+      return navigate(`/register?express=1&next=${encodeURIComponent(`/chat/${teacherId}`)}`);
     }
     navigate(`/chat/${teacherId}`);
   };
@@ -1490,17 +1506,34 @@ export default function TeacherProfile() {
 
                 {/* Réserver */}
                 {(!isTeacherUser && !isOwnProfile) && (
-                  <button
-                    className="mt-4 w-full bg-primary text-white px-5 py-3 rounded-xl font-semibold shadow hover:bg-primary-dark transition"
-                    onClick={() => {
-                      if (!auth.currentUser) return navigate("/login");
-                      setTrialMode(false);
-                      setShowBooking(true);
-                      setConfirmationMsg("");
-                    }}
-                  >
-                    {isBooking ? "Envoi…" : "Réserver"}
-                  </button>
+                  availableSlots.length === 0 ? (
+                    <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
+                      <p className="text-sm text-amber-900">
+                        Ce professeur n'a pas encore mis ses créneaux en ligne :
+                        <strong> écrivez-lui, il vous répond avec ses disponibilités.</strong>
+                      </p>
+                      <button
+                        className="mt-3 w-full bg-primary text-white px-5 py-3 rounded-xl font-semibold shadow hover:bg-primary-dark transition"
+                        onClick={handleContactTeacher}
+                      >
+                        Demander ses disponibilités
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      className="mt-4 w-full bg-primary text-white px-5 py-3 rounded-xl font-semibold shadow hover:bg-primary-dark transition"
+                      onClick={() => {
+                        if (!auth.currentUser) {
+                          return navigate(`/register?express=1&next=${encodeURIComponent(`/profils/${teacherId}`)}`);
+                        }
+                        setTrialMode(false);
+                        setShowBooking(true);
+                        setConfirmationMsg("");
+                      }}
+                    >
+                      {isBooking ? "Envoi…" : "Réserver"}
+                    </button>
+                  )
                 )}
 
                 {/* Essai gratuit */}
@@ -2131,17 +2164,34 @@ export default function TeacherProfile() {
 
                 {/* Bouton réserver */}
                 {(!isTeacherUser && !isOwnProfile) && (
-                  <button
-                    className="mt-4 w-full bg-primary text-white px-5 py-3 rounded-xl font-semibold shadow hover:bg-primary-dark transition"
-                    onClick={() => {
-                      if (!auth.currentUser) return navigate("/login");
-                      setTrialMode(false);
-                      setShowBooking(true);
-                      setConfirmationMsg("");
-                    }}
-                  >
-                    {isBooking ? "Envoi…" : "Réserver"}
-                  </button>
+                  availableSlots.length === 0 ? (
+                    <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
+                      <p className="text-sm text-amber-900">
+                        Ce professeur n'a pas encore mis ses créneaux en ligne :
+                        <strong> écrivez-lui, il vous répond avec ses disponibilités.</strong>
+                      </p>
+                      <button
+                        className="mt-3 w-full bg-primary text-white px-5 py-3 rounded-xl font-semibold shadow hover:bg-primary-dark transition"
+                        onClick={handleContactTeacher}
+                      >
+                        Demander ses disponibilités
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      className="mt-4 w-full bg-primary text-white px-5 py-3 rounded-xl font-semibold shadow hover:bg-primary-dark transition"
+                      onClick={() => {
+                        if (!auth.currentUser) {
+                          return navigate(`/register?express=1&next=${encodeURIComponent(`/profils/${teacherId}`)}`);
+                        }
+                        setTrialMode(false);
+                        setShowBooking(true);
+                        setConfirmationMsg("");
+                      }}
+                    >
+                      {isBooking ? "Envoi…" : "Réserver"}
+                    </button>
+                  )
                 )}
 
                 {/* Essai gratuit */}

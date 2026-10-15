@@ -76,10 +76,14 @@ export function touchFromArrival({ search = '', referrer = '', pathname = '/', n
   const host = externalHost(referrer);
   const clickSource = (CLICK_IDS.find(([k]) => p.get(k)) || [])[1] || '';
   const source = token(p.get('utm_source')) || clickSource || sourceFromHost(host) || 'direct';
+  // Les Shorts ne laissent aucun lien cliquable : le visiteur TAPE
+  // edukaraib.com/methode, donc il arrive sans utm et sans référent. Atterrir
+  // sur /methode est, à lui seul, la signature d'une vidéo.
+  const parMethode = String(pathname).startsWith('/methode') && source === 'direct';
   return {
-    source,
+    source: parMethode ? 'video' : source,
     medium: token(p.get('utm_medium')) || (host ? 'referral' : ''),
-    campaign: token(p.get('utm_campaign')),
+    campaign: token(p.get('utm_campaign')) || (parMethode ? 'methode' : ''),
     content: token(p.get('utm_content')),
     // Origine + chemin seulement : `users` est en lecture publique, on ne garde
     // pas la query string du référent (jetons de suivi, recherches…).

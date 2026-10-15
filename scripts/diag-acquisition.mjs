@@ -70,6 +70,14 @@ const afficher = (titre, m) => {
 afficher('Par source :', compte(recents, sourceDe));
 afficher('Par rôle :', compte(recents, (u) => u.role || '?'));
 
+// Page /methode : c'est le seul moyen de savoir si les vidéos YouTube rapportent
+// (adresse tapée de mémoire, donc aucun utm à attendre).
+const parMethode = recents.filter((u) => (u.acquisition?.landing || '').startsWith('/methode')
+  || u.acquisition?.campaign === 'methode');
+console.log(`Via la page /methode : ${parMethode.length} inscrit(s)`
+  + (parMethode.length ? ` — ${parMethode.map((u) => u.fullName || u.id).join(' · ')}` : ''));
+console.log('');
+
 console.log('Par semaine (lundi) :');
 const parSemaine = {};
 for (const u of recents) (parSemaine[jjmm(semaine(u.cree))] ||= []).push(u);

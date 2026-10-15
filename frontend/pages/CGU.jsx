@@ -295,6 +295,16 @@ export default function CGU() {
                 <li>Sécurité et bon fonctionnement de la plateforme ;</li>
                 <li>Amélioration de la qualité de service.</li>
               </ul>
+              <h3>7.2 bis Messagerie entre utilisateurs</h3>
+              <p>
+                Les échanges de la messagerie sont conservés sur la plateforme. L'équipe EduKaraib peut en
+                consulter le contenu, ou en recevoir un extrait par notification interne, dans trois cas
+                seulement : <strong>s'assurer qu'une demande reçoit une réponse</strong> (suivi de la qualité
+                du service), <strong>traiter un signalement ou un litige</strong>, et <strong>protéger les
+                utilisateurs mineurs</strong>. Ces échanges ne sont jamais vendus, ni utilisés à des fins
+                publicitaires, ni transmis à des tiers en dehors des prestataires techniques mentionnés au
+                point 7.3.
+              </p>
               <h3>7.3 Hébergement et sécurité des données (Firebase)</h3>
               <p>
                 Les données sont hébergées et sécurisées via <strong>Firebase (Google Cloud Platform)</strong>, situés

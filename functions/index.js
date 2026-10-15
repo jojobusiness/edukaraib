@@ -241,6 +241,21 @@ async function getUserDisplayName(uid) {
 }
 
 /** Vrai si le user a le rôle admin */
+/**
+ * Fiche utilisateur (rôle, ville, acquisition) — pour qualifier un lead.
+ * 15/10/2026 : sert à l'alerte « nouveau lead », pas aux emails d'un élève.
+ */
+async function getUserDoc(uid) {
+  if (!uid) return null;
+  try {
+    const snap = await db.collection("users").doc(uid).get();
+    return snap.exists ? snap.data() : null;
+  } catch (e) {
+    console.error("getUserDoc error:", e?.message || e);
+    return null;
+  }
+}
+
 async function isAdminUser(uid) {
   if (!uid) return false;
   try {
@@ -275,6 +290,86 @@ exports.onMessageCreated = functions
             .join(" · ") :
         "";
       const text = rawText || resumePieces;
+
+      // ───────────────────────────────────────────────────────────────────
+      // 🔥 ALERTE LEAD (15/10/2026) — élève/parent qui écrit à un prof.
+      // Avant : personne ne le voyait. Le prof recevait un email ; s'il ne se
+      // connectait pas (aucun prof n'est revenu sur le site entre le 02 et le
+      // 15/10), le lead mourait en silence. On prévient Joseph tout de suite.
+      // Un seul email par conversation : les suivants seraient illisibles.
+      // ───────────────────────────────────────────────────────────────────
+      const conversationId = m.conversationId || m.conversation_id || null;
+      if (conversationId) {
+        const [expediteur, destinataire] = await Promise.all([
+          getUserDoc(senderUid),
+          getUserDoc(receiverUid),
+        ]);
+        const estLead = ["student", "parent"].includes(expediteur?.role) &&
+          destinataire?.role === "teacher";
+        if (estLead) {
+          const convRef = db.collection("conversations").doc(conversationId);
+          // Transaction : deux messages envoyés coup sur coup ne doivent pas
+          // produire deux alertes.
+          const premier = await db.runTransaction(async (tx) => {
+            const conv = await tx.get(convRef);
+            if (conv.exists && conv.data()?.lead_alerte_at) return false;
+            tx.set(convRef, {lead_alerte_at: new Date()}, {merge: true});
+            return true;
+          }).catch((e) => {
+            console.error("lead transaction:", e?.message || e);
+            return false;
+          });
+
+          if (premier) {
+            const prenom = (expediteur?.firstName ||
+              (expediteur?.fullName || "").split(" ")[0] || "Un élève").trim();
+            const profNom = destinataire?.fullName || "le professeur";
+            const acq = expediteur?.acquisition || {};
+            const source = [acq.source, acq.campaign && `campagne ${acq.campaign}`]
+                .filter(Boolean).join(" · ") || "source inconnue";
+            const matiere = (destinataire?.subjects && String(destinataire.subjects)) || "";
+            const ville = expediteur?.city ? ` · ${expediteur.city}` : "";
+            // Extrait court : juste de quoi juger le sérieux du lead.
+            // Les CGU et la politique de confidentialité le prévoient (15/10/2026).
+            const extrait = (text || "").slice(0, 120) + ((text || "").length > 120 ? "…" : "");
+            const lienProf = `https://edukaraib.com/profils/${receiverUid}`;
+            const okLead = await sendEmailResend({
+              to: ADMIN_INBOX_EMAIL.value(),
+              subject: `🔥 Nouveau lead : ${prenom} → ${profNom}` +
+                `${matiere ? ` (${matiere})` : ""} — via ${acq.source || "source inconnue"}`,
+              text:
+                `${prenom} (${expediteur?.role || "?"}${ville}) vient d'écrire à ${profNom}.
+` +
+                `Source : ${source}
+` +
+                `${matiere ? `Matières du prof : ${matiere}
+` : ""}` +
+                `
+« ${extrait} »
+
+` +
+                `Profil du prof : ${lienProf}
+` +
+                `⚠️ Si le prof ne répond pas, relance-le toi-même : un lead qui attend est un lead perdu.
+`,
+              html: `
+          <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;color:#111">
+            <h2 style="margin:0 0 12px">🔥 Nouveau lead : ${prenom} → ${profNom}</h2>
+            <p style="margin:0 0 8px"><strong>${prenom}</strong> (${expediteur?.role || "?"}${ville}) vient d'écrire à <strong>${profNom}</strong>.</p>
+            <p style="margin:0 0 8px;font-size:13px;color:#555">Source : ${source}${matiere ? ` · Matières du prof : ${matiere}` : ""}</p>
+            <p style="margin:0 0 12px;padding:12px;background:#f3f4f6;border-radius:8px">${extrait || "(message sans texte)"}</p>
+            <p style="margin:16px 0">
+              <a href="${lienProf}" style="display:inline-block;background:#00804B;color:white;padding:10px 16px;border-radius:8px;text-decoration:none">
+                Voir le professeur
+              </a>
+            </p>
+            <p style="margin:0;font-size:12px;color:#666">⚠️ Si le prof ne répond pas, relance-le toi-même : un lead qui attend est un lead perdu.</p>
+          </div>`,
+            });
+            if (!okLead) console.error("Alerte lead : échec Resend");
+          }
+        }
+      }
 
       // On ne notifie que si le DESTINATAIRE est un admin
       if (!(await isAdminUser(receiverUid))) return null;
