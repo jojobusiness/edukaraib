@@ -45,10 +45,9 @@ export default function DiagnosticsSection() {
     setChargement(true);
     setErreur('');
     try {
-      const r = await fetchWithAuth('/api/admin-diagnostics');
-      const j = await r.json();
-      if (!r.ok) throw new Error(j?.message || j?.error || 'Erreur');
-      setData(j);
+      // ⚠️ fetchWithAuth renvoie le JSON déjà analysé et lève lui-même sur
+      // une réponse en erreur : pas de .json() à appeler ici.
+      setData(await fetchWithAuth('/api/admin-diagnostics'));
     } catch (e) {
       setErreur(e?.message || 'Lecture impossible');
     } finally {

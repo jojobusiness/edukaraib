@@ -89,12 +89,11 @@ export default function LeadsSection() {
     );
     if (!motif) return;
     try {
-      const r = await fetchWithAuth('/api/admin-export-conversation', {
+      // ⚠️ fetchWithAuth renvoie le JSON déjà analysé et lève lui-même sur erreur
+      const j = await fetchWithAuth('/api/admin-export-conversation', {
         method: 'POST',
         body: JSON.stringify({ conversationId: l.conversationId || l.id, motif }),
       });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j?.error === 'MOTIF_TROP_COURT' ? 'Motif trop court (10 caractères minimum).' : (j?.message || j?.error));
       const texte = [
         `Conversation ${j.conversationId}`,
         `Motif : ${j.motif}`,
@@ -112,7 +111,10 @@ export default function LeadsSection() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      alert("Export impossible : " + (e?.message || ''));
+      const m = String(e?.message || '');
+      alert(m.includes('MOTIF_TROP_COURT')
+        ? 'Motif trop court : 10 caractères minimum.'
+        : `Export impossible : ${m}`);
     }
   };
 
