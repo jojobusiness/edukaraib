@@ -27,7 +27,8 @@ const JOURS = Number(arg.jours || 7);
 const DEPUIS = new Date(Date.now() - JOURS * 86400000);
 
 const toDate = (v) => (v?.toDate ? v.toDate() : v ? new Date(v) : null);
-const jjmm = (d) => (d ? `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}` : '—');
+// Année comprise : une conversation de 2025 ne doit pas se lire comme celle d'hier
+const jjmm = (d) => (d ? `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}` : '—');
 const duree = (ms) => {
   if (ms === null || ms === undefined) return '—';
   const h = ms / 3600000;
@@ -103,10 +104,10 @@ lignes.sort((a, b) => b.premier - a.premier);
 
 console.log(`\n=== MESSAGES — ${JOURS} derniers jours — ${lignes.length} conversation(s) élève/parent → prof ===`);
 console.log('(aucun contenu de message n\'est affiché)\n');
-console.log('1er msg  élève                     prof                       envoyés  reçus  1re réponse  statut        source');
+console.log('1er msg   élève                     prof                       envoyés  reçus  1re réponse  statut        source');
 for (const l of lignes) {
   console.log(
-    `${jjmm(l.premier).padEnd(8)} ${nom(l.eleveUid).slice(0, 25).padEnd(26)} ${nom(l.profUid).slice(0, 25).padEnd(26)} `
+    `${jjmm(l.premier).padEnd(9)} ${nom(l.eleveUid).slice(0, 25).padEnd(26)} ${nom(l.profUid).slice(0, 25).padEnd(26)} `
     + `${String(l.deLEleve).padStart(7)} ${String(l.duProf).padStart(6)}  ${duree(l.delai).padEnd(12)} ${l.statut.padEnd(13)} ${l.source}`,
   );
 }
