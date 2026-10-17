@@ -8,6 +8,7 @@ import Home from './pages/Home';
 import Bac from './pages/Bac';
 import Rentree from './pages/Rentree';
 import NotFound from './pages/NotFound';
+import MiseAJourAuto from './components/MiseAJourAuto';
 
 // Gardes de routes : legers, restent statiques
 import TeacherRoute from './components/TeacherRoute';
@@ -159,6 +160,8 @@ function App() {
     <Router>
       <PageViewTracker /> {/* ✅ Tracker INSIDE the Router */}
       <RemonteEnHaut />
+      {/* Récupère la nouvelle version sans que personne ait à faire Ctrl+F5 */}
+      <MiseAJourAuto />
       {!authReady ? (
         <div className="min-h-screen grid place-items-center text-gray-500">Chargement…</div>
       ) : (
