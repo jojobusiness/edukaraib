@@ -150,8 +150,21 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
   if (refs.paymentIntentId) {
     pi = await stripe.paymentIntents.retrieve(refs.paymentIntentId, { expand: ['latest_charge.balance_transaction'] });
   }
-  const charge = pi?.charges?.data?.[0] || null;
+  // ⚠️ `pi.charges` n'existe plus depuis l'API 2022-11-15 (« Removes the charges
+  // attribute from the PaymentIntent object ») et on tourne en 2024-06-20 :
+  // on lisait donc toujours `null`, et `stripe_charge_id` n'était jamais posé.
+  // Le remplaçant est `latest_charge`, déjà développé par le `expand` ci-dessus.
+  const charge = typeof pi?.latest_charge === 'object' ? pi.latest_charge : null;
   const grossCents = pi?.amount_received ?? pi?.amount ?? 0;
+
+  // Frais Stripe RÉELS de cette transaction, pour savoir ce que le paiement
+  // nous laisse une fois le prof payé à 100 % (relevé « 💶 Marge » de l'admin).
+  // balance_transaction.fee : « Fees (in the smallest currency unit) paid for
+  // this transaction ». Absent sur un moyen de paiement encore en cours de
+  // règlement — dans ce cas l'admin estime et l'affiche comme estimé.
+  const bt = typeof charge?.balance_transaction === 'object' ? charge.balance_transaction : null;
+  const stripeFeeCents = typeof bt?.fee === 'number' ? bt.fee : null;
+  const paymentMethodType = charge?.payment_method_details?.type || null;
 
   // 1) Mettre à jour la leçon pivot — skip si pack (déjà traité dans la boucle ci-dessus)
   const lessonRef = adminDb.collection('lessons').doc(String(lessonId));
@@ -196,6 +209,10 @@ async function markPaymentHeldAndUpdateLesson(refs, metadata) {
       net_to_teacher_eur: Math.max(0, teacherAmountCents) / 100,
       payment_intent_id: pi?.id || refs.paymentIntentId || null,
       stripe_charge_id: charge?.id || null,
+      // Coût réel de l'encaissement : il sort de notre commission, jamais de
+      // la part du prof. Null = pas encore connu, l'admin estimera.
+      stripe_fee_cents: stripeFeeCents,
+      payment_method_type: paymentMethodType,
       // Tu pourras plus tard compléter lors du "release" avec transfer_id, released_at, etc.
     }, { merge: true });
   }
