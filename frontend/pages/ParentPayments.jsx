@@ -478,17 +478,23 @@ export default function ParentPayments() {
   // --- Remboursement ---
   const resolvePaymentId = async (lessonId, forStudent) => {
     try {
-      let qBase = query(
+      // 🔒 19/10/2026 : les règles ne laissent lire un paiement qu'à celui qui
+      // l'a payé. La requête doit donc contenir `payer_uid == moi`, sinon
+      // Firestore la refuse en entier. Filtres d'égalité seuls (aucun index
+      // composite à créer), le reste est trié ici.
+      const payerUid = auth.currentUser?.uid;
+      if (!payerUid) return null;
+      const snap = await getDocs(query(
         collection(db, 'payments'),
+        where('payer_uid', '==', payerUid),
         where('lesson_id', '==', String(lessonId)),
-        where('for_student', '==', String(forStudent)),
-        where('status', 'in', ['held', 'released'])
-      );
-      qBase = query(qBase, orderBy('created_at', 'desc'), limit(1));
-      const snap = await getDocs(qBase);
-      if (!snap.empty) return snap.docs[0].id;
-
-      return null;
+      ));
+      const millis = (v) => (v?.toMillis ? v.toMillis() : new Date(v || 0).getTime());
+      const trouve = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((p) => String(p.for_student) === String(forStudent) && ['held', 'released'].includes(p.status))
+        .sort((a, b) => millis(b.created_at) - millis(a.created_at))[0];
+      return trouve ? trouve.id : null;
     } catch (e) {
       console.error('resolvePaymentId error', e);
       return null;

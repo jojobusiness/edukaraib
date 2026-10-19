@@ -10,7 +10,7 @@ rules_version = '2';
 //    (Admin SDK, qui ignore les regles) ecrivent
 //  - pas d'auto-promotion : un user ne peut pas changer son propre role
 //  - le client ne peut jamais poser is_paid/paid_at sur une lecon
-// Phase 2 (a faire) : restreindre la lecture de lessons/payments par champ
+// Phase 2 : payments/subscriptions restreints le 19/10/2026. Reste lessons
 // (necessite d'aligner les requetes front), et participantsMap.*.is_paid.
 
 service cloud.firestore {
@@ -145,12 +145,31 @@ service cloud.firestore {
     }
 
     // ── ARGENT : ecriture client interdite partout ─────────────────────────
+    // 🔒 19/10/2026 — AVANT : `allow read: if signedIn()` sur payments et
+    // subscriptions. N'IMPORTE QUEL compte connecte pouvait lire TOUS les
+    // paiements du site : montants, qui a paye quel prof, pour quel enfant.
+    // Desormais : l'admin, et les seules personnes concernees par le paiement.
+    // Rappel : une requete doit PROUVER qu'elle ne lit que ses documents
+    // (where payer_uid/teacher_uid/for_student == son uid), sinon refus total.
+    // Verifie depuis l'exterieur par scripts/diag-regles-paiements.mjs.
+    function concerneParPaiement() {
+      return signedIn() && (
+        resource.data.get('payer_uid', '') == request.auth.uid
+        || resource.data.get('teacher_uid', '') == request.auth.uid
+        || resource.data.get('teacher_id', '') == request.auth.uid
+        || resource.data.get('for_student', '') == request.auth.uid
+      );
+    }
     match /payments/{id} {
-      allow read: if signedIn(); // Phase 2: restreindre payer/teacher/admin
+      allow read: if isAdmin() || concerneParPaiement();
       allow write: if false;
     }
     match /subscriptions/{id} {
-      allow read: if signedIn();
+      allow read: if isAdmin() || (signedIn() && (
+        resource.data.get('payer_uid', '') == request.auth.uid
+        || resource.data.get('student_id', '') == request.auth.uid
+        || resource.data.get('teacher_id', '') == request.auth.uid
+      ));
       allow write: if false;
     }
     match /coupons/{id} {
@@ -169,7 +188,7 @@ service cloud.firestore {
     }
     match /refunds/{id} { allow read, write: if isAdmin(); }
     match /payouts/{id} {
-      allow read: if signedIn();
+      allow read: if isAdmin(); // 19/10/2026 : etait signedIn(), aucun lecteur client
       allow write: if false;
     }
 

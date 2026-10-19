@@ -236,11 +236,16 @@ export default function TeacherDashboard() {
       // 6) Revenus du mois
       let monthRevenue = 0;
       try {
+        // 🔒 19/10/2026 : `teacher_uid` (le champ que posent le checkout et le
+        // webhook ; `teacher_id` ne l'est plus, la lecture ne trouvait rien) —
+        // et c'est aussi ce que les règles exigent pour lire ses paiements.
         const paySnap = await getDocs(
-          query(collection(db, 'payments'), where('teacher_id', '==', userId))
+          query(collection(db, 'payments'), where('teacher_uid', '==', userId))
         );
         const pays = paySnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        const successLike = new Set(['succeeded', 'paid', 'completed']);
+        // Argent encaissé pour ce prof (versé, à venir ou dû) — pas les
+        // sessions abandonnées ni les remboursés.
+        const successLike = new Set(['held', 'processing', 'released', 'payout_pending_rib']);
         const nowD = new Date();
         const monthPays = pays.filter(p => {
           const paidAt = p.paid_at || p.created_at || null;
@@ -251,6 +256,8 @@ export default function TeacherDashboard() {
 
         if (monthPays.length > 0) {
           monthRevenue = monthPays.reduce((sum, p) => {
+            // Sa part réelle : 100 % de son tarif, hors commission du site.
+            if (typeof p.net_to_teacher_eur === 'number') return sum + p.net_to_teacher_eur;
             const cents =
               (typeof p.amount_cents === 'number' && p.amount_cents) ||
               (typeof p.amount_total === 'number' && p.amount_total) ||
