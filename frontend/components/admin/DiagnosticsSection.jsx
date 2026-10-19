@@ -11,8 +11,6 @@ import { Link } from 'react-router-dom';
 import fetchWithAuth from '../../utils/fetchWithAuth';
 import { dureeLisible } from '../../lib/statsMessages';
 
-const euros = (n) => `${Number(n || 0).toFixed(2).replace('.', ',')} €`;
-
 const dateFr = (iso) => {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -63,7 +61,7 @@ export default function DiagnosticsSection() {
   if (erreur) return <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-red-800">Erreur : {erreur}</div>;
   if (!data) return null;
 
-  const { offre, acquisition, retours, conservation, marges } = data;
+  const { offre, acquisition, retours, conservation } = data;
 
   return (
     <div className="space-y-5">
@@ -73,69 +71,6 @@ export default function DiagnosticsSection() {
           ↻ Recalculer
         </button>
       </div>
-
-      {marges && (
-        <Bloc
-          titre="💶 Ce que les paiements nous laissent"
-          sous="Le prof touche 100 % de son tarif : les frais Stripe sortent de notre commission, jamais de sa part. Un paiement en rouge nous a coûté plus qu'il ne nous a rapporté."
-        >
-          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Chiffre valeur={euros(marges.encaisse)} libelle={`Encaissé (${marges.nbPaiements} paiements)`} />
-            <Chiffre valeur={euros(marges.verseProfs)} libelle="Versé aux profs (100 % de leur tarif)" />
-            <Chiffre valeur={euros(marges.fraisStripe + marges.fraisVirement)} libelle="Frais Stripe à notre charge" />
-            <Chiffre valeur={euros(marges.net)} libelle="Ce qu'il nous reste" alerte={marges.net < 0} />
-          </div>
-
-          {marges.negatifs.length === 0 ? (
-            <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
-              Aucun paiement à perte. Chaque encaissement couvre ses frais.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <p className="mb-2 text-sm font-semibold text-red-700">
-                {marges.negatifs.length} paiement{marges.negatifs.length > 1 ? 's' : ''} à perte — le prof a bien touché son tarif, c'est notre commission qui n'a pas couvert les frais.
-              </p>
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
-                  <tr>
-                    <th className="px-3 py-2">Date</th>
-                    <th className="px-3 py-2">Professeur</th>
-                    <th className="px-3 py-2 text-right">Payé</th>
-                    <th className="px-3 py-2 text-right">Part prof</th>
-                    <th className="px-3 py-2 text-right">Notre com.</th>
-                    <th className="px-3 py-2 text-right">Frais Stripe</th>
-                    <th className="px-3 py-2 text-right">Reste</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {marges.negatifs.map((l) => (
-                    <tr key={l.id} className="border-t border-slate-100">
-                      <td className="px-3 py-2 text-slate-500">{dateFr(l.date)}</td>
-                      <td className="px-3 py-2">
-                        {l.prof}
-                        {l.rembourse && <span className="ml-1 text-xs text-slate-400">(remboursé)</span>}
-                      </td>
-                      <td className="px-3 py-2 text-right">{euros(l.brut)}</td>
-                      <td className="px-3 py-2 text-right">{euros(l.partProf)}</td>
-                      <td className="px-3 py-2 text-right">{euros(l.commission)}</td>
-                      <td className="px-3 py-2 text-right">
-                        {euros(l.fraisStripe)}
-                        {l.estime && <span className="ml-1 text-xs text-slate-400">estimé</span>}
-                      </td>
-                      <td className="px-3 py-2 text-right font-semibold text-red-700">{euros(l.net)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <p className="mt-3 text-xs text-slate-500">
-            S'ajoute {euros(marges.coutComptesActifs)} ce mois-ci : Stripe facture 2 € par prof payé dans le mois (Connect).
-            {marges.estimes > 0 && ` ${marges.estimes} paiement(s) sans frais réels encore connus : estimés à la grille France (carte EEE 1,5 % + 0,25 €, Klarna 4,99 % + 0,40 €).`}
-          </p>
-        </Bloc>
-      )}
 
       <Bloc
         titre="🎓 Offre professeurs"

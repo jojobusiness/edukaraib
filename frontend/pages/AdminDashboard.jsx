@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { PARTNER_KINDS } from '../lib/partner';
 import LeadsSection from '../components/admin/LeadsSection';
 import DiagnosticsSection from '../components/admin/DiagnosticsSection';
+import PaiementsSection from '../components/admin/PaiementsSection';
 import { auth, db } from '../lib/firebase';
 import {
   addDoc,
@@ -29,9 +30,6 @@ import AnalyticsTab from '../components/admin/AnalyticsTab';
 /* ===========================
    Utils
 =========================== */
-const fmtMoney = (cents = 0, currency = 'EUR') =>
-  (Number(cents || 0) / 100).toLocaleString('fr-FR', { style: 'currency', currency });
-
 const toDateStr = (ts) => {
   try {
     if (!ts) return '';
@@ -385,11 +383,9 @@ export default function AdminDashboard() {
 
   // --- Payments state ---
   const [payments, setPayments] = useState([]);
-  const [refunds, setRefunds] = useState([]);
-  const [payouts, setPayouts] = useState([]);
   const [payLoading, setPayLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  // Incrémenté après un remboursement : l'onglet Paiements se recharge.
+  const [paiementsVersion, setPaiementsVersion] = useState(0);
 
   // --- Refund modal ---
   const [refundOpen, setRefundOpen] = useState(false);
@@ -451,43 +447,6 @@ export default function AdminDashboard() {
     );
     return () => unsub();
   }, []);
-
-  /* ----- Payments: lazy load on tab open or on filter ----- */
-  useEffect(() => {
-    if (tab !== 'payments') return;
-    (async () => {
-      setPayLoading(true);
-
-      const [pSnap, rSnap, poSnap] = await Promise.all([
-        getDocs(query(collection(db, 'payments'), orderBy('created_at', 'desc'), limit(500))),
-        getDocs(query(collection(db, 'refunds'), orderBy('created_at', 'desc'), limit(500))),
-        getDocs(query(collection(db, 'payouts'), orderBy('created_at', 'desc'), limit(500))),
-      ]);
-
-      const inRange = (ts) => {
-        if (!dateFrom && !dateTo) return true;
-        const t = ts?.toDate ? ts.toDate().getTime() : new Date(ts).getTime();
-        if (dateFrom) {
-          const start = new Date(dateFrom + 'T00:00:00').getTime();
-          if (t < start) return false;
-        }
-        if (dateTo) {
-          const end = new Date(dateTo + 'T23:59:59').getTime();
-          if (t > end) return false;
-        }
-        return true;
-      };
-
-      const p = pSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((x) => inRange(x.created_at));
-      const r = rSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((x) => inRange(x.created_at));
-      const po = poSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((x) => inRange(x.created_at));
-
-      setPayments(p);
-      setRefunds(r);
-      setPayouts(po);
-      setPayLoading(false);
-    })();
-  }, [tab, dateFrom, dateTo]);
 
   useEffect(() => {
     if (tab !== 'stats') return;
@@ -610,35 +569,6 @@ export default function AdminDashboard() {
     return m;
   }, [users]);
 
-  const totals = useMemo(() => {
-    const succ = payments.filter((p) => p.status === 'succeeded');
-    const sum = (arr) => arr.reduce((acc, x) => acc + Number(x.amount || 0), 0);
-    const paid = sum(succ);
-    const refunded = refunds.reduce((acc, r) => acc + Number(r.amount || 0), 0);
-    const net = paid - refunded;
-    return { paid, refunded, net };
-  }, [payments, refunds]);
-
-  const perTeacher = useMemo(() => {
-    const byId = new Map();
-    const add = (tid, kind, cents) => {
-      if (!byId.has(tid)) byId.set(tid, { teacher_id: tid, paid: 0, refunded: 0, net: 0 });
-      const row = byId.get(tid);
-      row[kind] += cents;
-      row.net = row.paid - row.refunded;
-      byId.set(tid, row);
-    };
-    payments.forEach((p) => {
-      if (p.status === 'succeeded' && p.teacher_id) add(p.teacher_id, 'paid', Number(p.amount || 0));
-    });
-    refunds.forEach((r) => {
-      if (r.teacher_id) add(r.teacher_id, 'refunded', Number(r.amount || 0));
-    });
-    const arr = Array.from(byId.values());
-    arr.sort((a, b) => b.net - a.net);
-    return arr;
-  }, [payments, refunds]);
-
   /* ===========================
      Accounts actions
   =========================== */
@@ -701,7 +631,7 @@ export default function AdminDashboard() {
   =========================== */
   const openRefund = async (payment) => {
     setRefundTarget(payment);
-    const teacher = teacherMap.get(payment.teacher_id);
+    const teacher = teacherMap.get(payment.teacher_uid || payment.teacher_id);
     setRefundTeacherName(teacher ? nameOf(teacher) : '');
     setRefundOpen(true);
   };
@@ -721,6 +651,7 @@ export default function AdminDashboard() {
       alert('Remboursement lancé avec succès.');
       setRefundOpen(false);
       setRefundTarget(null);
+      setPaiementsVersion((v) => v + 1);
     } catch (e) {
       console.error(e);
       alert(e.message || 'Remboursement impossible.');
@@ -989,283 +920,7 @@ export default function AdminDashboard() {
         {/* === PAYMENTS TAB === */}
         {tab === 'payments' && (
           <div className="space-y-6">
-            {/* Filtres */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <div>
-                <label className="block text-sm text-gray-600">Du</label>
-                <input
-                  type="date"
-                  className="border rounded px-3 py-2 w-full"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600">Au</label>
-                <input
-                  type="date"
-                  className="border rounded px-3 py-2 w-full"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                />
-              </div>
-            </div>
-
-            {/* KPIs */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="bg-white border rounded-xl p-4">
-                <div className="text-gray-500 text-sm">Paiements réussis</div>
-                <div className="text-xl font-bold">{fmtMoney(payments.filter(p=>p.status==='succeeded').reduce((a,b)=>a+Number(b.amount||0),0))}</div>
-              </div>
-              <div className="bg-white border rounded-xl p-4">
-                <div className="text-gray-500 text-sm">Remboursés</div>
-                <div className="text-xl font-bold">{fmtMoney(refunds.reduce((a,b)=>a+Number(b.amount||0),0))}</div>
-              </div>
-              <div className="bg-white border rounded-xl p-4">
-                <div className="text-gray-500 text-sm">Revenu net</div>
-                <div className="text-xl font-bold">
-                  {fmtMoney(
-                    payments.filter(p=>p.status==='succeeded').reduce((a,b)=>a+Number(b.amount||0),0)
-                    - refunds.reduce((a,b)=>a+Number(b.amount||0),0)
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Agrégat par prof */}
-            <div className="bg-white border rounded-xl overflow-hidden">
-              <div className="p-3 border-b font-semibold">Revenus par professeur</div>
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="p-2 text-left">Professeur</th>
-                    <th className="p-2 text-right">Payé</th>
-                    <th className="p-2 text-right">Remboursé</th>
-                    <th className="p-2 text-right">Net</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {payLoading && (
-                    <tr><td colSpan={4} className="p-4 text-center text-gray-500">Chargement…</td></tr>
-                  )}
-                  {!payLoading && users.length === 0 && (
-                    <tr><td colSpan={4} className="p-4 text-center text-gray-400">Aucune donnée</td></tr>
-                  )}
-                  {!payLoading && (() => {
-                    const byId = new Map();
-                    const add = (tid, kind, cents) => {
-                      if (!byId.has(tid)) byId.set(tid, { teacher_id: tid, paid: 0, refunded: 0, net: 0 });
-                      const row = byId.get(tid);
-                      row[kind] += cents;
-                      row.net = row.paid - row.refunded;
-                      byId.set(tid, row);
-                    };
-                    payments.forEach((p) => {
-                      if (p.status === 'succeeded' && p.teacher_id) add(p.teacher_id, 'paid', Number(p.amount || 0));
-                    });
-                    refunds.forEach((r) => {
-                      if (r.teacher_id) add(r.teacher_id, 'refunded', Number(r.amount || 0));
-                    });
-                    const arr = Array.from(byId.values()).sort((a,b)=>b.net-a.net);
-                    return arr.map((row) => {
-                      const t = teacherMap.get(row.teacher_id);
-                      return (
-                        <tr key={row.teacher_id} className="border-t">
-                          <td className="p-2">{t ? nameOf(t) : row.teacher_id}</td>
-                          <td className="p-2 text-right">{fmtMoney(row.paid)}</td>
-                          <td className="p-2 text-right text-amber-700">{fmtMoney(row.refunded)}</td>
-                          <td className="p-2 text-right font-semibold">{fmtMoney(row.net)}</td>
-                        </tr>
-                      );
-                    });
-                  })()}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Détails */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-white border rounded-xl overflow-hidden">
-                <div className="p-3 border-b font-semibold">Derniers paiements</div>
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="p-2 text-left">Date</th>
-                      <th className="p-2 text-left">Prof</th>
-                      <th className="p-2 text-right">Montant</th>
-                      <th className="p-2 text-left">Statut</th>
-                      <th className="p-2 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payLoading && (
-                      <tr><td colSpan={5} className="p-4 text-center text-gray-500">Chargement…</td></tr>
-                    )}
-                    {!payLoading && payments.length === 0 && (
-                      <tr><td colSpan={5} className="p-4 text-center text-gray-400">Aucun paiement</td></tr>
-                    )}
-                    {!payLoading && payments.map((p) => {
-                      const t = teacherMap.get(p.teacher_id);
-                      const canRefund = ['succeeded', 'held', 'released'].includes(String(p.status || ''));
-                      return (
-                        <tr key={p.id} className="border-t">
-                          <td className="p-2">{toDateStr(p.created_at)}</td>
-                          <td className="p-2">{t ? nameOf(t) : p.teacher_id}</td>
-                          <td className="p-2 text-right">{fmtMoney(p.amount, p.currency || 'EUR')}</td>
-                          <td className="p-2">
-                            <span className={`px-2 py-0.5 rounded ${p.status === 'succeeded' ? 'bg-green-100 text-green-700' : p.status === 'refunded' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100'}`}>
-                              {p.status}
-                            </span>
-                          </td>
-                          <td className="p-2 text-right">
-                            {canRefund && (
-                              <button
-                                className="px-3 py-1 rounded text-sm border border-red-300 text-red-700 hover:bg-red-50"
-                                onClick={() => openRefund(p)}
-                              >
-                                Rembourser
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="bg-white border rounded-xl overflow-hidden">
-                <div className="p-3 border-b font-semibold">Remboursements</div>
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="p-2 text-left">Date</th>
-                      <th className="p-2 text-left">Prof</th>
-                      <th className="p-2 text-right">Montant</th>
-                      <th className="p-2 text-left">Statut</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payLoading && (
-                      <tr><td colSpan={4} className="p-4 text-center text-gray-500">Chargement…</td></tr>
-                    )}
-                    {!payLoading && refunds.length === 0 && (
-                      <tr><td colSpan={4} className="p-4 text-center text-gray-400">Aucun remboursement</td></tr>
-                    )}
-                    {!payLoading && refunds.map((r) => {
-                      const t = teacherMap.get(r.teacher_id);
-                      return (
-                        <tr key={r.id} className="border-t">
-                          <td className="p-2">{toDateStr(r.created_at)}</td>
-                          <td className="p-2">{t ? nameOf(t) : r.teacher_id}</td>
-                          <td className="p-2 text-right">{fmtMoney(r.amount, r.currency || 'EUR')}</td>
-                          <td className="p-2">
-                            <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-700">
-                              {r.status || 'refunded'}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Virements en attente (RIB manquant) */}
-              <div className="bg-white border rounded-xl overflow-hidden lg:col-span-2">
-                <div className="p-3 border-b font-semibold flex items-center gap-2">
-                  <span>⚠️ Virements en attente (RIB manquant)</span>
-                  <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">
-                    {payments.filter(p => p.status === 'payout_pending_rib').length}
-                  </span>
-                </div>
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="p-2 text-left">Prof</th>
-                      <th className="p-2 text-left">Leçon</th>
-                      <th className="p-2 text-right">Net à verser</th>
-                      <th className="p-2 text-left">Depuis</th>
-                      <th className="p-2 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payments.filter(p => p.status === 'payout_pending_rib').length === 0 && (
-                      <tr><td colSpan={5} className="p-4 text-center text-gray-400">Aucun virement en attente ✅</td></tr>
-                    )}
-                    {payments.filter(p => p.status === 'payout_pending_rib').map((p) => {
-                      const t = teacherMap.get(p.teacher_uid || p.teacher_id);
-                      return (
-                        <tr key={p.id} className="border-t bg-amber-50">
-                          <td className="p-2 font-semibold">{t ? nameOf(t) : p.teacher_uid}</td>
-                          <td className="p-2 text-xs text-gray-500">{p.pack_id ? `Pack ${p.pack_id}` : p.lesson_id}</td>
-                          <td className="p-2 text-right font-bold text-green-700">{Number(p.net_to_teacher_eur || 0).toFixed(2)} €</td>
-                          <td className="p-2 text-xs">{toDateStr(p.payout_pending_since || p.created_at)}</td>
-                          <td className="p-2 text-right">
-                            <button
-                              className="px-3 py-1 rounded text-sm bg-green-600 text-white hover:bg-green-700"
-                              onClick={async () => {
-                                if (!window.confirm(`Marquer le virement de ${Number(p.net_to_teacher_eur||0).toFixed(2)}€ à ${t ? nameOf(t) : p.teacher_uid} comme effectué ?`)) return;
-                                try {
-                                  await updateDoc(doc(db, 'payments', p.id), {
-                                    status: 'released',
-                                    released_at: new Date(),
-                                    payout_method: 'manual_rib',
-                                  });
-                                  alert('Virement marqué comme effectué.');
-                                  setPayments(prev => prev.map(x => x.id === p.id ? { ...x, status: 'released' } : x));
-                                } catch (e) {
-                                  alert('Erreur : ' + e.message);
-                                }
-                              }}
-                            >
-                              ✅ Marquer viré
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="bg-white border rounded-xl overflow-hidden lg:col-span-2">
-                <div className="p-3 border-b font-semibold">Payouts (virements aux profs)</div>
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="p-2 text-left">Date</th>
-                      <th className="p-2 text-left">Prof</th>
-                      <th className="p-2 text-right">Montant</th>
-                      <th className="p-2 text-left">Statut</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payLoading && (
-                      <tr><td colSpan={4} className="p-4 text-center text-gray-500">Chargement…</td></tr>
-                    )}
-                    {!payLoading && payouts.length === 0 && (
-                      <tr><td colSpan={4} className="p-4 text-center text-gray-400">Aucun payout</td></tr>
-                    )}
-                    {!payLoading && payouts.map((po) => {
-                      const t = teacherMap.get(po.teacher_id);
-                      return (
-                        <tr key={po.id} className="border-t">
-                          <td className="p-2">{toDateStr(po.created_at)}</td>
-                          <td className="p-2">{t ? nameOf(t) : po.teacher_id}</td>
-                          <td className="p-2 text-right">{fmtMoney(po.amount, po.currency || 'EUR')}</td>
-                          <td className="p-2">
-                            <span className={`px-2 py-0.5 rounded ${po.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-gray-100'}`}>
-                              {po.status || 'paid'}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <PaiementsSection users={users} onRembourser={openRefund} version={paiementsVersion} />
 
             {/* Modal remboursement */}
             <RefundModal
