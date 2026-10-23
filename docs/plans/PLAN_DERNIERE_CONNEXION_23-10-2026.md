@@ -98,8 +98,8 @@ Passer `DELAI_MS` de 24 h à **1 h**.
 5. Vérifier en prod dans l'admin, onglet Comptes : Arol doit afficher « pas revenu depuis l'inscription », et Dylan « il y a 1 j » (au 23/10).
 
 ## 7. Résultat (23/10/2026)
-- ✅ **Livraison 1** : colonne « Dernière venue » dans l'onglet Comptes, avec un tri (créé le / dernière venue) et un filtre (toutes / revenus depuis 7 jours / pas revenus depuis l'inscription). La fonction pure est , avec  et  dans .
-- ✅ **Livraison 2** :  passe à 1 h (tests à 59 et 61 min). La Cloud Function  ignore désormais les écritures qui ne changent pas la copie publique, pour ne pas réécrire  à chaque heure de présence.
-- ✅ **Livraison 3** : le « Vu » existait déjà depuis le 15/06 (commit c7ef49cf), sans heure. Il affiche maintenant « ✓✓ Vu à 18 h 40 », « Vu hier » ou « Vu le 22/10 » (), il apparaît aussi dans la liste des discussions, et la politique de confidentialité a sa ligne. Aucune statistique n'en est tirée.
+- ✅ **Livraison 1** : colonne « Dernière venue » dans l'onglet Comptes, avec un tri (créé le / dernière venue) et un filtre (toutes / revenus depuis 7 jours / pas revenus depuis l'inscription). La fonction pure est `libelleDerniereVenue`, avec `trierParVenue` et `filtrerParVenue` dans `frontend/lib/derniereVenue.js`.
+- ✅ **Livraison 2** : `DELAI_MS` passe à 1 h (tests à 59 et 61 min). La Cloud Function `onUserWrittenSyncProfil` ignore désormais les écritures qui ne changent pas la copie publique, pour ne pas réécrire `profils` à chaque heure de présence.
+- ✅ **Livraison 3** : le « Vu » existait déjà depuis le 15/06 (commit c7ef49cf), sans heure. Il affiche maintenant « ✓✓ Vu à 18 h 40 », « Vu hier » ou « Vu le 22/10 » (`frontend/lib/etatLecture.js`), il apparaît aussi dans la liste des discussions, et la politique de confidentialité a sa ligne. Aucune statistique n'en est tirée.
 - Vérifié sur les vraies données le 23/10 : Arol → « pas revenu depuis l'inscription » (21/10 18:29), Dylan (Dydy) → « il y a 1 j » (22/10 06:07).
 - 260 tests, lint 0 erreur, build OK.
