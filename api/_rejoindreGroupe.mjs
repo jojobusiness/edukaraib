@@ -5,6 +5,15 @@
 // C'est ce qui obligeait `lessons` à rester ouvert. Désormais le serveur fait
 // l'ajout (api/rejoindre-groupe.mjs) et ne renvoie rien des autres élèves.
 // Mêmes champs qu'avant (TeacherProfile.jsx, étape « rejoindre un groupe »).
+import { FieldValue } from 'firebase-admin/firestore';
+
+/** Valeurs spéciales de l'Admin SDK. ⚠️ FieldValue.delete() : `deleteField`
+ * n'existe que côté navigateur (500 en prod le 23/10 avant ce correctif). */
+export const VALEURS_ADMIN = {
+  arrayUnion: (...x) => FieldValue.arrayUnion(...x),
+  serverTimestamp: () => FieldValue.serverTimestamp(),
+  deleteField: () => FieldValue.delete(),
+};
 
 /** Champs « pack » d'un participant, posés ou effacés. */
 export function champsPack(sid, { packHours, mode, packId }, effacer) {

@@ -51,6 +51,7 @@ const prof = (await adminDb.collection('users').where('role', '==', 'teacher').l
 const enfant = (await adminDb.collection('students').limit(1).get()).docs[0];
 const document = (await adminDb.collection('documents').limit(1).get()).docs[0];
 const unAdmin = (await adminDb.collection('users').where('role', '==', 'admin').limit(1).get()).docs[0];
+const unCours = (await adminDb.collection('lessons').limit(1).get()).docs[0];
 
 for (const [qui, uid] of [['SANS COMPTE', null], [`INTRUS « ${UID_INTRUS} »`, UID_INTRUS]]) {
   console.log(`\n=== ${qui} — ne doit rien voir ===`);
@@ -64,6 +65,12 @@ for (const [qui, uid] of [['SANS COMPTE', null], [`INTRUS « ${UID_INTRUS} »`, 
   if (enfant && uid) await essai("modifier la fiche d'un enfant", () => updateDoc(doc(db, 'students', enfant.id), { full_name: 'x' }).then(() => 1), 'refus');
   if (document) await essai("ouvrir un document de cours d'autrui", () => existe(doc(db, 'documents', document.id)), 'refus');
   await essai('lister les favoris', () => nb(collection(db, 'favorites')), 'refus');
+  // Cours (verrou du 23/10/2026, PLAN_VERROU_COURS)
+  await essai('lister tous les cours', () => nb(collection(db, 'lessons')), 'refus');
+  await essai("lister les cours d'un prof", () => nb(query(collection(db, 'lessons'), where('teacher_id', '==', prof.id))), 'refus');
+  if (unCours) await essai("ouvrir un cours d'autrui", () => existe(doc(db, 'lessons', unCours.id)), 'refus');
+  if (unCours && uid) await essai("modifier un cours d'autrui", () => updateDoc(doc(db, 'lessons', unCours.id), { status: unCours.data().status ?? null }).then(() => 1), 'refus');
+  await essai('page prof : créneaux publics (creneaux)', () => nb(query(collection(db, 'creneaux'), where('teacher_id', '==', prof.id))), 'autorisé');
   // Ce qui doit rester public : la vitrine des profs
   await essai('recherche : la liste des profs (profils)', () => nb(query(collection(db, 'profils'), where('role', '==', 'teacher'))), 'autorisé');
   await essai("page d'un prof (profils)", () => existe(doc(db, 'profils', prof.id)), 'autorisé');

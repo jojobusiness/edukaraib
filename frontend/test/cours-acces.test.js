@@ -2,7 +2,7 @@
 // copie publique `creneaux`, et ce que pose /api/rejoindre-groupe.
 import { describe, it, expect } from 'vitest';
 import { createRequire } from 'node:module';
-import { ajoutParticipant, champsPack, demandeInvalide } from '../../api/_rejoindreGroupe.mjs';
+import { ajoutParticipant, champsPack, demandeInvalide, VALEURS_ADMIN } from '../../api/_rejoindreGroupe.mjs';
 import { concerneUnDe } from '../lib/mesCours';
 
 const { accesDuCours, creneauPublic, placesPrises, memeListe } = createRequire(import.meta.url)('../../functions/coursAcces.js');
@@ -60,6 +60,12 @@ describe('rejoindre un groupe (serveur)', () => {
     expect(m.participant_ids).toEqual({ union: ['enfant2'] });
     expect(m.acces).toEqual({ union: ['enfant2', 'parent'] });
     expect(m['participantsMap.enfant2.pack']).toBe('DEL');
+  });
+  it('avec les VRAIES valeurs Admin SDK : aucune valeur indéfinie (500 en prod le 23/10)', () => {
+    for (const packHours of [0, 5]) {
+      const m = ajoutParticipant('e', { moi: 'm', pourEnfant: false, packHours, mode: 'visio', packId: 'p' }, VALEURS_ADMIN);
+      for (const [k, v] of Object.entries(m)) expect(v, k).not.toBeUndefined();
+    }
   });
   it('pack 5 h', () => {
     expect(champsPack('e', { packHours: 5, mode: 'visio', packId: 'p1' }, 'DEL')).toMatchObject({

@@ -4,7 +4,7 @@
 //   'none' = pas de groupe sur ce créneau → la page crée le cours elle-même.
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
-import { ajoutParticipant, demandeInvalide } from './_rejoindreGroupe.mjs';
+import { ajoutParticipant, demandeInvalide, VALEURS_ADMIN } from './_rejoindreGroupe.mjs';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
@@ -41,9 +41,11 @@ export default async function handler(req, res) {
     if (ids.includes(cible)) return res.status(200).json({ status: 'duplicate' });
 
     const packHours = Number(b.packHours || 0);
+    // ⚠️ Admin SDK : FieldValue.delete() — `deleteField` n'existe que côté
+    // navigateur (500 en prod le 23/10 avant ce correctif).
     await groupe.ref.update(ajoutParticipant(cible, {
       moi, pourEnfant, packHours, mode: b.mode || 'presentiel', packId: b.packId || null,
-    }, FieldValue));
+    }, VALEURS_ADMIN));
     await adminDb.collection('notifications').add({
       user_id: String(b.teacherId),
       read: false,
