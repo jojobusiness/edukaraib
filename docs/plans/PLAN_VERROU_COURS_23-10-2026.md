@@ -51,5 +51,21 @@ Seuls cas légitimes où le navigateur écrit `true` :
 
 Règle : pour chaque participant, `is_paid` ne peut devenir `true` que s'il l'était déjà. Il y a deux exceptions, ces deux cas, et le webhook (Admin SDK) n'est pas concerné par les règles.
 
-## 6. Résultat (à remplir)
-- RÉSULTAT : …
+## 6. Résultat (23/10/2026)
+- ✅ **Livré et vérifié en production.**
+  - Commits `e1149ee9` (verrou) et le correctif `/api/rejoindre-groupe` qui suit.
+  - Règles finales déployées.
+  - Cloud Function `onLessonWrittenSync` déployée.
+  - Données migrées par `scripts/migrer-acces-cours.mjs` (1 cours en base).
+- **Parcours réel contre la prod** (`scripts/essai-reservation-prod.mjs`, comptes de test créés puis supprimés) : 17/17.
+  - Le parent crée un cours collectif.
+  - Le créneau public apparaît, sans aucun identifiant.
+  - Un visiteur sans compte voit le créneau pris, mais pas le cours.
+  - Un élève rejoint le groupe par l'API ; une deuxième tentative donne « doublon ».
+  - Le créneau public passe à 2 places prises.
+  - Toutes les tentatives de fraude sont refusées : se déclarer payé, inscrire l'enfant d'un autre, lire le cours d'autrui.
+- ⚠️ **Incident pendant la bascule, ~10 min.** `/api/rejoindre-groupe` renvoyait une erreur 500 : `FieldValue.deleteField` n'existe pas dans l'Admin SDK, il faut `FieldValue.delete()`. L'essai de bout en bout l'a détecté juste après la mise en ligne. Le correctif est poussé et l'essai a été relancé : 17/17. Impact vérifié : 0 demande de cours (notifications `lesson_request`) sur les 2 dernières heures, 1 seul cours en base. Personne n'a été bloqué.
+  - Leçon : un test unitaire avec de faux `FieldValue` ne prouve rien. Le test utilise désormais les vraies valeurs de l'Admin SDK.
+- `scripts/diag-regles-donnees.mjs`, complété pour les cours : 0 faille. `scripts/diag-regles-paiements.mjs` : 0 faille.
+- Émulateur : 30 tests. Sur les règles d'avant, 6 échouent, **dont la fraude au « payé » : elle était bien possible en prod**.
+- Vitest : 271 tests, lint 0 erreur, build OK.
