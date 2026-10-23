@@ -16,6 +16,7 @@ import RefundRequestModal from '../components/RefundRequestModal';
 import fetchWithAuth from '../utils/fetchWithAuth';
 import { getCampaignCode } from '../lib/bacCampaign';
 import { toast } from 'sonner';
+import { requeteMesCours, concerneUnDe } from '../lib/mesCours';
 
 // Codes à remise fixe -5€ (front) — les autres (codes partenaires) sont validés côté serveur
 const FIXED5_PREFIX = /^(BIENVENUE|AVIS|FILLEUL|PARRAIN)-/;
@@ -331,25 +332,18 @@ export default function StudentPayments() {
         setLoading(false);
       };
 
-      // 2) Legacy: student_id IN (avec mes aliases)
-      for (const c of chunks) {
-        const qLegacy = query(collection(db, 'lessons'), where('student_id', 'in', c));
-        const unsub = onSnapshot(qLegacy, (snap) => {
-          snap.docs.forEach((d) => combined.set(d.id, { id: d.id, ...d.data() }));
+      // 2) 🔒 23/10/2026 : cours où je figure (acces — la Cloud Function y
+      // ajoute le compte lié à une fiche students), filtrés sur mes alias
+      {
+        const unsub = onSnapshot(requeteMesCours(db, user.uid), (snap) => {
+          snap.docs.forEach((d) => {
+            const l = { id: d.id, ...d.data() };
+            if (concerneUnDe(l, aliases)) combined.set(d.id, l);
+          });
           debouncedRender();
         }, (e) => { console.error(e); setLoading(false); });
         unsubscribers.push(unsub);
       }
-
-      // 3) Groupes: array-contains sur participant_ids pour CHAQUE alias
-      aliases.forEach((aid) => {
-        const qGroup = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', aid));
-        const unsub = onSnapshot(qGroup, (snap) => {
-          snap.docs.forEach((d) => combined.set(d.id, { id: d.id, ...d.data() }));
-          debouncedRender();
-        }, (e) => { console.error(e); setLoading(false); });
-        unsubscribers.push(unsub);
-      });
     })();
 
     return () => { unsubscribers.forEach((u) => u && u()); };

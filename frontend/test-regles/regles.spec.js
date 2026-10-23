@@ -46,7 +46,8 @@ beforeAll(async () => {
     await setDoc(doc(d, 'students', 'eleveFiche'), { full_name: 'Élève', user_id: ELEVE });
     const lecon = {
       teacher_id: PROF, student_id: ENFANT, participant_ids: [ENFANT],
-      participantsMap: { [ENFANT]: { parent_id: FAMILLE, booked_by: FAMILLE } },
+      participantsMap: { [ENFANT]: { parent_id: FAMILLE, booked_by: FAMILLE, is_paid: false, status: 'pending_teacher' } },
+      acces: [PROF, ENFANT, FAMILLE],
     };
     await setDoc(doc(d, 'lessons', 'lecon1'), lecon);
     await setDoc(doc(d, 'lessons', 'lecon2'), lecon);
@@ -54,6 +55,15 @@ beforeAll(async () => {
     await setDoc(doc(d, 'documents', 'docFamille'), { lesson_id: 'lecon1', sender_id: FAMILLE, acces: [PROF, ENFANT, FAMILLE], filename: 'a.pdf' });
     await setDoc(doc(d, 'favorites', `${FAMILLE}_${PROF}`), { user_id: FAMILLE, teacher_id: PROF });
     await setDoc(doc(d, 'presence', PROF), { online: true });
+    await setDoc(doc(d, 'lessons', 'leconEleve'), {
+      teacher_id: PROF, student_id: ELEVE, participant_ids: [ELEVE], is_group: false,
+      participantsMap: { [ELEVE]: { booked_by: ELEVE, is_paid: false } }, acces: [PROF, ELEVE],
+    });
+    await setDoc(doc(d, 'lessons', 'payee'), {
+      teacher_id: PROF, student_id: ELEVE, is_paid: true, is_group: false, participant_ids: [ELEVE],
+      participantsMap: {}, acces: [PROF, ELEVE],
+    });
+    await setDoc(doc(d, 'creneaux', 'lecon1'), { teacher_id: PROF, slot_day: 'Lun', slot_hour: 9, places_prises: 1 });
     await setDoc(doc(d, 'children', 'c1'), { full_name: 'x' });
   });
 });
@@ -171,5 +181,58 @@ describe('favoris, présence, cours, collections vides', () => {
     await assertFails(getDoc(doc(db(INTRUS), 'children', 'c1')));
     await assertFails(getDoc(doc(db(PROF), 'parents', FAMILLE, 'children', 'c1')));
     await assertSucceeds(getDoc(doc(db(ADMIN), 'children', 'c1')));
+  });
+});
+
+describe('lessons — les cours', () => {
+  it('sans compte : aucun cours, mais les créneaux publics de la page prof', async () => {
+    await assertFails(getDocs(collection(db(null), 'lessons')));
+    await assertFails(getDoc(doc(db(null), 'lessons', 'lecon1')));
+    await assertFails(getDocs(query(collection(db(null), 'lessons'), where('teacher_id', '==', PROF))));
+    await assertSucceeds(getDocs(query(collection(db(null), 'creneaux'), where('teacher_id', '==', PROF))));
+    await assertFails(setDoc(doc(db(PROF), 'creneaux', 'x'), { teacher_id: PROF }));
+  });
+  it("intrus : ni lecture ni modification du cours d'un autre", async () => {
+    await assertFails(getDoc(doc(db(INTRUS), 'lessons', 'lecon1')));
+    await assertFails(getDocs(query(collection(db(INTRUS), 'lessons'), where('teacher_id', '==', PROF))));
+    await assertFails(updateDoc(doc(db(INTRUS), 'lessons', 'lecon1'), { status: 'rejected' }));
+    await assertSucceeds(getDocs(query(collection(db(INTRUS), 'lessons'), where('acces', 'array-contains', INTRUS))));
+  });
+  it('prof : ses cours (TeacherLessons, TeacherCalendar…) et leur statut', async () => {
+    await assertSucceeds(getDocs(query(collection(db(PROF), 'lessons'), where('teacher_id', '==', PROF))));
+    await assertSucceeds(updateDoc(doc(db(PROF), 'lessons', 'lecon1'), { status: 'confirmed' }));
+    await assertFails(updateDoc(doc(db(PROF), 'lessons', 'lecon1'), { teacher_id: INTRUS }));
+  });
+  it('élève : ses cours (MyCourses, StudentCalendar, StudentDashboard)', async () => {
+    await assertSucceeds(getDocs(query(collection(db(ELEVE), 'lessons'), where('student_id', '==', ELEVE))));
+    await assertSucceeds(getDocs(query(collection(db(ELEVE), 'lessons'), where('participant_ids', 'array-contains', ELEVE))));
+    await assertSucceeds(getDocs(query(collection(db(ELEVE), 'lessons'), where('acces', 'array-contains', ELEVE))));
+  });
+  it('parent : les cours de ses enfants par acces (plus par student_id in)', async () => {
+    await assertSucceeds(getDocs(query(collection(db(FAMILLE), 'lessons'), where('acces', 'array-contains', FAMILLE))));
+    await assertSucceeds(getDoc(doc(db(FAMILLE), 'lessons', 'lecon1')));
+    await assertFails(getDocs(query(collection(db(FAMILLE), 'lessons'), where('student_id', 'in', [ENFANT]))));
+  });
+  it('💸 fraude : un participant ne se déclare pas « payé »', async () => {
+    await assertFails(updateDoc(doc(db(FAMILLE), 'lessons', 'lecon1'), { [`participantsMap.${ENFANT}.is_paid`]: true }));
+    await assertFails(updateDoc(doc(db(ELEVE), 'lessons', 'leconEleve'), { [`participantsMap.${ELEVE}.is_paid`]: true }));
+    await assertFails(updateDoc(doc(db(FAMILLE), 'lessons', 'lecon1'), { is_paid: true }));
+    // mais il peut agir sur sa demande (réactivation, refus…)
+    await assertSucceeds(updateDoc(doc(db(FAMILLE), 'lessons', 'lecon1'), {
+      [`participantsMap.${ENFANT}.status`]: 'pending_teacher', [`participantsMap.${ENFANT}.is_paid`]: false,
+    }));
+  });
+  it('le prof passe en groupe un cours individuel déjà payé (recopie is_paid)', async () => {
+    await assertSucceeds(updateDoc(doc(db(PROF), 'lessons', 'payee'), {
+      is_group: true, [`participantsMap.${ELEVE}`]: { is_paid: true, status: 'confirmed' },
+    }));
+  });
+  it('création : en son nom, jamais « déjà payé » sauf essai gratuit', async () => {
+    const f = db(FAMILLE);
+    const base = { teacher_id: PROF, student_id: ENFANT, participant_ids: [ENFANT], price_per_hour: 30 };
+    await assertSucceeds(addDoc(collection(f, 'lessons'), { ...base, acces: [PROF, ENFANT, FAMILLE], participantsMap: { [ENFANT]: { is_paid: false } } }));
+    await assertFails(addDoc(collection(f, 'lessons'), { ...base, participantsMap: { [ENFANT]: { is_paid: false } } }));
+    await assertFails(addDoc(collection(f, 'lessons'), { ...base, acces: [FAMILLE], participantsMap: { [ENFANT]: { is_paid: true } } }));
+    await assertSucceeds(addDoc(collection(f, 'lessons'), { ...base, price_per_hour: 0, is_trial: true, acces: [FAMILLE], participantsMap: { [ENFANT]: { is_paid: true, paid_by: 'trial' } } }));
   });
 });

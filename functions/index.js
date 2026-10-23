@@ -657,3 +657,44 @@ exports.onUserWrittenSyncProfil = functions
       await ref.set(profil);
       return null;
     });
+
+// -----------------------------------------------------------------------------
+// 🔒 Cours : accès et copie publique (23/10/2026)
+//
+// `lessons` n'est plus lisible que par les comptes du cours (`acces`) ; la
+// page publique d'un prof lit `creneaux/{id}`, sans aucun identifiant
+// d'élève. Les deux sont recalculés ici à chaque écriture d'un cours.
+// Règles : functions/coursAcces.js.
+// -----------------------------------------------------------------------------
+const {accesDuCours, creneauPublic, memeListe} = require("./coursAcces");
+
+exports.onLessonWrittenSync = functions
+    .region(REGION)
+    .runWith({timeoutSeconds: 30, memory: "256MB"})
+    .firestore.document("lessons/{lessonId}")
+    .onWrite(async (change, context) => {
+      const id = context.params.lessonId;
+      const refCreneau = db.collection("creneaux").doc(id);
+      if (!change.after.exists) {
+        await refCreneau.delete().catch(() => {});
+        return null;
+      }
+      const lecon = change.after.data() || {};
+      const lireEleve = async (sid) => {
+        const s = await db.collection("students").doc(sid).get();
+        return s.exists ? s.data() : null;
+      };
+      const acces = await accesDuCours(lecon, lireEleve);
+      const creneau = creneauPublic(lecon);
+
+      const avant = change.before.exists ? change.before.data() || {} : null;
+      const creneauAvant = avant ? creneauPublic(avant) : null;
+      if (!creneauAvant || JSON.stringify(creneauAvant) !== JSON.stringify(creneau)) {
+        await refCreneau.set(creneau);
+      }
+      // Ne réécrit `acces` que s'il change : sinon la fonction se relancerait sans fin
+      if (!memeListe(lecon.acces, acces)) {
+        await change.after.ref.update({acces});
+      }
+      return null;
+    });

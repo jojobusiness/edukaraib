@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
 import { instantaneEleve } from '../lib/profils';
+import { requeteMesCours, concerneUnDe } from '../lib/mesCours';
 
 const DAY_OFFSETS = { lun: 0, mar: 1, mer: 2, jeu: 3, ven: 4, sam: 5, dim: 6 };
 
@@ -120,7 +121,6 @@ async function resolvePersonName(id, cacheRef) {
   cacheRef.current.set(id, id);
   return id;
 }
-function chunk(arr, size = 10) { const out=[]; for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size)); return out; }
 function NameChip({ children }) {
   return (
     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-800 text-xs font-medium">
@@ -245,14 +245,11 @@ export default function ParentCalendar() {
 
       // cours: élève principal OU participant
       const map = new Map();
-      for (const c of chunk(kidIdsLocal, 10)) {
-        const qLessons = query(collection(db, 'lessons'), where('student_id', 'in', c));
-        (await getDocs(qLessons)).docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
-      }
-      for (const kid of kidIdsLocal) {
-        const qPart = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', kid));
-        (await getDocs(qPart)).docs.forEach(d => map.set(d.id, { id: d.id, ...d.data() }));
-      }
+      // 🔒 23/10/2026 : cours où je figure (acces), filtrés sur mes enfants
+      (await getDocs(requeteMesCours(db, auth.currentUser.uid))).docs.forEach((d) => {
+        const l = { id: d.id, ...d.data() };
+        if (concerneUnDe(l, kidIdsLocal)) map.set(d.id, l);
+      });
       const allLessons = Array.from(map.values());
 
       // Éligibilité

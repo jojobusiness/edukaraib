@@ -17,12 +17,12 @@ import TrustpilotBanner from '../components/TrustpilotBanner';
 import { instantaneEleve } from '../lib/profils';
 import { toast } from 'sonner';
 import { confirmer } from '../components/ui/Dialogues';
+import { requeteMesCours, concerneUnDe } from '../lib/mesCours';
 
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const codeIndex = (c) => Math.max(0, FR_DAY_CODES.indexOf(c));
 function mondayOfWeek(base = new Date()) { const d=new Date(base); const jsDay=d.getDay(); const offset=((jsDay+6)%7); d.setHours(0,0,0,0); d.setDate(d.getDate()-offset); return d; }
 function nextOccurrence(slot_day, slot_hour, now = new Date()) { if(!FR_DAY_CODES.includes(slot_day)) return null; const mon=mondayOfWeek(now); const idx=codeIndex(slot_day); const start=new Date(mon); start.setDate(mon.getDate()+idx); start.setHours(Number(slot_hour)||0,0,0,0); if(start<=now) start.setDate(start.getDate()+7); return start; }
-function chunk(arr, size = 10){ const out=[]; for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size)); return out; }
 
 async function resolveName(id) {
   try { const s = await getDoc(doc(db, 'profils', id)); if (s.exists()) { const d=s.data(); return d.fullName||d.name||d.displayName||'Élève'; } } catch {}
@@ -178,17 +178,10 @@ export default function ParentDashboard() {
       const kidIds = kids.map(k => k.id);
       let allLessons = [];
 
-      // Leçons individuelles
-      for (const ids of chunk(kidIds, 10)) {
-        const qLessons = query(collection(db, 'lessons'), where('student_id', 'in', ids));
-        const snap = await getDocs(qLessons);
-        allLessons = allLessons.concat(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      }
-      // Leçons groupées (participant)
-      for (const ids of chunk(kidIds, 10)) {
-        const qLessonsGrp = query(collection(db, 'lessons'), where('participant_ids', 'array-contains-any', ids));
-        const snap = await getDocs(qLessonsGrp);
-        allLessons = allLessons.concat(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      // 🔒 23/10/2026 : cours où je figure (acces), filtrés sur mes enfants
+      {
+        const snap = await getDocs(requeteMesCours(db, userId));
+        allLessons = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter((l) => concerneUnDe(l, kidIds));
       }
 
       // dédup

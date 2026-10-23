@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { instantaneEleve } from '../lib/profils';
 import { toast } from 'sonner';
+import { requeteMesCours, concerneUnDe } from '../lib/mesCours';
 
 /* ---------- Helpers ---------- */
 
@@ -436,51 +437,20 @@ export default function ParentCourses() {
       setCourses(Array.from(map.values()));
     };
 
-    const chunks = (arr, n=10) => Array.from({ length: Math.ceil(arr.length / n)}, (_,i)=>arr.slice(i*n,(i+1)*n));
 
-    const chunksA = chunks(kidIds, 10);
-    const chunksB = chunks(kidIds, 10);
-    const totalListeners = chunksA.length + chunksB.length;
-    let readyCount = 0;
-
-    const onFirstSnapshot = () => {
-      readyCount += 1;
-      if (readyCount >= totalListeners) setLoading(false);
-    };
-
-    // A) lessons via student_id
-    for (const chunk of chunksA) {
-      const qA = query(collection(db, 'lessons'), where('student_id', 'in', chunk));
-      const unsubA = onSnapshot(
-        qA,
-        (sA) => {
-          sA.docChanges().forEach((ch) => {
-            if (ch.type === 'removed') remove(ch.doc.id);
-            else upsert(ch.doc.id, ch.doc.data());
-          });
-          onFirstSnapshot();
-        },
-        () => { onFirstSnapshot(); }
-      );
-      unsubs.push(unsubA);
-    }
-
-    // B) lessons via participant_ids
-    for (const chunk of chunksB) {
-      const qB = query(collection(db, 'lessons'), where('participant_ids', 'array-contains-any', chunk));
-      const unsubB = onSnapshot(
-        qB,
-        (sB) => {
-          sB.docChanges().forEach((ch) => {
-            if (ch.type === 'removed') remove(ch.doc.id);
-            else upsert(ch.doc.id, ch.doc.data());
-          });
-          onFirstSnapshot();
-        },
-        () => { onFirstSnapshot(); }
-      );
-      unsubs.push(unsubB);
-    }
+    // 🔒 23/10/2026 : cours où je figure (acces), filtrés sur mes enfants + moi
+    const unsubMes = onSnapshot(
+      requeteMesCours(db, me.uid),
+      (snap) => {
+        snap.docChanges().forEach((ch) => {
+          if (ch.type === 'removed' || !concerneUnDe(ch.doc.data(), kidIds)) remove(ch.doc.id);
+          else upsert(ch.doc.id, ch.doc.data());
+        });
+        setLoading(false);
+      },
+      () => { setLoading(false); }
+    );
+    unsubs.push(unsubMes);
 
     return () => { unsubs.forEach(fn => fn && fn()); };
   }, [kidIds]);

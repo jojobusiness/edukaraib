@@ -12,8 +12,8 @@ rules_version = '2';
 //  - le client ne peut jamais poser is_paid/paid_at sur une lecon
 // Phase 2 : payments/subscriptions restreints le 19/10/2026.
 // Phase 3 (23/10/2026) : users, students, documents, favorites, presence,
-// parents, children fermes. Reste la LECTURE de lessons (la reservation lit
-// les cours des autres : a passer cote serveur) et participantsMap.*.is_paid.
+// parents, children fermes. Phase 4 (23/10/2026) : lessons fermes (acces +
+// copie publique creneaux + /api/rejoindre-groupe), « paye » forge bloque.
 // Preuve : npm run test:regles (emulateur) + scripts/diag-regles-donnees.mjs (prod).
 
 service cloud.firestore {
@@ -98,21 +98,97 @@ service cloud.firestore {
     }
 
     // ── Lecons ─────────────────────────────────────────────────────────────
-    // Lecture publique : TeacherProfile (page publique) affiche les creneaux
-    // occupes. Phase 2 : restreindre. Le client ne peut JAMAIS ecrire les
-    // champs de paiement top-level (le webhook/API les posent via Admin SDK).
+    // 🔒 23/10/2026 — AVANT : `allow read: if true` (sans compte : eleve,
+    // parent, creneau, prix, paiement de chaque cours) et `update: if signedIn()`
+    // (n'importe qui modifiait le cours d'un autre). Desormais : les comptes
+    // du cours. `acces` est tenu par la Cloud Function onLessonWrittenSync
+    // (functions/coursAcces.js). La page publique d'un prof lit `creneaux`.
+    // Une requete doit prouver qu'elle ne lit que ses cours : teacher_id ==
+    // moi, student_id == moi, participant_ids / acces array-contains moi.
+    // Plan : docs/plans/PLAN_VERROU_COURS_23-10-2026.md.
+    function dansLeCours() {
+      return signedIn() && (
+        resource.data.get('teacher_id', '') == request.auth.uid
+        || resource.data.get('student_id', '') == request.auth.uid
+        || request.auth.uid in resource.data.get('participant_ids', [])
+        || request.auth.uid in resource.data.get('acces', [])
+      );
+    }
+    // 💸 Fraude fermee le 23/10/2026 : un participant passait
+    // participantsMap.<eleve>.is_paid a true sur son propre cours ;
+    // create-checkout-session le croyait « deja paye » et ne le faisait
+    // jamais payer. Pour chaque participant, is_paid ne devient true que
+    // s'il l'etait deja (seul le webhook, Admin SDK, le pose). Exception :
+    // le prof qui passe en groupe un cours individuel DEJA paye (il recopie
+    // lesson.is_paid sur l'eleve d'origine). Une regle ne sait pas boucler :
+    // verification deroulee sur 20 participants, au-dela la mise a jour est refusee.
+    function paiementNonForge(i) {
+      let nouv = request.resource.data.get('participantsMap', {});
+      let anc = resource.data.get('participantsMap', {});
+      let cles = nouv.keys();
+      return cles.size() <= i
+        || nouv[cles[i]].get('is_paid', false) != true
+        || anc.get(cles[i], {}).get('is_paid', false) == true
+        || (resource.data.get('is_paid', false) == true
+            && cles[i] == resource.data.get('student_id', ''));
+    }
+    function aucunPaiementForge() {
+      return request.resource.data.get('participantsMap', {}).keys().size() <= 20
+        && paiementNonForge(0)
+        && paiementNonForge(1)
+        && paiementNonForge(2)
+        && paiementNonForge(3)
+        && paiementNonForge(4)
+        && paiementNonForge(5)
+        && paiementNonForge(6)
+        && paiementNonForge(7)
+        && paiementNonForge(8)
+        && paiementNonForge(9)
+        && paiementNonForge(10)
+        && paiementNonForge(11)
+        && paiementNonForge(12)
+        && paiementNonForge(13)
+        && paiementNonForge(14)
+        && paiementNonForge(15)
+        && paiementNonForge(16)
+        && paiementNonForge(17)
+        && paiementNonForge(18)
+        && paiementNonForge(19);
+    }
     match /lessons/{id} {
-      allow read: if true;
+      allow read: if isAdmin() || dansLeCours();
+      // Creation en son nom ; un participant « deja paye » seulement pour
+      // un essai gratuit (is_trial, prix 0)
       allow create: if signedIn()
-        && request.resource.data.get('is_paid', false) == false;
+        && request.resource.data.get('is_paid', false) == false
+        && request.auth.uid in request.resource.data.get('acces', [])
+        && ((request.resource.data.get('is_trial', false) == true
+               && request.resource.data.get('price_per_hour', 0) == 0)
+            || creationSansPaiement());
       allow update: if isAdmin()
-        || (signedIn() && !request.resource.data.diff(resource.data).affectedKeys()
-              .hasAny(['is_paid', 'paid_at', 'paid_by', 'total_amount',
-                       'payment_intent_id', 'stripe_charge_id']));
-      // 23/10/2026 : etait signedIn() — n'importe qui supprimait le cours d'un
-      // autre. Aucun ecran ne supprime de cours : prof du cours et admin.
+        || (dansLeCours()
+            && request.resource.data.get('teacher_id', '') == resource.data.get('teacher_id', '')
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                 .hasAny(['is_paid', 'paid_at', 'paid_by', 'total_amount',
+                          'payment_intent_id', 'stripe_charge_id'])
+            && aucunPaiementForge());
+      // Aucun ecran ne supprime de cours : prof du cours et admin.
       allow delete: if isAdmin()
         || (signedIn() && resource.data.get('teacher_id', '') == request.auth.uid);
+    }
+    function creationSansPaiement() {
+      let pm = request.resource.data.get('participantsMap', {});
+      let cles = pm.keys();
+      return cles.size() <= 1
+        && (cles.size() == 0 || pm[cles[0]].get('is_paid', false) != true);
+    }
+
+    // Copie publique des cours, SANS aucun identifiant d'eleve : jour, heure,
+    // statut, groupe, capacite, places prises. Ecrite uniquement par la Cloud
+    // Function onLessonWrittenSync. Lue par la page publique d'un prof.
+    match /creneaux/{id} {
+      allow read: if true;
+      allow write: if false;
     }
 
     // ── Notifications ──────────────────────────────────────────────────────

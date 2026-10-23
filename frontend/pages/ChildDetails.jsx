@@ -2,13 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import {
-  collection,
-  query,
-  where,
   getDocs,
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
 import { instantaneEleve } from '../lib/profils';
+import { requeteMesCours } from '../lib/mesCours';
 
 // --- Helpers ---
 function formatDateMaybe(ts) {
@@ -82,9 +80,10 @@ export default function ChildDetails() {
       if (!childId) return;
       setLoadingCourses(true);
       try {
-        const qLessons = query(collection(db, 'lessons'), where('student_id', '==', childId));
-        const snapshot = await getDocs(qLessons);
-        const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        // 🔒 23/10/2026 : on lit les cours où je figure, puis ceux de cet enfant
+        const snapshot = await getDocs(requeteMesCours(db, auth.currentUser?.uid));
+        const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+          .filter((l) => String(l.student_id || '') === String(childId));
 
         // tri
         data.sort((a, b) => {

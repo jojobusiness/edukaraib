@@ -10,6 +10,7 @@ import { useSEO } from '../hooks/useSEO';
 import { getCampaignPack, getCampaignSubject, setChatDraft } from '../lib/bacCampaign';
 import { instantaneEleve } from '../lib/profils';
 import { toast } from 'sonner';
+import fetchWithAuth from '../utils/fetchWithAuth';
 
 const DAYS_ORDER = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
@@ -410,15 +411,27 @@ export default function TeacherProfile() {
   useEffect(() => {
     if (!teacher) return;
 
-    const qLessons = query(
-      collection(db, 'lessons'),
-      where('teacher_id', '==', teacherId)
-    );
-
-    const unsubLessons = onSnapshot(qLessons, (snap) => {
-      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-      const booked = [];
+    // 🔒 23/10/2026 : `lessons` n'est plus public. Les créneaux pris viennent de
+    // `creneaux` (copie sans aucun élève, Cloud Function onLessonWrittenSync) ;
+    // la pastille « mon enfant est inscrit ici » vient de MES cours (acces).
+    let publics = [];
+    let miens = [];
+    const recalculer = () => {
+      const docs = publics;
+      const booked = miens.map((l) => ({
+        day: l.slot_day,
+        hour: l.slot_hour,
+        date: l.date || null,
+        week: l.week || null,
+        startAt: l.startAt || null,
+        participant_ids: Array.isArray(l.participant_ids) ? l.participant_ids : [],
+        student_id: l.student_id || null,
+        participantsMap: l.participantsMap || {},
+        is_group: !!l.is_group,
+        capacity: l.capacity,
+        status: l.status,
+      })).filter((b) => b.day && typeof b.hour === 'number'
+        && !['removed', 'deleted', 'rejected'].includes(String(b.status || '').toLowerCase()));
       const remaining = {};
 
       const teacherGroupEnabled = !!teacher.group_enabled;
@@ -457,9 +470,9 @@ export default function TeacherProfile() {
           date: dateStr || null,
           week: weekStr || null,
           startAt: l.startAt || null,
-          participant_ids: Array.isArray(l.participant_ids) ? l.participant_ids : [],
-          student_id: l.student_id || null,
-          participantsMap: l.participantsMap || {},
+          participant_ids: [],
+          student_id: null,
+          participantsMap: {},
           is_group: !!l.is_group,
           capacity: l.capacity,
           status: l.status,
@@ -467,14 +480,7 @@ export default function TeacherProfile() {
 
         // places restantes pour les groupes (par DATE)
         if (l.is_group) {
-          const ids = Array.isArray(l.participant_ids) ? l.participant_ids : [];
-          const pm = l.participantsMap || {};
-          let occupied = 0;
-          const uniq = new Set(ids);
-          uniq.forEach((sid) => {
-            const st = String(pm?.[sid]?.status || l.status || 'pending').toLowerCase();
-            if (!['rejected', 'removed', 'deleted'].includes(st)) occupied += 1;
-          });
+          const occupied = Number(l.places_prises || 0);
 
           const cap = Number(l.capacity || 0) > 0 ? Number(l.capacity) : defaultCap;
           const remains = Math.max(0, cap - occupied);
@@ -512,9 +518,26 @@ export default function TeacherProfile() {
 
       setBookedSlots(booked);
       setRemainingBySlot(remaining);
-    });
+    };
 
-    return () => unsubLessons();
+    const unsubPublics = onSnapshot(
+      query(collection(db, 'creneaux'), where('teacher_id', '==', teacherId)),
+      (snap) => { publics = snap.docs.map((d) => ({ id: d.id, ...d.data() })); recalculer(); },
+      () => { publics = []; recalculer(); },
+    );
+    const moi = auth.currentUser?.uid;
+    const unsubMiens = moi
+      ? onSnapshot(
+        query(collection(db, 'lessons'), where('acces', 'array-contains', moi)),
+        (snap) => {
+          miens = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((l) => l.teacher_id === teacherId);
+          recalculer();
+        },
+        () => {},
+      )
+      : () => {};
+
+    return () => { unsubPublics(); unsubMiens(); };
   }, [teacherId, teacher]);
 
   // Infos auteurs d'avis
@@ -955,6 +978,22 @@ export default function TeacherProfile() {
     const hourly =
       bookMode === "visio" && visio !== null ? visio : base;
 
+    // 🔒 23/10/2026 : on ne lit plus les cours des autres. Les doublons se
+    // cherchent parmi les cours où je figure (acces), filtrés ici — même
+    // résultat que les deux anciennes requêtes, sans index composite.
+    let mesCours = null;
+    const mesDoublons = async (slot) => {
+      if (!mesCours) {
+        const snap = await getDocs(query(collection(db, 'lessons'), where('acces', 'array-contains', me.uid)));
+        mesCours = snap.docs;
+      }
+      const memeCreneau = (l) => l.teacher_id === teacherId && l.slot_day === slot.day
+        && l.slot_hour === slot.hour && l.date === slot.date;
+      const ind = mesCours.filter((d) => { const l = d.data(); return memeCreneau(l) && l.is_group === false && l.student_id === targetStudentId; });
+      const grp = mesCours.filter((d) => { const l = d.data(); return memeCreneau(l) && l.is_group === true && (l.participant_ids || []).includes(targetStudentId); });
+      return [{ docs: ind }, { docs: grp }];
+    };
+
     setIsBooking(true);
     setConfirmationMsg("");
     try {
@@ -967,26 +1006,9 @@ export default function TeacherProfile() {
           
         try {
           // Vérifier doublons + réactiver si précédemment "rejected"
-          const dupIndQ = query(
-            collection(db, "lessons"),
-            where("teacher_id", "==", teacherId),
-            where("slot_day", "==", slot.day),
-            where("slot_hour", "==", slot.hour),
-            where("date", "==", slot.date),          // 🔸 différence de semaine
-            where("is_group", "==", false),
-            where("student_id", "==", targetStudentId)
-          );
-          const dupGrpQ = query(
-            collection(db, "lessons"),
-            where("teacher_id", "==", teacherId),
-            where("slot_day", "==", slot.day),
-            where("slot_hour", "==", slot.hour),
-            where("date", "==", slot.date),
-            where("is_group", "==", true),
-            where("participant_ids", "array-contains", targetStudentId)
-          );
+          // (🔒 23/10/2026 : seulement parmi MES cours — voir mesDoublons)
 
-          const [dupIndSnap, dupGrpSnap] = await Promise.all([getDocs(dupIndQ), getDocs(dupGrpQ)]);
+          const [dupIndSnap, dupGrpSnap] = await mesDoublons(slot);
 
           // 1) INDIVIDUEL : s'il existe un cours non rejeté -> DUPLICATE
           const existingInd = dupIndSnap.docs[0]?.data();
@@ -1120,62 +1142,29 @@ export default function TeacherProfile() {
             continue;
           }
 
-          // 4) Si pas de réactivation possible : logique précédente
-          // Rejoindre un groupe existant (packs autorisés aussi)
+          // 4) Rejoindre le groupe existant d'un autre élève (packs autorisés aussi).
+          // 🔒 23/10/2026 : par le serveur — le navigateur ne lit plus le cours
+          // des autres élèves (api/rejoindre-groupe.mjs).
           {
-            const qExisting = query(
-              collection(db, "lessons"),
-              where("teacher_id", "==", teacherId),
-              where("slot_day", "==", slot.day),
-              where("slot_hour", "==", slot.hour),
-              where("date", "==", slot.date),
-              where("is_group", "==", true)
-            );
-            const existSnap = await getDocs(qExisting);
-            let joined = false;
-
-            for (const d of existSnap.docs) {
-              const l = d.data();
-              const current = Array.isArray(l.participant_ids) ? l.participant_ids : [];
-              if (current.includes(targetStudentId)) {
-                results.push({ slot, status: "duplicate", message: `Déjà inscrit(e) sur ${slot.day} ${slot.hour}h.` });
-                joined = true;
-                break;
-              }
-
-              await updateDoc(doc(db, 'lessons', d.id), {
-                participant_ids: arrayUnion(targetStudentId),
-
-                // infos communes
-                [`participantsMap.${targetStudentId}.parent_id`]: (bookingFor === 'child' ? me.uid : null),
-                [`participantsMap.${targetStudentId}.booked_by`]: me.uid,
-                [`participantsMap.${targetStudentId}.is_paid`]: false,
-                [`participantsMap.${targetStudentId}.paid_by`]: null,
-                [`participantsMap.${targetStudentId}.paid_at`]: null,
-                [`participantsMap.${targetStudentId}.status`]: 'pending_teacher',
-                [`participantsMap.${targetStudentId}.added_at`]: serverTimestamp(),
-
-                ...(isPack
-                  ? putPackParticipant(targetStudentId, paidHours, bookMode, forcedPackId)
-                  : wipePackParticipant(targetStudentId)
-                ),
-              });
-
-              await addDoc(collection(db, "notifications"), {
-                user_id: teacherId,
-                read: false,
-                created_at: serverTimestamp(),
-                type: "lesson_request",
-                lesson_id: d.id,
-                requester_id: targetStudentId,
-                message: `Demande d'ajout au groupe (${slot.day} ${slot.hour}h).`,
-              });
-
-              results.push({ slot, status: "joined_group", message: `Ajout au groupe demandé pour ${slot.day} ${slot.hour}h.` });
-              joined = true;
-              break;
+            const r = await fetchWithAuth('/api/rejoindre-groupe', {
+              method: 'POST',
+              body: JSON.stringify({
+                teacherId,
+                slot: { day: slot.day, hour: slot.hour, date: slot.date },
+                targetStudentId,
+                packHours: isPack ? paidHours : 0,
+                mode: bookMode,
+                packId: isPack ? forcedPackId : null,
+              }),
+            });
+            if (r?.status === 'duplicate') {
+              results.push({ slot, status: "duplicate", message: `Déjà inscrit(e) sur ${slot.day} ${slot.hour}h.` });
+              continue;
             }
-            if (joined) continue;
+            if (r?.status === 'joined_group') {
+              results.push({ slot, status: "joined_group", message: `Ajout au groupe demandé pour ${slot.day} ${slot.hour}h.` });
+              continue;
+            }
           }
 
           // Création (groupe / individuel)
@@ -1219,6 +1208,9 @@ export default function TeacherProfile() {
             },
 
             mode: bookMode,
+            // 🔒 23/10/2026 : comptes du cours (règle Firestore). La Cloud
+            // Function onLessonWrittenSync le complète ensuite.
+            acces: Array.from(new Set([teacherId, targetStudentId, me.uid])),
             ...(isPack ? putPackRoot(forcedPackId) : {}), // ✅ fix: s'applique aussi aux cours groupés
           });
 

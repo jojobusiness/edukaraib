@@ -15,6 +15,7 @@ import fetchWithAuth from '../utils/fetchWithAuth';
 import { getCampaignCode } from '../lib/bacCampaign';
 import { instantaneEleve } from '../lib/profils';
 import { toast } from 'sonner';
+import { requeteMesCours, concerneUnDe } from '../lib/mesCours';
 
 // Codes à remise fixe -5€ (front) — les autres (codes partenaires) sont validés côté serveur
 const FIXED5_PREFIX = /^(BIENVENUE|AVIS|FILLEUL|PARRAIN)-/;
@@ -402,24 +403,17 @@ export default function ParentPayments() {
         setLoading(false);
       };
 
-      // Legacy: student_id IN
-      for (const c of chunks) {
-        const qLegacy = query(collection(db, 'lessons'), where('student_id', 'in', c));
-        const unsub = onSnapshot(qLegacy, (snap) => {
-          snap.docs.forEach((d) => combined.set(d.id, { id: d.id, ...d.data() }));
+      // 🔒 23/10/2026 : cours où je figure (acces), filtrés sur mes enfants + moi
+      {
+        const unsub = onSnapshot(requeteMesCours(db, user.uid), (snap) => {
+          snap.docs.forEach((d) => {
+            const l = { id: d.id, ...d.data() };
+            if (concerneUnDe(l, childIds)) combined.set(d.id, l);
+          });
           debouncedRebuild();
         }, (e) => { console.error(e); setLoading(false); });
         unsubscribers.push(unsub);
       }
-      // Groupes: array-contains
-      childIds.forEach((cid) => {
-        const qGroup = query(collection(db, 'lessons'), where('participant_ids', 'array-contains', cid));
-        const unsub = onSnapshot(qGroup, (snap) => {
-          snap.docs.forEach((d) => combined.set(d.id, { id: d.id, ...d.data() }));
-          debouncedRebuild();
-        }, (e) => { console.error(e); setLoading(false); });
-        unsubscribers.push(unsub);
-      });
     })();
 
     return () => {
