@@ -50,5 +50,15 @@ Lire ou rejoindre un cours collectif oblige aujourd'hui le navigateur à lire le
 
 La suite fera l'objet de son propre plan, dédié.
 
-## 5. Résultat (à remplir)
-- RÉSULTAT : …
+## 5. Résultat (23/10/2026)
+- ✅ **Livré et vérifié en production** (commit `9140cf7f`, règles déployées vers 18 h 45).
+- `scripts/diag-regles-donnees.mjs` sur la prod : **0 faille**. Sans compte comme avec un compte jetable, tout est refusé (comptes, fiches enfants, documents, favoris). La recherche voit toujours les 17 profs, et aucun des 17 profils publics ne contient d'e-mail, de téléphone, de date de naissance ou d'identifiant Stripe. Les écrans parent, prof et admin passent.
+- `/api/notify-email` vers une adresse libre depuis un compte jetable : **403**.
+- `scripts/diag-regles-paiements.mjs` relancé : toujours 0 faille.
+- Émulateur : 22 tests verts ; **14 échouent sur les anciennes règles**, ce qui prouve qu'ils détectent les failles.
+- Données migrées :
+  - 36 profils publics (`scripts/sync-profils-publics.mjs`) ;
+  - 7 documents, chacun avec son champ `acces` (`scripts/migrer-acces-documents.mjs`). Leurs cours étant supprimés, seul l'auteur y a accès.
+- Cloud Function `onUserWrittenSyncProfil` déployée. Testée en direct : un changement de nom est recopié en moins de 30 s.
+- `api/server.js` (ancien serveur de chat en panne, avec un second relais e-mail) est retiré.
+- **Reste** : la lecture de `lessons` (§ 4), à traiter dans un plan dédié.
