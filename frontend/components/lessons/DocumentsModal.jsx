@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { auth, db, storage } from '../../lib/firebase';
-import fetchWithAuth from '../../utils/fetchWithAuth';
 import {
   collection,
   query,
@@ -9,9 +8,9 @@ import {
   addDoc,
   serverTimestamp,
   doc,
-  getDoc,
   updateDoc,
   deleteDoc,
+  arrayUnion,
 } from 'firebase/firestore';
 import {
   ref as sRef,
@@ -19,100 +18,24 @@ import {
   getDownloadURL,
   deleteObject,
 } from 'firebase/storage';
+import { envoyerMail } from '../../lib/profils';
+import { accesDuCours } from '../../lib/accesCours';
 
 /* =========================
    EMAIL HELPERS (même logique que TeacherLessons.jsx)
    ========================= */
 
-async function getEmailFromDoc(pathCol, uid) {
-  try {
-    const s = await getDoc(doc(db, pathCol, uid));
-    if (s.exists()) {
-      const d = s.data();
-      return d.email || d.contactEmail || d.parentEmail || null;
-    }
-  } catch {}
-  return null;
-}
-
-async function getUserEmail(uid) {
-  if (!uid) return null;
-  return (
-    (await getEmailFromDoc('users', uid)) ||
-    (await getEmailFromDoc('teachers', uid)) ||
-    (await getEmailFromDoc('parents', uid)) ||
-    (await getEmailFromDoc('students', uid))
-  );
-}
-
-// parent d’un élève
-async function getParentIdForStudent(studentId, lesson) {
-  const pm = lesson?.participantsMap || {};
-  const viaMap = pm?.[studentId]?.parent_id || pm?.[studentId]?.booked_by;
-  if (viaMap) return viaMap;
-
-  try {
-    const s = await getDoc(doc(db, 'students', studentId));
-    if (s.exists()) {
-      const d = s.data();
-      return d.parent_id || d.parentId || d.booked_by || null;
-    }
-  } catch {}
-
-  try {
-    const u = await getDoc(doc(db, 'users', studentId));
-    if (u.exists()) {
-      const d = u.data();
-      return d.parent_id || d.parentId || d.booked_by || null;
-    }
-  } catch {}
-
-  return null;
-}
-
-/** Envoie aux élèves/participants ET, si besoin, à leurs parents */
-async function sendEmailsToUsers(
-  userIds = [],
-  { title, message, ctaUrl, ctaText = 'Ouvrir' },
-  lessonCtx = null
-) {
-  const emails = new Set();
-
-  // 1) emails directs
-  for (const uid of userIds) {
-    const em = await getUserEmail(uid);
-    if (em) emails.add(em);
-  }
-
-  // 2) fallback parents via participantsMap si dispo
-  if (lessonCtx && Array.isArray(lessonCtx.participant_ids)) {
-    for (const sid of lessonCtx.participant_ids) {
-      const hasStudentEmail = await getUserEmail(sid);
-      if (!hasStudentEmail) {
-        const pid = await getParentIdForStudent(sid, lessonCtx);
-        const pem = await getUserEmail(pid);
-        if (pem) emails.add(pem);
-      }
-    }
-  }
-
-  if (!emails.size) return;
-
-  const payload = {
+// 🔒 23/10/2026 : on écrit à des IDENTIFIANTS, le serveur trouve les adresses
+// (pour un enfant, celle de son parent). Le navigateur ne lit plus jamais
+// l'e-mail de quelqu'un d'autre. Voir lib/profils.js → envoyerMail.
+async function sendEmailsToUsers(userIds = [], { title, message, ctaUrl, ctaText = 'Ouvrir' }, lessonCtx = null) {
+  const participants = Array.isArray(lessonCtx?.participant_ids) ? lessonCtx.participant_ids : [];
+  await envoyerMail([...userIds, ...participants], {
     title,
     message,
     ctaUrl: ctaUrl || `${window.location.origin}/smart-dashboard`,
     ctaText,
-  };
-
-  await Promise.all(
-    Array.from(emails).map((to) =>
-      fetchWithAuth('/api/notify-email', {
-        method: 'POST',
-        body: JSON.stringify({ to, ...payload }),
-      }).catch(() => {})
-    )
-  );
+  });
 }
 
 /* =========================
@@ -136,11 +59,30 @@ export default function DocumentsModal({
 
   async function refreshList() {
     if (!lesson?.id) return;
-    const qDocs = query(collection(db, 'documents'), where('lesson_id', '==', lesson.id));
+    const moi = auth.currentUser?.uid;
+    if (!moi) return;
+    // 🔒 23/10/2026 : on ne lit que les documents auxquels on a accès (règle
+    // Firestore). Filtre du cours côté navigateur : une seule condition =
+    // pas d'index composite à maintenir.
+    const qDocs = query(collection(db, 'documents'), where('acces', 'array-contains', moi));
     const snap = await getDocs(qDocs);
-    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const items = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((d) => d.lesson_id === lesson.id);
     items.sort((a, b) => (b.created_at?.seconds || 0) - (a.created_at?.seconds || 0));
     setFiles(items);
+
+    // Un élève qui rejoint le cours après l'envoi d'un fichier doit le voir aussi :
+    // quand le prof ouvre la fenêtre, on complète l'accès des fichiers existants.
+    if (lesson.teacher_id === moi) {
+      const attendus = accesDuCours(lesson, moi);
+      await Promise.allSettled(items.map((d) => {
+        const manquants = attendus.filter((id) => !(d.acces || []).includes(id));
+        return manquants.length
+          ? updateDoc(doc(db, 'documents', d.id), { acces: arrayUnion(...manquants) })
+          : null;
+      }));
+    }
   }
 
   useEffect(() => {
@@ -182,6 +124,7 @@ export default function DocumentsModal({
         storage_path: path,
         url,
         created_at: serverTimestamp(),
+        acces: accesDuCours(lesson, auth.currentUser?.uid),
       });
 
       // 3) Notifications in-app — élève principal + tous les participants

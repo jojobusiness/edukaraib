@@ -8,13 +8,12 @@ import {
   where,
   doc,
   getDoc,
-  orderBy,
-  limit,
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
 import RefundRequestModal from '../components/RefundRequestModal';
 import fetchWithAuth from '../utils/fetchWithAuth';
 import { getCampaignCode } from '../lib/bacCampaign';
+import { instantaneEleve } from '../lib/profils';
 
 // Codes à remise fixe -5€ (front) — les autres (codes partenaires) sont validés côté serveur
 const FIXED5_PREFIX = /^(BIENVENUE|AVIS|FILLEUL|PARRAIN)-/;
@@ -259,7 +258,7 @@ export default function ParentPayments() {
     const cache = teacherCacheRef.current;
     if (cache.has(uid)) return cache.get(uid);
     try {
-      const s = await getDoc(doc(db, 'users', uid));
+      const s = await getDoc(doc(db, 'profils', uid));
       let name = uid;
       if (s.exists()) {
         const d = s.data();
@@ -274,14 +273,14 @@ export default function ParentPayments() {
     const cache = childNameCacheRef.current;
     if (cache.has(idOrUid)) return cache.get(idOrUid);
     try {
-      const s = await getDoc(doc(db, 'students', idOrUid));
+      const s = await instantaneEleve(idOrUid);
       if (s.exists()) {
         const d = s.data(); const nm = d.full_name || d.name || idOrUid;
         cache.set(idOrUid, nm); return nm;
       }
     } catch {}
     try {
-      const s = await getDoc(doc(db, 'users', idOrUid));
+      const s = await getDoc(doc(db, 'profils', idOrUid));
       if (s.exists()) {
         const d = s.data(); const nm = d.fullName || d.name || d.displayName || idOrUid;
         cache.set(idOrUid, nm); return nm;

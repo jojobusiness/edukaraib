@@ -1,6 +1,7 @@
 // /api/notify-email.js (version améliorée avec design + lien dynamique)
 import { Resend } from "resend";
-import { verifyAuth } from "./_firebaseAdmin.mjs";
+import { adminDb, verifyAuth } from "./_firebaseAdmin.mjs";
+import { adressesDe, ctaSur, lienDuSite, MAX_DESTINATAIRES } from "./_destinataires.mjs";
 
 const APP_BASE_URL = process.env.APP_BASE_URL || "https://edukaraib.com";
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -11,8 +12,13 @@ const FROM_PRO = "EduKaraib <notifications@edukaraib.com>"; // pro (après véri
 const safe = (s = "") => String(s).replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 // URLs cliquables dans le texte (appliqué APRÈS échappement HTML)
+// 🔒 23/10/2026 : pour un envoi déclenché par un utilisateur (pas l'admin), seuls
+// les liens vers edukaraib.com deviennent cliquables — les autres restent du texte.
+let liensLibres = true;
 const linkify = (escaped) =>
-  escaped.replace(/(https?:\/\/[^\s<]+)/g, (u) => `<a href="${u}" style="color:#0ea5e9;text-decoration:underline;word-break:break-all;">${u}</a>`);
+  escaped.replace(/(https?:\/\/[^\s<]+)/g, (u) => (liensLibres || lienDuSite(u.replace(/&amp;/g, "&"))
+    ? `<a href="${u}" style="color:#0ea5e9;text-decoration:underline;word-break:break-all;">${u}</a>`
+    : u));
 
 // Texte brut → HTML structuré : paragraphes (ligne vide), <br/> (retour simple),
 // listes numérotées ("1. ...") et à puces ("- ..." / "• ...")
@@ -111,14 +117,41 @@ export default async function handler(req, res) {
       try { data = JSON.parse(req.body || "{}"); } catch { data = {}; }
     }
 
-    const { to, title, message, ctaUrl, ctaText } = data || {};
+    const { to, toUid, toUids, title, message, ctaText } = data || {};
+    let { ctaUrl } = data || {};
 
     // Formulaire de contact public : autorisé sans auth UNIQUEMENT vers notre propre boîte
     const isPublicContact = to === "contact@edukaraib.com";
 
+    // 🔒 23/10/2026 — Avant, tout compte connecté envoyait un mail EduKaraib
+    // vers N'IMPORTE QUELLE adresse avec un lien libre (relais de hameçonnage).
+    // Désormais : on écrit à un identifiant (toUid / toUids), le serveur trouve
+    // l'adresse ; une adresse en clair n'est acceptée que de l'admin ou du
+    // serveur. Règles : api/_destinataires.mjs.
+    let destinataires = to ? [to] : [];
+    liensLibres = true;
     if (!hasInternalKey && !isPublicContact) {
       const auth = await verifyAuth(req, res);
       if (!auth) return; // verifyAuth a déjà envoyé le 401
+      const moi = await adminDb.collection("users").doc(auth.uid).get();
+      const estAdmin = moi.exists && moi.data()?.role === "admin";
+      if (!estAdmin) {
+        if (to) return res.status(403).json({ ok: false, error: "adresse_en_clair_reservee_admin" });
+        if (String(message || "").length > 5000 || String(title || "").length > 300) {
+          return res.status(400).json({ ok: false, error: "payload_too_large" });
+        }
+        liensLibres = false;
+        ctaUrl = ctaSur(ctaUrl, `${APP_BASE_URL}/smart-dashboard`);
+      }
+      const uids = [...(Array.isArray(toUids) ? toUids : []), toUid].filter(Boolean);
+      if (uids.length > MAX_DESTINATAIRES) return res.status(400).json({ ok: false, error: "trop_de_destinataires" });
+      if (uids.length) {
+        const lire = async (col, id) => {
+          const s = await adminDb.collection(col).doc(id).get();
+          return s.exists ? s.data() : null;
+        };
+        destinataires = [...new Set([...destinataires, ...(await adressesDe(uids, lire))])];
+      }
     }
 
     // Garde-fous du chemin public (anti-abus : pas de lien arbitraire injecté
@@ -136,33 +169,27 @@ export default async function handler(req, res) {
     if (!process.env.RESEND_API_KEY) {
       return res.status(500).json({ ok: false, error: "missing_RESEND_API_KEY" });
     }
-    if (!to) return res.json({ ok: true, skipped: "no_email" });
+    if (!destinataires.length) return res.json({ ok: true, skipped: "no_email" });
 
     // ⚠️ Resend SDK v6 renvoie { data, error }, PAS { id } directement.
     // L'id est dans result.data.id. Tester result.id renvoyait toujours faux
     // → 500 systématique alors que l'email partait (et était même renvoyé 2×).
-    const pro = await resend.emails.send({
-      from: FROM_PRO,
-      to: [to],
-      subject: title || "Notification EduKaraib",
-      html: htmlTpl({ title, message, ctaUrl, ctaText }),
-    });
+    // Un mail par personne : personne ne voit l'adresse des autres.
+    const subject = title || "Notification EduKaraib";
+    const html = htmlTpl({ title, message, ctaUrl, ctaText });
+    const ids = [];
+    let derniereErreur = null;
+    for (const dest of destinataires) {
+      const pro = await resend.emails.send({ from: FROM_PRO, to: [dest], subject, html });
+      if (pro?.data?.id) { ids.push(pro.data.id); continue; }
+      // Fallback uniquement si l'envoi pro a échoué
+      const fallback = await resend.emails.send({ from: FROM_TEST, to: [dest], subject, html });
+      if (fallback?.data?.id) { ids.push(fallback.data.id); continue; }
+      derniereErreur = pro?.error?.message || fallback?.error?.message || "send_failed";
+    }
+    if (ids.length) return res.json({ ok: true, id: ids[0], envoyes: ids.length });
 
-    if (pro?.data?.id) return res.json({ ok: true, id: pro.data.id });
-
-    // Fallback uniquement si l'envoi pro a échoué
-    const fallback = await resend.emails.send({
-      from: FROM_TEST,
-      to: [to],
-      subject: title || "Notification EduKaraib",
-      html: htmlTpl({ title, message, ctaUrl, ctaText }),
-    });
-    if (fallback?.data?.id) return res.json({ ok: true, id: fallback.data.id });
-
-    return res.status(500).json({
-      ok: false,
-      error: pro?.error?.message || fallback?.error?.message || "send_failed",
-    });
+    return res.status(500).json({ ok: false, error: derniereErreur || "send_failed" });
   } catch (e) {
     const msg = (e && e.response) || e?.message || String(e);
     return res.status(500).json({ ok: false, error: msg });

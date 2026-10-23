@@ -7,9 +7,9 @@ import {
   getDocs,
   doc,
   getDoc,
-  limit,
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
+import { instantaneEleve } from '../lib/profils';
 
 const DAY_OFFSETS = { lun: 0, mar: 1, mer: 2, jeu: 3, ven: 4, sam: 5, dim: 6 };
 
@@ -86,23 +86,15 @@ function isFreeForStudent(lesson, uid) {
 async function fetchUserProfile(uid) {
   if (!uid) return null;
   try {
-    const direct = await getDoc(doc(db, 'users', uid));
+    const direct = await getDoc(doc(db, 'profils', uid));
     if (direct.exists()) return { id: uid, ...direct.data() };
-  } catch {}
-  try {
-    const q = query(collection(db, 'users'), where('uid', '==', uid), limit(1));
-    const s = await getDocs(q);
-    if (!s.empty) {
-      const d = s.docs[0];
-      return { id: d.id, ...d.data() };
-    }
   } catch {}
   return null;
 }
 async function fetchStudentDoc(id) {
   if (!id) return null;
   try {
-    const s = await getDoc(doc(db, 'students', id));
+    const s = await instantaneEleve(id);
     if (s.exists()) return { id, ...s.data() };
   } catch {}
   return null;
@@ -111,7 +103,7 @@ async function resolvePersonName(id, cacheRef) {
   if (!id) return '';
   if (cacheRef.current.has(id)) return cacheRef.current.get(id);
   try {
-    const u = await getDoc(doc(db, 'users', id));
+    const u = await getDoc(doc(db, 'profils', id));
     if (u.exists()) {
       const d = u.data();
       const nm = d.fullName || d.name || d.displayName || id;

@@ -67,7 +67,7 @@ export default function Search() {
   // Chargement profs + stats
   useEffect(() => {
     const fetchTeachers = async () => {
-      const qy = query(collection(db, 'users'), where('role', '==', 'teacher'));
+      const qy = query(collection(db, 'profils'), where('role', '==', 'teacher'));
       const snap = await getDocs(qy);
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 

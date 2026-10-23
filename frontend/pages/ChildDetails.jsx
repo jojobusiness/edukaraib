@@ -2,14 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import {
-  doc,
-  getDoc,
   collection,
   query,
   where,
   getDocs,
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
+import { instantaneEleve } from '../lib/profils';
 
 // --- Helpers ---
 function formatDateMaybe(ts) {
@@ -65,7 +64,7 @@ export default function ChildDetails() {
       if (!childId) return;
       setLoadingChild(true);
       try {
-        const childSnap = await getDoc(doc(db, 'students', childId));
+        const childSnap = await instantaneEleve(childId);
         if (childSnap.exists()) {
           setChild({ id: childSnap.id, ...childSnap.data() });
         } else {

@@ -18,7 +18,7 @@ export default function NotifList({ notifications }) {
       const updates = {};
       for (let id of idsToFetch) {
         try {
-          const snap = await getDoc(doc(db, 'users', id));
+          const snap = await getDoc(doc(db, 'profils', id));
           if (snap.exists()) updates[id] = snap.data().fullName || 'Utilisateur';
         } catch { updates[id] = 'Utilisateur'; }
       }

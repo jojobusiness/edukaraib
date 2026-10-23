@@ -623,3 +623,32 @@ exports.onReviewCreatedGivePromo = functions
 
       return null;
     });
+
+// -----------------------------------------------------------------------------
+// 🔒 Copie publique des profils (23/10/2026)
+//
+// `users` n'est plus lisible que par soi-même et l'admin (il contient e-mail,
+// téléphone, date de naissance, compte Stripe). Ce que les AUTRES ont le droit
+// de voir (vitrine d'un prof, nom et avatar d'un élève) est recopié dans
+// `profils/{uid}` à chaque écriture, sur une liste blanche : profilPublic.js.
+// `profils` n'est écrit que par cette fonction (règle : write false).
+// -----------------------------------------------------------------------------
+const {profilPublic} = require("./profilPublic");
+
+exports.onUserWrittenSyncProfil = functions
+    .region(REGION)
+    .runWith({timeoutSeconds: 30, memory: "256MB"})
+    .firestore.document("users/{uid}")
+    .onWrite(async (change, context) => {
+      const uid = context.params.uid;
+      const ref = db.collection("profils").doc(uid);
+      const profil = change.after.exists ?
+        profilPublic(uid, change.after.data()) : null;
+      if (!profil) {
+        await ref.delete().catch(() => {});
+        return null;
+      }
+      // set sans merge : un champ retiré de la liste blanche disparaît aussi
+      await ref.set(profil);
+      return null;
+    });

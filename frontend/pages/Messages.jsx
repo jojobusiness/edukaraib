@@ -2,7 +2,6 @@ import React, { useEffect, useState, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { auth, db, storage } from "../lib/firebase";
-import fetchWithAuth from "../utils/fetchWithAuth";
 import { consumeChatDraft } from "../lib/bacCampaign";
 import AttachmentGrid from "../components/chat/AttachmentGrid";
 import MediaLightbox from "../components/chat/MediaLightbox";
@@ -27,71 +26,21 @@ import {
   addDoc,
   serverTimestamp,
   doc,
-  getDoc,
   getDocs,
   updateDoc,
   limit,
 } from "firebase/firestore";
+import { envoyerMail, lireProfil } from "../lib/profils";
 
 // --- EMAIL HELPERS (Messages.jsx) ---
-
-async function getEmailFromDoc(pathCol, uid) {
-  try {
-    const s = await getDoc(doc(db, pathCol, uid));
-    if (s.exists()) {
-      const d = s.data();
-      return d.email || d.contactEmail || d.parentEmail || null;
-    }
-  } catch {}
-  return null;
-}
-async function getEmailFromColByUid(pathCol, uid) {
-  try {
-    const qy = query(collection(db, pathCol), where("uid", "==", uid), limit(1));
-    const s = await getDocs(qy);
-    if (!s.empty) {
-      const d = s.docs[0].data();
-      return d.email || d.contactEmail || d.parentEmail || null;
-    }
-  } catch {}
-  return null;
-}
-
-/** Cherche l'email d'un utilisateur quel que soit son “type” */
-async function getUserEmail(uid) {
-  if (!uid) return null;
-
-  // 1) users (cas standard)
-  let em = await getEmailFromDoc("users", uid);
-  if (em) return em;
-
-  // 2) teachers / parents / students (autres collections possibles)
-  em = await getEmailFromDoc("teachers", uid) ||
-       await getEmailFromDoc("parents", uid) ||
-       await getEmailFromDoc("students", uid);
-  if (em) return em;
-
-  // 3) fallback via champs uid
-  em = await getEmailFromColByUid("users", uid) ||
-       await getEmailFromColByUid("teachers", uid) ||
-       await getEmailFromColByUid("parents", uid) ||
-       await getEmailFromColByUid("students", uid);
-  return em || null;
-}
-
+// 🔒 23/10/2026 : on écrit à un identifiant ; le serveur trouve l'adresse.
 async function notifyEmailUser(uid, { title, message, ctaUrl, ctaText = "Ouvrir" }) {
-  const to = await getUserEmail(uid);
-  if (!to) return;
-  await fetchWithAuth("/api/notify-email", {
-    method: "POST",
-    body: JSON.stringify({
-      to,
-      title: title || "Nouveau message sur EduKaraib",
-      message,
-      ctaUrl: ctaUrl || `${window.location.origin}/smart-dashboard`,
-      ctaText: ctaText || "Ouvrir la conversation",
-    }),
-  }).catch(() => {});
+  await envoyerMail([uid], {
+    title: title || "Nouveau message sur EduKaraib",
+    message,
+    ctaUrl: ctaUrl || `${window.location.origin}/smart-dashboard`,
+    ctaText: ctaText || "Ouvrir la conversation",
+  });
 }
 // --- /EMAIL HELPERS ---
 
@@ -130,24 +79,6 @@ function getDayKey(ts) {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
 
-async function fetchFromColById(col, uid) {
-  try {
-    const d = await getDoc(doc(db, col, uid));
-    if (d.exists()) return { id: d.id, ...d.data(), _col: col, _mode: "byId" };
-  } catch {}
-  return null;
-}
-async function fetchFromColByUid(col, uid) {
-  try {
-    const qy = query(collection(db, col), where("uid", "==", uid), limit(1));
-    const s = await getDocs(qy);
-    if (!s.empty) {
-      const d = s.docs[0];
-      return { id: d.id, ...d.data(), _col: col, _mode: "byUid" };
-    }
-  } catch {}
-  return null;
-}
 function buildName(p, uidFallback) {
   if (!p) return uidFallback ? `Utilisateur-${String(uidFallback).slice(0, 6)}` : "Utilisateur";
   const byFL = [p.firstName, p.lastName].filter(Boolean).join(" ").trim();
@@ -172,28 +103,9 @@ function buildAvatar(p) {
   );
 }
 
+// 🔒 23/10/2026 : la fiche de l'autre vient de `profils` (copie publique)
 async function fetchUserProfile(uid) {
-  if (!uid) return null;
-
-  // 1) users
-  let p =
-    (await fetchFromColById("users", uid)) ||
-    (await fetchFromColByUid("users", uid));
-  if (p) return p;
-
-  // 2) teachers
-  p =
-    (await fetchFromColById("teachers", uid)) ||
-    (await fetchFromColByUid("teachers", uid));
-  if (p) return p;
-
-  // 3) students
-  p =
-    (await fetchFromColById("students", uid)) ||
-    (await fetchFromColByUid("students", uid));
-  if (p) return p;
-
-  return null;
+  return lireProfil(uid);
 }
 
 /** Trouve / crée une conversation unique entre myUid et otherUid (fallback client) */

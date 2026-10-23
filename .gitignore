@@ -6,3 +6,6 @@ node_modules/
 
 .vercel
 .env*
+
+# Journaux des émulateurs Firebase (npm run test:regles)
+*-debug.log

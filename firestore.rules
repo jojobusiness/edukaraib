@@ -10,8 +10,11 @@ rules_version = '2';
 //    (Admin SDK, qui ignore les regles) ecrivent
 //  - pas d'auto-promotion : un user ne peut pas changer son propre role
 //  - le client ne peut jamais poser is_paid/paid_at sur une lecon
-// Phase 2 : payments/subscriptions restreints le 19/10/2026. Reste lessons
-// (necessite d'aligner les requetes front), et participantsMap.*.is_paid.
+// Phase 2 : payments/subscriptions restreints le 19/10/2026.
+// Phase 3 (23/10/2026) : users, students, documents, favorites, presence,
+// parents, children fermes. Reste la LECTURE de lessons (la reservation lit
+// les cours des autres : a passer cote serveur) et participantsMap.*.is_paid.
+// Preuve : npm run test:regles (emulateur) + scripts/diag-regles-donnees.mjs (prod).
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -24,13 +27,17 @@ service cloud.firestore {
     }
 
     // ── Profils ────────────────────────────────────────────────────────────
-    // Lecture publique : Search/Home/SEO listent les profs sans login.
+    // 🔒 23/10/2026 — AVANT : `allow read: if true`. SANS AUCUN COMPTE, on
+    // listait les 36 comptes : e-mail, telephone, date de naissance, compte
+    // Stripe. Desormais `users` ne se lit que par soi-meme et l'admin. Ce que
+    // les autres ont le droit de voir est recopie dans `profils` (ci-dessous).
     // Ecriture : soi-meme sans toucher au role (anti-escalade), admin libre.
     // partner_uid : partenaire auquel la famille est rattachée (remise + reversement
     // sur tous ses achats). Posé par le webhook de paiement uniquement : une
     // famille ne peut ni se rattacher elle-même, ni changer de partenaire.
     match /users/{uid} {
-      allow read: if true;
+      allow read: if isSelf(uid) || isAdmin()
+        || (signedIn() && resource.data.get('uid', '') == request.auth.uid);
       allow create: if isSelf(uid)
         && request.resource.data.get('role', 'student') in ['student', 'parent', 'teacher']
         && !('partner_uid' in request.resource.data);
@@ -41,15 +48,47 @@ service cloud.firestore {
       allow delete: if isAdmin() || isSelf(uid);
     }
 
-    match /teachers/{id} {
-      allow read: if true;
-      allow write: if isSelf(id) || isAdmin();
+    // Copie publique de chaque compte, ecrite UNIQUEMENT par la Cloud Function
+    // onUserWrittenSyncProfil, sur une liste blanche (functions/profilPublic.js) :
+    // vitrine complete d'un prof, nom et avatar seulement pour les autres.
+    // Lecture d'une fiche : publique (les avis affichent le nom de leur auteur).
+    // Liste : seulement les profs (recherche, accueil) et l'admin (support).
+    match /profils/{uid} {
+      allow get: if true;
+      allow list: if isAdmin() || resource.data.role in ['teacher', 'admin'];
+      allow write: if false;
     }
 
-    // Lookups multi-ID (students.uid vs user_id) par parents/profs : auth requis
-    match /students/{id} { allow read, write: if signedIn(); }
-    match /parents/{id}  { allow read, write: if signedIn(); }
-    match /children/{id} { allow read, write: if signedIn(); }
+    // Ancienne vitrine, vide et plus lue : fermee en ecriture (23/10/2026)
+    match /teachers/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // 🔒 23/10/2026 — AVANT : `read, write: if signedIn()`. Tout compte lisait,
+    // modifiait et supprimait le nom et la DATE DE NAISSANCE des enfants.
+    // Desormais : le parent, l'eleve lui-meme, l'admin. Le prof d'un cours
+    // obtient le nom (sans date de naissance) par /api/fiches-eleves.
+    function ficheAMoi() {
+      return signedIn() && (
+        resource.data.get('parent_id', '') == request.auth.uid
+        || resource.data.get('user_id', '') == request.auth.uid
+        || resource.data.get('uid', '') == request.auth.uid
+      );
+    }
+    match /students/{id} {
+      allow read: if isAdmin() || ficheAMoi();
+      allow create: if isAdmin()
+        || (signedIn() && request.resource.data.get('parent_id', '') == request.auth.uid);
+      allow update: if isAdmin()
+        || (signedIn() && resource.data.get('parent_id', '') == request.auth.uid
+            && request.resource.data.get('parent_id', '') == request.auth.uid);
+      allow delete: if isAdmin()
+        || (signedIn() && resource.data.get('parent_id', '') == request.auth.uid);
+    }
+    // Vides et plus utilisees (23/10/2026)
+    match /parents/{document=**}  { allow read, write: if isAdmin(); }
+    match /children/{id} { allow read, write: if isAdmin(); }
 
     // Avis publics (carousel Home, profils)
     match /reviews/{id} {
@@ -70,7 +109,10 @@ service cloud.firestore {
         || (signedIn() && !request.resource.data.diff(resource.data).affectedKeys()
               .hasAny(['is_paid', 'paid_at', 'paid_by', 'total_amount',
                        'payment_intent_id', 'stripe_charge_id']));
-      allow delete: if signedIn();
+      // 23/10/2026 : etait signedIn() — n'importe qui supprimait le cours d'un
+      // autre. Aucun ecran ne supprime de cours : prof du cours et admin.
+      allow delete: if isAdmin()
+        || (signedIn() && resource.data.get('teacher_id', '') == request.auth.uid);
     }
 
     // ── Notifications ──────────────────────────────────────────────────────
@@ -132,11 +174,45 @@ service cloud.firestore {
       // ⛔ Ni effacé : la purge des 12 mois est faite par le serveur
       allow delete: if false;
     }
-    match /presence/{id}      { allow read, write: if signedIn(); }
+    // 23/10/2026 : chacun n'ecrit que SA presence
+    match /presence/{id} {
+      allow read: if signedIn();
+      allow write: if isSelf(id);
+    }
 
-    // Documents de cours, favoris
-    match /documents/{id} { allow read, write: if signedIn(); }
-    match /favorites/{id} { allow read, write: if signedIn(); }
+    // 🔒 23/10/2026 — Documents de cours. AVANT : `read, write: if signedIn()`,
+    // tout compte lisait et supprimait les fichiers de tout le monde.
+    // `acces` = comptes du cours (prof, eleves, parents), pose a l'envoi :
+    // frontend/lib/accesCours.js. Toute lecture doit filtrer
+    // `where('acces', 'array-contains', moi)`.
+    function profDuCoursDuDocument() {
+      return signedIn() && get(/databases/$(database)/documents/lessons/$(resource.data.lesson_id))
+        .data.get('teacher_id', '') == request.auth.uid;
+    }
+    match /documents/{id} {
+      allow read: if isAdmin()
+        || (signedIn() && request.auth.uid in resource.data.get('acces', []));
+      allow create: if signedIn()
+        && request.resource.data.get('sender_id', '') == request.auth.uid
+        && request.auth.uid in request.resource.data.get('acces', []);
+      allow update: if isAdmin()
+        || ((resource.data.get('sender_id', '') == request.auth.uid || profDuCoursDuDocument())
+            && request.resource.data.get('sender_id', '') == resource.data.get('sender_id', ''))
+        // Le prof complete l'acces quand un eleve rejoint le cours apres coup
+        || (signedIn() && request.auth.uid in resource.data.get('acces', [])
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acces']));
+      allow delete: if isAdmin()
+        || (signedIn() && resource.data.get('sender_id', '') == request.auth.uid)
+        || profDuCoursDuDocument();
+    }
+
+    // 23/10/2026 : favoris = ceux du compte connecte, personne d'autre
+    match /favorites/{id} {
+      allow read, delete: if signedIn() && resource.data.get('user_id', '') == request.auth.uid;
+      allow create: if signedIn() && request.resource.data.get('user_id', '') == request.auth.uid;
+      allow update: if signedIn() && resource.data.get('user_id', '') == request.auth.uid
+        && request.resource.data.get('user_id', '') == request.auth.uid;
+    }
 
     // Codes promo bonus pack (lecture connectee, gestion admin)
     match /promo_codes/{id} {

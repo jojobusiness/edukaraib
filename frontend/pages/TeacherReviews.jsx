@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { auth, db } from '../lib/firebase';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { nomDeQuelquun } from '../lib/profils';
 import DashboardLayout from '../components/DashboardLayout';
 
 export default function TeacherReviews() {
@@ -15,11 +16,7 @@ export default function TeacherReviews() {
       // Pour chaque avis, on essaie de trouver le nom de l'élève (optionnel)
       const enriched = await Promise.all(snapshot.docs.map(async d => {
         const review = { id: d.id, ...d.data() };
-        let studentName = review.student_id;
-        try {
-          const snap = await getDoc(doc(db, 'users', review.student_id));
-          if (snap.exists()) studentName = snap.data().fullName || studentName;
-        } catch {}
+        const studentName = (await nomDeQuelquun(review.student_id)) || 'Élève';
         return { ...review, studentName };
       }));
       // Les plus récents en premier

@@ -10,10 +10,10 @@ import {
   getDocs,
   doc,
   getDoc,
-  limit,
   onSnapshot,
   orderBy,
 } from 'firebase/firestore';
+import { instantaneEleve } from '../lib/profils';
 
 // ---------- Helpers jours/heures ----------
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -60,23 +60,15 @@ function isFreeFor(lesson, uid) {
 async function fetchUserProfile(uid) {
   if (!uid) return null;
   try {
-    const s = await getDoc(doc(db, 'users', uid));
+    const s = await getDoc(doc(db, 'profils', uid));
     if (s.exists()) return { id: uid, ...s.data(), _source: 'users' };
-  } catch {}
-  try {
-    const q = query(collection(db, 'users'), where('uid', '==', uid), limit(1));
-    const snap = await getDocs(q);
-    if (!snap.empty) {
-      const d = snap.docs[0];
-      return { id: d.id, ...d.data(), _source: 'users-query' };
-    }
   } catch {}
   return null;
 }
 async function fetchStudentDoc(id) {
   if (!id) return null;
   try {
-    const s = await getDoc(doc(db, 'students', id));
+    const s = await instantaneEleve(id);
     if (s.exists()) return { id, ...s.data(), _source: 'students' };
   } catch {}
   return null;

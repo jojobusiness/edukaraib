@@ -14,6 +14,7 @@ import {
 import { autoClearPaymentDueNotifications } from '../lib/paymentNotifications';
 import ReferralCard from '../components/ReferralCard';
 import TrustpilotBanner from '../components/TrustpilotBanner';
+import { instantaneEleve } from '../lib/profils';
 
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const codeIndex = (c) => Math.max(0, FR_DAY_CODES.indexOf(c));
@@ -22,9 +23,9 @@ function nextOccurrence(slot_day, slot_hour, now = new Date()) { if(!FR_DAY_CODE
 function chunk(arr, size = 10){ const out=[]; for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size)); return out; }
 
 async function resolveName(id) {
-  try { const s = await getDoc(doc(db,'users', id)); if (s.exists()) { const d=s.data(); return d.fullName||d.name||d.displayName||'Élève'; } } catch {}
+  try { const s = await getDoc(doc(db, 'profils', id)); if (s.exists()) { const d=s.data(); return d.fullName||d.name||d.displayName||'Élève'; } } catch {}
   try {
-    const st = await getDoc(doc(db, 'students', id));
+    const st = await instantaneEleve(id);
     if (st.exists()) { const d=st.data(); return d.full_name||d.name||'Élève'; }
   } catch {}
   return 'Élève';

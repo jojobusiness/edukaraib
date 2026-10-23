@@ -1,13 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { db } from '../../lib/firebase';
-import fetchWithAuth from '../../utils/fetchWithAuth';
+import { auth, db } from '../../lib/firebase';
 import {
   collection,
   doc,
   getDoc,
   getDocs,
-  limit,
-  orderBy,
   query,
   updateDoc,
   where,
@@ -18,6 +15,7 @@ import {
   addDoc,
   onSnapshot,
 } from 'firebase/firestore';
+import { instantaneEleve, envoyerMail, nomDeQuelquun } from '../../lib/profils';
 
 /* ---------------- utils noms / recherche ---------------- */
 const stripDiacritics = (s = '') => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -27,54 +25,29 @@ const pickStudentName = (x = {}) =>
   [x.first_name, x.last_name].filter(Boolean).join(' ') ||
   (x.profile && (x.profile.full_name || x.profile.name)) || 'Sans nom';
 
-async function searchStudentsByName(termRaw) {
+// \ud83d\udd12 23/10/2026 : avant, la recherche listait TOUS les \u00e9l\u00e8ves du site (fiches
+// enfants comprises) \u00e0 n'importe quel prof. Un prof n'invite plus que des
+// \u00e9l\u00e8ves qu'il a d\u00e9j\u00e0 eus en cours : ceux de ses propres le\u00e7ons.
+async function searchStudentsByName(termRaw, teacherId) {
   const term = lc(termRaw);
-  if (!term) return [];
+  if (!term || !teacherId) return [];
   const MAX = 12;
-  const out = [];
+  const ids = new Set();
   try {
-    const qs = query(
-      collection(db, 'students'),
-      where('full_name_lc', '>=', term),
-      where('full_name_lc', '<=', term + '\uf8ff'),
-      limit(MAX)
-    );
-    const snap = await getDocs(qs);
-    snap.forEach((d) => out.push({ id: d.id, name: pickStudentName(d.data()), source: 'students' }));
-  } catch {}
-  if (out.length === 0) {
-    try {
-      const qs2 = query(collection(db, 'students'), orderBy('full_name'), limit(200));
-      const snap2 = await getDocs(qs2);
-      snap2.forEach((d) => {
-        const nm = pickStudentName(d.data());
-        if (lc(nm).includes(term)) out.push({ id: d.id, name: nm, source: 'students(full_name)' });
-      });
-    } catch {}
-  }
-  try {
-    const qu = query(collection(db, 'users'), where('role', 'in', ['student', 'child']), limit(120));
-    const snapU = await getDocs(qu);
-    snapU.forEach((d) => {
-      const x = d.data();
-      const nm =
-        x.fullName ||
-        x.name ||
-        x.displayName ||
-        (x.profile && (x.profile.full_name || x.profile.name)) ||
-        '';
-      if (lc(nm).includes(term)) out.push({ id: d.id, name: nm || 'Sans nom', source: 'users' });
+    const snap = await getDocs(query(collection(db, 'lessons'), where('teacher_id', '==', teacherId)));
+    snap.forEach((d) => {
+      const l = d.data();
+      if (l.student_id) ids.add(String(l.student_id));
+      (Array.isArray(l.participant_ids) ? l.participant_ids : []).forEach((id) => id && ids.add(String(id)));
     });
   } catch {}
-  const uniq = [];
-  const seen = new Set();
-  out.forEach((r) => {
-    if (!seen.has(r.id)) {
-      seen.add(r.id);
-      uniq.push(r);
-    }
-  });
-  return uniq.slice(0, MAX);
+  const out = [];
+  for (const id of ids) {
+    const nm = await nomDeQuelquun(id);
+    if (nm && lc(nm).includes(term)) out.push({ id, name: pickStudentName({ name: nm }), source: 'mes-eleves' });
+    if (out.length >= MAX) break;
+  }
+  return out;
 }
 
 function countConfirmed(participant_ids = [], participantsMap = {}) {
@@ -129,92 +102,17 @@ function statusLabel(st) {
   }
 }
 
-async function getEmailFromDoc(pathCol, uid) {
-  try {
-    const s = await getDoc(doc(db, pathCol, uid));
-    if (s.exists()) {
-      const d = s.data();
-      return d.email || d.contactEmail || d.parentEmail || null;
-    }
-  } catch {}
-  return null;
-}
-
-async function getUserEmail(uid) {
-  if (!uid) return null;
-  return (
-    (await getEmailFromDoc('users', uid)) ||
-    (await getEmailFromDoc('teachers', uid)) ||
-    (await getEmailFromDoc('parents', uid)) ||
-    (await getEmailFromDoc('students', uid))
-  );
-}
-
-async function getParentIdForStudent(studentId, lessonCtx) {
-  const pm = lessonCtx?.participantsMap || {};
-  const viaMap = pm?.[studentId]?.parent_id || pm?.[studentId]?.booked_by;
-  if (viaMap) return viaMap;
-
-  try {
-    const s = await getDoc(doc(db, 'students', studentId));
-    if (s.exists()) {
-      const d = s.data();
-      return d.parent_id || d.parentId || d.booked_by || null;
-    }
-  } catch {}
-
-  try {
-    const u = await getDoc(doc(db, 'users', studentId));
-    if (u.exists()) {
-      const d = u.data();
-      return d.parent_id || d.parentId || d.booked_by || null;
-    }
-  } catch {}
-
-  return null;
-}
-
-async function sendEmailsToUsers(
-  userIds = [],
-  { title, message, ctaUrl, ctaText = 'Ouvrir' },
-  lessonCtx = null
-) {
-  const emails = new Set();
-
-  // emails directs
-  for (const uid of userIds) {
-    const em = await getUserEmail(uid);
-    if (em) emails.add(em);
-  }
-
-  // fallback parent si pas d’email élève
-  if (lessonCtx && Array.isArray(lessonCtx.participant_ids)) {
-    for (const sid of lessonCtx.participant_ids) {
-      const hasStudentEmail = await getUserEmail(sid);
-      if (!hasStudentEmail) {
-        const pid = await getParentIdForStudent(sid, lessonCtx);
-        const pem = await getUserEmail(pid);
-        if (pem) emails.add(pem);
-      }
-    }
-  }
-
-  if (!emails.size) return;
-
-  await Promise.all(
-    Array.from(emails).map((to) =>
-      fetchWithAuth('/api/notify-email', {
-        method: 'POST',
-        body: JSON.stringify({
-          to,
-          title,
-          message,
-          ctaUrl: ctaUrl || `${window.location.origin}/smart-dashboard`,
-          ctaText,
-        }),
-      }).catch(() => {})
-    )
-  );
+// 🔒 23/10/2026 : on écrit à des IDENTIFIANTS, le serveur trouve les adresses
+// (pour un enfant, celle de son parent). Le navigateur ne lit plus jamais
+// l'e-mail de quelqu'un d'autre. Voir lib/profils.js → envoyerMail.
+async function sendEmailsToUsers(userIds = [], { title, message, ctaUrl, ctaText = 'Ouvrir' }, lessonCtx = null) {
+  const participants = Array.isArray(lessonCtx?.participant_ids) ? lessonCtx.participant_ids : [];
+  await envoyerMail([...userIds, ...participants], {
+    title,
+    message,
+    ctaUrl: ctaUrl || `${window.location.origin}/smart-dashboard`,
+    ctaText,
+  });
 }
 
 function isPackParticipant(ent = {}) {
@@ -343,7 +241,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
       try {
-        setResults(await searchStudentsByName(term));
+        setResults(await searchStudentsByName(term, lesson?.teacher_id || auth.currentUser?.uid));
       } finally {
         setSearching(false);
       }
@@ -380,11 +278,11 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
   async function resolveName(id) {
     if (!id) return '';
     try {
-      const s = await getDoc(doc(db, 'students', id));
+      const s = await instantaneEleve(id);
       if (s.exists()) return pickStudentName(s.data());
     } catch {}
     try {
-      const u = await getDoc(doc(db, 'users', id));
+      const u = await getDoc(doc(db, 'profils', id));
       if (u.exists()) return pickStudentName(u.data());
     } catch {}
     return id;
@@ -622,7 +520,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
             <label className="block text-sm font-medium mb-1">Inviter un élève (par nom)</label>
             <input
               type="text"
-              placeholder="Rechercher un élève…"
+              placeholder="Rechercher parmi vos élèves…"
               className="w-full border rounded-lg px-3 py-2"
               value={search}
               onChange={(e) => setSearch(e.target.value)}

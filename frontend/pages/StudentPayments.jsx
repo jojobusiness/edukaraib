@@ -205,7 +205,7 @@ export default function StudentPayments() {
     const cache = teacherCacheRef.current;
     if (cache.has(uid)) return cache.get(uid);
     try {
-      const s = await getDoc(doc(db, 'users', uid));
+      const s = await getDoc(doc(db, 'profils', uid));
       let name = uid;
       if (s.exists()) {
         const d = s.data();

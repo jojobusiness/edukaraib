@@ -7,9 +7,9 @@ import {
   getDocs,
   doc,
   getDoc,
-  limit,
 } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
+import { instantaneEleve } from '../lib/profils';
 
 const DAY_OFFSETS = { lun: 0, mar: 1, mer: 2, jeu: 3, ven: 4, sam: 5, dim: 6 };
 
@@ -94,23 +94,15 @@ function hasAnyFreeHour(lesson) {
 async function fetchUserProfile(uid) {
   if (!uid) return null;
   try {
-    const s = await getDoc(doc(db, 'users', uid));
+    const s = await getDoc(doc(db, 'profils', uid));
     if (s.exists()) return { id: uid, ...s.data(), _src: 'users' };
-  } catch {}
-  try {
-    const q = query(collection(db, 'users'), where('uid', '==', uid), limit(1));
-    const snap = await getDocs(q);
-    if (!snap.empty) {
-      const d = snap.docs[0];
-      return { id: d.id, ...d.data(), _src: 'users-query' };
-    }
   } catch {}
   return null;
 }
 async function fetchStudentDoc(id) {
   if (!id) return null;
   try {
-    const s = await getDoc(doc(db, 'students', id));
+    const s = await instantaneEleve(id);
     if (s.exists()) return { id, ...s.data(), _src: 'students' };
   } catch {}
   return null;

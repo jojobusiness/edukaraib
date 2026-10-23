@@ -12,11 +12,11 @@ import {
   orderBy,
   setDoc,
   deleteDoc,
-  limit,
 } from 'firebase/firestore';
 import { autoClearPaymentDueNotifications } from '../lib/paymentNotifications';
 import ReferralCard from '../components/ReferralCard';
 import TrustpilotBanner from '../components/TrustpilotBanner';
+import { instantaneEleve } from '../lib/profils';
 
 // ---------- Helpers temps ----------
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -50,16 +50,8 @@ function isFreeFor(lesson, uid) {
 async function fetchUserProfile(uid) {
   if (!uid) return null;
   try {
-    const s = await getDoc(doc(db, 'users', uid));
+    const s = await getDoc(doc(db, 'profils', uid));
     if (s.exists()) return { id: uid, ...s.data() };
-  } catch {}
-  try {
-    const q = query(collection(db, 'users'), where('uid', '==', uid), limit(1));
-    const snap = await getDocs(q);
-    if (!snap.empty) {
-      const d = snap.docs[0];
-      return { id: d.id, ...d.data() };
-    }
   } catch {}
   return null;
 }
@@ -75,7 +67,7 @@ async function resolveNamesForParticipants(lessons) {
     // users d'abord
     let nm = null;
     try {
-      const s = await getDoc(doc(db, 'users', id));
+      const s = await getDoc(doc(db, 'profils', id));
       if (s.exists()) {
         const d = s.data();
         nm = d.fullName || d.name || d.displayName;
@@ -83,7 +75,7 @@ async function resolveNamesForParticipants(lessons) {
     } catch {}
     if (!nm) {
       try {
-        const s = await getDoc(doc(db, 'students', id));
+        const s = await instantaneEleve(id);
         if (s.exists()) {
           const d = s.data();
           nm = d.full_name || d.name;

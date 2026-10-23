@@ -8,6 +8,7 @@ import {
 import BookingModal from '../components/BookingModal';
 import { useSEO } from '../hooks/useSEO';
 import { getCampaignPack, getCampaignSubject, setChatDraft } from '../lib/bacCampaign';
+import { instantaneEleve } from '../lib/profils';
 
 const DAYS_ORDER = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
@@ -247,7 +248,7 @@ export default function TeacherProfile() {
 
   // Charger prof
   useEffect(() => {
-    const unsubTeacher = onSnapshot(doc(db, 'users', teacherId), (snap) => {
+    const unsubTeacher = onSnapshot(doc(db, 'profils', teacherId), (snap) => {
       if (!snap.exists()) {
         setTeacher(null);
         return;
@@ -296,12 +297,12 @@ export default function TeacherProfile() {
         // Deux requêtes en parallèle : subjects array vs string
         const [snapArray, snapString] = await Promise.all([
           getDocs(query(
-            collection(db, 'users'),
+            collection(db, 'profils'),
             where('role', '==', 'teacher'),
             where('subjects', 'array-contains', mainSubject)
           )).catch(() => ({ docs: [] })),
           getDocs(query(
-            collection(db, 'users'),
+            collection(db, 'profils'),
             where('role', '==', 'teacher'),
             where('subjects', '==', mainSubject)
           )).catch(() => ({ docs: [] })),
@@ -527,14 +528,14 @@ export default function TeacherProfile() {
 
       const entries = await Promise.all(ids.map(async (id) => {
         try {
-          const u = await getDoc(doc(db, 'users', id));
+          const u = await getDoc(doc(db, 'profils', id));
           if (u.exists()) {
             const ux = u.data();
             return [id, { name: pickDisplayName(ux) || 'Utilisateur', avatar: pickAvatar(ux) || '' }];
           }
         } catch {}
         try {
-          const s = await getDoc(doc(db, 'students', id));
+          const s = await instantaneEleve(id);
           if (s.exists()) {
             const sx = s.data();
             return [id, { name: pickDisplayName(sx) || 'Élève', avatar: pickAvatar(sx) || '' }];

@@ -8,39 +8,18 @@ import {
   collection,
   query,
   where,
-  getDocs,
   doc,
   getDoc,
   updateDoc,
-  limit,
   onSnapshot,
   deleteField,
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
+import { instantaneEleve } from '../lib/profils';
 
 /* ---------- Helpers ---------- */
 
 /* ---------- Email helpers (prof) ---------- */
-async function getUserEmailById(uid) {
-  if (!uid) return null;
-  try {
-    // users/{uid}
-    const s = await getDoc(doc(db, 'users', uid));
-    if (s.exists()) {
-      const d = s.data();
-      return d.email || d.contactEmail || null;
-    }
-  } catch {}
-  // fallback teachers/{uid}
-  try {
-    const t = await getDoc(doc(db, 'teachers', uid));
-    if (t.exists()) {
-      const d = t.data();
-      return d.email || d.contactEmail || null;
-    }
-  } catch {}
-  return null;
-}
 
 async function getMyDisplayName(uid) {
   try {
@@ -55,8 +34,7 @@ async function getMyDisplayName(uid) {
 
 async function emailTeacherAboutInvite(lesson, { accepted }) {
   const teacherId = lesson?.teacher_id;
-  const teacherEmail = await getUserEmailById(teacherId);
-  if (!teacherEmail) return;
+  if (!teacherId) return;
 
   const me = auth.currentUser;
   const myName = await getMyDisplayName(me?.uid);
@@ -72,7 +50,7 @@ async function emailTeacherAboutInvite(lesson, { accepted }) {
   await fetchWithAuth("/api/notify-email", {
     method: "POST",
     body: JSON.stringify({
-      to: teacherEmail,
+      toUid: teacherId, // 🔒 23/10/2026 : le serveur trouve l'adresse
       title,
       message,
       ctaText: "Ouvrir le cours",
@@ -208,16 +186,8 @@ const PENDING_LESSON_STATUSES = new Set([
 async function fetchUserProfile(uid) {
   if (!uid) return null;
   try {
-    const direct = await getDoc(doc(db, 'users', uid));
+    const direct = await getDoc(doc(db, 'profils', uid));
     if (direct.exists()) return { id: uid, ...direct.data() };
-  } catch {}
-  try {
-    const q = query(collection(db, 'users'), where('uid', '==', uid), limit(1));
-    const s = await getDocs(q);
-    if (!s.empty) {
-      const d = s.docs[0];
-      return { id: d.id, ...d.data() };
-    }
   } catch {}
   return null;
 }
@@ -234,7 +204,7 @@ async function resolvePersonName(id, cache) {
   if (cache.current.has(id)) return cache.current.get(id);
   // users
   try {
-    const u = await getDoc(doc(db, 'users', id));
+    const u = await getDoc(doc(db, 'profils', id));
     if (u.exists()) {
       const d = u.data();
       const nm = d.fullName || d.name || d.displayName || id;
@@ -244,7 +214,7 @@ async function resolvePersonName(id, cache) {
   } catch {}
   // students
   try {
-    const s = await getDoc(doc(db, 'students', id));
+    const s = await instantaneEleve(id);
     if (s.exists()) {
       const d = s.data();
       const nm = d.full_name || d.name || id;

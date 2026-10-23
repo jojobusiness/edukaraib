@@ -44,7 +44,7 @@ export default function Invoice() {
 
         const [lessonSnap, teacherSnap, payerSnap] = await Promise.all([
           pay.lesson_id ? getDoc(doc(db, 'lessons', String(pay.lesson_id))) : Promise.resolve(null),
-          pay.teacher_uid ? getDoc(doc(db, 'users', String(pay.teacher_uid))) : Promise.resolve(null),
+          pay.teacher_uid ? getDoc(doc(db, 'profils', String(pay.teacher_uid))) : Promise.resolve(null),
           getDoc(doc(db, 'users', user.uid)),
         ]);
 

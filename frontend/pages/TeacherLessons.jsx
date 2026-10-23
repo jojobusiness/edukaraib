@@ -18,6 +18,7 @@ import fetchWithAuth from '../utils/fetchWithAuth';
 import DocumentsModal from '../components/lessons/DocumentsModal';
 import GroupSettingsModal from '../components/lessons/GroupSettingsModal';
 import { createPaymentDueNotificationsForLesson } from '../lib/paymentNotifications';
+import { instantaneEleve, envoyerMail } from '../lib/profils';
 
 const JAAS_TENANT = 'vpaas-magic-cookie-651cb7a83ef74ca1981d7fdeee7f91ca';
 const JAAS_ROOM_PREFIX = `${JAAS_TENANT}/`;
@@ -149,13 +150,12 @@ function StatusPill({ status }) {
 }
 
 /* ---------- data helpers ---------- */
-async function resolvePersonName(id, cache, opts = {}) {
-  const { parentId = null } = opts;
+async function resolvePersonName(id, cache) {
   if (!id) return '';
   if (cache.has(id)) return cache.get(id);
 
   try {
-    const u = await getDoc(doc(db, 'users', id));
+    const u = await getDoc(doc(db, 'profils', id));
     if (u.exists()) {
       const d = u.data();
       const nm = d.fullName || d.name || d.displayName || id;
@@ -165,7 +165,7 @@ async function resolvePersonName(id, cache, opts = {}) {
   } catch {}
 
   try {
-    const s = await getDoc(doc(db, 'students', id));
+    const s = await instantaneEleve(id);
     if (s.exists()) {
       const d = s.data();
       const nm = d.full_name || d.name || id;
@@ -174,34 +174,8 @@ async function resolvePersonName(id, cache, opts = {}) {
     }
   } catch {}
 
-  // 🔎 fallback 1 : collection globale "children" (si utilisée)
-  try {
-    const c = await getDoc(doc(db, 'children', id));
-    if (c.exists()) {
-      const d = c.data();
-      const nm = (d.fullName || d.full_name || [d.firstName, d.lastName].filter(Boolean).join(' ') || d.name || '').trim();
-      if (nm) {
-        cache.set(id, nm);
-        return nm;
-      }
-    }
-  } catch {}
-
-  // 🔎 fallback 2 : sous-collection "parents/{parentId}/children/{childId}"
-  if (parentId) {
-    try {
-      const pc = await getDoc(doc(db, 'parents', parentId, 'children', id));
-      if (pc.exists()) {
-        const d = pc.data();
-        const nm = (d.fullName || d.full_name || [d.firstName, d.lastName].filter(Boolean).join(' ') || d.name || '').trim();
-        if (nm) {
-          cache.set(id, nm);
-          return nm;
-        }
-      }
-    } catch {}
-  }
-
+  // 23/10/2026 : les anciens replis `children` et `parents/{id}/children`
+  // ont été retirés — collections vides, et désormais réservées à l'admin.
   cache.set(id, id);
   return id;
 }
@@ -220,64 +194,17 @@ async function notifyUsers(userIds = [], payloadBase = {}) {
 }
 
 // --- EMAIL HELPERS ---
-async function getEmailFromDoc(pathCol, uid) {
-  try {
-    const s = await getDoc(doc(db, pathCol, uid));
-    if (s.exists()) {
-      const d = s.data();
-      return d.email || d.contactEmail || d.parentEmail || null;
-    }
-  } catch {}
-  return null;
-}
-async function getUserEmail(uid) {
-  if (!uid) return null;
-  return (
-    (await getEmailFromDoc("users", uid))     ||
-    (await getEmailFromDoc("teachers", uid))  ||
-    (await getEmailFromDoc("parents", uid))   ||
-    (await getEmailFromDoc("students", uid))
-  );
-}
-
-/** Envoie aux élèves ET, si nécessaire, à leurs parents */
+// 🔒 23/10/2026 : on écrit à des IDENTIFIANTS, le serveur trouve les adresses
+// (pour un enfant, celle de son parent). Le navigateur ne lit plus jamais
+// l'e-mail de quelqu'un d'autre. Voir lib/profils.js → envoyerMail.
 async function sendEmailsToUsers(userIds = [], { title, message, ctaUrl, ctaText = "Ouvrir" }, lessonCtx = null) {
-  const emails = new Set();
-
-  // 1) emails directs
-  for (const uid of userIds) {
-    const em = await getUserEmail(uid);
-    if (em) emails.add(em);
-  }
-
-  // 2) fallback parents via participantsMap si dispo
-  if (lessonCtx && Array.isArray(lessonCtx.participant_ids)) {
-    const pm = lessonCtx.participantsMap || {};
-    for (const sid of lessonCtx.participant_ids) {
-      if (!emails.size || !(await getUserEmail(sid))) {
-        const parentId = pm?.[sid]?.parent_id || pm?.[sid]?.booked_by || null;
-        const pem = await getUserEmail(parentId);
-        if (pem) emails.add(pem);
-      }
-    }
-  }
-
-  if (!emails.size) return;
-  const payload = {
+  const participants = Array.isArray(lessonCtx?.participant_ids) ? lessonCtx.participant_ids : [];
+  await envoyerMail([...userIds, ...participants], {
     title,
     message,
     ctaUrl: ctaUrl || `${window.location.origin}/smart-dashboard`,
     ctaText,
-  };
-
-  await Promise.all(
-    Array.from(emails).map((to) =>
-      fetchWithAuth("/api/notify-email", {
-        method: "POST",
-        body: JSON.stringify({ to, ...payload }),
-      }).catch(() => {})
-    )
-  );
+  });
 }
 // --- /EMAIL HELPERS ---
 
@@ -290,7 +217,7 @@ async function getParentIdForStudent(studentId, lesson) {
 
   // 2) via collection students/{id}
   try {
-    const s = await getDoc(doc(db, "students", studentId));
+    const s = await instantaneEleve(studentId);
     if (s.exists()) {
       const d = s.data();
       return d.parent_id || d.parentId || d.booked_by || null;
@@ -299,7 +226,7 @@ async function getParentIdForStudent(studentId, lesson) {
 
   // 3) fallback via users/{id} si tu as stocké parent_id dessus
   try {
-    const u = await getDoc(doc(db, "users", studentId));
+    const u = await getDoc(doc(db, "profils", studentId));
     if (u.exists()) {
       const d = u.data();
       return d.parent_id || d.parentId || d.booked_by || null;

@@ -107,7 +107,7 @@ export default function CampaignLanding({ config }) {
     let alive = true;
     (async () => {
       try {
-        const snap = await getDocs(query(collection(db, 'users'), where('role', '==', 'teacher')));
+        const snap = await getDocs(query(collection(db, 'profils'), where('role', '==', 'teacher')));
         const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
         const ids = data.map((t) => t.id).filter(Boolean);

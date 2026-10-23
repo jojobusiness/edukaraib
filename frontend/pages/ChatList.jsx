@@ -14,29 +14,12 @@ import {
 import DashboardLayout from "../components/DashboardLayout";
 import { Link } from "react-router-dom";
 import { useUserRole } from "../hooks/useUserRole";
+import { lireProfil } from "../lib/profils";
 
 // --- Mini cache en mémoire pour accélérer la liste
 const PROFILE_CACHE = new Map(); // uid -> { name, avatar, role }
 
 // ---------- Helpers ----------
-async function fetchFromColById(col, uid) {
-  try {
-    const d = await getDoc(doc(db, col, uid));
-    if (d.exists()) return { id: d.id, ...d.data(), _col: col, _mode: "byId" };
-  } catch {}
-  return null;
-}
-async function fetchFromColByUid(col, uid) {
-  try {
-    const qy = query(collection(db, col), where("uid", "==", uid), limit(1));
-    const s = await getDocs(qy);
-    if (!s.empty) {
-      const d = s.docs[0];
-      return { id: d.id, ...d.data(), _col: col, _mode: "byUid" };
-    }
-  } catch {}
-  return null;
-}
 function buildName(p, uidFallback) {
   if (!p) {
     return uidFallback ? `Utilisateur-${String(uidFallback).slice(0, 6)}` : "(Sans nom)";
@@ -62,28 +45,9 @@ function buildAvatar(p) {
     "/avatar-default.png"
   );
 }
+// 🔒 23/10/2026 : la fiche de l'autre vient de `profils` (copie publique)
 async function fetchUserProfile(uid) {
-  if (!uid) return null;
-
-  // 1) users
-  let p =
-    (await fetchFromColById("users", uid)) ||
-    (await fetchFromColByUid("users", uid));
-  if (p) return p;
-
-  // 2) teachers
-  p =
-    (await fetchFromColById("teachers", uid)) ||
-    (await fetchFromColByUid("teachers", uid));
-  if (p) return p;
-
-  // 3) students
-  p =
-    (await fetchFromColById("students", uid)) ||
-    (await fetchFromColByUid("students", uid));
-  if (p) return p;
-
-  return null;
+  return lireProfil(uid);
 }
 
 function formatDate(date) {
@@ -98,7 +62,8 @@ function formatDate(date) {
 // Récupère l'UID du premier admin trouvé dans users
 async function fetchAdminUid(myUid) {
   try {
-    const q = query(collection(db, "users"), where("role", "==", "admin"), limit(1));
+    // `profils` : l'admin y est listable (nom et avatar seulement), `users` est fermé
+    const q = query(collection(db, "profils"), where("role", "==", "admin"), limit(1));
     const snap = await getDocs(q);
     if (!snap.empty && snap.docs[0].id !== myUid) {
       return { uid: snap.docs[0].id, data: snap.docs[0].data() };

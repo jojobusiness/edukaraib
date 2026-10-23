@@ -221,14 +221,11 @@ export default function Home() {
     const run = async () => {
       setLoadingTeachers(true);
       try {
-        // 1) Essai principal : collection `teachers`
-        const tSnap = await getDocs(collection(db, 'teachers'));
-        let all = tSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-        // 2) Fallback : `users` where role=='teacher'
-        if (!Array.isArray(all) || all.length === 0) {
+        // Vitrine publique des profs (copie sans e-mail ni téléphone, 23/10/2026)
+        let all = [];
+        {
           const qUsersTeachers = query(
-            collection(db, 'users'),
+            collection(db, 'profils'),
             where('role', '==', 'teacher'),
             limit(100)
           );
@@ -344,7 +341,7 @@ export default function Home() {
         const userCache = new Map();
         await Promise.all(allIds.map(async (uid) => {
           try {
-            const snap = await getDoc(doc(db, 'users', uid));
+            const snap = await getDoc(doc(db, 'profils', uid));
             if (snap.exists()) userCache.set(uid, snap.data());
           } catch {}
         }));
