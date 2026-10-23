@@ -74,7 +74,7 @@
 - **Diagnostic prod** (`scripts/diag-regles-donnees.mjs`) : 0 faille. Côté Storage, sans compte comme avec un compte jetable, tout est refusé : justificatifs, chat, documents de cours. Photos et diplômes publics : 200.
 - `scripts/diag-regles-paiements.mjs` : 0 faille.
 - **Incidents pendant la livraison, corrigés :**
-  - au premier essai, la notification piège est passée, car le propagation des règles prend jusqu'à 1 min. Revérifiée à froid : refusée ;
+  - au premier essai, la notification piège est passée, car la propagation des règles prend jusqu'à 1 min. Revérifiée à froid : refusée ;
   - un créneau public orphelin a été recréé par une exécution en retard de la Cloud Function. Elle revérifie maintenant que le cours existe avant d'écrire, et l'orphelin est supprimé.
 - Émulateur : 48 tests Firestore et 10 Storage. Sur les règles d'avant, 8 tests Storage sur 10 échouent.
 - Vitest : 287 tests, lint 0 erreur, build OK.
