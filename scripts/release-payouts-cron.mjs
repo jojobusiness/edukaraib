@@ -5,6 +5,7 @@
 // -----------------------------------------------------------------------------
 
 import { stripe } from '../api/_stripe.mjs';
+import { coursTermine } from '../api/_coursHoraire.mjs';
 import { adminDb } from '../api/_firebaseAdmin.mjs';
 
 /**
@@ -28,11 +29,10 @@ function coerceToDate(tsLike) {
 /**
  * Retourne true si le cours a démarré (start_datetime <= now)
  */
+// 23/10/2026 : même règle que trigger-payout (api/_coursHoraire.mjs) — avant,
+// elle lisait start_datetime, que la famille peut écrire, et versait dès le début.
 function lessonHasStarted(lessonDoc) {
-  const start = coerceToDate(lessonDoc?.start_datetime);
-  if (!start) return false;
-  const now = new Date();
-  return start.getTime() <= now.getTime();
+  return coursTermine(lessonDoc);
 }
 
 /**

@@ -75,7 +75,8 @@ const LESSON = {
 function seed({ partners = {}, usages = [], parent = {} } = {}) {
   h.state.store = {
     lessons: { L1: { ...LESSON } },
-    users: { parent1: { role: 'parent', ...parent } },
+    // Le tarif vient du profil du prof depuis le 23/10/2026 (api/_tarifs.mjs)
+    users: { parent1: { role: 'parent', ...parent }, t1: { role: 'teacher', price_per_hour: 25 } },
     influencers: partners,
     influencer_usages: Object.fromEntries(usages.map((u, i) => [`u${i}`, u])),
     coupons: {},
@@ -261,5 +262,25 @@ describe('rattachement de la famille au partenaire (webhook)', () => {
   it('refuse l’auto-rattachement', async () => {
     seed({ partners: { parent1: asso() } });
     expect(await linkFamilyToPartner(h.db, 'parent1', 'parent1')).toBe(false);
+  });
+});
+
+// 💸 23/10/2026 — Fraude au prix : c'est la famille qui crée le cours. Avant,
+// elle y écrivait price_per_hour = 1 et payait 1 € (le prof touchait 1 €).
+describe('checkout — le prix vient du profil du prof, jamais du cours', () => {
+  it('cours trafiqué à 1 €/h → facturé au tarif du prof (25 €)', async () => {
+    seed();
+    h.state.store.lessons.L1.price_per_hour = 1;
+    const res = await pay();
+    expect(res.statusCode).toBe(200);
+    expect(amount()).toBe(3500);
+    expect(session().metadata.teacher_amount_cents).toBe('2500');
+  });
+  it('prof sans tarif → paiement refusé (pas de montant inventé)', async () => {
+    seed();
+    h.state.store.users.t1.price_per_hour = 0;
+    const res = await pay();
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error).toBe('TARIF_PROF_ABSENT');
   });
 });

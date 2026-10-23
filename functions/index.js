@@ -107,15 +107,54 @@ async function getUserEmail(userId) {
 /**
  * Helper: fabrique le contenu email {subject, html, text}
  */
-function buildEmail({title, message, createdAt}) {
-  const subject = title || "Nouvelle notification EduKaraib";
+// 🔒 23/10/2026 — Avant, l'e-mail reprenait le titre et le texte LIBRES de la
+// notification, sans échappement HTML. Or n'importe quel compte pouvait en
+// créer une pour n'importe quel inscrit : c'était un relais de mails
+// « EduKaraib » (liens, images compris). Désormais :
+//   - les types créés depuis le navigateur reçoivent un texte FIXE ;
+//   - seuls deux types gardent leur texte : l'annonce de l'admin (la règle
+//     Firestore la réserve à l'admin) et le code promo (créé par le serveur) ;
+//   - tout est échappé ; un type inconnu ne part pas par e-mail.
+const MODELES_EMAIL = {
+  lesson_request: ["Nouvelle demande de cours", "Vous avez reçu une demande de cours sur EduKaraib. Ouvrez votre tableau de bord pour l'accepter ou la refuser."],
+  review_left: ["Nouvel avis reçu", "Un élève a laissé un avis sur l'un de vos cours."],
+  document_shared: ["Nouveau document de cours", "Un document a été partagé dans l'un de vos cours."],
+  group_invite: ["Invitation à un cours collectif", "Un professeur vous invite à rejoindre un cours collectif."],
+  group_invite_accepted: ["Invitation acceptée", "Un élève a accepté votre invitation à un cours collectif."],
+  payment_due: ["Paiement à régler", "Un cours confirmé attend votre paiement."],
+  cours_accepted: ["Cours accepté", "Votre cours a été accepté par le professeur."],
+  cours_rejected: ["Cours refusé", "Votre demande de cours a été refusée par le professeur."],
+  cours_completed: ["Cours terminé", "Votre cours est terminé. Vous pouvez laisser un avis."],
+};
+const TYPES_TEXTE_DE_CONFIANCE = ["admin_broadcast", "promo_first_review"];
+const echapper = (t) => String(t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/**
+ * Titre et texte de l'e-mail d'une notification, ou null si elle ne doit
+ * pas partir par e-mail.
+ * @param {object} data la notification
+ * @return {{title: string, message: string}|null}
+ */
+function contenuEmail(data) {
+  if (TYPES_TEXTE_DE_CONFIANCE.includes(data.type)) {
+    return {title: data.title || "Notification EduKaraib", message: data.message || ""};
+  }
+  const m = MODELES_EMAIL[data.type];
+  return m ? {title: m[0], message: m[1]} : null;
+}
+
+function buildEmail({title: titreBrut, message: messageBrut, createdAt}) {
+  const title = echapper(titreBrut);
+  const message = echapper(messageBrut);
+  const subject = titreBrut || "Nouvelle notification EduKaraib";
   const text =
-    (message || "Vous avez une nouvelle notification sur EduKaraib.") +
+    (messageBrut || "Vous avez une nouvelle notification sur EduKaraib.") +
     `\n\nDate: ${createdAt || ""}\n` +
     `\nConsultez vos notifications sur votre tableau de bord.`;
   const html = `
     <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;color:#111">
-      <h2 style="margin:0 0 12px">🔔 ${subject}</h2>
+      <h2 style="margin:0 0 12px">🔔 ${title || "Nouvelle notification EduKaraib"}</h2>
       <p style="margin:0 0 8px">${(message || "Vous avez une nouvelle notification sur EduKaraib.")}</p>
       <p style="margin:0 0 8px;font-size:12px;color:#666">Date: ${createdAt || ""}</p>
       <p style="margin:16px 0">
@@ -192,11 +231,12 @@ exports.onNotificationCreated = functions
         }
       })();
 
-      const mail = buildEmail({
-        title: data.title || data.type || "Notification EduKaraib",
-        message: data.message || "",
-        createdAt,
-      });
+      const contenu = contenuEmail(data);
+      if (!contenu) {
+        console.log("Pas d'e-mail pour ce type de notification :", notifId, data.type);
+        return null;
+      }
+      const mail = buildEmail({...contenu, createdAt});
 
       const ok = await sendEmailResend({to, ...mail});
       if (ok) {
@@ -666,7 +706,69 @@ exports.onUserWrittenSyncProfil = functions
 // d'élève. Les deux sont recalculés ici à chaque écriture d'un cours.
 // Règles : functions/coursAcces.js.
 // -----------------------------------------------------------------------------
-const {accesDuCours, creneauPublic, memeListe} = require("./coursAcces");
+const {accesDuCours, creneauPublic, memeListe, idsDuCours} = require("./coursAcces");
+const {verdictGratuite, retirerGratuite} = require("./gratuites");
+
+/**
+ * À la création d'un cours : retire une gratuité injustifiée (essai déjà
+ * utilisé, heures offertes en trop, code « premier avis » invalide) et
+ * marque le code promo comme utilisé. Voir functions/gratuites.js.
+ * @param {string} id
+ * @param {object} lecon
+ * @param {FirebaseFirestore.DocumentReference} ref
+ * @return {Promise<void>}
+ */
+async function verifierGratuite(id, lecon, ref) {
+  const ms = (t) => (t && t.toMillis ? t.toMillis() : Number(t) || 0);
+  const l = {...lecon, _created_ms: ms(lecon.created_at)};
+  const gratuit = l.is_trial === true || l.is_free_hour === true ||
+    Object.values(l.participantsMap || {}).some((p) => p && (p.is_free_hour === true || p.paid_by === "trial"));
+  if (!gratuit) return;
+
+  const profSnap = l.teacher_id ? await db.collection("users").doc(String(l.teacher_id)).get() : null;
+  const prof = profSnap && profSnap.exists ? profSnap.data() : null;
+  const reservants = new Set(Object.values(l.participantsMap || {})
+      .map((p) => p && p.booked_by).filter(Boolean));
+  const eleves = new Set(idsDuCours(l).filter((x) => x !== l.teacher_id));
+
+  let autresEssais = [];
+  if (l.is_trial === true && l.teacher_id) {
+    const s = await db.collection("lessons").where("teacher_id", "==", String(l.teacher_id))
+        .where("is_trial", "==", true).get();
+    autresEssais = s.docs.filter((d) => {
+      const o = d.data();
+      const ids = idsDuCours(o);
+      return ids.some((x) => eleves.has(x) || reservants.has(x));
+    }).map((d) => ({id: d.id, created_ms: ms(d.data().created_at)}));
+  }
+  let coursDuPack = [];
+  if (l.pack === true && l.pack_id) {
+    const s = await db.collection("lessons").where("pack_id", "==", String(l.pack_id)).get();
+    coursDuPack = s.docs.map((d) => ({id: d.id, created_ms: ms(d.data().created_at), l: d.data()}));
+  }
+  let promoDoc = null;
+  if (l.free_reason === "first_review_promo") {
+    for (const owner of reservants) {
+      const s = await db.collection("promo_codes").where("owner_id", "==", owner)
+          .where("status", "==", "active").where("eligible_pack_hours", "==", 5).limit(1).get();
+      if (!s.empty) {
+        promoDoc = s.docs[0];
+        break;
+      }
+    }
+  }
+
+  const v = verdictGratuite(id, l, {prof, autresEssais, coursDuPack, promoValide: !!promoDoc});
+  if (!v.ok) {
+    const tarif = Number(prof && prof.price_per_hour) || 0;
+    await ref.update({...retirerGratuite(l, tarif, admin.firestore.FieldValue.delete()), gratuite_refusee_raison: v.raison});
+    console.warn("[gratuité refusée]", id, v.raison);
+    return;
+  }
+  if (v.utiliserPromo && promoDoc) {
+    await promoDoc.ref.update({status: "used", used_at: admin.firestore.FieldValue.serverTimestamp(), used_lesson_id: id});
+  }
+}
 
 exports.onLessonWrittenSync = functions
     .region(REGION)
@@ -680,6 +782,13 @@ exports.onLessonWrittenSync = functions
         return null;
       }
       const lecon = change.after.data() || {};
+      if (!change.before.exists) {
+        try {
+          await verifierGratuite(id, lecon, change.after.ref);
+        } catch (e) {
+          console.error("[verifierGratuite]", id, e && e.message);
+        }
+      }
       const lireEleve = async (sid) => {
         const s = await db.collection("students").doc(sid).get();
         return s.exists ? s.data() : null;

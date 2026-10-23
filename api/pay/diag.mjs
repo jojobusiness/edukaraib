@@ -1,4 +1,5 @@
 import { adminDb, verifyAuth } from '../_firebaseAdmin.mjs';
+import { tarifsDuProf, montantProfCents } from '../_tarifs.mjs';
 
 // ---- utils lecture body -----------------------------------------------------
 function readBody(req) {
@@ -203,23 +204,14 @@ export default async function handler(req, res) {
        String(pm.pack_type || '').toLowerCase() === 'pack10' ? 10 : 0);
     const isPack = packHours > 0;
 
-    let grossCents = 0;
-    if (isPack) {
-      // Utilise le pack_price du prof si défini, sinon fallback -10%
-      const packPrice = isVisio
-        ? toNum(packHours === 10 ? lesson.visio_pack10_price : lesson.visio_pack5_price)
-        : toNum(packHours === 10 ? lesson.pack10_price : lesson.pack5_price);
-      const rateEuro = isVisio && lesson.visio_same_rate === false
-        ? toNum(lesson.visio_price_per_hour) : toNum(lesson.price_per_hour);
-      grossCents = packPrice > 0
-        ? Math.round(packPrice * 100)
-        : Math.round(rateEuro * packHours * 0.9 * 100);
-    } else {
-      const rateEuro = isVisio && lesson.visio_same_rate === false
-        ? toNum(lesson.visio_price_per_hour) : toNum(lesson.price_per_hour);
-      const hours = toNum(lesson.duration_hours) || 1;
-      grossCents = Math.round(rateEuro * hours * 100);
-    }
+    // 💸 23/10/2026 : même calcul que create-checkout-session — tarifs du
+    // PROFIL du prof, jamais des champs du cours (api/_tarifs.mjs)
+    const profSnap = await adminDb.collection('users').doc(String(lesson.teacher_id)).get();
+    const tarifs = tarifsDuProf(profSnap.exists ? profSnap.data() : {}, isVisio);
+    const grossCents = montantProfCents(tarifs, {
+      packMode: isPack,
+      billedHours: isPack ? packHours : (toNum(lesson.duration_hours) || 1),
+    });
 
     // Ajoute les frais plateforme (10€/h)
     const billedHours = isPack ? packHours : (toNum(lesson.duration_hours) || 1);

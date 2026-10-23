@@ -86,7 +86,9 @@ export default function VisioRoom() {
         const inGroup =
           Array.isArray(l.participant_ids) &&
           l.participant_ids.map(String).includes(u.uid);
-        const isParent = String(l.parent_id) === u.uid;
+        const isParent = String(l.parent_id) === u.uid
+          // 23/10/2026 : parents d'un enfant inscrit (avant, ils étaient refusés)
+          || (Array.isArray(l.acces) && l.acces.includes(u.uid));
 
         if (!(isTeacher || isStudent || inGroup || isParent)) {
           setState({
@@ -177,6 +179,8 @@ export default function VisioRoom() {
             method: 'POST',
             body: JSON.stringify({
               roomName,
+              lessonId,
+              token,
               isModerator,
               userId,
               userName: displayName,

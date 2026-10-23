@@ -2,6 +2,7 @@ import { stripe } from './_stripe.mjs';
 import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
 import { Resend } from 'resend';
 import { captureError } from './_sentry.mjs';
+import { coursTermine } from './_coursHoraire.mjs';
 
 const GOOGLE_REVIEW_URL = 'https://www.google.com/search?q=EduKaraib+cours+particuliers+Antilles&hl=fr';
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
@@ -86,6 +87,11 @@ export default async function handler(req, res) {
   if (lesson.status !== 'completed') {
     return res.status(400).json({ error: 'LESSON_NOT_COMPLETED' });
   }
+  // 💸 23/10/2026 : un cours marqué « terminé » avant d'avoir eu lieu ne
+  // déclenche plus de virement (api/_coursHoraire.mjs)
+  if (!coursTermine(lesson)) {
+    return res.status(400).json({ error: 'COURS_PAS_ENCORE_PASSE' });
+  }
 
   const teacherUid = lesson.teacher_id;
   if (!teacherUid) return res.status(400).json({ error: 'NO_TEACHER' });
@@ -140,7 +146,7 @@ export default async function handler(req, res) {
 
       // Seules les leçons complétées ET payées donnent lieu au payout prof
       const completedAndPaid = packLessons.filter(l => {
-        const done = l.status === 'completed';
+        const done = l.status === 'completed' && coursTermine(l);
         const paid = l.is_group
           ? (l.participant_ids || []).some(sid => !!l.participantsMap?.[sid]?.is_paid)
           : !!l.is_paid;

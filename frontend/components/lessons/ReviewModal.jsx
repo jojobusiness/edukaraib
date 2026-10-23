@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { auth, db } from "../../lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, setDoc, doc, serverTimestamp } from "firebase/firestore";
 
 function Star({ filled }) {
   return (
@@ -73,11 +73,13 @@ export default function ReviewModal({ open, onClose, lesson, onSent }) {
 
     try {
       // 1) Créer l'avis
-      await addDoc(collection(db, "reviews"), {
+      // 🔒 23/10/2026 : un avis par compte et par cours (règle Firestore)
+      const moi = auth.currentUser?.uid;
+      await setDoc(doc(db, "reviews", `${lesson.id}_${moi}`), {
         lesson_id: lesson.id,
-        student_id: lesson.student_id,
+        student_id: lesson.student_id || null,
         teacher_id: lesson.teacher_id,
-        rating: Number(rating),
+        rating: Math.round(Number(rating)),
         comment: comment.trim(),
         created_at: serverTimestamp(),
         left_by_parent_id: auth.currentUser?.uid || null,

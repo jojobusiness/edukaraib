@@ -197,6 +197,8 @@ export default function Profile() {
       // Sync email_verified dans Firestore pour visibilité admin
       try {
         const { updateDoc: _upd, doc: _doc } = await import("firebase/firestore");
+        // La règle exige la valeur du jeton Firebase : on le rafraîchit d'abord (23/10/2026)
+        if (u.emailVerified) await u.getIdToken(true).catch(() => {});
         await updateDoc(doc(db, "users", u.uid), { email_verified: u.emailVerified });
       } catch (_) {}
       try {
@@ -259,6 +261,7 @@ export default function Profile() {
       if (u.emailVerified) {
         setEmailVerified(true);
         setResendStatus('');
+        await u.getIdToken(true).catch(() => {});
         await updateDoc(doc(db, "users", u.uid), { email_verified: true });
         return;
       }
@@ -570,7 +573,7 @@ export default function Profile() {
     });
 
     const json = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(json?.error || `HTTP ${r.status}`);
+    if (!r.ok) throw new Error(json?.message || json?.error || `HTTP ${r.status}`);
     return json;
   }
 

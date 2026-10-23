@@ -5,6 +5,7 @@ import {
   PARTNERS_COLLECTION, PARTNER_USAGES_COLLECTION, isPartnerModel, needsUsageChecks,
   normalizePartnerCode, partnerAmounts, partnerRefusalReason,
 } from '../_partners.mjs';
+import { tarifsDuProf, montantProfCents, maxCoursDuPack } from '../_tarifs.mjs';
 
 // -- helpers lecture corps & num
 function readBody(req) {
@@ -14,10 +15,6 @@ function readBody(req) {
     return req.body;
   } catch { return {}; }
 }
-const toNum = (v) => {
-  const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v);
-  return Number.isFinite(n) ? n : 0;
-};
 
 // ---- helpers ID équivalents (élève / enfant) ----
 async function resolveEquivalentStudentIds(targetId) {
@@ -123,14 +120,10 @@ function getBilledHoursFor(lesson, participantId) {
   if (!Number.isFinite(h) || h <= 0) return 1;
   return Math.min(Math.floor(h), MAX_SINGLE_LESSON_HOURS);
 }
-function computeBaseRateEuroFor(lesson, participantId) {
-  const isVisio = String(lesson.mode) === 'visio' || lesson.is_visio === true;
-  const visioSame = lesson.visio_same_rate;
-  const visioRate = toNum(lesson.visio_price_per_hour);
-  const baseRate  = toNum(lesson.price_per_hour);
-  if (isVisio && visioSame === false && visioRate > 0) return visioRate;
-  return baseRate;
-}
+// 💸 23/10/2026 — Le PRIX vient du profil du prof (users/{teacher_id}), plus
+// JAMAIS des champs du cours : c'est la famille qui crée le cours. Avant,
+// elle pouvait y mettre price_per_hour = 1 et payer 1 € de l'heure (le prof
+// touchait 1 €). Tarifs : api/_tarifs.mjs.
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -224,29 +217,19 @@ export default async function handler(req, res) {
     billedHours = getBilledHoursFor(lesson, participantId);
   }
 
-  // Calcul montant total
-  const rateEuro = computeBaseRateEuroFor(lesson, participantId);
-  let teacherAmountCents;
-  
-  if (packMode) {
-    // Utilise le pack_price défini par le prof si disponible
-    const packPriceField = billedHours === 10
-      ? (lesson.visio_pack10_price ?? lesson.pack10_price)
-      : (lesson.visio_pack5_price  ?? lesson.pack5_price);
-    const packPriceEuro = toNum(packPriceField);
-    
-    // Détermine si c'est visio pour choisir le bon champ
-    const isVisio = String(lesson.mode) === 'visio' || lesson.is_visio === true;
-    const packPrice = isVisio
-      ? toNum(billedHours === 10 ? lesson.visio_pack10_price : lesson.visio_pack5_price)
-      : toNum(billedHours === 10 ? lesson.pack10_price : lesson.pack5_price);
+  // Calcul montant total — tarifs du PROFIL du prof, jamais du cours (💸 23/10/2026)
+  const profSnap = await adminDb.collection('users').doc(String(lesson.teacher_id)).get();
+  if (!profSnap.exists) return res.status(404).json({ error: 'TEACHER_NOT_FOUND' });
+  const tarifs = tarifsDuProf(profSnap.data(), String(lesson.mode) === 'visio' || lesson.is_visio === true);
 
-    teacherAmountCents = packPrice > 0
-      ? Math.round(packPrice * 100)                        // prix pack défini par le prof
-      : Math.round(rateEuro * billedHours * 0.9 * 100);    // fallback -10% si non renseigné
-  } else {
-    teacherAmountCents = Math.round(rateEuro * billedHours * 100);
+  // Un paiement de pack ne couvre jamais plus de cours que le pack n'en contient
+  // (heures payées + heures offertes). Avant, une famille pouvait ranger
+  // 20 cours sous la même clé de pack et n'en payer que 5.
+  if (packMode && lessonsToBill.length > maxCoursDuPack(billedHours)) {
+    return res.status(400).json({ error: 'PACK_TROP_DE_COURS', max: maxCoursDuPack(billedHours), trouves: lessonsToBill.length });
   }
+  const teacherAmountCents = montantProfCents(tarifs, { packMode, billedHours });
+  if (!(teacherAmountCents > 0)) return res.status(400).json({ error: 'TARIF_PROF_ABSENT' });
 
   const siteFeeCents = billedHours * 1000; // 10€ / h
   // Le coupon réduit uniquement la commission plateforme, pas le tarif du prof

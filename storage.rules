@@ -1,0 +1,98 @@
+rules_version = '2';
+
+// EduKaraib — Règles Storage (23/10/2026)
+//
+// AVANT (règles posées dans la console, jamais versionnées) :
+//   match /{allPaths=**} { allow read, write: if request.auth != null; }
+// → n'importe quel compte connecté listait, téléchargeait, REMPLAÇAIT ou
+//   SUPPRIMAIT tous les fichiers : justificatifs de remboursement, diplômes
+//   des profs, pièces jointes du chat, documents de cours.
+//
+// Désormais : chaque dossier a son propriétaire. Les tailles et types
+// reprennent les limites déjà affichées sur le site. Tout le reste est fermé.
+// Déploiement : npx firebase-tools deploy --only storage --project edukaraib
+// Preuve : npm run test:regles (frontend/test-regles/storage.spec.js).
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function connecte() { return request.auth != null; }
+    function estMoi(uid) { return connecte() && request.auth.uid == uid; }
+    function estAdmin() {
+      return connecte()
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    function auPlus(mo) { return request.resource.size <= mo * 1024 * 1024; }
+    function typeOk(motif) { return request.resource.contentType.matches(motif); }
+
+    // Participant d'une conversation (secret des correspondances, 15/10/2026)
+    function dansConversation(cid) {
+      return connecte() && request.auth.uid in
+        firestore.get(/databases/(default)/documents/conversations/$(cid)).data.participants;
+    }
+    // Compte d'un cours : même définition que firestore.rules (dansLeCours)
+    function dansLeCours(lessonId) {
+      let l = firestore.get(/databases/(default)/documents/lessons/$(lessonId)).data;
+      return connecte() && (
+        l.get('teacher_id', '') == request.auth.uid
+        || l.get('student_id', '') == request.auth.uid
+        || request.auth.uid in l.get('participant_ids', [])
+        || request.auth.uid in l.get('acces', [])
+      );
+    }
+
+    // Photo de profil : publique (recherche, page prof, avis), écrite par soi
+    match /avatars/{uid} {
+      allow read: if true;
+      allow create, update: if estMoi(uid) && auPlus(5) && typeOk('image/.*');
+      allow delete: if estMoi(uid) || estAdmin();
+    }
+
+    // Vidéo de présentation du prof : intro-videos/{uid}.{ext}
+    match /intro-videos/{fichier} {
+      allow read: if true;
+      allow create, update: if connecte()
+        && fichier.matches(request.auth.uid + '[.][A-Za-z0-9]+')
+        && auPlus(150) && typeOk('video/.*');
+      allow delete: if connecte() && fichier.matches(request.auth.uid + '[.][A-Za-z0-9]+');
+    }
+
+    // Diplômes : affichés sur la page publique du prof
+    match /certificates/{uid}/{fichier} {
+      allow read: if true;
+      allow create, update: if estMoi(uid) && auPlus(5)
+        && (typeOk('image/.*') || typeOk('application/pdf'));
+      allow delete: if estMoi(uid) || estAdmin();
+    }
+
+    // Justificatifs de remboursement : la famille qui les envoie + l'admin
+    match /refund-proofs/{uid}/{fichier} {
+      allow read: if estMoi(uid) || estAdmin();
+      allow create: if estMoi(uid) && auPlus(5)
+        && (typeOk('image/.*') || typeOk('application/pdf'));
+      allow update, delete: if estAdmin();
+    }
+
+    // Pièces jointes du chat : chat/{conversation}/{expéditeur}/{fichier}
+    // Pas de suppression : conservation 12 mois, purge par le serveur.
+    match /chat/{cid}/{uid}/{fichier} {
+      allow read: if dansConversation(cid);
+      allow create: if estMoi(uid) && dansConversation(cid) && auPlus(50)
+        && (typeOk('image/.*') || typeOk('video/.*') || typeOk('audio/.*'));
+      allow update, delete: if false;
+    }
+
+    // Documents d'un cours : les comptes du cours
+    match /lessons/{lessonId}/{fichier} {
+      allow read, delete: if dansLeCours(lessonId);
+      allow create: if dansLeCours(lessonId) && auPlus(25);
+      allow update: if false;
+    }
+
+    // Tout le reste : fermé
+    match /{tout=**} {
+      allow read, write: if false;
+    }
+  }
+}

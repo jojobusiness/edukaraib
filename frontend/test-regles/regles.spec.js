@@ -34,9 +34,9 @@ beforeAll(async () => {
     const compte = (uid, role, extra = {}) => setDoc(doc(d, 'users', uid), {
       uid, role, fullName: `Nom ${uid}`, email: `${uid}@exemple.fr`, phone: '0600000000', birth: '2000-01-01', ...extra,
     });
-    await compte(PROF, 'teacher', { stripeAccountId: 'acct_secret' });
+    await compte(PROF, 'teacher', { stripeAccountId: 'acct_secret', trial_enabled: true, referralCode: 'PROF-1' });
     await compte(FAMILLE, 'parent');
-    await compte(ELEVE, 'student');
+    await compte(ELEVE, 'student', { disabled: true, studentReferredBy: 'parrain', trialUsedWith: [PROF] });
     await compte(INTRUS, 'student');
     await compte(ADMIN, 'admin');
     await setDoc(doc(d, 'profils', PROF), { uid: PROF, role: 'teacher', fullName: 'Nom prof1' });
@@ -63,6 +63,8 @@ beforeAll(async () => {
       teacher_id: PROF, student_id: ELEVE, is_paid: true, is_group: false, participant_ids: [ELEVE],
       participantsMap: {}, acces: [PROF, ELEVE],
     });
+    await setDoc(doc(d, 'lessons', 'terminee'), { teacher_id: PROF, student_id: ELEVE, participant_ids: [ELEVE], status: 'completed', acces: [PROF, ELEVE], price_per_hour: 30, date: '2026-10-01', slot_hour: 9 });
+    await setDoc(doc(d, 'promo_codes', 'AVIS-X'), { owner_id: FAMILLE, status: 'active' });
     await setDoc(doc(d, 'creneaux', 'lecon1'), { teacher_id: PROF, slot_day: 'Lun', slot_hour: 9, places_prises: 1 });
     await setDoc(doc(d, 'children', 'c1'), { full_name: 'x' });
   });
@@ -234,5 +236,65 @@ describe('lessons — les cours', () => {
     await assertFails(addDoc(collection(f, 'lessons'), { ...base, participantsMap: { [ENFANT]: { is_paid: false } } }));
     await assertFails(addDoc(collection(f, 'lessons'), { ...base, acces: [FAMILLE], participantsMap: { [ENFANT]: { is_paid: true } } }));
     await assertSucceeds(addDoc(collection(f, 'lessons'), { ...base, price_per_hour: 0, is_trial: true, acces: [FAMILLE], participantsMap: { [ENFANT]: { is_paid: true, paid_by: 'trial' } } }));
+  });
+});
+
+describe('phase 5 — champs serveur, avis, notifications, prix', () => {
+  it('un compte ne se débannit pas, ne rejoue pas son parrainage, ne remet pas ses essais à zéro', async () => {
+    const e = db(ELEVE);
+    await assertFails(updateDoc(doc(e, 'users', ELEVE), { disabled: false }));
+    await assertFails(updateDoc(doc(e, 'users', ELEVE), { studentReferredBy: null }));
+    await assertFails(updateDoc(doc(e, 'users', ELEVE), { trialUsedWith: [] }));
+    await assertFails(updateDoc(doc(e, 'users', ELEVE), { promo: { first_review: { code: 'X' } } }));
+    await assertFails(updateDoc(doc(e, 'users', ELEVE), { email_verified: true }));
+    await assertSucceeds(updateDoc(doc(e, 'users', ELEVE), { city: 'Cayenne', trialUsedWith: [PROF, 'autre'] }));
+  });
+  it('un prof ne se déclare pas « Stripe prêt » ni ne change de code parrain ; son formulaire passe', async () => {
+    const p = db(PROF);
+    await assertFails(updateDoc(doc(p, 'users', PROF), { stripeChargesEnabled: true }));
+    await assertFails(updateDoc(doc(p, 'users', PROF), { stripeAccountId: 'acct_pirate' }));
+    await assertFails(updateDoc(doc(p, 'users', PROF), { referralCode: 'AUTRE' }));
+    // Profile.jsx renvoie la fiche entière + des valeurs vides pour les champs absents
+    await assertSucceeds(updateDoc(doc(p, 'users', PROF), { stripeAccountId: 'acct_secret', bio: 'Nouvelle bio', stripeDetailsSubmitted: false }));
+  });
+  it('inscription : pas de privilège posé à la création', async () => {
+    const n = db('nouveau1');
+    await assertFails(setDoc(doc(n, 'users', 'nouveau1'), { uid: 'nouveau1', role: 'student', stripeChargesEnabled: true }));
+    await assertSucceeds(setDoc(doc(db('nouveau2'), 'users', 'nouveau2'), { uid: 'nouveau2', role: 'teacher', stripeAccountId: '', stripeChargesEnabled: false, referralCode: 'NOUV-2' }));
+  });
+  it('avis : un par cours terminé, par quelqu’un du cours', async () => {
+    const avis = (uid, lessonId, extra = {}) => setDoc(doc(db(uid), 'reviews', `${lessonId}_${uid}`), {
+      lesson_id: lessonId, teacher_id: PROF, student_id: ELEVE, rating: 5, comment: 'Top', left_by_parent_id: uid, ...extra,
+    });
+    await assertFails(avis(INTRUS, 'terminee'));
+    await assertFails(avis(ELEVE, 'leconEleve'));
+    await assertFails(avis(ELEVE, 'terminee', { rating: 50 }));
+    await assertFails(setDoc(doc(db(ELEVE), 'reviews', 'id-libre'), { lesson_id: 'terminee', teacher_id: PROF, rating: 5, left_by_parent_id: ELEVE }));
+    await assertSucceeds(avis(ELEVE, 'terminee'));
+  });
+  it('notifications : plus de mail libre, annonce réservée à l’admin', async () => {
+    await assertFails(addDoc(collection(db(INTRUS), 'notifications'), { user_id: PROF, type: 'phishing', message: 'Cliquez ici' }));
+    await assertFails(addDoc(collection(db(INTRUS), 'notifications'), { user_id: PROF, type: 'admin_broadcast', message: 'x' }));
+    await assertFails(addDoc(collection(db(INTRUS), 'notifications'), { user_id: PROF, type: 'lesson_request', message: 'x'.repeat(2000) }));
+    await assertSucceeds(addDoc(collection(db(FAMILLE), 'notifications'), { user_id: PROF, type: 'lesson_request', message: 'Demande de cours' }));
+    await assertSucceeds(addDoc(collection(db(ADMIN), 'notifications'), { user_id: PROF, type: 'admin_broadcast', message: 'Annonce' }));
+  });
+  it('codes promo : chacun le sien', async () => {
+    await assertFails(getDoc(doc(db(INTRUS), 'promo_codes', 'AVIS-X')));
+    await assertSucceeds(getDoc(doc(db(FAMILLE), 'promo_codes', 'AVIS-X')));
+  });
+  it('cours : prix, gratuité et horaire ne se modifient plus après coup', async () => {
+    await assertFails(updateDoc(doc(db(FAMILLE), 'lessons', 'lecon1'), { price_per_hour: 1 }));
+    await assertFails(updateDoc(doc(db(FAMILLE), 'lessons', 'lecon1'), { is_free_hour: true }));
+    await assertFails(updateDoc(doc(db(FAMILLE), 'lessons', 'lecon1'), { [`participantsMap.${ENFANT}.is_free_hour`]: true }));
+    await assertFails(updateDoc(doc(db(PROF), 'lessons', 'lecon1'), { date: '2020-01-01' }));
+    await assertFails(updateDoc(doc(db(PROF), 'lessons', 'lecon1'), { duration_hours: 8 }));
+  });
+  it('création : gratuit seulement en pack ou essai proposé par le prof', async () => {
+    const f = db(FAMILLE);
+    const base = { teacher_id: PROF, student_id: ENFANT, participant_ids: [ENFANT], price_per_hour: 30, acces: [PROF, ENFANT, FAMILLE] };
+    await assertFails(addDoc(collection(f, 'lessons'), { ...base, is_free_hour: true, participantsMap: { [ENFANT]: { is_free_hour: true } } }));
+    await assertSucceeds(addDoc(collection(f, 'lessons'), { ...base, pack: true, pack_hours: 5, pack_id: 'p1', is_free_hour: true, participantsMap: { [ENFANT]: { is_free_hour: true } } }));
+    await assertFails(addDoc(collection(f, 'lessons'), { ...base, teacher_id: ELEVE, acces: [ELEVE, FAMILLE], price_per_hour: 0, is_trial: true, participantsMap: { [ENFANT]: { is_paid: true, paid_by: 'trial' } } }));
   });
 });

@@ -16,12 +16,15 @@ import admin from 'firebase-admin';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, collection, getDocs, query, where, limit, doc, getDoc, updateDoc } from 'firebase/firestore';
-import { adminDb } from '../api/_firebaseAdmin.mjs';
+import { getStorage, ref, listAll, getBytes } from 'firebase/storage';
+import { addDoc, setDoc } from 'firebase/firestore';
+import { adminDb, bucket } from '../api/_firebaseAdmin.mjs';
 
 const CONFIG = {
   apiKey: 'AIzaSyDoPTDEtgcROB-PkLehddqr3Lpy_nM5P4A',
   authDomain: 'edukaraib.firebaseapp.com',
   projectId: 'edukaraib',
+  storageBucket: 'edukaraib.firebasestorage.app',
 };
 const UID_INTRUS = 'test-regles-intrus-donnees';
 
@@ -52,6 +55,8 @@ const enfant = (await adminDb.collection('students').limit(1).get()).docs[0];
 const document = (await adminDb.collection('documents').limit(1).get()).docs[0];
 const unAdmin = (await adminDb.collection('users').where('role', '==', 'admin').limit(1).get()).docs[0];
 const unCours = (await adminDb.collection('lessons').limit(1).get()).docs[0];
+const [fichiersChat] = await bucket.getFiles({ prefix: 'chat/', maxResults: 1 });
+const unFichierChat = fichiersChat[0]?.name || null;
 
 for (const [qui, uid] of [['SANS COMPTE', null], [`INTRUS « ${UID_INTRUS} »`, UID_INTRUS]]) {
   console.log(`\n=== ${qui} — ne doit rien voir ===`);
@@ -71,6 +76,17 @@ for (const [qui, uid] of [['SANS COMPTE', null], [`INTRUS « ${UID_INTRUS} »`, 
   if (unCours) await essai("ouvrir un cours d'autrui", () => existe(doc(db, 'lessons', unCours.id)), 'refus');
   if (unCours && uid) await essai("modifier un cours d'autrui", () => updateDoc(doc(db, 'lessons', unCours.id), { status: unCours.data().status ?? null }).then(() => 1), 'refus');
   await essai('page prof : créneaux publics (creneaux)', () => nb(query(collection(db, 'creneaux'), where('teacher_id', '==', prof.id))), 'autorisé');
+  // Storage, avis, notifications, codes promo (phase 5, 23/10/2026)
+  const st = getStorage(app);
+  await essai('Storage : lister les justificatifs de remboursement', async () => (await listAll(ref(st, 'refund-proofs'))).items.length, 'refus');
+  await essai('Storage : lister les pièces jointes du chat', async () => (await listAll(ref(st, 'chat'))).prefixes.length, 'refus');
+  if (unFichierChat) await essai("Storage : lire une pièce jointe d'une conversation d'autrui", async () => (await getBytes(ref(st, unFichierChat))).byteLength, 'refus');
+  await essai('Storage : lister les documents de cours', async () => (await listAll(ref(st, 'lessons'))).prefixes.length, 'refus');
+  await essai('lister les codes promo', () => nb(collection(db, 'promo_codes')), 'refus');
+  if (uid) {
+    await essai('poster un faux avis sur un prof', () => setDoc(doc(db, 'reviews', `faux_${uid}`), { lesson_id: 'x', teacher_id: prof.id, rating: 1, left_by_parent_id: uid }).then(() => 1), 'refus');
+    await essai('notification piège envoyée par e-mail', () => addDoc(collection(db, 'notifications'), { user_id: prof.id, type: 'securite', title: 'Votre compte', message: 'https://pirate.example' }).then(() => 1), 'refus');
+  }
   // Ce qui doit rester public : la vitrine des profs
   await essai('recherche : la liste des profs (profils)', () => nb(query(collection(db, 'profils'), where('role', '==', 'teacher'))), 'autorisé');
   await essai("page d'un prof (profils)", () => existe(doc(db, 'profils', prof.id)), 'autorisé');

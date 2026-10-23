@@ -18,7 +18,7 @@ import admin from 'firebase-admin';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken } from 'firebase/auth';
 import {
-  getFirestore, collection, getDocs, getDoc, addDoc, updateDoc, doc, query, where, serverTimestamp,
+  getFirestore, collection, getDocs, getDoc, addDoc, updateDoc, setDoc, doc, query, where, serverTimestamp,
 } from 'firebase/firestore';
 import { adminDb } from '../api/_firebaseAdmin.mjs';
 
@@ -121,6 +121,49 @@ try {
   await refuse('5. un autre parent lit le cours', () => getDoc(doc(autre.db, 'lessons', leconId)));
   const vusParent = await getDocs(query(collection(parent.db, 'lessons'), where('acces', 'array-contains', PARENT)));
   ok(vusParent.docs.some((d) => d.id === leconId), '5. le parent retrouve le cours de son enfant (requête par acces)');
+  // ── 6. Gratuités (vérifiées par les règles puis par la Cloud Function)
+  await adminDb.collection('users').doc(PROF).update({ trial_enabled: true, price_per_hour: 30 });
+  const coursDe = (extra) => ({
+    teacher_id: PROF, status: 'booked', created_at: serverTimestamp(), price_per_hour: 30,
+    slot_day: 'Mer', slot_hour: 10, date: '2099-01-07', is_group: false, student_id: enfantId,
+    participant_ids: [enfantId], acces: [PROF, enfantId, PARENT], mode: 'presentiel', ...extra,
+  });
+  await refuse('6. heure « offerte » hors pack', () => addDoc(collection(parent.db, 'lessons'),
+    coursDe({ is_free_hour: true, participantsMap: { [enfantId]: { parent_id: PARENT, booked_by: PARENT, is_free_hour: true, is_paid: false } } })));
+  const essai = (n) => addDoc(collection(parent.db, 'lessons'), coursDe({
+    price_per_hour: 0, is_trial: true, is_free_hour: true, date: `2099-02-0${n}`,
+    participantsMap: { [enfantId]: { parent_id: PARENT, booked_by: PARENT, is_paid: true, paid_by: 'trial', is_free_hour: true } },
+  }));
+  const essai1 = await essai(1);
+  await new Promise((r) => setTimeout(r, 1500));
+  const essai2 = await essai(2);
+  ok(await attendre(async () => (await adminDb.collection('lessons').doc(essai2.id).get()).data()?.gratuite_refusee === true),
+    '6. deuxième essai gratuit chez le même prof → gratuité retirée par le serveur');
+  const e2 = (await adminDb.collection('lessons').doc(essai2.id).get()).data();
+  ok(e2.price_per_hour === 30 && e2.participantsMap?.[enfantId]?.is_paid === false, '6. il redevient payant au tarif du prof (30 €)');
+  ok(!(await adminDb.collection('lessons').doc(essai1.id).get()).data()?.gratuite_refusee, '6. le premier essai reste gratuit');
+  const pack = (i) => addDoc(collection(parent.db, 'lessons'), coursDe({
+    pack: true, pack_hours: 5, pack_id: 'pack-e2e', is_free_hour: true, free_reason: 'pack_bonus', date: `2099-03-0${i}`,
+    participantsMap: { [enfantId]: { parent_id: PARENT, booked_by: PARENT, is_paid: false, is_free_hour: true } },
+  }));
+  const p1 = await pack(1);
+  await new Promise((r) => setTimeout(r, 1500));
+  const p2 = await pack(2);
+  ok(await attendre(async () => (await adminDb.collection('lessons').doc(p2.id).get()).data()?.gratuite_refusee === true),
+    '6. pack 5 h : 2e heure « offerte » → retirée (1 seule prévue)');
+  ok(!(await adminDb.collection('lessons').doc(p1.id).get()).data()?.gratuite_refusee, '6. pack 5 h : la 1re heure offerte reste offerte');
+
+  // ── 7. Avis et notifications
+  await refuse('7. avis sur un cours pas terminé', () => setDoc(doc(parent.db, 'reviews', `${leconId}_${PARENT}`), {
+    lesson_id: leconId, teacher_id: PROF, rating: 5, comment: 'x', left_by_parent_id: PARENT,
+  }));
+  await refuse('7. notification piège (type libre, envoyée par e-mail)', () => addDoc(collection(autre.db, 'notifications'), {
+    user_id: PROF, type: 'securite', title: 'Votre compte', message: 'Cliquez https://pirate.example',
+  }));
+  await refuse("7. annonce « admin » par un compte ordinaire", () => addDoc(collection(autre.db, 'notifications'), {
+    user_id: PROF, type: 'admin_broadcast', message: 'x',
+  }));
+  await refuse('7. se débannir / se déclarer Stripe prêt', () => updateDoc(doc(autre.db, 'users', AUTRE), { disabled: false, stripeChargesEnabled: true }));
   for (const s of [parent, eleve, autre]) await deleteApp(s.app);
 } catch (e) {
   problemes += 1;
@@ -128,6 +171,8 @@ try {
 } finally {
   // ── Nettoyage
   if (leconId) await adminDb.collection('lessons').doc(leconId).delete();
+  const restes = await adminDb.collection('lessons').where('teacher_id', '==', PROF).get();
+  await Promise.all(restes.docs.map((d) => d.ref.delete()));
   const notifs = await adminDb.collection('notifications').where('user_id', '==', PROF).get();
   await Promise.all(notifs.docs.map((d) => d.ref.delete()));
   if (enfantId) await adminDb.collection('students').doc(enfantId).delete();
@@ -136,7 +181,8 @@ try {
     await admin.auth().deleteUser(uid).catch(() => {});
   }
   const nettoye = await attendre(async () => !(await adminDb.collection('creneaux').doc(leconId || 'x').get()).exists
-    && !(await adminDb.collection('profils').doc(PROF).get()).exists);
+    && !(await adminDb.collection('profils').doc(PROF).get()).exists
+    && (await adminDb.collection('creneaux').where('teacher_id', '==', PROF).get()).empty);
   console.log(nettoye ? '🧹 comptes, cours, créneau et profils de test supprimés' : '⚠️ nettoyage incomplet — vérifier creneaux/profils');
 }
 console.log(problemes === 0 ? '\n✅ Réservation OK de bout en bout, aucune faille.\n' : `\n🔴 ${problemes} problème(s).\n`);

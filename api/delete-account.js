@@ -1,6 +1,20 @@
 // ✅ Migration : import depuis _firebaseAdmin.mjs (singleton unifié)
 // _admin.js était un doublon — toute la logique est maintenant dans _firebaseAdmin.mjs
+import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb as db, authAdmin, bucket, stripe } from './_firebaseAdmin.mjs';
+
+// 23/10/2026 — Ce que fait la suppression d'un compte, et ce qu'elle ne fait plus :
+// - elle REFUSE tant qu'un paiement est en cours (prof pas encore payé, ou
+//   famille en remboursement) : avant, un prof supprimait son compte Stripe
+//   avec de l'argent en attente, et la famille perdait la trace de son paiement ;
+// - elle RETIRE le compte des cours collectifs au lieu de supprimer le cours
+//   (avant, la réservation des autres élèves disparaissait avec lui) ;
+// - elle MASQUE les conversations au lieu de les effacer : la politique de
+//   confidentialité garantit 12 mois de conservation (litige, harcèlement),
+//   et l'autre personne garde sa copie. La purge des 12 mois s'en charge ;
+// - elle supprime aussi les fiches des enfants d'un parent (nom, date de
+//   naissance), ses favoris, sa présence, ses diplômes et sa vidéo.
+const PAIEMENTS_EN_COURS = ['held', 'processing', 'payout_pending_rib', 'refunding'];
 
 async function deleteQueryBatch(q, batchSize = 400) {
   const snap = await q.limit(batchSize).get();
@@ -37,6 +51,19 @@ export default async function handler(req, res) {
     const role = userData?.role || 'student';
     const stripeAccountId = userData?.stripeAccountId || '';
 
+    // Paiement en cours → on ne supprime rien (voir en-tête)
+    const [enCoursProf, enCoursFamille] = await Promise.all([
+      db.collection('payments').where('teacher_uid', '==', uid).where('status', 'in', PAIEMENTS_EN_COURS).limit(1).get(),
+      db.collection('payments').where('payer_uid', '==', uid).where('status', 'in', PAIEMENTS_EN_COURS).limit(1).get(),
+    ]);
+    if (!enCoursProf.empty || !enCoursFamille.empty) {
+      return res.status(409).json({
+        ok: false,
+        error: 'PAIEMENTS_EN_COURS',
+        message: 'Un paiement est encore en cours sur votre compte. Écrivez-nous à contact@edukaraib.com : nous le réglons, puis nous supprimons votre compte.',
+      });
+    }
+
     // Stripe
     let stripeDeleted = true;
     if (role === 'teacher' && stripeAccountId) {
@@ -52,10 +79,12 @@ export default async function handler(req, res) {
     try {
       await bucket.file(`avatars/${uid}`).delete({ ignoreNotFound: true });
     } catch {}
-    try {
-      const [files] = await bucket.getFiles({ prefix: `uploads/${uid}/` });
-      await Promise.all(files.map((f) => f.delete().catch(() => {})));
-    } catch {}
+    for (const prefix of [`uploads/${uid}/`, `certificates/${uid}/`, `intro-videos/${uid}.`]) {
+      try {
+        const [files] = await bucket.getFiles({ prefix });
+        await Promise.all(files.map((f) => f.delete().catch(() => {})));
+      } catch {}
+    }
 
     // Firestore
     try {
@@ -70,12 +99,24 @@ export default async function handler(req, res) {
     await deleteQueryBatch(db.collection('lessons').where('student_id', '==', uid));
     // Lessons où l'utilisateur est prof (teacher_id)
     await deleteQueryBatch(db.collection('lessons').where('teacher_id', '==', uid));
-    // Lessons de groupe où l'utilisateur est dans participant_ids (RGPD)
-    await deleteQueryBatch(db.collection('lessons').where('participant_ids', 'array-contains', uid));
-    // Conversations (messagerie)
-    await deleteQueryBatch(db.collection('conversations').where('participants', 'array-contains', uid));
-    // Messages envoyés
-    await deleteQueryBatch(db.collection('messages').where('sender_uid', '==', uid));
+    // Cours collectifs : on retire le compte, le cours des autres reste
+    const groupes = await db.collection('lessons').where('participant_ids', 'array-contains', uid).get();
+    for (const g of groupes.docs) {
+      const autres = (g.data().participant_ids || []).filter((x) => x !== uid);
+      if (!autres.length) { await g.ref.delete(); continue; }
+      await g.ref.update({
+        participant_ids: FieldValue.arrayRemove(uid),
+        acces: FieldValue.arrayRemove(uid),
+        [`participantsMap.${uid}`]: FieldValue.delete(),
+      });
+    }
+    // Conversations : masquées, pas effacées (conservation 12 mois, copie de l'autre)
+    const convs = await db.collection('conversations').where('participants', 'array-contains', uid).get();
+    for (const c of convs.docs) await c.ref.update({ hiddenFor: FieldValue.arrayUnion(uid), compte_supprime: FieldValue.arrayUnion(uid) });
+    // Fiches des enfants d'un parent (nom, date de naissance)
+    await deleteQueryBatch(db.collection('students').where('parent_id', '==', uid));
+    await deleteQueryBatch(db.collection('favorites').where('user_id', '==', uid));
+    await db.collection('presence').doc(uid).delete().catch(() => {});
     // Notifications
     await deleteQueryBatch(db.collection('notifications').where('user_id', '==', uid));
 

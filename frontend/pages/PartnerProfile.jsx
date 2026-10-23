@@ -82,7 +82,7 @@ export default function PartnerProfile() {
   const callDeleteAccount = async () => {
     const idToken = await auth.currentUser.getIdToken(true);
     const r = await fetch('/api/delete-account', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` } });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j?.message || j?.error || `HTTP ${r.status}`); }
   };
 
   const handleDeleteAccount = async () => {
