@@ -20,6 +20,8 @@ import {
 } from 'firebase/storage';
 import { envoyerMail } from '../../lib/profils';
 import { accesDuCours } from '../../lib/accesCours';
+import { toast } from 'sonner';
+import { confirmer } from '../ui/Dialogues';
 
 /* =========================
    EMAIL HELPERS (même logique que TeacherLessons.jsx)
@@ -181,7 +183,7 @@ export default function DocumentsModal({
       await refreshList();
     } catch (err) {
       console.error(err);
-      alert("Échec de l'upload du document.");
+      toast.error("Échec de l'upload du document.");
     } finally {
       setUploading(false);
       if (e?.target) e.target.value = '';
@@ -230,7 +232,7 @@ export default function DocumentsModal({
       await refreshList();
     } catch (e) {
       console.error(e);
-      alert('Impossible de renommer le document.');
+      toast.error('Impossible de renommer le document.');
     } finally {
       cancelEdit();
     }
@@ -238,7 +240,7 @@ export default function DocumentsModal({
 
   // Supprimer un document (Firestore + Storage)
   const removeDoc = async (f) => {
-    if (!confirm('Supprimer ce document ?')) return;
+    if (!(await confirmer({ titre: 'Supprimer ce document ?', message: f.filename || '', libelleConfirmer: 'Supprimer', danger: true }))) return;
     try {
       // Supprimer d’abord le fichier Storage si possible
       if (f.storage_path) {
@@ -276,7 +278,7 @@ export default function DocumentsModal({
       await refreshList();
     } catch (e) {
       console.error(e);
-      alert('Impossible de supprimer ce document.');
+      toast.error('Impossible de supprimer ce document.');
     }
   };
 

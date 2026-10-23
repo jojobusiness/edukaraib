@@ -9,6 +9,7 @@ import BookingModal from '../components/BookingModal';
 import { useSEO } from '../hooks/useSEO';
 import { getCampaignPack, getCampaignSubject, setChatDraft } from '../lib/bacCampaign';
 import { instantaneEleve } from '../lib/profils';
+import { toast } from 'sonner';
 
 const DAYS_ORDER = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
@@ -837,7 +838,7 @@ export default function TeacherProfile() {
       if (!r.ok) throw new Error(data.error || 'Erreur');
       window.location.href = data.url;
     } catch (e) {
-      alert('Erreur : ' + e.message);
+      toast.error('Erreur : ' + e.message);
     } finally {
       setSubLoading(false);
     }

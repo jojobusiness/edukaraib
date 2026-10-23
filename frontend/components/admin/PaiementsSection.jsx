@@ -8,6 +8,8 @@ import { db } from '../../lib/firebase';
 import fetchWithAuth from '../../utils/fetchWithAuth';
 import { STATUTS, filtrer, normaliser, parProf, totaux } from '../../lib/paiements';
 import MargesSection from './MargesSection';
+import { toast } from 'sonner';
+import { confirmer } from '../ui/Dialogues';
 
 const euros = (n) => `${Number(n || 0).toFixed(2).replace('.', ',')} €`;
 const dateFr = (d) => (d
@@ -73,14 +75,14 @@ export default function PaiementsSection({ users = [], onRembourser, version = 0
 
   const verser = async (l) => {
     const prof = nomDe(comptes.get(l.profUid), l.profUid);
-    if (!window.confirm(`Verser ${euros(l.partProf)} à ${prof} par Stripe ?`)) return;
+    if (!(await confirmer({ titre: `Verser ${euros(l.partProf)} à ${prof} ?`, message: 'Le virement part par Stripe Connect vers le compte du prof.', libelleConfirmer: 'Verser' }))) return;
     setVersement(l.id);
     try {
       await fetchWithAuth('/api/admin-verser-prof', { method: 'POST', body: JSON.stringify({ paymentId: l.id }) });
       await charger();
     } catch (e) {
       const msg = String(e?.message || '');
-      alert(msg.includes('PROF_SANS_STRIPE')
+      toast.error(msg.includes('PROF_SANS_STRIPE')
         ? `${prof} n'a pas encore connecté son compte Stripe. Il a reçu un mail ; relance-le, puis réessaie.`
         : `Versement impossible : ${msg}`);
     } finally {

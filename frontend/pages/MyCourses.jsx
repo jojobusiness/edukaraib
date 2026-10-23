@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { instantaneEleve } from '../lib/profils';
+import { toast } from 'sonner';
 
 /* ---------- Helpers ---------- */
 
@@ -602,7 +603,7 @@ export default function MyCourses() {
       await emailTeacherAboutInvite(lesson, { accepted: true });
     } catch (e) {
       console.error(e);
-      alert("Impossible d'accepter l'invitation.");
+      toast.error("Impossible d'accepter l'invitation.");
     }
   }
 
@@ -619,7 +620,7 @@ export default function MyCourses() {
       await emailTeacherAboutInvite(lesson, { accepted: false });      
     } catch (e) {
       console.error(e);
-      alert("Impossible de refuser l'invitation.");
+      toast.error("Impossible de refuser l'invitation.");
     }
   }
 

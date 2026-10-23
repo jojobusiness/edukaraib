@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import fetchWithAuth from '../../utils/fetchWithAuth';
 import { pixelTrack } from '../../lib/metaPixel';
+import { toast } from 'sonner';
 
 /**
  * Props
@@ -38,7 +39,7 @@ export default function PayButton({ lessonId, forStudent, couponCode, packKey })
       });
       window.location.href = data.url;
     } catch (e) {
-      alert(e.message || 'Impossible de créer le paiement');
+      toast.error(e.message || 'Impossible de créer le paiement');
     } finally {
       setLoading(false);
     }

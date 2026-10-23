@@ -86,6 +86,12 @@ export default [
       // Seule cette règle attrape ce cas.
       'react/jsx-no-undef': 'error',
 
+      // ⚠️ NE PAS RETIRER (23/10/2026) — règle de Joseph : aucune fenêtre
+      // native du navigateur (« www.edukaraib.com indique… ») sur le site.
+      // Information/erreur → toast (sonner) ; question → confirmer() ;
+      // saisie → demanderTexte() (components/ui/Dialogues.jsx).
+      'no-alert': 'error',
+
       // Marquent les composants/React importés comme « utilisés »
       // (sinon no-unused-vars les signalerait à tort).
       'react/jsx-uses-vars': 'error',

@@ -14,6 +14,7 @@ import {
 import EarningsSummary from '../components/earnings/EarningsSummary';
 import EarningsChart from '../components/earnings/EarningsChart';
 import PaymentsTable from '../components/earnings/PaymentsTable';
+import { toast } from 'sonner';
 
 // ----- Commission fixe de la plateforme -----
 const SITE_FEE_EUR = 10;
@@ -611,7 +612,7 @@ function UpcomingHeldSection({ loadingLessons, loadingPayments, payments, lesson
               </div>
               {referralData.code && (
                 <button type="button"
-                  onClick={() => { navigator.clipboard.writeText(referralData.code); alert('Code copié !'); }}
+                  onClick={() => { navigator.clipboard.writeText(referralData.code); toast.success('Code copié !'); }}
                   className="shrink-0 bg-white border border-green-300 text-green-700 font-bold text-sm px-4 py-2 rounded-xl hover:bg-green-100 transition">
                   📋 Copier
                 </button>

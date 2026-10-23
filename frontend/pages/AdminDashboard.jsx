@@ -26,6 +26,8 @@ import fetchWithAuth from '../utils/fetchWithAuth';
 // 👇 imports messagerie (utilisés dans l'onglet "Discussions")
 import Messages from './Messages';
 import AnalyticsTab from '../components/admin/AnalyticsTab';
+import { toast } from 'sonner';
+import { confirmer, demanderTexte } from '../components/ui/Dialogues';
 
 /* ===========================
    Utils
@@ -253,25 +255,25 @@ function RefundRequestsSection() {
   }, []);
 
   const approve = async (r) => {
-    if (!window.confirm(`Rembourser ${Number(r.amount_eur || 0).toFixed(2)} € ? Le client recevra un email de confirmation.`)) return;
+    if (!(await confirmer({ titre: `Rembourser ${Number(r.amount_eur || 0).toFixed(2)} € ?`, message: 'Le client recevra un email de confirmation.', libelleConfirmer: 'Rembourser' }))) return;
     setBusyId(r.id);
     try {
       await fetchWithAuth('/api/refund', {
         method: 'POST',
         body: JSON.stringify({ paymentId: r.payment_id, requestId: r.id, reason: r.reason }),
       });
-      alert('Remboursement effectue — email envoye au client, cours annule.');
+      toast.success('Remboursement effectue — email envoye au client, cours annule.');
     } catch (e) {
-      alert('Erreur : ' + (e.message || 'remboursement impossible'));
+      toast.error('Erreur : ' + (e.message || 'remboursement impossible'));
     } finally {
       setBusyId(null);
     }
   };
 
   const reject = async (r) => {
-    const note = window.prompt('Raison du refus (envoyee au client par email) :');
+    const note = await demanderTexte({ titre: 'Refuser le remboursement', message: 'Cette raison est envoyée au client par email.', placeholder: 'Raison du refus', libelleConfirmer: 'Refuser', multiligne: true });
     if (note === null) return;
-    if (!note.trim()) { alert('Indique une raison.'); return; }
+    if (!note.trim()) { toast.error('Indique une raison.'); return; }
     setBusyId(r.id);
     try {
       await updateDoc(doc(db, 'refund_requests', r.id), {
@@ -287,9 +289,9 @@ function RefundRequestsSection() {
         'https://edukaraib.com/contact',
         'Nous contacter'
       );
-      alert('Demande refusee — email envoye au client.');
+      toast.success('Demande refusee — email envoye au client.');
     } catch (e) {
-      alert('Erreur : ' + (e.message || 'refus impossible'));
+      toast.error('Erreur : ' + (e.message || 'refus impossible'));
     } finally {
       setBusyId(null);
     }
@@ -582,47 +584,47 @@ export default function AdminDashboard() {
   };
 
   const setRole = async (u, role) => {
-    if (!window.confirm(`Changer le rôle de ${nameOf(u)} en "${role}" ?`)) return;
+    if (!(await confirmer({ titre: 'Changer le rôle ?', message: `${nameOf(u)} passera en « ${role} ».`, libelleConfirmer: 'Changer' }))) return;
     try {
       await updateDoc(doc(db, 'users', u.id), { role });
-      alert('Rôle mis à jour.');
+      toast.success('Rôle mis à jour.');
     } catch (e) {
       console.error(e);
-      alert('Impossible de modifier le rôle.');
+      toast.error('Impossible de modifier le rôle.');
     }
   };
 
   const toggleDisabled = async (u) => {
     const next = !u?.disabled;
-    if (!window.confirm(`${next ? 'Désactiver' : 'Réactiver'} le compte ${nameOf(u)} ?`)) return;
+    if (!(await confirmer({ titre: `${next ? 'Désactiver' : 'Réactiver'} le compte ?`, message: nameOf(u), libelleConfirmer: next ? 'Désactiver' : 'Réactiver', danger: next }))) return;
     try {
       await updateDoc(doc(db, 'users', u.id), { disabled: next });
-      alert('Compte mis à jour.');
+      toast.success('Compte mis à jour.');
     } catch (e) {
       console.error(e);
-      alert('Impossible de modifier le compte.');
+      toast.error('Impossible de modifier le compte.');
     }
   };
 
   const resetPassword = async (u) => {
-    if (!u?.email) return alert("Cet utilisateur n'a pas d'email.");
+    if (!u?.email) return toast.error("Cet utilisateur n'a pas d'email.");
     try {
       await sendPasswordResetEmail(auth, u.email);
-      alert('Email de réinitialisation envoyé.');
+      toast.success('Email de réinitialisation envoyé.');
     } catch (e) {
       console.error(e);
-      alert("Impossible d'envoyer le reset password.");
+      toast.error("Impossible d'envoyer le reset password.");
     }
   };
 
   const removeUser = async (u) => {
-    if (!window.confirm(`Supprimer définitivement ${nameOf(u)} ?`)) return;
+    if (!(await confirmer({ titre: 'Supprimer définitivement ce compte ?', message: `${nameOf(u)} — cette action est irréversible.`, libelleConfirmer: 'Supprimer', danger: true }))) return;
     try {
       await deleteDoc(doc(db, 'users', u.id));
-      alert('Utilisateur supprimé.');
+      toast.success('Utilisateur supprimé.');
     } catch (e) {
       console.error(e);
-      alert('Suppression impossible côté Firestore (le compte Auth restera actif si non effacé côté Auth).');
+      toast.error('Suppression impossible côté Firestore (le compte Auth restera actif si non effacé côté Auth).');
     }
   };
 
@@ -648,13 +650,13 @@ export default function AdminDashboard() {
       });
       if (!resp || resp.error) throw new Error(resp?.error || 'Échec du remboursement');
 
-      alert('Remboursement lancé avec succès.');
+      toast.success('Remboursement lancé avec succès.');
       setRefundOpen(false);
       setRefundTarget(null);
       setPaiementsVersion((v) => v + 1);
     } catch (e) {
       console.error(e);
-      alert(e.message || 'Remboursement impossible.');
+      toast.error(e.message || 'Remboursement impossible.');
     }
   };
 
@@ -699,7 +701,7 @@ export default function AdminDashboard() {
               onClick={() => {
                 signOut(auth)
                   .then(() => window.location.href = "/")
-                  .catch((e) => alert("Erreur lors de la déconnexion : " + e.message));
+                  .catch((e) => toast.error("Erreur lors de la déconnexion : " + e.message));
               }}
               className="text-sm bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg transition"
             >
@@ -972,7 +974,7 @@ export default function AdminDashboard() {
                       setMessageSending(true);
                       const ids = Array.from(selectedIds);
                       const fails = await broadcastToUids(ids, messageTitle.trim(), messageBody.trim(), "https://edukaraib.com/smart-dashboard");
-                      alert(fails ? `Message envoyé, mais ${fails} email(s) en échec (notification in-app OK).` : 'Message envoyé aux comptes sélectionnés.');
+                      toast(fails ? `Message envoyé, mais ${fails} email(s) en échec (notification in-app OK).` : 'Message envoyé aux comptes sélectionnés.');
                       setMessageTitle('');
                       setMessageBody('');
                     } finally {
@@ -991,7 +993,7 @@ export default function AdminDashboard() {
                     try {
                       setMessageSending(true);
                       const fails = await broadcastToUids(filteredUsers.map((u) => u.id), messageTitle.trim(), messageBody.trim(), "https://edukaraib.com/dashboard");
-                      alert(fails ? `Message envoyé, mais ${fails} email(s) en échec (notification in-app OK).` : 'Message envoyé à la liste filtrée.');
+                      toast(fails ? `Message envoyé, mais ${fails} email(s) en échec (notification in-app OK).` : 'Message envoyé à la liste filtrée.');
                       setMessageTitle('');
                       setMessageBody('');
                     } finally {
@@ -1011,7 +1013,7 @@ export default function AdminDashboard() {
                       setMessageSending(true);
                       const nonAdmins = users.filter(u => u.role !== 'admin');
                       const fails = await broadcastToUids(nonAdmins.map((u) => u.id), messageTitle.trim(), messageBody.trim(), "https://edukaraib.com/dashboard");
-                      alert(fails ? `Message envoyé, mais ${fails} email(s) en échec (notification in-app OK).` : 'Message envoyé à tous (hors admins).');
+                      toast(fails ? `Message envoyé, mais ${fails} email(s) en échec (notification in-app OK).` : 'Message envoyé à tous (hors admins).');
                       setMessageTitle('');
                       setMessageBody('');
                     } finally {
@@ -1264,7 +1266,7 @@ export default function AdminDashboard() {
                                         }
                                         setInfluCodeEdit(null);
                                       } catch (err) {
-                                        alert('Erreur : ' + err.message);
+                                        toast.error('Erreur : ' + err.message);
                                       } finally {
                                         setInfluCodeSaving(false);
                                       }
@@ -1300,7 +1302,7 @@ export default function AdminDashboard() {
                                       }
                                       setInfluCodeEdit(null);
                                     } catch (err) {
-                                      alert('Erreur : ' + err.message);
+                                      toast.error('Erreur : ' + err.message);
                                     } finally {
                                       setInfluCodeSaving(false);
                                     }
@@ -1377,7 +1379,7 @@ export default function AdminDashboard() {
                                       i.id === influ.id ? { ...i, active: newActive } : i
                                     ));
                                   } catch (e) {
-                                    alert('Erreur: ' + e.message);
+                                    toast.error('Erreur: ' + e.message);
                                   } finally {
                                     setInfluToggleLoading(null);
                                   }

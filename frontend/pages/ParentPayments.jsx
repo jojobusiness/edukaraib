@@ -14,6 +14,7 @@ import RefundRequestModal from '../components/RefundRequestModal';
 import fetchWithAuth from '../utils/fetchWithAuth';
 import { getCampaignCode } from '../lib/bacCampaign';
 import { instantaneEleve } from '../lib/profils';
+import { toast } from 'sonner';
 
 // Codes à remise fixe -5€ (front) — les autres (codes partenaires) sont validés côté serveur
 const FIXED5_PREFIX = /^(BIENVENUE|AVIS|FILLEUL|PARRAIN)-/;
@@ -442,7 +443,7 @@ export default function ParentPayments() {
         body: JSON.stringify({ lessonId: row.lesson.id, forStudent: row.forStudent }),
       });
       if (!diag?.ok) {
-        alert('Diagnostic paiement : ' + (diag?.error || 'inconnu'));
+        toast.error('Diagnostic paiement : ' + (diag?.error || 'inconnu'));
         setPayingKey(null);
         return;
       }
@@ -467,7 +468,7 @@ export default function ParentPayments() {
         setCouponErrors(prev => ({ ...prev, [key]: 'Code expiré' }));
         setCouponValid(prev => ({ ...prev, [key]: false }));
       } else {
-        alert(e.message || 'Impossible de démarrer le paiement.');
+        toast.error(e.message || 'Impossible de démarrer le paiement.');
       }
     } finally {
       setPayingKey(null);
@@ -505,7 +506,7 @@ export default function ParentPayments() {
     setInvoiceLoadingKey(key);
     try {
       const paymentId = await resolvePaymentId(row.lesson.id, row.forStudent);
-      if (!paymentId) { alert('Facture introuvable.'); return; }
+      if (!paymentId) { toast.error('Facture introuvable.'); return; }
       // Navigation directe : window.open apres un await = bloque par les
       // navigateurs mobiles (popup hors geste utilisateur)
       window.location.assign(`/facture/${paymentId}`);

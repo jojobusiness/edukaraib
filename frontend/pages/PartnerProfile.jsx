@@ -12,6 +12,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { PARTNER_ROLE } from '../../api/_partners.mjs';
+import { confirmer, demanderTexte } from '../components/ui/Dialogues';
 
 const inputCls = 'w-full border border-gray-300 rounded-lg px-3 py-2';
 
@@ -85,14 +86,14 @@ export default function PartnerProfile() {
   };
 
   const handleDeleteAccount = async () => {
-    if (!window.confirm('Supprimer définitivement votre compte partenaire ?\nCette action est irréversible.')) return;
+    if (!(await confirmer({ titre: 'Supprimer votre compte partenaire ?', message: 'Cette action est irréversible.', libelleConfirmer: 'Supprimer mon compte', danger: true }))) return;
     try {
       await callDeleteAccount();
       window.location.href = '/';
     } catch (err) {
       if (!String(err?.message || '').includes('requires-recent-login')) { toast.error(`Erreur : ${err.message}`); return; }
       const email = auth.currentUser?.email || '';
-      const pwd = window.prompt(`Par sécurité, saisissez votre mot de passe (${email}) :`);
+      const pwd = await demanderTexte({ titre: 'Confirmez votre mot de passe', message: `Par sécurité, saisissez le mot de passe de ${email}.`, motDePasse: true, obligatoire: true, libelleConfirmer: 'Confirmer' });
       if (!pwd) return;
       await reauthenticateWithCredential(auth.currentUser, EmailAuthProvider.credential(email, pwd));
       await callDeleteAccount();

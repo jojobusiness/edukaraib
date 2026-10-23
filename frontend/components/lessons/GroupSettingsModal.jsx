@@ -16,6 +16,8 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { instantaneEleve, envoyerMail, nomDeQuelquun } from '../../lib/profils';
+import { toast } from 'sonner';
+import { confirmer } from '../ui/Dialogues';
 
 /* ---------------- utils noms / recherche ---------------- */
 const stripDiacritics = (s = '') => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -330,10 +332,10 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
 
     try {
       await updateDoc(ref, patch);
-      alert('Capacité mise à jour.');
+      toast.success('Capacité mise à jour.');
     } catch (e) {
       console.error(e);
-      alert("Impossible d'enregistrer la capacité.");
+      toast.error("Impossible d'enregistrer la capacité.");
     }
   }
 
@@ -344,14 +346,14 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
 
     // Déjà listé ?
     if ((participantIds || []).includes(id)) {
-      alert('Déjà présent dans la liste.');
+      toast('Déjà présent dans la liste.');
       return;
     }
 
     // ✅ Bloquer si pas de place (en se basant sur ton calcul affiché)
     // freeDisplayed = capacity - confirmedDisplayed
     if (freeDisplayed <= 0) {
-      alert("Impossible d'inviter : le groupe est complet. Augmente la capacité si tu veux plus de places.");
+      toast.error("Impossible d'inviter : le groupe est complet. Augmente la capacité si tu veux plus de places.");
       return;
     }
 
@@ -411,7 +413,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
       setResults([]);
     } catch (e) {
       console.error(e);
-      alert("Impossible d'inviter l'élève.");
+      toast.error("Impossible d'inviter l'élève.");
     }
   }
 
@@ -420,11 +422,11 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
   async function removeStudent(id) {
     const ent = participantsMap?.[id] || {};
     if (isPackParticipant(ent)) {
-      alert("Impossible : cet élève est sur un pack. (Retrait désactivé)");
+      toast.error("Impossible : cet élève est sur un pack. (Retrait désactivé)");
       return;
     }
 
-    const ok = window.confirm("Retirer cet élève de la liste ?");
+    const ok = await confirmer({ titre: 'Retirer cet élève de la liste ?', libelleConfirmer: 'Retirer', danger: true });
     if (!ok) return;
 
     const ref = doc(db, 'lessons', lesson.id);
@@ -455,7 +457,7 @@ export default function GroupSettingsModal({ open, onClose, lesson }) {
       );
     } catch (e) {
       console.error(e);
-      alert("Impossible de retirer l'élève.");
+      toast.error("Impossible de retirer l'élève.");
     }
   }
 

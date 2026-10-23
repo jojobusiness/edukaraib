@@ -3,6 +3,7 @@ import { useParams, useLocation } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import fetchWithAuth from '../utils/fetchWithAuth';
+import { toast } from 'sonner';
 
 const JAAS_TENANT = 'vpaas-magic-cookie-651cb7a83ef74ca1981d7fdeee7f91ca';
 const JAAS_DOMAIN = '8x8.vc';
@@ -233,7 +234,7 @@ export default function VisioRoom() {
         });
       } catch (e) {
         console.error('Jitsi init error', e);
-        alert('Impossible de charger la salle visio.');
+        toast.error('Impossible de charger la salle visio.');
       }
     })();
 

@@ -17,6 +17,8 @@ import { autoClearPaymentDueNotifications } from '../lib/paymentNotifications';
 import ReferralCard from '../components/ReferralCard';
 import TrustpilotBanner from '../components/TrustpilotBanner';
 import { instantaneEleve } from '../lib/profils';
+import { toast } from 'sonner';
+import { confirmer } from '../components/ui/Dialogues';
 
 // ---------- Helpers temps ----------
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -135,7 +137,7 @@ export default function StudentDashboard() {
   }, [userId]);
 
   const handleCancelSubscription = async (subId) => {
-    if (!window.confirm('Annuler cet abonnement ? Les cours du mois en cours restent reserves.')) return;
+    if (!(await confirmer({ titre: 'Annuler cet abonnement ?', message: 'Les cours du mois en cours restent réservés.', libelleConfirmer: 'Annuler l’abonnement', libelleAnnuler: 'Garder', danger: true }))) return;
     try {
       const idToken = await auth.currentUser.getIdToken();
       const r = await fetch('/api/cancel-subscription', {
@@ -144,8 +146,8 @@ export default function StudentDashboard() {
         body: JSON.stringify({ subscriptionId: subId }),
       });
       if (r.ok) setSubscriptions(prev => prev.map(s => s.id === subId ? { ...s, status: 'cancelling' } : s));
-      else { const d = await r.json(); alert('Erreur : ' + (d.error || 'Impossible')); }
-    } catch (e) { alert('Erreur reseau'); }
+      else { const d = await r.json(); toast.error('Erreur : ' + (d.error || 'Impossible')); }
+    } catch (e) { toast.error('Erreur reseau'); }
   };
 
   // 🔔 Notifications (LIVE) + auto-clean paiement

@@ -1,4 +1,4 @@
-/* eslint-env node */
+/* global process */
 // Les règles Firestore tiennent-elles ? (23/10/2026)
 //
 //   npm run test:regles      (lance l'émulateur Firestore, puis ces tests)

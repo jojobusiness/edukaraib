@@ -12,6 +12,8 @@ import {
   serverTimestamp,
   addDoc,
 } from 'firebase/firestore';
+import { toast } from 'sonner';
+import { confirmer } from '../components/ui/Dialogues';
 
 function countAccepted(l) {
   const pm = l.participantsMap || {};
@@ -44,7 +46,7 @@ export default function StudentInvitations() {
     const cap = Number(lesson.capacity || 0);
     const accepted = countAccepted(lesson);
     if (cap > 0 && accepted >= cap) {
-      alert('Capacité atteinte, impossible d’accepter.');
+      toast.error('Capacité atteinte, impossible d’accepter.');
       return;
     }
     try {
@@ -67,12 +69,12 @@ export default function StudentInvitations() {
         : x));
     } catch (e) {
       console.error(e);
-      alert("Impossible d'accepter l’invitation.");
+      toast.error("Impossible d'accepter l’invitation.");
     }
   }
 
   async function decline(lesson) {
-    const ok = window.confirm('Refuser l’invitation ?');
+    const ok = await confirmer({ titre: 'Refuser l’invitation ?', libelleConfirmer: 'Refuser', danger: true });
     if (!ok) return;
     try {
       await updateDoc(doc(db, 'lessons', lesson.id), {
@@ -82,7 +84,7 @@ export default function StudentInvitations() {
       setInvites((prev) => prev.filter((x) => x.id !== lesson.id));
     } catch (e) {
       console.error(e);
-      alert("Impossible de refuser l’invitation.");
+      toast.error("Impossible de refuser l’invitation.");
     }
   }
 

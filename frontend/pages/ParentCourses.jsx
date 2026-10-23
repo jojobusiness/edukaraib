@@ -14,6 +14,7 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { instantaneEleve } from '../lib/profils';
+import { toast } from 'sonner';
 
 /* ---------- Helpers ---------- */
 
@@ -701,7 +702,7 @@ export default function ParentCourses() {
       await emailTeacherAboutChildInvite(c, childLabel, { accepted: true });
     } catch (e) {
       console.error(e);
-      alert("Impossible d'accepter l'invitation.");
+      toast.error("Impossible d'accepter l'invitation.");
     }
   }
 
@@ -717,7 +718,7 @@ export default function ParentCourses() {
       await emailTeacherAboutChildInvite(c, childLabel, { accepted: false });
     } catch (e) {
       console.error(e);
-      alert("Impossible de refuser l'invitation.");
+      toast.error("Impossible de refuser l'invitation.");
     }
   }
 

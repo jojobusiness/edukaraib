@@ -31,6 +31,8 @@ import {
   limit,
 } from "firebase/firestore";
 import { envoyerMail, lireProfil } from "../lib/profils";
+import { toast } from 'sonner';
+import { confirmer, demanderTexte } from '../components/ui/Dialogues';
 
 // --- EMAIL HELPERS (Messages.jsx) ---
 // 🔒 23/10/2026 : on écrit à un identifiant ; le serveur trouve l'adresse.
@@ -220,7 +222,7 @@ export default function Messages(props) {
       if (!myUid || !receiverId) return;
 
       if (myUid === receiverId) {
-        alert("Impossible de discuter avec soi-même.");
+        toast.error("Impossible de discuter avec soi-même.");
         return;
       }
 
@@ -314,9 +316,13 @@ export default function Messages(props) {
   const handleSignaler = async (m) => {
     const myUid = auth.currentUser?.uid;
     if (!myUid) return;
-    const motif = window.prompt(
-      ["Signaler ce message à l'équipe EduKaraib.", "", "En confirmant, vous transmettez ce message à l'équipe.", "Pourquoi le signalez-vous ?"].join(String.fromCharCode(10)),
-    );
+    const motif = await demanderTexte({
+      titre: "Signaler ce message à l'équipe EduKaraib",
+      message: "En confirmant, vous transmettez ce message à l'équipe.",
+      placeholder: "Pourquoi le signalez-vous ?",
+      libelleConfirmer: "Signaler",
+      multiligne: true,
+    });
     if (motif === null) return;
     try {
       await addDoc(collection(db, "signalements"), {
@@ -330,9 +336,9 @@ export default function Messages(props) {
         traite: false,
         created_at: serverTimestamp(),
       });
-      alert("Merci. L'équipe EduKaraib a reçu votre signalement et va l'examiner.");
+      toast.success("Merci. L'équipe EduKaraib a reçu votre signalement et va l'examiner.");
     } catch (e) {
-      alert("Le signalement n'a pas pu être envoyé : " + (e?.message || ""));
+      toast.error("Le signalement n'a pas pu être envoyé : " + (e?.message || ""));
     }
   };
 
@@ -369,7 +375,7 @@ export default function Messages(props) {
           if (p.durationSec) fiche.durationSec = p.durationSec;
           attachments.push(fiche);
         } catch (err) {
-          alert(messageErreurUpload(err));
+          toast.error(messageErreurUpload(err));
           return false;
         }
       }
@@ -407,7 +413,7 @@ export default function Messages(props) {
       return true;
     } catch (err) {
       console.warn("send failed:", err?.message || err);
-      alert("Échec de l’envoi du message. Réessayez.");
+      toast.error("Échec de l’envoi du message. Réessayez.");
       return false;
     } finally {
       setSending(false);
@@ -434,14 +440,11 @@ export default function Messages(props) {
     // 15/10/2026 : on MASQUE, on ne détruit plus. Un participant ne peut plus
     // effacer la copie de l'autre — ni les preuves d'un harcèlement ou d'une
     // arnaque. Conservation 12 mois, puis purge par le serveur.
-    const ok = window.confirm(
-      [
-        "Masquer cette discussion ?",
-        "",
-        "Elle disparaîtra de votre liste. Les messages sont conservés 12 mois,",
-        "puis supprimés automatiquement. Votre correspondant garde sa copie.",
-      ].join(String.fromCharCode(10)),
-    );
+    const ok = await confirmer({
+      titre: "Masquer cette discussion ?",
+      message: "Elle disparaîtra de votre liste. Les messages sont conservés 12 mois, puis supprimés automatiquement. Votre correspondant garde sa copie.",
+      libelleConfirmer: "Masquer",
+    });
     if (!ok) return;
 
     try {

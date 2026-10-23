@@ -19,6 +19,7 @@ import DocumentsModal from '../components/lessons/DocumentsModal';
 import GroupSettingsModal from '../components/lessons/GroupSettingsModal';
 import { createPaymentDueNotificationsForLesson } from '../lib/paymentNotifications';
 import { instantaneEleve, envoyerMail } from '../lib/profils';
+import { toast } from 'sonner';
 
 const JAAS_TENANT = 'vpaas-magic-cookie-651cb7a83ef74ca1981d7fdeee7f91ca';
 const JAAS_ROOM_PREFIX = `${JAAS_TENANT}/`;
@@ -1052,7 +1053,7 @@ export default function TeacherLessons() {
       }
     } catch (e) {
       console.error(e);
-      alert("Impossible de modifier le statut.");
+      toast.error("Impossible de modifier le statut.");
     }
   }
 
@@ -1163,7 +1164,7 @@ export default function TeacherLessons() {
       );
     } catch (e) {
       console.error(e);
-      alert("Impossible d'accepter tout le pack.");
+      toast.error("Impossible d'accepter tout le pack.");
     }
   }
 
@@ -1242,7 +1243,7 @@ export default function TeacherLessons() {
       );
     } catch (e) {
       console.error(e);
-      alert("Impossible de refuser tout le pack.");
+      toast.error("Impossible de refuser tout le pack.");
     }
   }
 
@@ -1290,7 +1291,7 @@ export default function TeacherLessons() {
       try { await createPaymentDueNotificationsForLesson(lessonId, { onlyForStudentId: studentId }); } catch {}
     } catch (e) {
       console.error(e);
-      alert("Impossible d'accepter l'élève.");
+      toast.error("Impossible d'accepter l'élève.");
     }
   }
 
@@ -1322,7 +1323,7 @@ export default function TeacherLessons() {
       );
     } catch (e) {
       console.error(e);
-      alert("Impossible de refuser l'élève.");
+      toast.error("Impossible de refuser l'élève.");
     }
   }
 
@@ -1550,7 +1551,7 @@ export default function TeacherLessons() {
       setLessons(prev => prev.map(l => (l.id === lesson.id ? { ...l, visio: payload } : l)));
     } catch (e) {
       console.error('createVisioLink error', e);
-      alert("Impossible de créer le lien visio.");
+      toast.error("Impossible de créer le lien visio.");
     }
   }
 

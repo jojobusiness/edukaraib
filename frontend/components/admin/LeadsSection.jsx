@@ -18,6 +18,8 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import fetchWithAuth from '../../utils/fetchWithAuth';
 import { statsDemandes, dureeLisible, COLLECTION_DEMANDES } from '../../lib/statsMessages';
+import { toast } from 'sonner';
+import { demanderTexte } from '../ui/Dialogues';
 
 const FENETRES = [7, 30, 90, 3650];
 const etiquetteFenetre = (j) => (j >= 3650 ? 'Depuis le début' : `${j} jours`);
@@ -76,17 +78,18 @@ export default function LeadsSection() {
   // ⚖️ Ouvrir une conversation ne se fait pas d'un clic : motif obligatoire,
   // trace dans acces_journal, et la conversation est gelée (plus de purge).
   const exporter = async (l) => {
-    const motif = window.prompt(
-      [
-        `Ouvrir la conversation entre ${l.eleve} et ${l.prof} ?`,
-        '',
+    const motif = await demanderTexte({
+      titre: `Ouvrir la conversation entre ${l.eleve} et ${l.prof} ?`,
+      message: [
         "EduKaraib ne lit pas les conversations. Ouvrir celle-ci n'est justifié",
         'que pour un signalement, un litige ou une réquisition judiciaire.',
         'Votre accès sera enregistré, avec ce motif.',
-        '',
-        'Motif (10 caractères minimum) :',
       ].join(String.fromCharCode(10)),
-    );
+      placeholder: 'Motif (10 caractères minimum)',
+      libelleConfirmer: 'Ouvrir la conversation',
+      multiligne: true,
+      obligatoire: true,
+    });
     if (!motif) return;
     try {
       // ⚠️ fetchWithAuth renvoie le JSON déjà analysé et lève lui-même sur erreur
@@ -112,7 +115,7 @@ export default function LeadsSection() {
       URL.revokeObjectURL(url);
     } catch (e) {
       const m = String(e?.message || '');
-      alert(m.includes('MOTIF_TROP_COURT')
+      toast.error(m.includes('MOTIF_TROP_COURT')
         ? 'Motif trop court : 10 caractères minimum.'
         : `Export impossible : ${m}`);
     }

@@ -17,6 +17,8 @@ import StripeConnectButtons from '../components/stripe/StripeConnectButtons';
 import { auth, db, storage } from '../lib/firebase';
 import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
+import { toast } from 'sonner';
+import { confirmer, demanderTexte } from '../components/ui/Dialogues';
 
 /* ====== Contrôles & listes (alignés avec Register) ====== */
 // Villes des Caraïbes et au-delà (pour profs en visio du monde entier)
@@ -365,16 +367,16 @@ export default function Profile() {
 
     // Validations de base
     if (!NAME_MIN2_REGEX.test(profile.firstName || '')) {
-      return alert('Prénom invalide (2 caractères minimum).');
+      return toast.error('Prénom invalide (2 caractères minimum).');
     }
     if (!NAME_MIN2_REGEX.test(profile.lastName || '')) {
-      return alert('Nom invalide (2 caractères minimum).');
+      return toast.error('Nom invalide (2 caractères minimum).');
     }
     if (profile.city && !existsCity(profile.city)) {
-      return alert('Ville inconnue : sélectionne une ville de la liste, ou "En ligne".');
+      return toast.error('Ville inconnue : sélectionne une ville de la liste, ou "En ligne".');
     }
     if (profile.birth && profile.birth > TODAY) {
-      return alert("La date de naissance ne peut pas dépasser aujourd'hui.");
+      return toast.error("La date de naissance ne peut pas dépasser aujourd'hui.");
     }
 
     // Prix / Capacité
@@ -388,15 +390,15 @@ export default function Profile() {
     if (profile.role === 'teacher') {
       // Au moins un mode actif
       if (!profile.presentiel_enabled && !profile.visio_enabled) {
-        return alert("Active au moins un mode d'enseignement : présentiel ou visio.");
+        return toast.error("Active au moins un mode d'enseignement : présentiel ou visio.");
       }
       if (profile.presentiel_enabled) {
         if (priceNum === null || Number.isNaN(priceNum) || priceNum < 0 || priceNum > 1000) {
-          return alert("Le prix présentiel (€/h) doit être entre 0 et 1000.");
+          return toast.error("Le prix présentiel (€/h) doit être entre 0 et 1000.");
         }
       }
       if (Number.isNaN(capacityNum) || capacityNum < 1) {
-        return alert('La capacité de groupe doit être un entier ≥ 1.');
+        return toast.error('La capacité de groupe doit être un entier ≥ 1.');
       }
     }
 
@@ -408,10 +410,10 @@ export default function Profile() {
 
     if (profile.presentiel_enabled) {
       if (pack5 !== '' && (Number.isNaN(pack5) || pack5 < 0)) {
-        return alert('Pack 5h (présentiel) invalide (nombre ≥ 0).');
+        return toast.error('Pack 5h (présentiel) invalide (nombre ≥ 0).');
       }
       if (pack10 !== '' && (Number.isNaN(pack10) || pack10 < 0)) {
-        return alert('Pack 10h (présentiel) invalide (nombre ≥ 0).');
+        return toast.error('Pack 10h (présentiel) invalide (nombre ≥ 0).');
       }
     }
 
@@ -421,7 +423,7 @@ export default function Profile() {
       if (!profile.visio_same_rate) {
         visioRateNum = profile.visio_price_per_hour === '' ? null : Number(profile.visio_price_per_hour);
         if (visioRateNum === null || Number.isNaN(visioRateNum) || visioRateNum < 0 || visioRateNum > 1000) {
-          return alert("Tarif visio invalide (0 → 1000 €).");
+          return toast.error("Tarif visio invalide (0 → 1000 €).");
         }
       } else {
         visioRateNum = p || 0;
@@ -431,10 +433,10 @@ export default function Profile() {
       const v10 = profile.visio_pack10_price === '' ? '' : Number(profile.visio_pack10_price);
 
       if (v5 !== '' && (Number.isNaN(v5) || v5 < 0)) {
-        return alert('Pack 5h (visio) invalide (nombre ≥ 0).');
+        return toast.error('Pack 5h (visio) invalide (nombre ≥ 0).');
       }
       if (v10 !== '' && (Number.isNaN(v10) || v10 < 0)) {
-        return alert('Pack 10h (visio) invalide (nombre ≥ 0).');
+        return toast.error('Pack 10h (visio) invalide (nombre ≥ 0).');
       }
     }
 
@@ -531,10 +533,10 @@ export default function Profile() {
       }
       setProfile((p) => ({ ...p, avatarUrl, fullName }));
       setCertFiles([]);
-      alert('Profil mis à jour !');
+      toast.success('Profil mis à jour !');
     } catch (err) {
       console.error(err);
-      alert("Erreur pendant l'enregistrement.");
+      toast.error("Erreur pendant l'enregistrement.");
     } finally {
       setSaving(false);
     }
@@ -547,9 +549,9 @@ export default function Profile() {
 
   const handleResetPassword = async () => {
     const email = profile.email || auth.currentUser?.email;
-    if (!email) return alert("Pas d'adresse email trouvée.");
+    if (!email) return toast.error("Pas d'adresse email trouvée.");
     await sendPasswordResetEmail(auth, email);
-    alert('Un email de réinitialisation a été envoyé.');
+    toast.success('Un email de réinitialisation a été envoyé.');
   };
 
   async function callDeleteAccount() {
@@ -573,27 +575,30 @@ export default function Profile() {
   }
 
   const handleDeleteAccount = async () => {
-    if (!window.confirm(
-      "Supprimer définitivement votre compte ?\nCette action supprimera votre profil, vos fichiers et (si prof) votre compte Stripe."
-    )) return;
+    if (!(await confirmer({
+      titre: 'Supprimer définitivement votre compte ?',
+      message: 'Cette action supprimera votre profil, vos fichiers et (si prof) votre compte Stripe.',
+      libelleConfirmer: 'Supprimer mon compte',
+      danger: true,
+    }))) return;
 
     try {
       await callDeleteAccount();
-      alert('Compte supprimé. À bientôt !');
+      toast.success('Compte supprimé. À bientôt !');
       window.location.href = '/';
     } catch (err) {
       const msg = String(err?.message || err || '');
       if (msg.includes('requires-recent-login')) {
         const email = auth.currentUser?.email || '';
-        const pwd = window.prompt(`Par sécurité, entrez votre mot de passe (${email}) :`);
+        const pwd = await demanderTexte({ titre: 'Confirmez votre mot de passe', message: `Par sécurité, saisissez le mot de passe de ${email}.`, motDePasse: true, obligatoire: true, libelleConfirmer: 'Confirmer' });
         if (!pwd) return;
         const cred = EmailAuthProvider.credential(email, pwd);
         await reauthenticateWithCredential(auth.currentUser, cred);
         await callDeleteAccount();
-        alert('Compte supprimé. À bientôt !');
+        toast.success('Compte supprimé. À bientôt !');
         window.location.href = '/';
       } else {
-        alert('Erreur de suppression : ' + msg);
+        toast.error('Erreur de suppression : ' + msg);
       }
     }
   };
@@ -689,7 +694,7 @@ export default function Profile() {
                     type="button"
                     onClick={() => {
                       navigator.clipboard.writeText(profile.referralCode);
-                      alert('Code copié !');
+                      toast.success('Code copié !');
                     }}
                     className="text-xs font-bold text-green-700 bg-white border border-green-300 px-3 py-1 rounded-lg hover:bg-green-100 transition"
                   >
@@ -845,7 +850,7 @@ export default function Profile() {
                     onChange={e => {
                       const files = Array.from(e.target.files || []);
                       const valid = files.filter(f => f.size <= 5 * 1024 * 1024);
-                      if (valid.length < files.length) alert("Certains fichiers depassent 5 Mo et ont ete ignores.");
+                      if (valid.length < files.length) toast.error("Certains fichiers depassent 5 Mo et ont ete ignores.");
                       setCertFiles(prev => [...prev, ...valid]);
                       e.target.value = '';
                     }}
@@ -934,7 +939,7 @@ export default function Profile() {
                       onChange={e => {
                         const f = e.target.files?.[0];
                         if (!f) return;
-                        if (f.size > 150 * 1024 * 1024) { alert('Vidéo trop lourde (max 150 Mo).'); return; }
+                        if (f.size > 150 * 1024 * 1024) { toast.error('Vidéo trop lourde (max 150 Mo).'); return; }
                         setVideoFile(f);
                         setVideoFileName(f.name);
                       }}

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import fetchWithAuth from '../../utils/fetchWithAuth'
+import fetchWithAuth from '../../utils/fetchWithAuth';
+import { toast } from 'sonner';
 
 export default function StripeConnectButtons({ hasAccount }) {
   const [loading, setLoading] = useState(false);
@@ -11,7 +12,7 @@ export default function StripeConnectButtons({ hasAccount }) {
       const data = await fetchWithAuth(url, { method: 'POST' });
       window.location.href = data.url;
     } catch (e) {
-      alert(e.message || "Impossible d'ouvrir la page Stripe.");
+      toast.error(e.message || "Impossible d'ouvrir la page Stripe.");
     } finally {
       setLoading(false);
     }

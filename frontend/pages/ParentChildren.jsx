@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import { collection, addDoc, query, where, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import DashboardLayout from '../components/DashboardLayout';
+import { confirmer } from '../components/ui/Dialogues';
 
 export default function ParentChildren() {
   const [children, setChildren] = useState([]);
@@ -62,7 +63,7 @@ export default function ParentChildren() {
 
   // ---- SUPPRESSION ----
   const handleDelete = async (id) => {
-    if (window.confirm("Supprimer cet enfant ?")) {
+    if (await confirmer({ titre: 'Supprimer cet enfant ?', message: 'Sa fiche sera effacée de votre compte.', libelleConfirmer: 'Supprimer', danger: true })) {
       await deleteDoc(doc(db, 'students', id));
       await fetchChildren();
     }

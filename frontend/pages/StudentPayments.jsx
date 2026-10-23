@@ -15,6 +15,7 @@ import DashboardLayout from '../components/DashboardLayout';
 import RefundRequestModal from '../components/RefundRequestModal';
 import fetchWithAuth from '../utils/fetchWithAuth';
 import { getCampaignCode } from '../lib/bacCampaign';
+import { toast } from 'sonner';
 
 // Codes à remise fixe -5€ (front) — les autres (codes partenaires) sont validés côté serveur
 const FIXED5_PREFIX = /^(BIENVENUE|AVIS|FILLEUL|PARRAIN)-/;
@@ -374,7 +375,7 @@ export default function StudentPayments() {
         body: JSON.stringify({ lessonId: lesson.id, forStudent: uid }),
       });
       if (!diag?.ok) {
-        alert('Diagnostic paiement : ' + (diag?.error || 'inconnu'));
+        toast.error('Diagnostic paiement : ' + (diag?.error || 'inconnu'));
         setPayingId(null);
         return;
       }
@@ -399,7 +400,7 @@ export default function StudentPayments() {
       setCouponError('Code expiré');
       setCouponValid(false);
     } else {
-      alert(e.message || 'Impossible de démarrer le paiement.');
+      toast.error(e.message || 'Impossible de démarrer le paiement.');
     }
   }finally {
       setPayingId(null);
@@ -429,7 +430,7 @@ export default function StudentPayments() {
     setInvoiceLoadingId(lesson.id);
     try {
       const paymentId = await resolvePaymentId(lesson.id);
-      if (!paymentId) { alert('Facture introuvable.'); return; }
+      if (!paymentId) { toast.error('Facture introuvable.'); return; }
       // Navigation directe : window.open apres un await = bloque par les
       // navigateurs mobiles (popup hors geste utilisateur)
       window.location.assign(`/facture/${paymentId}`);

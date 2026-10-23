@@ -18,6 +18,7 @@ import { ensureUserDoc } from '../utils/ensureUserDoc';
 import { getAcquisitionRecord } from '../lib/acquisition';
 import { HEARD_FROM_OPTIONS } from '../../api/_acquisition.mjs';
 import { pixelTrack } from '../lib/metaPixel';
+import { toast } from 'sonner';
 
 // ————————————————————————————————
 // Villes des Caraïbes et au-delà (pour profs en visio du monde entier)
@@ -211,7 +212,7 @@ export default function Register() {
       if (u) await finishGoogle(u); // u === null => redirect déclenché, la page va naviguer
     } catch (e) {
       if (e?.code !== 'auth/popup-closed-by-user' && e?.code !== 'auth/cancelled-popup-request') {
-        alert('Connexion Google impossible : ' + (e?.message || ''));
+        toast.error('Connexion Google impossible : ' + (e?.message || ''));
       }
     } finally {
       setGoogleLoading(false);
@@ -248,44 +249,44 @@ export default function Register() {
     e.preventDefault();
 
     if (!acceptTerms) {
-      return alert("Tu dois accepter les Conditions Générales d'Utilisation pour créer un compte.");
+      return toast.error("Tu dois accepter les Conditions Générales d'Utilisation pour créer un compte.");
     }
 
-    if (!NAME_MIN2_REGEX.test(form.firstName)) return alert("Prénom invalide.");
-    if (!NAME_MIN2_REGEX.test(form.lastName)) return alert("Nom invalide.");
-    if (!form.email) return alert("Adresse email requise.");
-    if (!form.password || form.password.length < 6) return alert("Mot de passe trop court (≥6).");
-    if (form.password !== confirmPassword) return alert("Les mots de passe ne correspondent pas.");
+    if (!NAME_MIN2_REGEX.test(form.firstName)) return toast.error("Prénom invalide.");
+    if (!NAME_MIN2_REGEX.test(form.lastName)) return toast.error("Nom invalide.");
+    if (!form.email) return toast.error("Adresse email requise.");
+    if (!form.password || form.password.length < 6) return toast.error("Mot de passe trop court (≥6).");
+    if (form.password !== confirmPassword) return toast.error("Les mots de passe ne correspondent pas.");
 
     if (!isExpress) {
-      if (!form.heardFrom) return alert('Dites-nous comment vous avez connu EduKaraib.');
-      if (!form.city) return alert("Merci d'indiquer votre ville.");
-      if (!existsCity(form.city)) return alert("Ville inconnue : choisissez une ville proposée dans la liste, ou sélectionnez 'En ligne'.");
+      if (!form.heardFrom) return toast.error('Dites-nous comment vous avez connu EduKaraib.');
+      if (!form.city) return toast.error("Merci d'indiquer votre ville.");
+      if (!existsCity(form.city)) return toast.error("Ville inconnue : choisissez une ville proposée dans la liste, ou sélectionnez 'En ligne'.");
     }
     if (form.birth) {
-      if (form.birth > TODAY) return alert("La date de naissance ne peut pas dépasser la date d'aujourd'hui.");
+      if (form.birth > TODAY) return toast.error("La date de naissance ne peut pas dépasser la date d'aujourd'hui.");
     }
 
     // Validations spécifiques prof
     if (form.role === 'teacher') {
       if (!form.presentiel_enabled && !form.visio_enabled) {
-        return alert("Active au moins un mode d'enseignement : présentiel ou visio.");
+        return toast.error("Active au moins un mode d'enseignement : présentiel ou visio.");
       }
 
       // Présentiel
       if (form.presentiel_enabled) {
         const base = Number(form.price_per_hour || 0);
         if (Number.isNaN(base) || base < 0 || base > 1000) {
-          return alert("Le prix présentiel (€/h) doit être compris entre 0 et 1000 €.");
+          return toast.error("Le prix présentiel (€/h) doit être compris entre 0 et 1000 €.");
         }
         // Validation basique uniquement (nombre ≥ 0)
         if (form.pack5_price !== '') {
           const p5 = Number(form.pack5_price);
-          if (Number.isNaN(p5) || p5 < 0) return alert("Pack 5h (présentiel) invalide (nombre ≥ 0).");
+          if (Number.isNaN(p5) || p5 < 0) return toast.error("Pack 5h (présentiel) invalide (nombre ≥ 0).");
         }
         if (form.pack10_price !== '') {
           const p10 = Number(form.pack10_price);
-          if (Number.isNaN(p10) || p10 < 0) return alert("Pack 10h (présentiel) invalide (nombre ≥ 0).");
+          if (Number.isNaN(p10) || p10 < 0) return toast.error("Pack 10h (présentiel) invalide (nombre ≥ 0).");
         }
       }
 
@@ -297,18 +298,18 @@ export default function Register() {
         } else {
           visioRate = Number(form.visio_price_per_hour || 0);
           if (Number.isNaN(visioRate) || visioRate < 0 || visioRate > 1000) {
-            return alert("Tarif visio invalide (0 → 1000 €).");
+            return toast.error("Tarif visio invalide (0 → 1000 €).");
           }
         }
 
         // Validation basique uniquement (nombre ≥ 0)
         if (form.visio_pack5_price !== '') {
           const v5 = Number(form.visio_pack5_price);
-          if (Number.isNaN(v5) || v5 < 0) return alert("Pack 5h (visio) invalide (nombre ≥ 0).");
+          if (Number.isNaN(v5) || v5 < 0) return toast.error("Pack 5h (visio) invalide (nombre ≥ 0).");
         }
         if (form.visio_pack10_price !== '') {
           const v10 = Number(form.visio_pack10_price);
-          if (Number.isNaN(v10) || v10 < 0) return alert("Pack 10h (visio) invalide (nombre ≥ 0).");
+          if (Number.isNaN(v10) || v10 < 0) return toast.error("Pack 10h (visio) invalide (nombre ≥ 0).");
         }
       }
     }
@@ -322,7 +323,7 @@ export default function Register() {
       // On finalise directement sans bloquer sur la vérification email
       await finalizeWithUser(cred.user);
     } catch (err) {
-      alert('Erreur: ' + (err?.message || 'Création de compte impossible'));
+      toast.error('Erreur: ' + (err?.message || 'Création de compte impossible'));
     } finally {
       setLoading(false);
     }
@@ -518,7 +519,7 @@ export default function Register() {
       }
 
     } catch (err) {
-      alert('Erreur: ' + (err?.message || 'Finalisation impossible'));
+      toast.error('Erreur: ' + (err?.message || 'Finalisation impossible'));
     } finally {
       setLoading(false);
     }
@@ -528,9 +529,9 @@ export default function Register() {
     if (!pendingUser) return;
     try {
       await sendEmailVerification(pendingUser, actionCodeSettings);
-      alert("Email de vérification renvoyé. Pense à vérifier tes spams.");
+      toast.success("Email de vérification renvoyé. Pense à vérifier tes spams.");
     } catch (e) {
-      alert("Impossible d'envoyer l'email de vérification pour le moment.");
+      toast.error("Impossible d'envoyer l'email de vérification pour le moment.");
     }
   };
 

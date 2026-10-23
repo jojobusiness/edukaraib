@@ -1,5 +1,6 @@
 import React from "react";
 import { Toaster, toast } from "sonner";
+import { DialoguesHote } from "../components/ui/Dialogues";
 
 /**
  * ErrorBoundary pour erreurs de rendu React
@@ -109,6 +110,7 @@ export function AppGuards({ children }) {
     <>
       <GlobalErrorBoundary>{children}</GlobalErrorBoundary>
       <Toaster richColors position="top-center" closeButton duration={6000} />
+      <DialoguesHote />
     </>
   );
 }
