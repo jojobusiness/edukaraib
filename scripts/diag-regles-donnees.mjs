@@ -42,7 +42,9 @@ const essai = async (libelle, fn, attendu) => {
     if (attendu === 'refus') { problemes += 1; console.log(`❌ FAILLE  ${libelle} → AUTORISÉ (${nb})`); }
     else console.log(`✅         ${libelle} → autorisé (${nb})`);
   } catch (e) {
-    const refus = String(e?.code || '').includes('permission-denied');
+    // Firestore : permission-denied ; Storage : storage/unauthorized
+    const code = String(e?.code || '');
+    const refus = code.includes('permission-denied') || code.includes('storage/unauthorized');
     if (attendu === 'refus' && refus) console.log(`✅         ${libelle} → refusé`);
     else { problemes += 1; console.log(`❌ CASSÉ   ${libelle} → ${e?.code || e?.message}`); }
   }

@@ -799,6 +799,11 @@ exports.onLessonWrittenSync = functions
       const avant = change.before.exists ? change.before.data() || {} : null;
       const creneauAvant = avant ? creneauPublic(avant) : null;
       if (!creneauAvant || JSON.stringify(creneauAvant) !== JSON.stringify(creneau)) {
+        // Une exécution en retard ne doit pas recréer le créneau d'un cours supprimé entre-temps
+        if (!(await change.after.ref.get()).exists) {
+          await refCreneau.delete().catch(() => {});
+          return null;
+        }
         await refCreneau.set(creneau);
       }
       // Ne réécrit `acces` que s'il change : sinon la fonction se relancerait sans fin

@@ -61,5 +61,20 @@
   - `scripts/essai-reservation-prod.mjs` : parcours réel, plus les fraudes à la gratuité, l'avis, la notification et les champs de compte ;
   - `scripts/diag-regles-donnees.mjs` : complété avec le Storage, les avis, les notifications et les codes promo.
 
-## 5. Résultat (à remplir)
-- RÉSULTAT : …
+## 5. Résultat (23/10/2026, ~20 h)
+- ✅ **Tout est livré et vérifié en production.**
+  - Commit `48b5ae9e` et ses suivis.
+  - Règles Firestore et Storage déployées.
+  - Cloud Functions `onLessonWrittenSync` (gratuités) et `onNotificationCreated` (textes fixes) déployées.
+- **Parcours réel contre la prod** (`scripts/essai-reservation-prod.mjs`) : tout passe.
+  - Réservation, groupe, doublon.
+  - Fraudes refusées : payé forgé, heure offerte hors pack, enfant d'autrui, faux avis, notification piège, annonce admin, déban, Stripe prêt.
+  - 2ᵉ essai gratuit : rendu payant à 30 € par le serveur.
+  - 2ᵉ heure offerte d'un pack 5 h : retirée.
+- **Diagnostic prod** (`scripts/diag-regles-donnees.mjs`) : 0 faille. Côté Storage, sans compte comme avec un compte jetable, tout est refusé : justificatifs, chat, documents de cours. Photos et diplômes publics : 200.
+- `scripts/diag-regles-paiements.mjs` : 0 faille.
+- **Incidents pendant la livraison, corrigés :**
+  - au premier essai, la notification piège est passée, car le propagation des règles prend jusqu'à 1 min. Revérifiée à froid : refusée ;
+  - un créneau public orphelin a été recréé par une exécution en retard de la Cloud Function. Elle revérifie maintenant que le cours existe avant d'écrire, et l'orphelin est supprimé.
+- Émulateur : 48 tests Firestore et 10 Storage. Sur les règles d'avant, 8 tests Storage sur 10 échouent.
+- Vitest : 287 tests, lint 0 erreur, build OK.
