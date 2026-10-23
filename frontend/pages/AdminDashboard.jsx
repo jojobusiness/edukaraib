@@ -28,6 +28,7 @@ import Messages from './Messages';
 import AnalyticsTab from '../components/admin/AnalyticsTab';
 import { toast } from 'sonner';
 import { confirmer, demanderTexte } from '../components/ui/Dialogues';
+import { libelleDerniereVenue, trierParVenue, filtrerParVenue } from '../lib/derniereVenue';
 
 /* ===========================
    Utils
@@ -381,6 +382,9 @@ export default function AdminDashboard() {
   const [usersLoading, setUsersLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all'); // all|student|parent|teacher|admin|disabled
+  // Dernière venue (plan du 23/10/2026) : tri et filtre de l'onglet Comptes
+  const [triComptes, setTriComptes] = useState('creation'); // creation|venue
+  const [filtreVenue, setFiltreVenue] = useState('tous'); // tous|revenus7j|pasRevenus
   const [selectedIds, setSelectedIds] = useState(new Set());
 
   // --- Payments state ---
@@ -550,7 +554,7 @@ export default function AdminDashboard() {
   /* ----- Derived: account filters ----- */
   const filteredUsers = useMemo(() => {
     const t = (search || '').toLowerCase().trim();
-    return users.filter((u) => {
+    const liste = filtrerParVenue(users, filtreVenue).filter((u) => {
       // ⛔️ masque les admins dans la liste
       if (u?.role === 'admin') return false;
 
@@ -563,7 +567,9 @@ export default function AdminDashboard() {
       const s = [u.email, nameOf(u), u.city, u.role].filter(Boolean).join(' ').toLowerCase();
       return s.includes(t);
     });
-  }, [users, search, roleFilter]);
+    // « Créé le » = ordre de la requête (createdAt décroissant)
+    return triComptes === 'venue' ? trierParVenue(liste) : liste;
+  }, [users, search, roleFilter, filtreVenue, triComptes]);
 
   const teacherMap = useMemo(() => {
     const m = new Map();
@@ -781,7 +787,7 @@ export default function AdminDashboard() {
         {/* === ACCOUNTS TAB === */}
         {tab === 'accounts' && (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
               <input
                 className="border rounded-lg px-3 py-2"
                 placeholder="Rechercher nom/email/ville/rôle…"
@@ -800,6 +806,25 @@ export default function AdminDashboard() {
                 <option value="influencer">Partenaire</option>
                 <option value="admin">Admin</option>
                 <option value="disabled">Désactivés</option>
+              </select>
+              <select
+                className="border rounded-lg px-3 py-2"
+                value={filtreVenue}
+                onChange={(e) => setFiltreVenue(e.target.value)}
+                aria-label="Filtrer par dernière venue"
+              >
+                <option value="tous">Toutes les venues</option>
+                <option value="revenus7j">Revenus depuis 7 jours</option>
+                <option value="pasRevenus">Pas revenus depuis l'inscription</option>
+              </select>
+              <select
+                className="border rounded-lg px-3 py-2"
+                value={triComptes}
+                onChange={(e) => setTriComptes(e.target.value)}
+                aria-label="Trier les comptes"
+              >
+                <option value="creation">Tri : créé le</option>
+                <option value="venue">Tri : dernière venue</option>
               </select>
 
               <div className="col-span-1 md:col-span-2 flex items-center gap-2">
@@ -826,18 +851,19 @@ export default function AdminDashboard() {
                     <th className="p-2 text-left">Ville</th>
                     <th className="p-2 text-left">État</th>
                     <th className="p-2 text-left">Créé le</th>
+                    <th className="p-2 text-left">Dernière venue</th>
                     <th className="p-2 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {usersLoading && (
                     <tr>
-                      <td colSpan={8} className="p-4 text-center text-gray-500">Chargement…</td>
+                      <td colSpan={9} className="p-4 text-center text-gray-500">Chargement…</td>
                     </tr>
                   )}
                   {!usersLoading && filteredUsers.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="p-4 text-center text-gray-400">Aucun compte</td>
+                      <td colSpan={9} className="p-4 text-center text-gray-400">Aucun compte</td>
                     </tr>
                   )}
                   {filteredUsers.map((u) => (
@@ -882,6 +908,13 @@ export default function AdminDashboard() {
                         )}
                       </td>
                       <td className="p-2">{toDateStr(u.createdAt)}</td>
+                      <td className="p-2">
+                        {(() => {
+                          const v = libelleDerniereVenue(u.createdAt, u.lastSeenAt);
+                          const couleur = v.ton === 'orange' ? 'text-orange-600 font-medium' : v.ton === 'gris' ? 'text-gray-400' : 'text-gray-700';
+                          return <span className={couleur} title={v.titre}>{v.texte}</span>;
+                        })()}
+                      </td>
                       <td className="p-2 text-right">
                         <div className="flex gap-2 justify-end">
                           <Link

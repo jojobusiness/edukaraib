@@ -15,6 +15,7 @@ import DashboardLayout from "../components/DashboardLayout";
 import { Link } from "react-router-dom";
 import { useUserRole } from "../hooks/useUserRole";
 import { lireProfil } from "../lib/profils";
+import { etatLecture } from "../lib/etatLecture";
 
 // --- Mini cache en mémoire pour accélérer la liste
 const PROFILE_CACHE = new Map(); // uid -> { name, avatar, role }
@@ -70,6 +71,12 @@ async function fetchAdminUid(myUid) {
     }
   } catch {}
   return null;
+}
+
+function AccuseLecture({ vu }) {
+  return vu
+    ? <span className="text-primary font-medium">✓✓ Vu ·</span>
+    : <span>✓ Envoyé ·</span>;
 }
 
 export default function ChatList({ onSelectChat }) {
@@ -140,6 +147,8 @@ export default function ChatList({ onSelectChat }) {
           const myReadMs = c.reads?.[myUid]?.toMillis?.() ?? 0;
           const incoming = !!c.lastSender && c.lastSender !== myUid;
           const unread = incoming && lastSentMs > myReadMs;
+          // « Vu » / « Envoyé » sur mon dernier message (jamais de statistique)
+          const lecture = etatLecture({ sender_uid: c.lastSender, sent_at: c.lastSentAt }, c.reads, myUid, otherUid);
 
           return {
             cid: c.id,
@@ -153,6 +162,7 @@ export default function ChatList({ onSelectChat }) {
             lastSentMs,
             incoming,
             unread,
+            vu: lecture?.etat === "vu",
           };
         })
       );
@@ -211,7 +221,7 @@ export default function ChatList({ onSelectChat }) {
                         {adminConv.incoming ? (
                           unread && <span className="text-red-500 mr-1">●</span>
                         ) : (
-                          <span className="text-gray-400 mr-1">Vous :</span>
+                          <span className="text-gray-400 mr-1"><AccuseLecture vu={adminConv.vu} /> Vous :</span>
                         )}
                         {adminConv.lastMessage}
                       </div>
@@ -289,7 +299,7 @@ export default function ChatList({ onSelectChat }) {
                       {c.incoming ? (
                         c.unread && <span className="text-red-500 mr-1">●</span>
                       ) : c.lastMessage ? (
-                        <span className="text-gray-400 mr-1">Vous :</span>
+                        <span className="text-gray-400 mr-1"><AccuseLecture vu={c.vu} /> Vous :</span>
                       ) : null}
                       {c.lastMessage || "Aucun message"}
                     </div>

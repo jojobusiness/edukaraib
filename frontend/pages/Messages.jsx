@@ -33,6 +33,7 @@ import {
 import { envoyerMail, lireProfil } from "../lib/profils";
 import { toast } from 'sonner';
 import { confirmer, demanderTexte } from '../components/ui/Dialogues';
+import { etatLecture, libelleVu } from "../lib/etatLecture";
 
 // --- EMAIL HELPERS (Messages.jsx) ---
 // 🔒 23/10/2026 : on écrit à un identifiant ; le serveur trouve l'adresse.
@@ -504,7 +505,8 @@ export default function Messages(props) {
           messages.forEach((m, i) => {
             if (m.sender_uid === myUid) lastMineIdx = i;
           });
-          const otherReadMs = convMeta?.reads?.[receiverId]?.toMillis?.() ?? 0;
+          // « Vu à 18 h 40 » / « Envoyé » : lib/etatLecture.js (jamais de statistique)
+          const lecture = etatLecture(messages[lastMineIdx], convMeta?.reads, myUid, receiverId);
           return messages.map((m, idx) => {
             const isMine = m.sender_uid === myUid;
             const dayKey = getDayKey(m.sent_at);
@@ -512,7 +514,7 @@ export default function Messages(props) {
             if (showSeparator) lastDayKey = dayKey;
             const label = showSeparator ? dateSeparatorLabel(m.sent_at) : null;
             const showStatus = isMine && idx === lastMineIdx;
-            const seen = otherReadMs >= (m.sent_at?.toMillis?.() ?? Infinity);
+            const seen = lecture?.etat === 'vu';
             const attachments = Array.isArray(m.attachments) ? m.attachments : [];
             const medias = attachments.filter(
               (a) => a?.kind === "image" || a?.kind === "video"
@@ -574,7 +576,7 @@ export default function Messages(props) {
                     {formatTime(m.sent_at)}
                     {showStatus && (
                       <span className={seen ? "text-primary font-medium ml-1" : "ml-1"}>
-                        {" · "}{seen ? "Vu ✓✓" : "Envoyé ✓"}
+                        {" · "}{seen ? `✓✓ ${libelleVu(lecture.le)}` : "✓ Envoyé"}
                       </span>
                     )}
                   </span>

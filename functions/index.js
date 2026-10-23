@@ -648,6 +648,11 @@ exports.onUserWrittenSyncProfil = functions
         await ref.delete().catch(() => {});
         return null;
       }
+      // lastSeenAt s'écrit jusqu'à 1×/h et n'est pas dans la copie : on ne
+      // réécrit que si la copie publique change vraiment.
+      const avant = change.before.exists ?
+        profilPublic(uid, change.before.data()) : null;
+      if (avant && JSON.stringify(avant) === JSON.stringify(profil)) return null;
       // set sans merge : un champ retiré de la liste blanche disparaît aussi
       await ref.set(profil);
       return null;

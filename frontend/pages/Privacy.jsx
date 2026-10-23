@@ -54,6 +54,9 @@ const SECTIONS = [
         en cas de harcèlement, de menace ou d'arnaque ; c'est aussi pourquoi « masquer » une discussion la
         retire de votre liste sans l'effacer pour votre correspondant.
         <br /><br />
+        Quand vous ouvrez une conversation, votre interlocuteur voit que son message a été lu (« Vu »).
+        Cette information reste dans la conversation : EduKaraib n'en tire aucune statistique.
+        <br /><br />
         Vos autres données sont conservées pendant toute la durée d'activité de votre compte, puis supprimées
         dans un délai de <strong>3 mois</strong> après sa fermeture, sauf obligation légale contraire
         (ex : données comptables conservées 10 ans conformément au Code de commerce).
