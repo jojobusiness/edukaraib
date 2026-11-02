@@ -19,6 +19,7 @@
    ———————————————————————————————————————————————————————————— */
 
 import { initializeApp } from 'firebase/app';
+import { connecterAdmin } from './_sessionAdmin.mjs';
 import { getFirestore, collection, getDocs } from 'firebase/firestore';
 
 const app = initializeApp({
@@ -30,6 +31,8 @@ const app = initializeApp({
   appId: '1:827164038836:web:8f0ce9776e18d1b03da9e1',
 });
 const db = getFirestore(app);
+// Depuis le verrou du 23/10/2026, `users` ne se lit plus sans droits : session admin.
+await connecterAdmin(app);
 
 const MISE_EN_SERVICE = '02/10/2026';
 const arg = Object.fromEntries(process.argv.slice(2).map((a) => a.replace(/^--/, '').split('=')));

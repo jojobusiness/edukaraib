@@ -158,7 +158,7 @@ function buildEmail({title: titreBrut, message: messageBrut, createdAt}) {
       <p style="margin:0 0 8px">${(message || "Vous avez une nouvelle notification sur EduKaraib.")}</p>
       <p style="margin:0 0 8px;font-size:12px;color:#666">Date: ${createdAt || ""}</p>
       <p style="margin:16px 0">
-        <a href="https://edukaraib.com" style="display:inline-block;background:#2563EB;color:white;padding:10px 16px;border-radius:8px;text-decoration:none">
+        <a href="https://edukaraib.com/smart-dashboard" style="display:inline-block;background:#2563EB;color:white;padding:10px 16px;border-radius:8px;text-decoration:none">
           Ouvrir mon tableau de bord
         </a>
       </p>

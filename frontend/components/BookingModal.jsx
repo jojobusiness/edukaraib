@@ -138,7 +138,17 @@ export default function BookingModal({
 
   // ------- Navigation mois + semaine active -------
   const [monthCursor, setMonthCursor] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d; });
-  const [weekAnchor, setWeekAnchor]   = useState(() => startOfWeekMon(new Date()));
+  // 02/11/2026 : s'ouvre sur la première semaine qui a des créneaux, pas sur une
+  // semaine vide (Marie-Christine n'en a qu'à partir du 14/12).
+  const [weekAnchor, setWeekAnchor]   = useState(() => {
+    const debut = startOfWeekMon(new Date());
+    const prochaine = Object.keys(availability || {})
+      .filter((k) => /^\d{4}-\d{2}-\d{2}$/.test(k) && Object.values(availability[k] || {}).flat().length > 0)
+      .map((k) => new Date(`${k}T00:00:00`))
+      .filter((d) => d >= debut)
+      .sort((a, b) => a - b)[0];
+    return prochaine || debut;
+  });
 
   const activeWeekDays = useMemo(() => {
     const out = [];

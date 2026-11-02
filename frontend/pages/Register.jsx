@@ -653,7 +653,7 @@ export default function Register() {
                 placeholder="ton@email.com"
               />
               <p className="text-xs text-gray-500 mt-1">
-                Un email de vérification te sera envoyé. Tu devras confirmer avant de continuer.
+                Un email de vérification te sera envoyé.
               </p>
             </div>
             <div>

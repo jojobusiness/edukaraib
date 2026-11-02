@@ -125,7 +125,8 @@ export default function PaiementsSection({ users = [], onRembourser, version = 0
               <tbody>
                 {dus.map((l) => {
                   const u = comptes.get(l.profUid);
-                  const pret = !!(u?.stripeAccountId && u?.stripeChargesEnabled);
+                  // Le serveur redemande à Stripe au moment de verser (api/_compteProf.mjs)
+                  const pret = !!u?.stripeAccountId;
                   return (
                     <tr key={l.id} className="border-t border-amber-200">
                       <td className="px-3 py-2 font-semibold">{nomDe(u, l.profUid)}</td>

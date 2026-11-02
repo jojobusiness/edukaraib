@@ -9,17 +9,28 @@
 // l'ancien format (objet jour → créneaux) et le nouveau (tableau). Deux
 // implémentations de la même règle finissent toujours par diverger.
 
-/** Nombre de créneaux cochés, tous formats d'`availability` confondus. */
-export function nbCreneaux(availability) {
+const CLE_SEMAINE = /^\d{4}-\d{2}-\d{2}$/;
+const SEPT_JOURS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Nombre de créneaux RÉELLEMENT réservables, tous formats d'`availability`.
+ * 02/11/2026 : les semaines passées ne comptent plus. Avant, un prof dont la
+ * dernière semaine datait de mars passait pour « réservable » et affichait
+ * « Créneaux ouverts », alors que son calendrier était vide. Dès qu'une clé de
+ * semaine existe, l'ancien format est ignoré : c'est ce que fait BookingModal.
+ */
+export function nbCreneaux(availability, maintenant = Date.now()) {
   if (!availability) return 0;
   if (Array.isArray(availability)) return availability.length;
-  if (typeof availability === 'object') {
-    return Object.values(availability).reduce(
-      (n, v) => n + (Array.isArray(v) ? v.length : (v ? 1 : 0)),
-      0,
-    );
+  if (typeof availability !== 'object') return 0;
+  const compte = (v) => (Array.isArray(v) ? v.length : (v ? 1 : 0));
+  const cles = Object.keys(availability);
+  if (!cles.some((k) => CLE_SEMAINE.test(k))) {
+    return Object.values(availability).reduce((n, v) => n + compte(v), 0);
   }
-  return 0;
+  return cles
+    .filter((k) => CLE_SEMAINE.test(k) && Date.parse(`${k}T00:00:00`) + SEPT_JOURS > maintenant)
+    .reduce((n, k) => n + Object.values(availability[k] || {}).reduce((m, v) => m + compte(v), 0), 0);
 }
 
 /**

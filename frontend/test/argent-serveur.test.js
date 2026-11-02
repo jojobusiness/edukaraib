@@ -5,6 +5,9 @@ import { describe, it, expect } from 'vitest';
 import { createRequire } from 'node:module';
 import { tarifsDuProf, montantProfCents, maxCoursDuPack } from '../../api/_tarifs.mjs';
 import { debutDuCours, coursTermine } from '../../api/_coursHoraire.mjs';
+import { compteProfPret } from '../../api/_compteProf.mjs';
+import { resumeCours, resumePaiements } from '../../api/_ficheCompte.mjs';
+import { nbCreneaux } from '../lib/offreProf';
 
 const { verdictGratuite, retirerGratuite } = createRequire(import.meta.url)('../../functions/gratuites.js');
 
@@ -76,5 +79,40 @@ describe('cours gratuits vérifiés par le serveur', () => {
   it('retirer la gratuité : prix du prof, participant plus « payé par essai »', () => {
     const c = retirerGratuite({ participantsMap: { e: { paid_by: 'trial', is_paid: true } } }, 30, 'DEL');
     expect(c).toMatchObject({ is_free_hour: false, price_per_hour: 30, 'participantsMap.e.is_paid': false, 'participantsMap.e.paid_by': null });
+  });
+});
+
+describe('compte Stripe du prof : on demande à Stripe (02/11/2026)', () => {
+  const stripe = (compte) => ({ accounts: { retrieve: async () => { if (!compte) throw new Error('down'); return compte; } } });
+  it('prêt seulement si virements et transferts sont actifs', async () => {
+    expect(await compteProfPret(stripe({ payouts_enabled: true, capabilities: { transfers: 'active' } }), 'a')).toBe(true);
+    expect(await compteProfPret(stripe({ payouts_enabled: false, capabilities: { transfers: 'inactive' } }), 'a')).toBe(false);
+  });
+  it('pas de compte ou Stripe injoignable : pas prêt, sans planter', async () => {
+    expect(await compteProfPret(stripe({}), null)).toBe(false);
+    expect(await compteProfPret(stripe(null), 'a')).toBe(false);
+  });
+});
+
+describe('créneaux : les semaines passées ne comptent plus', () => {
+  const NOW = Date.parse('2026-11-02T12:00:00Z');
+  it('semaine passée 0, semaine en cours et future comptées', () => {
+    expect(nbCreneaux({ '2026-03-09': { Lun: [9, 10] } }, NOW)).toBe(0);
+    expect(nbCreneaux({ '2026-11-02': { Lun: [9] }, '2026-12-14': { Mar: [10, 11] } }, NOW)).toBe(3);
+  });
+  it('ancien format récurrent : toujours compté, sauf si des semaines existent', () => {
+    expect(nbCreneaux({ Lun: [9, 10] }, NOW)).toBe(2);
+    expect(nbCreneaux({ Lun: [9, 10], '2026-03-09': { Lun: [9] } }, NOW)).toBe(0);
+  });
+});
+
+describe('fiche de compte admin', () => {
+  it('compte les cours sans doublon', () => {
+    const r = resumeCours([{ id: 'a', status: 'completed' }, { id: 'a', status: 'completed' }, { id: 'b', status: 'rejected' }, { id: 'c', status: 'confirmed', date: '2099-01-01' }, { id: 'd', status: 'booked' }]);
+    expect(r).toEqual({ total: 4, termines: 1, aVenir: 1, enAttente: 1, refuses: 1 });
+  });
+  it('ne compte pas un paiement non abouti', () => {
+    const r = resumePaiements([{ status: 'pending', gross_eur: 130 }, { status: 'refunded', gross_eur: 5 }, { status: 'released', gross_eur: 40, net_to_teacher_eur: 30 }]);
+    expect(r).toEqual({ nb: 1, paye: 40, gagne: 30, rembourses: 1 });
   });
 });

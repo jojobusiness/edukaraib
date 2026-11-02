@@ -3,6 +3,7 @@ import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
 import { Resend } from 'resend';
 import { captureError } from './_sentry.mjs';
 import { coursTermine } from './_coursHoraire.mjs';
+import { compteProfPret } from './_compteProf.mjs';
 
 const GOOGLE_REVIEW_URL = 'https://www.google.com/search?q=EduKaraib+cours+particuliers+Antilles&hl=fr';
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
@@ -110,7 +111,8 @@ export default async function handler(req, res) {
   const teacherSnap = await adminDb.collection('users').doc(teacherUid).get();
   const teacher = teacherSnap.exists ? teacherSnap.data() : null;
   const stripeAccountId = teacher?.stripeAccountId || null;
-  const stripeReady = !!(stripeAccountId && teacher?.stripeChargesEnabled);
+  // 02/11/2026 : on demande à Stripe, pas à un champ recopié (api/_compteProf.mjs)
+  const stripeReady = await compteProfPret(stripe, stripeAccountId);
 
   try {
     // ── CAS PACK ──────────────────────────────────────────────

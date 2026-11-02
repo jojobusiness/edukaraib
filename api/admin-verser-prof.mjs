@@ -13,6 +13,7 @@
 import { stripe } from './_stripe.mjs';
 import { adminDb } from './_firebaseAdmin.mjs';
 import { requireAdmin } from './_adminAuth.mjs';
+import { compteProfPret } from './_compteProf.mjs';
 import { captureError } from './_sentry.mjs';
 
 function readBody(req) {
@@ -41,7 +42,8 @@ export default async function handler(req, res) {
   // Même condition que trigger-payout pour considérer le compte Stripe prêt.
   const teacherSnap = await adminDb.collection('users').doc(String(teacherUid)).get();
   const teacher = teacherSnap.exists ? teacherSnap.data() : {};
-  if (!teacher.stripeAccountId || !teacher.stripeChargesEnabled) {
+  // 02/11/2026 : on demande à Stripe, pas à un champ recopié (api/_compteProf.mjs)
+  if (!(await compteProfPret(stripe, teacher.stripeAccountId))) {
     return res.status(409).json({ error: 'PROF_SANS_STRIPE' });
   }
 

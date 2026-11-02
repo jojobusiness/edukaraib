@@ -35,10 +35,10 @@ node scripts/release-payouts-cron.mjs
 npm test
 
 # Diagnostic de l'offre profs — À RELANCER AVANT TOUT ENVOI DE TRAFIC
-node scripts/diag-offre-profs.mjs
+node --env-file=.env.local scripts/diag-offre-profs.mjs
 
 # D'où viennent les inscrits (source par semaine / rôle) — relevé du dimanche
-node scripts/diag-acquisition.mjs
+node --env-file=.env.local scripts/diag-acquisition.mjs
 ```
 
 Le projet a une suite de tests depuis le 01/08/2026 (`npm test`). Elle monte

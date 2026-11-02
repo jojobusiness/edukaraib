@@ -29,6 +29,7 @@ import AnalyticsTab from '../components/admin/AnalyticsTab';
 import { toast } from 'sonner';
 import { confirmer, demanderTexte } from '../components/ui/Dialogues';
 import { libelleDerniereVenue, trierParVenue, filtrerParVenue } from '../lib/derniereVenue';
+import FicheCompte from '../components/admin/FicheCompte';
 
 /* ===========================
    Utils
@@ -384,6 +385,7 @@ export default function AdminDashboard() {
   const [roleFilter, setRoleFilter] = useState('all'); // all|student|parent|teacher|admin|disabled
   // Dernière venue (plan du 23/10/2026) : tri et filtre de l'onglet Comptes
   const [triComptes, setTriComptes] = useState('creation'); // creation|venue
+  const [ficheUid, setFicheUid] = useState(null); // fiche d'un compte (02/11/2026)
   const [filtreVenue, setFiltreVenue] = useState('tous'); // tous|revenus7j|pasRevenus
   const [selectedIds, setSelectedIds] = useState(new Set());
 
@@ -785,6 +787,8 @@ export default function AdminDashboard() {
         </div>
 
         {/* === ACCOUNTS TAB === */}
+        {ficheUid && <FicheCompte uid={ficheUid} onClose={() => setFicheUid(null)} />}
+
         {tab === 'accounts' && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
@@ -875,7 +879,11 @@ export default function AdminDashboard() {
                           onChange={() => toggleSelect(u.id)}
                         />
                       </td>
-                      <td className="p-2">{nameOf(u)}</td>
+                      <td className="p-2">
+                        <button type="button" onClick={() => setFicheUid(u.id)} className="text-left font-semibold text-primary hover:underline">
+                          {nameOf(u)}
+                        </button>
+                      </td>
                       <td className="p-2">{u.email}</td>
                       <td className="p-2">
                         <span className="inline-flex items-center gap-2">

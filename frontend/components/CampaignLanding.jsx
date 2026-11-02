@@ -8,6 +8,8 @@ import { useSEO } from '../hooks/useSEO';
 import { saveCampaign, getCampaignCode } from '../lib/bacCampaign';
 import { pixelTrack } from '../lib/metaPixel';
 import { subjectMatches } from '../lib/subjectMatch';
+import { nbCreneaux } from '../lib/offreProf';
+import { tarifsDuProf } from '../../api/_tarifs.mjs';
 import {
   GraduationCap, Clock, ShieldCheck, CreditCard, Video, BadgeCheck,
   ChevronDown, ChevronUp, Star, ArrowRight, Ticket, Sparkles,
@@ -28,23 +30,7 @@ import {
 
 const ICONES = { GraduationCap, Video, CreditCard, ShieldCheck };
 
-/**
- * Nombre de créneaux de disponibilité cochés par un prof.
- * `availability` mélange l’ancien et le nouveau format dans la même base (cf.
- * le crash profil prof du 12/06) : on route par type plutôt que de supposer.
- * Aucune requête supplémentaire — le champ est déjà dans le document `users`.
- */
-export function nbCreneaux(availability) {
-  if (!availability) return 0;
-  if (Array.isArray(availability)) return availability.length;
-  if (typeof availability === 'object') {
-    return Object.values(availability).reduce(
-      (n, v) => n + (Array.isArray(v) ? v.length : (v ? 1 : 0)),
-      0,
-    );
-  }
-  return 0;
-}
+export { nbCreneaux };
 
 function Countdown({ target, label }) {
   const [now, setNow] = useState(() => new Date());
@@ -209,7 +195,7 @@ export default function CampaignLanding({ config }) {
     else navigate('/search'); // secours si la section est masquée (< 3 profs)
   };
 
-  const showProfsSection = profsLoading || profs.length >= 3;
+  const showProfsSection = !config.sansProfs && (profsLoading || profs.length >= 3);
 
   // ——— Matières réellement couvertes ———
   // Un bouton de matière sans aucun prof correspondant envoie l'utilisateur sur
@@ -231,6 +217,31 @@ export default function CampaignLanding({ config }) {
     );
     return couvertes.length >= 3 ? couvertes : config.subjects;
   }, [config.subjects, allProfs, profsLoading]);
+
+  // Prix réels (02/11/2026) : la page annonçait « ≈ 30 €/h » alors que la plupart
+  // des profs sont à 40 €. Une formule sans prix écrit affiche le plus bas du
+  // site, calculé sur les profils, frais de 10 €/h inclus.
+  const prixReels = useMemo(() => {
+    const minimum = { 0: Infinity, 5: Infinity, 10: Infinity };
+    allProfs.forEach((t) => {
+      const modes = [];
+      if (t.visio_enabled) modes.push(true);
+      if (t.presentiel_enabled) modes.push(false);
+      modes.forEach((visio) => {
+        const p = tarifsDuProf(t, visio);
+        if (!(p.heure > 0)) return;
+        minimum[0] = Math.min(minimum[0], p.heure + 10);
+        minimum[5] = Math.min(minimum[5], p.pack5 + 50);
+        minimum[10] = Math.min(minimum[10], p.pack10 + 100);
+      });
+    });
+    return minimum;
+  }, [allProfs]);
+  const prixDe = (p) => {
+    if (p.price) return p.price;
+    const m = prixReels[p.pack];
+    return Number.isFinite(m) ? `dès ${Math.ceil(m)} €` : '…';
+  };
 
   // Rareté affichée : on annonce les nombres RÉELS, jamais un chiffre codé en
   // dur. Un chiffre gonflé se démonte au clic suivant. On distingue les profs
@@ -324,7 +335,7 @@ export default function CampaignLanding({ config }) {
         <div className="max-w-4xl mx-auto">
           <h2 className="text-2xl font-bold text-center text-slate-900 mb-2">{copy.packsTitle}</h2>
           <p className="text-center text-gray-500 text-sm mb-8">
-            Prix estimés sur la base d’un tarif moyen de 30 €/h. Le tarif exact est fixé par chaque prof — affiché sur son profil. Le prof reçoit toujours 100 % de son tarif.
+            {copy.packsNote || 'Prix estimés sur la base d’un tarif moyen de 30 €/h. Le tarif exact est fixé par chaque prof — affiché sur son profil. Le prof reçoit toujours 100 % de son tarif.'}
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {config.packs.map((p) => (
@@ -343,11 +354,11 @@ export default function CampaignLanding({ config }) {
                 <p className="text-sm text-primary font-semibold mb-3">{p.tagline}</p>
                 <div className="mb-3 pb-3 border-b border-gray-100">
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-2xl font-extrabold text-slate-900">{p.price}</span>
+                    <span className="text-2xl font-extrabold text-slate-900">{prixDe(p)}</span>
                     <span className="text-sm text-gray-500">{p.priceNote}</span>
                   </div>
                   {p.pack !== 0 && (
-                    <p className="text-xs text-gray-400 mt-0.5">ou en 3x sans frais avec Klarna</p>
+                    <p className="text-xs text-gray-400 mt-0.5">ou en 3x sans frais</p>
                   )}
                 </div>
                 <ul className="space-y-2 text-sm text-gray-700 flex-1">
@@ -387,9 +398,11 @@ export default function CampaignLanding({ config }) {
             <h3 className="font-bold text-slate-900 mb-1 text-center">
               {selectedPack !== null ? copy.subjectsTitleActive : copy.subjectsTitleIdle}
             </h3>
-            <p className="text-center text-gray-500 text-xs mb-4">
-              {copy.subjectsNote}
-            </p>
+            {copy.subjectsNote && (
+              <p className="text-center text-gray-500 text-xs mb-4">
+                {copy.subjectsNote}
+              </p>
+            )}
             <div className="flex flex-wrap justify-center gap-2">
               {subjectsAffichees.map((s) => (
                 <button
@@ -424,6 +437,7 @@ export default function CampaignLanding({ config }) {
       </section>
 
       {/* ——— POURQUOI EDUKARAIB ——— */}
+      {copy.why?.length > 0 && (
       <section className="px-4 py-12 bg-gray-50">
         <div className="max-w-3xl mx-auto">
           <h2 className="text-2xl font-bold text-center text-slate-900 mb-8">{copy.whyTitle}</h2>
@@ -443,6 +457,7 @@ export default function CampaignLanding({ config }) {
           </div>
         </div>
       </section>
+      )}
 
       {/* ——— TÉMOIGNAGES (si la campagne en a de vrais) ——— */}
       {/* ⚠️ /bac porte encore deux témoignages inventés : à remplacer par de
@@ -489,6 +504,7 @@ export default function CampaignLanding({ config }) {
       )}
 
       {/* ——— FAQ ——— */}
+      {config.faq.length > 0 && (
       <section className="px-4 py-12 bg-gray-50">
         <div className="max-w-2xl mx-auto">
           <h2 className="text-2xl font-bold text-center text-slate-900 mb-6">{copy.faqTitle}</h2>
@@ -513,8 +529,10 @@ export default function CampaignLanding({ config }) {
           </p>
         </div>
       </section>
+      )}
 
       {/* ——— CTA FINAL ——— */}
+      {copy.finalCta && (
       <section className="px-4 py-14 bg-slate-900 text-white text-center">
         <div className="max-w-xl mx-auto">
           <p className="text-yellow-400 font-bold text-sm mb-2">
@@ -531,6 +549,7 @@ export default function CampaignLanding({ config }) {
           </button>
         </div>
       </section>
+      )}
 
       {/* ——— CTA collant mobile (82 % du trafic) ——— */}
       <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/90 backdrop-blur border-t border-gray-100 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(0,0,0,0.12)]">

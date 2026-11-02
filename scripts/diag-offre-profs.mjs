@@ -21,6 +21,7 @@
    ———————————————————————————————————————————————————————————— */
 
 import { initializeApp } from 'firebase/app';
+import { connecterAdmin } from './_sessionAdmin.mjs';
 import { getFirestore, collection, getDocs, query, where } from 'firebase/firestore';
 // Règle partagée avec le produit (bandeau d'état du prof) : une seule source.
 import { nbCreneaux } from '../frontend/lib/offreProf.js';
@@ -34,6 +35,8 @@ const app = initializeApp({
   appId: '1:827164038836:web:8f0ce9776e18d1b03da9e1',
 });
 const db = getFirestore(app);
+// Depuis le verrou du 23/10/2026, `users` ne se lit plus sans droits : session admin.
+await connecterAdmin(app);
 
 const snap = await getDocs(query(collection(db, 'users'), where('role', '==', 'teacher')));
 const profs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));

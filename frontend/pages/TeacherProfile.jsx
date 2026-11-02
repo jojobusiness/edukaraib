@@ -11,6 +11,7 @@ import { getCampaignPack, getCampaignSubject, setChatDraft } from '../lib/bacCam
 import { instantaneEleve } from '../lib/profils';
 import { toast } from 'sonner';
 import fetchWithAuth from '../utils/fetchWithAuth';
+import { nbCreneaux } from '../lib/offreProf';
 
 const DAYS_ORDER = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
@@ -816,8 +817,13 @@ export default function TeacherProfile() {
   // Creneaux disponibles du prof (pour le formulaire d'abonnement)
   // Ancien format ({ Lun: [9,10] }) et nouveau ({ 'YYYY-MM-DD': { Lun: [9,10] } })
   // peuvent cohabiter dans le meme objet — on route chaque entree selon sa forme
+  // 02/11/2026 : seulement les créneaux à venir. Avec des semaines passées, le
+  // bouton Réserver ouvrait un calendrier vide (dernière semaine de Fawzi : mars).
   const availableSlots = useMemo(() => {
-    const avail = teacher?.availability || {};
+    const brut = teacher?.availability || {};
+    const parSemaine = Object.keys(brut).some((k) => /^\d{4}-\d{2}-\d{2}$/.test(k));
+    const avail = Object.fromEntries(Object.entries(brut).filter(([k]) => !parSemaine
+      || (/^\d{4}-\d{2}-\d{2}$/.test(k) && nbCreneaux({ [k]: brut[k] }) > 0)));
     const slots = [];
     const seen = new Set();
     const addSlot = (day, h) => {
@@ -1407,7 +1413,7 @@ export default function TeacherProfile() {
                 </div> */}
 
                 {/* Bouton contacter */}
-                {!isOwnProfile && (
+                {!isOwnProfile && availableSlots.length > 0 && (
                   <button
                     className="mt-4 w-full bg-yellow-400 text-slate-900 px-5 py-3 rounded-xl font-semibold shadow hover:bg-yellow-500 transition"
                     onClick={handleContactTeacher}
@@ -1443,7 +1449,7 @@ export default function TeacherProfile() {
                 )}
 
                 {/* Sélecteurs côte à côte */}
-                <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className={`mt-4 grid-cols-2 gap-3 ${availableSlots.length > 0 ? "grid" : "hidden"}`}>
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Mode</label>
                     {onlyMode ? (
@@ -1503,7 +1509,7 @@ export default function TeacherProfile() {
                   availableSlots.length === 0 ? (
                     <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
                       <p className="text-sm text-amber-900">
-                        Ce professeur n'a pas encore mis ses créneaux en ligne :
+                        Pas de créneau en ligne pour le moment :
                         <strong> écrivez-lui, il vous répond avec ses disponibilités.</strong>
                       </p>
                       <button
@@ -1531,7 +1537,7 @@ export default function TeacherProfile() {
                 )}
 
                 {/* Essai gratuit */}
-                {(!isTeacherUser && !isOwnProfile) && teacher.trial_enabled === true && (
+                {(!isTeacherUser && !isOwnProfile) && availableSlots.length > 0 && teacher.trial_enabled === true && (
                   <button
                     disabled={trialUsed}
                     className={`mt-2 w-full px-5 py-3 rounded-xl font-semibold shadow transition ${
@@ -1540,7 +1546,7 @@ export default function TeacherProfile() {
                         : 'bg-green-500 text-white hover:bg-green-600'
                     }`}
                     onClick={() => {
-                      if (!auth.currentUser) return navigate("/login");
+                      if (!auth.currentUser) return navigate(`/register?express=1&next=${encodeURIComponent(`/profils/${teacherId}`)}`);
                       if (trialUsed) return;
                       setTrialMode(true);
                       setPackChoice(0);
@@ -2045,7 +2051,7 @@ export default function TeacherProfile() {
                 </div> */
                 }
                 {/* Bouton contacter */}
-                {!isOwnProfile && (
+                {!isOwnProfile && availableSlots.length > 0 && (
                   <button
                     className="mt-4 w-full bg-yellow-400 text-slate-900 px-5 py-3 rounded-xl font-semibold shadow hover:bg-yellow-500 transition"
                     onClick={handleContactTeacher}
@@ -2081,7 +2087,7 @@ export default function TeacherProfile() {
                 )}
 
                 {/* Mode + Pack côte à côte */}
-                <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className={`mt-4 grid-cols-2 gap-3 ${availableSlots.length > 0 ? "grid" : "hidden"}`}>
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Mode</label>
                     {onlyMode ? (
@@ -2161,7 +2167,7 @@ export default function TeacherProfile() {
                   availableSlots.length === 0 ? (
                     <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4">
                       <p className="text-sm text-amber-900">
-                        Ce professeur n'a pas encore mis ses créneaux en ligne :
+                        Pas de créneau en ligne pour le moment :
                         <strong> écrivez-lui, il vous répond avec ses disponibilités.</strong>
                       </p>
                       <button
@@ -2189,7 +2195,7 @@ export default function TeacherProfile() {
                 )}
 
                 {/* Essai gratuit */}
-                {(!isTeacherUser && !isOwnProfile) && teacher.trial_enabled === true && (
+                {(!isTeacherUser && !isOwnProfile) && availableSlots.length > 0 && teacher.trial_enabled === true && (
                   <button
                     disabled={trialUsed}
                     className={`mt-2 w-full px-5 py-3 rounded-xl font-semibold shadow transition ${
@@ -2198,7 +2204,7 @@ export default function TeacherProfile() {
                         : 'bg-green-500 text-white hover:bg-green-600'
                     }`}
                     onClick={() => {
-                      if (!auth.currentUser) return navigate("/login");
+                      if (!auth.currentUser) return navigate(`/register?express=1&next=${encodeURIComponent(`/profils/${teacherId}`)}`);
                       if (trialUsed) return;
                       setTrialMode(true);
                       setPackChoice(0);

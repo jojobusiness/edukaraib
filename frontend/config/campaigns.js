@@ -165,16 +165,12 @@ export const BAC_CAMPAIGN = {
 
 /* ══════════════════════════ RENTRÉE 2026 ═══════════════════════════════════ */
 
-/* ⚠️ À CONFIRMER : date de rentrée de l’académie de Guyane (elle peut différer
-   de la métropole et des Antilles). Le 01/09 est une hypothèse de travail ;
-   elle ne change que la bascule preparation → demarrage, pas le tunnel. */
-const DATE_RENTREE = new Date('2026-09-01T07:00:00-03:00');
-const FIN_PREMIERES_SEM = new Date('2026-09-21T00:00:00-03:00');
-const DATE_PREMIERES_NOTES = new Date('2026-10-05T00:00:00-03:00');
-const FIN_CAMPAGNE = new Date('2026-11-03T00:00:00-03:00'); // Toussaint
-
+/* 02/11/2026 — « Rentrée de novembre » et page SIMPLIFIÉE à la demande de Joseph
+   (« trop d'informations, on est perdu ») : un titre, les formules, la matière,
+   3 lignes. Plus de profs, de FAQ ni de blocs qui répètent la même chose. */
 export const RENTREE_CAMPAIGN = {
   id: 'rentree',
+  sansProfs: true,
   profsFallback: 12,
 
   /* ⚠️ RÈGLE : une matière ne reste dans cette liste que si AU MOINS UN prof
@@ -199,48 +195,18 @@ export const RENTREE_CAMPAIGN = {
   ],
 
   seo: {
-    title: 'Soutien scolaire rentrée 2026 — Guyane & Antilles | EduKaraib',
+    title: 'Rentrée de novembre : cours particuliers Guyane & Antilles | EduKaraib',
     description: 'Un prof caribéen pour bien démarrer l’année : collège, lycée, BTS. Visio ou présentiel, payable en 3x, satisfait ou remboursé.',
     url: 'https://edukaraib.com/rentree',
   },
   pixelName: 'Landing Rentrée',
 
-  getPhase(now = new Date()) {
-    if (now < DATE_RENTREE) return 'preparation';
-    if (now < FIN_PREMIERES_SEM) return 'demarrage';
-    if (now < DATE_PREMIERES_NOTES) return 'installation';
-    if (now < FIN_CAMPAGNE) return 'notes';
-    return 'apres';
-  },
+  getPhase() { return 'novembre'; },
 
   heroes: {
-    preparation: {
-      title: 'La rentrée se prépare maintenant, pas en octobre.',
-      subtitle: 'Reprenez les bases avant le jour J avec un prof caribéen — visio ou près de chez vous. Payable en 3x.',
-      countdownLabel: 'Rentrée dans',
-      countdownTarget: DATE_RENTREE,
-    },
-    demarrage: {
-      title: 'Les premières semaines décident de toute l’année.',
-      subtitle: 'Un prof dès maintenant, c’est une année qui démarre bien au lieu d’un rattrapage en décembre.',
-      countdownLabel: null,
-      countdownTarget: null,
-    },
-    installation: {
-      title: 'Prenez de l’avance pendant que le programme est encore accessible.',
-      subtitle: 'Un cours par semaine suffit à installer le rythme. Profs caribéens vérifiés, visio ou présentiel.',
-      countdownLabel: 'Premières notes dans',
-      countdownTarget: DATE_PREMIERES_NOTES,
-    },
-    notes: {
-      title: 'Les premières notes sont tombées. Il est encore temps de corriger le tir.',
-      subtitle: 'Une matière qui décroche se rattrape en octobre. En février, c’est une autre histoire.',
-      countdownLabel: null,
-      countdownTarget: null,
-    },
-    apres: {
-      title: 'Un prof caribéen pour reprendre les bases, toute l’année.',
-      subtitle: 'Visio ou près de chez vous, à votre rythme. Payable en 3x.',
+    novembre: {
+      title: 'Rentrée de novembre : reprenez l’année du bon pied.',
+      subtitle: 'Un prof caribéen, en visio ou près de chez vous.',
       countdownLabel: null,
       countdownTarget: null,
     },
@@ -255,111 +221,58 @@ export const RENTREE_CAMPAIGN = {
   packs: [
     {
       pack: 0,
-      name: 'Coup de pouce',
-      tagline: 'Une matière qui coince',
-      price: '≈ 30 €',
+      name: 'À l’unité',
+      tagline: 'Pour débloquer un chapitre',
+      price: '',
       priceNote: 'l’heure',
-      points: ['Cours à l’unité, sans engagement', 'Prof vérifié, visio ou présentiel', 'Pour débloquer un chapitre précis'],
+      points: ['Sans engagement'],
       discount: '-2 € avec votre code partenaire',
       highlight: false,
-      cta: 'Choisir ce format',
+      cta: 'Choisir',
     },
     {
       pack: 5,
-      name: 'Pack Démarrage 5h',
-      tagline: 'Bien lancer l’année',
-      price: '≈ 150 €',
-      priceNote: '6h de cours · soit ~25 €/h',
-      points: ['+1h OFFERTE (6h au total)', 'Payable en 3x sans frais (Klarna)', 'De quoi remettre les bases à niveau'],
+      name: 'Pack 5h',
+      tagline: 'Pour remettre les bases à niveau',
+      price: '',
+      priceNote: '6h de cours',
+      points: ['1h offerte'],
       discount: '-10 € avec votre code partenaire',
       highlight: false,
-      cta: 'Choisir le Pack 5h',
+      cta: 'Choisir',
     },
     {
       pack: 10,
-      name: 'Pack Trimestre 10h',
-      tagline: 'Un cours par semaine jusqu’à la Toussaint',
-      price: '≈ 300 €',
-      priceNote: '12h de cours · soit ~25 €/h',
-      points: [
-        '+2h OFFERTES (12h au total)',
-        'Le rythme qui fait progresser : 1h par semaine',
-        'Payable en 3x sans frais (Klarna)',
-      ],
+      name: 'Pack 10h',
+      tagline: 'Un cours par semaine jusqu’en janvier',
+      price: '',
+      priceNote: '12h de cours',
+      points: ['2h offertes'],
       discount: '-20 € avec votre code partenaire',
       highlight: true,
-      cta: 'Choisir le Pack Trimestre',
+      cta: 'Choisir',
     },
   ],
 
-  faq: [
-    {
-      q: 'Comment mon code partenaire est-il appliqué ?',
-      a: 'Si vous êtes arrivé(e) ici avec le code d’un partenaire (votre association de parents, l’établissement, un créateur), il est enregistré automatiquement : la remise s’applique toute seule au moment du paiement. Avec le code d’une association ou d’un établissement, elle reste ensuite attachée à votre compte, pour tous vos enfants.',
-    },
-    {
-      q: 'À quelle fréquence faut-il prendre des cours ?',
-      a: 'Une heure par semaine suffit dans la grande majorité des cas — c’est la régularité qui fait progresser, pas l’intensité. C’est exactement ce que couvre le Pack Trimestre.',
-    },
-    {
-      q: 'Mon enfant est au collège ou au lycée, c’est possible ?',
-      a: 'Oui. Nos profs couvrent le collège, le lycée et le supérieur (BTS, licence — comptabilité, gestion, droit, économie). Choisissez la matière, on vous montre directement les profs disponibles.',
-    },
-    {
-      q: 'Je peux vraiment payer en 3 fois ?',
-      a: 'Oui — au paiement, choisissez Klarna pour régler en 3 fois sans frais. Apple Pay et Google Pay sont aussi disponibles.',
-    },
-    {
-      q: 'Et si le cours ne convient pas ?',
-      a: 'Première séance satisfait ou remboursé : vous pouvez demander le remboursement directement depuis votre espace, sans justification.',
-    },
-  ],
+  faq: [],
 
   copy: {
     heroCtaPrimary: 'Choisir ma formule',
-    heroCtaSecondary: 'Voir les profs disponibles',
-    profsTitle: 'Des profs disponibles pour cette rentrée',
-    profsSubtitle: 'Caribéens, vérifiés — visio ou près de chez vous. Choisissez, puis réservez vos heures.',
-    profsCtaAll: 'Voir tous les profs',
     packsTitle: 'Choisissez votre formule',
-    /* Pas de « le plus choisi » ici : l’affirmation ne serait pas vérifiable
-       sur une campagne qui démarre. Même effet d’orientation, zéro mensonge. */
-    badgeLabel: '⭐ Recommandé pour l’année',
-    subjectsTitleIdle: 'La matière',
-    subjectsTitleActive: '👇 Dernière étape : la matière',
-    subjectsNote: 'On vous montre directement les profs disponibles dans cette matière.',
-    stepsTitle: 'Comment ça marche',
+    packsNote: 'Prix les plus bas sur le site, frais inclus. Le prix exact dépend du prof et s’affiche sur son profil.',
+    badgeLabel: '⭐ Recommandé',
+    subjectsTitleIdle: 'Puis la matière',
+    subjectsTitleActive: '👇 Maintenant, la matière',
+    subjectsNote: '',
+    stepsTitle: 'Ensuite',
     steps: [
-      { n: '1', t: 'Choisissez la formule', d: 'Et la matière — 10 secondes.' },
-      { n: '2', t: 'Créez le compte en 30s', d: 'Email, mot de passe, prénom. C’est tout.' },
-      { n: '3', t: 'Contactez le prof', d: 'Message pré-rempli, il vous propose un créneau cette semaine. Vous payez après confirmation.' },
+      { n: '1', t: 'Écrivez au prof', d: 'Il vous propose un horaire.' },
+      { n: '2', t: 'Payez une fois le cours accepté', d: 'En 3x sans frais sur les packs.' },
+      { n: '3', t: 'Faites le cours', d: 'Première séance remboursable.' },
     ],
-    whyTitle: 'Pourquoi EduKaraib',
-    why: [
-      { icon: 'GraduationCap', t: 'Profs caribéens vérifiés', d: 'Des profs qui connaissent la réalité d’ici — Guyane, Antilles, en ligne.' },
-      { icon: 'Video', t: 'Visio ou présentiel', d: 'Depuis la maison ou près de chez vous, selon vos horaires.' },
-      { icon: 'CreditCard', t: 'Paiement en 3x sans frais', d: 'Klarna, Apple Pay, Google Pay — au choix.' },
-      { icon: 'ShieldCheck', t: 'Satisfait ou remboursé', d: 'Première séance remboursable en 1 clic depuis votre espace.' },
-    ],
-    /* Pas de témoignages inventés sur une page neuve : un concurrent lit ces
-       pages, et la crédibilité est l’actif principal d’une marketplace de
-       soutien scolaire. On affiche à la place des preuves vérifiables.
-       À basculer sur de vrais avis (prénom + commune) dès les premières
-       ventes rentrée. */
+    why: [],
     testimonials: null,
-    proofPoints: [
-      { t: 'Le prof touche 100 % de son tarif', d: 'Notre commission s’ajoute au prix, elle n’est jamais prélevée sur le prof. C’est ce qui nous permet d’attirer les bons profs d’ici.' },
-      { t: 'Paiement après confirmation du créneau', d: 'Vous échangez avec le prof, vous validez l’horaire, et seulement ensuite vous payez.' },
-      { t: 'Facture téléchargeable immédiatement', d: 'Chaque paiement génère une facture PDF depuis votre espace.' },
-      { t: 'Remboursement en 1 clic sur la première séance', d: 'Sans justification à fournir, depuis votre espace.' },
-    ],
-    faqTitle: 'Questions fréquentes',
-    scarcity: ({ verifies, disponibles }) => (disponibles > 0
-      ? `🔥 ${verifies} profs vérifiés · ${disponibles} avec des créneaux ouverts cette semaine`
-      : `🔥 ${verifies} profs caribéens vérifiés pour la rentrée`),
-    finalCta: (phase) => (phase === 'notes'
-      ? 'Une note qui décroche se rattrape maintenant.'
-      : 'L’année se joue dans les premières semaines.'),
+    proofPoints: [],
     stickyCta: 'Choisir ma formule',
   },
 };
