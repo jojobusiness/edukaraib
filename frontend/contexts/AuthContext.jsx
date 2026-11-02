@@ -4,6 +4,7 @@ import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { marquerVenue } from '../lib/derniereVenue';
 import { onAuthStateChanged, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { toast } from 'sonner';
+import { codeARattacher, noterCodeRattache } from '../lib/bacCampaign';
 
 const AuthCtx = createContext({ user: null, authReady: false });
 
@@ -33,6 +34,14 @@ export function AuthProvider({ children }) {
         // revenu ». Volontairement non attendue et silencieuse : une statistique
         // ne doit jamais retarder ni bloquer une connexion.
         marquerVenue(u, (uid) => updateDoc(doc(db, 'users', uid), { lastSeenAt: serverTimestamp() }));
+        // Déjà inscrit et arrivé par le lien d'un partenaire : le code suit le compte,
+        // même s'il paie plus tard sur un autre navigateur (TikTok puis Safari).
+        const code = codeARattacher(u?.uid);
+        if (code) {
+          updateDoc(doc(db, 'users', u.uid), { code_campagne: code })
+            .then(() => noterCodeRattache(u.uid, code))
+            .catch(() => {});
+        }
       });
       return () => unsub();
     });

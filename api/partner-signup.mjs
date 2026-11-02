@@ -100,7 +100,7 @@ export default async function handler(req, res) {
 
   // await obligatoire : Vercel gèle la fonction dès la réponse envoyée
   await Promise.all([
-    sendPartnerWelcomeEmail({ to: email, structureName, contactName, code }),
+    sendPartnerWelcomeEmail({ to: email, structureName, contactName, code, kind }),
     sendAdminNewPartnerEmail({ structureName, kind: PARTNER_KINDS[kind], email, code }),
   ]);
 

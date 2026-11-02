@@ -284,3 +284,39 @@ describe('checkout — le prix vient du profil du prof, jamais du cours', () => 
     expect(res.body.error).toBe('TARIF_PROF_ABSENT');
   });
 });
+
+// 02/11/2026 — Le code suit le compte : inscription dans TikTok, paiement ailleurs.
+describe('checkout — code gardé sur le compte', () => {
+  const partenaires = (extra = {}) => ({ asso1: asso(extra) });
+  it('code oublié par le navigateur mais présent sur le compte → remise, reversement, rattachement', async () => {
+    seed({ partners: partenaires(), parent: { acquisition: { code: 'APEL973' } } });
+    const res = await pay();
+    expect(res.statusCode).toBe(200);
+    expect(amount()).toBe(3300);
+    expect(session().metadata.partner_uid).toBe('asso1');
+    expect(session().metadata.partner_link).toBe('1');
+    expect(session().metadata.teacher_amount_cents).toBe('2500');
+  });
+  it('code_campagne : même chose pour un compte déjà inscrit', async () => {
+    seed({ partners: partenaires(), parent: { code_campagne: 'APEL973' } });
+    await pay();
+    expect(session().metadata.partner_uid).toBe('asso1');
+  });
+  it('code inconnu ou parrainage sur le compte → paiement normal, sans erreur', async () => {
+    seed({ partners: partenaires(), parent: { acquisition: { code: 'REF-XYZ123' } } });
+    const res = await pay();
+    expect(res.statusCode).toBe(200);
+    expect(amount()).toBe(3500);
+  });
+  it('partenaire désactivé → aucun effet', async () => {
+    seed({ partners: partenaires({ active: false }), parent: { code_campagne: 'APEL973' } });
+    await pay();
+    expect(amount()).toBe(3500);
+    expect(session().metadata.partner_uid).toBe('');
+  });
+  it('un ancien code sur le compte ne s’applique pas tout seul', async () => {
+    seed({ partners: { inf1: legacy() }, parent: { code_campagne: 'LEGACY42' } });
+    await pay();
+    expect(amount()).toBe(3500);
+  });
+});

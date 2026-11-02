@@ -14,6 +14,7 @@ import 'react-phone-number-input/style.css';
 import fetchWithAuth from '../utils/fetchWithAuth';
 import { getCampaignSubject } from '../lib/bacCampaign';
 import { signInWithGoogle, consumeGoogleRedirect } from '../lib/googleAuth';
+import { navigateurIntegre } from '../lib/navigateur';
 import { ensureUserDoc } from '../utils/ensureUserDoc';
 import { getAcquisitionRecord } from '../lib/acquisition';
 import { HEARD_FROM_OPTIONS } from '../../api/_acquisition.mjs';
@@ -564,7 +565,7 @@ export default function Register() {
         </div>
 
         {/* Connexion Google — 1 tap, supprime la friction mobile (82 % du trafic) */}
-        {!afterSignupTeacher && !waitingEmailVerify && (
+        {!afterSignupTeacher && !waitingEmailVerify && !navigateurIntegre() && (
           <>
             <button
               type="button"

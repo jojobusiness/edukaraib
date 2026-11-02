@@ -4,6 +4,7 @@ import { auth, db } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { useNavigate, Link, useLocation, useSearchParams } from 'react-router-dom';
 import { signInWithGoogle, consumeGoogleRedirect } from '../lib/googleAuth';
+import { navigateurIntegre } from '../lib/navigateur';
 import { ensureUserDoc } from '../utils/ensureUserDoc';
 import { pixelTrack } from '../lib/metaPixel';
 
@@ -137,6 +138,8 @@ export default function Login() {
             Connecte-toi à ta plateforme d'accompagnement scolaire aux Caraïbes.
           </p>
         </div>
+        {!navigateurIntegre() && (
+          <>
         <button
           type="button"
           onClick={handleGoogle}
@@ -149,6 +152,8 @@ export default function Login() {
         <div className="flex items-center gap-3 my-4 text-xs text-gray-400">
           <span className="flex-1 h-px bg-gray-200" /> ou par email <span className="flex-1 h-px bg-gray-200" />
         </div>
+          </>
+        )}
 
         <form className="space-y-4" onSubmit={handleLogin}>
           <div>

@@ -16,6 +16,7 @@ import ParentRoute from './components/ParentRoute';
 import PrivateRoute from './components/PrivateRoute';
 import StudentRoute from './components/StudentRoute';
 import RequireRole from './routes/RequireRole';
+import RedirectionPartenaire from './components/RedirectionPartenaire';
 
 // Tout le reste en lazy : chaque page n'est telechargee qu'a la navigation.
 // Avant : 1 bundle monolithique de 2,48 Mo charge par tous les visiteurs.
@@ -258,6 +259,8 @@ function App() {
             
             {/* Partenaires (associations, établissements, créateurs) */}
             <Route path="/partenaire" element={<PartnerHome />} />
+            <Route path="/createurs" element={<Navigate to="/partenaire?type=createur" replace />} />
+            <Route path="/p/:code" element={<RedirectionPartenaire />} />
             <Route path="/partenaire/espace" element={<PartnerSpace />} />
             <Route path="/partenaire/profil" element={<PartnerProfile />} />
             {/* Anciennes adresses, déjà envoyées dans des mails */}

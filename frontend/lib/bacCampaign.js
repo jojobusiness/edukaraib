@@ -9,7 +9,11 @@
 
 const CAMPAIGN_KEY = 'edk_bac_campaign';
 const CHAT_DRAFT_KEY = 'edk_chat_draft';
-const TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 jours
+// 90 jours depuis le 02/11/2026 (14 avant) : une famille peut suivre un créateur
+// longtemps avant d'acheter. Même durée que la source d'acquisition.
+const TTL_MS = 90 * 24 * 60 * 60 * 1000;
+const UN_JOUR_MS = 24 * 60 * 60 * 1000;
+const CODE_RE = /^[A-Z0-9-]{4,20}$/;
 
 function readCampaign() {
   try {
@@ -40,6 +44,50 @@ export function getCampaignCode() {
   const c = readCampaign();
   const code = (c?.code || '').trim().toUpperCase();
   return /^[A-Z0-9-]{4,20}$/.test(code) ? code : null;
+}
+
+/** Code partenaire porté par une adresse : ?code=, ?partenaire= ou /p/CODE (ou null). */
+export function codeDepuisUrl(search = '', pathname = '') {
+  const p = new URLSearchParams(search);
+  const court = String(pathname).match(/^\/p\/([^/]+)/)?.[1] || '';
+  let brut = p.get('code') || p.get('partenaire') || court;
+  try { brut = decodeURIComponent(brut); } catch { /* garde la valeur brute */ }
+  const code = String(brut).trim().toUpperCase();
+  return CODE_RE.test(code) ? code : null;
+}
+
+/**
+ * À appeler au démarrage, sur N'IMPORTE QUELLE page (02/11/2026) : avant, seuls
+ * /bac et /rentree lisaient le code. Un lien vers l'accueil ou une fiche prof
+ * ne donnait ni remise à la famille, ni reversement au créateur.
+ * Compte aussi un clic par code et par 24 h. Ne lève jamais.
+ */
+export function capterCodePartenaire() {
+  if (typeof window === 'undefined') return;
+  try {
+    const code = codeDepuisUrl(window.location.search, window.location.pathname);
+    if (!code) return;
+    saveCampaign({ code });
+    const cle = `edk_clic_${code}`;
+    if (Date.now() - Number(localStorage.getItem(cle) || 0) < UN_JOUR_MS) return;
+    localStorage.setItem(cle, String(Date.now()));
+    fetch('/api/partner-clic', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch { /* stockage bloqué : sans gravité */ }
+}
+
+/** Le code à poser sur ce compte, s'il n'y a pas déjà été posé (ou null). */
+export function codeARattacher(uid) {
+  const code = getCampaignCode();
+  if (!code || !uid) return null;
+  try { return localStorage.getItem(`edk_code_pose_${uid}`) === code ? null : code; } catch { return code; }
+}
+export function noterCodeRattache(uid, code) {
+  try { localStorage.setItem(`edk_code_pose_${uid}`, code); } catch { /* sans gravité */ }
 }
 
 /** Pack choisi sur la landing : 0 (solo), 5 ou 10 (ou null si rien) */

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { auth, db } from '../lib/firebase';
 import {
   createUserWithEmailAndPassword,
@@ -22,8 +22,8 @@ const ERRORS = {
   'auth/weak-password': 'Mot de passe trop faible (6 caractères minimum).',
   CODE_TAKEN: 'Ce code est déjà pris : choisissez-en un autre, ou laissez le champ vide.',
   INVALID_CODE: 'Le code doit faire de 4 à 20 caractères : lettres, chiffres ou tirets.',
-  INVALID_STRUCTURE_NAME: 'Indiquez le nom de votre structure.',
-  EMAIL_USED_BY_OTHER_ACCOUNT: 'Cette adresse est celle d’un compte parent, élève ou professeur. Utilisez l’adresse de la structure.',
+  INVALID_STRUCTURE_NAME: 'Indiquez votre nom.',
+  EMAIL_USED_BY_OTHER_ACCOUNT: 'Cette adresse est celle d’un compte parent, élève ou professeur. Utilisez une autre adresse.',
   EMAIL_ALREADY_PARTNER: 'Cette adresse est déjà celle d’un partenaire : connectez-vous.',
 };
 const errorText = (err) => ERRORS[err?.code] || ERRORS[err?.message] || `Une erreur est survenue : ${err?.message || ''}`;
@@ -47,8 +47,17 @@ const AVANTAGES = [
   { icon: '🏦', title: 'Reversements automatiques', desc: 'Connectez le compte bancaire de votre structure : chaque cours payé vous est reversé, 7 jours après le paiement.' },
 ];
 
+const AVANTAGES_CREATEUR = [
+  { icon: '🔗', title: 'Un lien et un code à vous', desc: 'edukaraib.com/p/VOTRECODE : assez court pour votre bio ou pour le dire en vidéo.' },
+  { icon: '🔁', title: 'Toute l’année', desc: 'La famille reste rattachée à votre code : vous touchez 2 € par heure sur tous ses achats, sans rien refaire.' },
+  { icon: '📊', title: 'Vos chiffres en direct', desc: 'Clics, inscrits, cours payés et sommes à recevoir, dans votre espace.' },
+  { icon: '🏦', title: 'Paiement automatique', desc: 'Connectez votre compte bancaire : chaque cours payé vous est reversé 7 jours après le paiement.' },
+];
+
 export default function PartnerHome() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const createur = params.get('type') === 'createur';
   const [mode, setMode] = useState('register'); // 'login' | 'register'
   const [loading, setLoading] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
@@ -58,7 +67,7 @@ export default function PartnerHome() {
   const [loginPassword, setLoginPassword] = useState('');
 
   const [form, setForm] = useState({
-    structureName: '', kind: 'association', contactName: '', email: '', phone: '', code: '', password: '', confirm: '',
+    structureName: '', kind: createur ? 'createur' : 'association', contactName: '', email: '', phone: '', code: '', password: '', confirm: '',
   });
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -151,24 +160,25 @@ export default function PartnerHome() {
           <div className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-full px-4 py-1.5">
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
             <span className="text-emerald-700 text-xs font-bold uppercase tracking-wider">
-              Associations · établissements · communautés
+              {createur ? 'Créateurs de contenu' : 'Associations · établissements · communautés'}
             </span>
           </div>
 
           <div>
             <h1 className="text-4xl md:text-5xl font-extrabold text-gray-900 leading-tight tracking-tight">
-              Vos familles paient moins cher.
-              <span className="block text-primary">Votre structure reçoit 2 € par heure.</span>
+              {createur ? 'Votre communauté paie moins cher.' : 'Vos familles paient moins cher.'}
+              <span className="block text-primary">{createur ? 'Vous gagnez 2 € par heure de cours.' : 'Votre structure reçoit 2 € par heure.'}</span>
             </h1>
             <p className="mt-4 text-gray-500 text-lg leading-relaxed max-w-md">
-              Un code pour vos familles : 2 € de remise par heure de cours avec des professeurs de Guyane
-              et des Antilles, et 2 € par heure reversés à votre structure, sur tous leurs achats de l’année scolaire.
+              {createur
+                ? 'Votre code : 2 € de remise par heure de cours avec des professeurs de Guyane et des Antilles, et 2 € par heure pour vous, sur tous les achats de la famille pendant l’année scolaire. Aucun frais, aucune obligation.'
+                : 'Un code pour vos familles : 2 € de remise par heure de cours avec des professeurs de Guyane et des Antilles, et 2 € par heure reversés à votre structure, sur tous leurs achats de l’année scolaire.'}
             </p>
           </div>
 
           <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
             <div className="grid grid-cols-3 px-5 py-3 bg-gray-50 border-b border-gray-100 text-xs font-bold uppercase tracking-widest text-gray-400">
-              <span>Achat</span><span className="text-right">Famille</span><span className="text-right">Votre structure</span>
+              <span>Achat</span><span className="text-right">Famille</span><span className="text-right">{createur ? 'Vous' : 'Votre structure'}</span>
             </div>
             <div className="divide-y divide-gray-50">
               {grid.map((r) => (
@@ -182,7 +192,7 @@ export default function PartnerHome() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {AVANTAGES.map((a) => (
+            {(createur ? AVANTAGES_CREATEUR : AVANTAGES).map((a) => (
               <div key={a.title} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex gap-4 items-start">
                 <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-xl shrink-0">{a.icon}</div>
                 <div>
@@ -228,14 +238,16 @@ export default function PartnerHome() {
               </form>
             ) : (
               <form onSubmit={handleRegister} className="space-y-4">
-                <Field label="Nom de la structure">
-                  <input className={inputCls} value={form.structureName} onChange={set('structureName')} required placeholder="APE du collège…" />
+                <Field label={createur ? 'Votre nom de créateur' : 'Nom de la structure'}>
+                  <input className={inputCls} value={form.structureName} onChange={set('structureName')} required placeholder={createur ? '@votrecompte' : 'APE du collège…'} />
                 </Field>
-                <Field label="Type">
-                  <select className={inputCls} value={form.kind} onChange={set('kind')}>
-                    {Object.entries(PARTNER_KINDS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-                  </select>
-                </Field>
+                {!createur && (
+                  <Field label="Type">
+                    <select className={inputCls} value={form.kind} onChange={set('kind')}>
+                      {Object.entries(PARTNER_KINDS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                    </select>
+                  </Field>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Field label="Votre nom">
                     <input className={inputCls} value={form.contactName} onChange={set('contactName')} required autoComplete="name" />
@@ -244,10 +256,10 @@ export default function PartnerHome() {
                     <input type="tel" className={inputCls} value={form.phone} onChange={set('phone')} autoComplete="tel" />
                   </Field>
                 </div>
-                <Field label="Email de la structure">
+                <Field label={createur ? 'Email' : 'Email de la structure'}>
                   <input type="email" className={inputCls} value={form.email} onChange={set('email')} required autoComplete="email" />
                 </Field>
-                <Field label="Code souhaité (facultatif)" hint="Ex. APEL973. Laissez vide : nous le créons à partir du nom.">
+                <Field label="Code souhaité (facultatif)" hint={createur ? 'Ex. MARIE973. Laissez vide : nous le créons à partir du nom.' : 'Ex. APEL973. Laissez vide : nous le créons à partir du nom.'}>
                   <input className={`${inputCls} uppercase`} value={form.code} onChange={set('code')} maxLength={20} />
                 </Field>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -259,7 +271,7 @@ export default function PartnerHome() {
                   </Field>
                 </div>
                 <button type="submit" disabled={loading} className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-3.5 rounded-xl disabled:opacity-50 text-sm">
-                  {loading ? 'Création…' : 'Créer mon code partenaire'}
+                  {loading ? 'Création…' : createur ? 'Créer mon code' : 'Créer mon code partenaire'}
                 </button>
                 <p className="text-center text-xs text-gray-400">Votre code est actif tout de suite. Vos reversements arrivent automatiquement, 7 jours après chaque cours payé.</p>
               </form>

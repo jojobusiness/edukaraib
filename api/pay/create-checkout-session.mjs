@@ -3,7 +3,7 @@ import { adminDb, verifyAuth } from '../_firebaseAdmin.mjs';
 import { captureError } from '../_sentry.mjs';
 import {
   PARTNERS_COLLECTION, PARTNER_USAGES_COLLECTION, isPartnerModel, needsUsageChecks,
-  normalizePartnerCode, partnerAmounts, partnerRefusalReason,
+  normalizePartnerCode, PARTNER_CODE_REGEX, partnerAmounts, partnerRefusalReason,
 } from '../_partners.mjs';
 import { tarifsDuProf, montantProfCents, maxCoursDuPack } from '../_tarifs.mjs';
 
@@ -352,6 +352,25 @@ export default async function handler(req, res) {
       appliedCouponCodes.push(code);
     }
 
+  }
+
+  // 3) 02/11/2026 — Code gardé sur le compte. Le navigateur peut l'avoir perdu :
+  //    inscription dans TikTok, paiement plus tard dans Safari. Sans ce repli, la
+  //    famille payait plein tarif et le créateur n'était jamais payé. Seulement
+  //    le modèle partenaire : les anciens codes gardent leurs limites d'usage.
+  if (!partnerUid && payerSnap.exists) {
+    const fiche = payerSnap.data() || {};
+    for (const brut of [fiche.code_campagne, fiche.acquisition?.code]) {
+      const code = normalizePartnerCode(brut);
+      if (!PARTNER_CODE_REGEX.test(code)) continue;
+      const trouve = await adminDb.collection(PARTNERS_COLLECTION)
+        .where('code', '==', code).where('active', '==', true).limit(1).get();
+      if (trouve.empty || !isPartnerModel(trouve.docs[0].data())) continue;
+      if (await applyPartner(trouve.docs[0].id, trouve.docs[0].data(), code)) {
+        partnerLink = true;
+        break;
+      }
+    }
   }
 
   if (couponDiscountCents > 0) {

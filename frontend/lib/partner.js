@@ -6,8 +6,10 @@ export { PARTNER_KINDS, isPartnerModel };
 
 const SITE = 'https://edukaraib.com';
 
-/** Lien à partager : la landing capte le code et le garde jusqu'au paiement. */
-export const partnerShareLink = (code) => `${SITE}/rentree?code=${encodeURIComponent(code || '')}`;
+export const estCreateur = (partner) => partner?.kind === 'createur';
+
+/** Lien à partager : court, pour une bio ou à dire à l'oral. Le code est gardé jusqu'au paiement. */
+export const partnerShareLink = (code) => `${SITE}/p/${encodeURIComponent(code || '')}`;
 
 /** Grille affichée au partenaire, selon son modèle. */
 export function partnerGridRows(partner) {
@@ -26,7 +28,17 @@ export function partnerGridRows(partner) {
 }
 
 /** Message prêt à transférer aux familles (WhatsApp, mail, groupe Facebook). */
-export function partnerShareMessage({ code, structureName }) {
+export function partnerShareMessage({ code, structureName, kind }) {
+  if (kind === 'createur') {
+    return [
+      'Besoin d’un coup de main en maths, en français ou en anglais ?',
+      '',
+      'Sur EduKaraib, tu trouves des profs de Guyane et des Antilles, en visio ou près de chez toi.',
+      '',
+      `Avec mon code ${code}, c’est 2 € de moins par heure de cours.`,
+      `👉 edukaraib.com/p/${code}`,
+    ].join('\n');
+  }
   const who = structureName || 'Notre association';
   return [
     'Bonjour à tous,',

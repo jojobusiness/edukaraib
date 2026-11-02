@@ -8,10 +8,12 @@ import { AuthProvider } from './contexts/AuthContext';
 import { AppGuards } from './setup/mobile-and-errors';
 import { initAmplitude } from './lib/amplitude';
 import { captureAcquisition } from './lib/acquisition';
+import { capterCodePartenaire } from './lib/bacCampaign';
 
 // D'où vient ce visiteur (utm, fbclid, référent) : gardé 90 jours, écrit sur le
 // compte à l'inscription. Avant tout rendu, pour ne pas perdre la 1re URL.
 captureAcquisition();
+capterCodePartenaire();
 
 if (import.meta.env.PROD) {
   inject();

@@ -7,6 +7,7 @@
 //
 // Différence voulue avec le parrainage : ici la PREMIÈRE source gagne.
 import { touchFromArrival, shouldReplaceTouch, acquisitionRecord } from '../../api/_acquisition.mjs';
+import { getCampaignCode } from './bacCampaign';
 
 const KEY = 'ek_acquisition';
 const MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
@@ -47,5 +48,13 @@ export function captureAcquisition() {
 /** Objet à écrire dans `users/{uid}.acquisition` au moment de l'inscription. */
 export function getAcquisitionRecord(heardFrom = '') {
   if (typeof window === 'undefined') return acquisitionRecord(null, heardFrom);
-  return acquisitionRecord(readStored(), heardFrom);
+  const fiche = acquisitionRecord(readStored(), heardFrom);
+  // 02/11/2026 : la 1re source gagne, mais le code partenaire doit passer quand
+  // même, sinon un visiteur déjà venu par Facebook ne rapporte rien au créateur.
+  const code = getCampaignCode();
+  if (code) {
+    fiche.code = code;
+    if (['direct', 'inconnu'].includes(fiche.source)) fiche.source = 'partenaire';
+  }
+  return fiche;
 }

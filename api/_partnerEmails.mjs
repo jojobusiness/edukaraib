@@ -66,8 +66,24 @@ async function send({ to, subject, html }) {
 }
 
 /** Bienvenue — le code est actif dès l'inscription. */
-export function sendPartnerWelcomeEmail({ to, structureName, contactName, code }) {
+export function sendPartnerWelcomeEmail({ to, structureName, contactName, code, kind }) {
   const hello = contactName ? `Bonjour ${esc(contactName)},` : 'Bonjour,';
+  if (kind === 'createur') {
+    return send({
+      to,
+      subject: `Votre code EduKaraib : ${code}`,
+      html: layout('Votre code est actif', `
+      <p>${hello}</p>
+      <p>Voici votre code, à partager avec votre communauté :</p>
+      ${codeBox(code)}
+      <p>Votre lien : <strong>edukaraib.com/p/${esc(code)}</strong></p>
+      <p>Chaque famille qui passe par ce lien ou ce code bénéficie de <strong>2 € de remise par heure de cours</strong>, et vous recevez <strong>2 € par heure</strong>, sur tous ses achats jusqu’au 31 juillet 2027.</p>
+      ${gridTable()}
+      <p><strong>Pour être payé</strong>, connectez votre compte bancaire depuis votre espace (2 minutes, via Stripe, notre prestataire de paiement). Chaque cours payé vous est ensuite reversé automatiquement, 7 jours après le paiement.</p>
+      <p>Votre espace contient aussi un texte prêt à poster, et vos clics, inscrits et cours payés en direct.</p>`,
+      { url: `${appUrl()}/partenaire/espace`, label: 'Ouvrir mon espace' }),
+    });
+  }
   const who = esc(structureName);
   return send({
     to,

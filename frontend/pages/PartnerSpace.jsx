@@ -6,7 +6,7 @@ import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import fetchWithAuth from '../utils/fetchWithAuth';
-import { partnerGridRows, partnerShareLink, partnerShareMessage, isPartnerModel } from '../lib/partner';
+import { partnerGridRows, partnerShareLink, partnerShareMessage, isPartnerModel, estCreateur } from '../lib/partner';
 import { PARTNER_ROLE } from '../../api/_partners.mjs';
 
 const fmtEur = (n) => Number(n || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
@@ -37,7 +37,7 @@ function Card({ title, children }) {
 }
 
 /** Reversements : compte Stripe Connect du partenaire (comme les profs). */
-function PayoutSetup({ stripe, pending, onOpen, opening }) {
+function PayoutSetup({ stripe, pending, onOpen, opening, createur }) {
   let text;
   let label;
   if (stripe?.transfers_active) {
@@ -50,7 +50,7 @@ function PayoutSetup({ stripe, pending, onOpen, opening }) {
     text = 'Stripe vérifie vos informations (de quelques minutes à 2 jours). Les reversements partiront dès la vérification terminée.';
     label = 'Ouvrir mon compte Stripe';
   } else {
-    text = 'Pour recevoir vos reversements, connectez le compte bancaire de votre structure. Cela prend 2 minutes, via Stripe, notre prestataire de paiement (le même que pour nos professeurs).';
+    text = `Pour recevoir vos reversements, connectez ${createur ? 'votre compte bancaire' : 'le compte bancaire de votre structure'}. Cela prend 2 minutes, via Stripe, notre prestataire de paiement (le même que pour nos professeurs).`;
     label = 'Recevoir mes reversements';
   }
   return (
@@ -73,6 +73,7 @@ export default function PartnerSpace() {
   const [partner, setPartner] = useState(null);
   const [stripe, setStripe] = useState(null);
   const [stripeOpening, setStripeOpening] = useState(false);
+  const [stats, setStats] = useState(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -103,6 +104,7 @@ export default function PartnerSpace() {
     if (!uid) return;
     loadPartner(uid);
     fetchWithAuth('/api/partner-connect').then(setStripe).catch(() => setStripe(null));
+    fetchWithAuth('/api/partner-stats').then((r) => setStats(r?.stats?.[uid] || null)).catch(() => setStats(null));
   }, [uid, loadPartner]);
 
   const openStripe = async () => {
@@ -133,7 +135,8 @@ export default function PartnerSpace() {
   const alreadyPaid = payouts.reduce((s, p) => s + Number(p.amount_eur || 0), 0);
   const families = partner?.familiesCount ?? new Set(conversions.map((c) => c.payer_uid).filter(Boolean)).size;
   const link = partnerShareLink(code);
-  const message = partnerShareMessage({ code, structureName: name });
+  const createur = estCreateur(partner);
+  const message = partnerShareMessage({ code, structureName: name, kind: partner?.kind });
 
   return (
     <DashboardLayout role="influencer">
@@ -148,8 +151,10 @@ export default function PartnerSpace() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
         {[
+          { label: 'Clics sur votre lien', value: stats?.clics ?? '…' },
+          { label: 'Inscrits', value: stats?.inscrits ?? '…' },
           { label: 'Familles rattachées', value: families },
           { label: 'Cours payés', value: conversions.length },
           { label: 'À vous reverser', value: fmtEur(pending) },
@@ -184,11 +189,11 @@ export default function PartnerSpace() {
       </Card>
 
       <Card title="Recevoir vos reversements">
-        <PayoutSetup stripe={stripe} pending={pending} onOpen={openStripe} opening={stripeOpening} />
+        <PayoutSetup stripe={stripe} pending={pending} onOpen={openStripe} opening={stripeOpening} createur={createur} />
       </Card>
 
       {code && (
-        <Card title="Message prêt à transférer aux familles">
+        <Card title={createur ? 'Texte prêt pour vos posts' : 'Message prêt à transférer aux familles'}>
           <textarea readOnly value={message} rows={9} className="w-full border border-gray-200 rounded-xl p-3 text-sm text-gray-700 bg-gray-50" />
           <div className="flex flex-wrap gap-2 mt-3">
             <button type="button" onClick={() => copy(message, 'Message')} className="text-sm font-semibold px-4 py-2 rounded-xl bg-primary text-white hover:bg-primary-dark">Copier le message</button>
@@ -198,7 +203,7 @@ export default function PartnerSpace() {
         </Card>
       )}
 
-      <Card title="Ce que reçoivent vos familles et votre structure">
+      <Card title={createur ? 'Ce que reçoivent les familles, et vous' : 'Ce que reçoivent vos familles et votre structure'}>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {partnerGridRows(partner).map((r) => (
             <div key={r.type} className="rounded-xl border border-gray-200 p-3">
@@ -208,12 +213,12 @@ export default function PartnerSpace() {
             </div>
           ))}
         </div>
-        <p className="text-xs text-gray-500 mt-3">Les packs de 10 h rapportent le plus à votre structure : mettez-les en avant auprès de vos familles.</p>
+        <p className="text-xs text-gray-500 mt-3">{createur ? 'Les packs de 10 h vous rapportent le plus : 20 € d’un coup.' : 'Les packs de 10 h rapportent le plus à votre structure : mettez-les en avant auprès de vos familles.'}</p>
       </Card>
 
-      <Card title="Cours payés par vos familles">
+      <Card title="Cours payés">
         {conversions.length === 0 ? (
-          <p className="text-gray-400 text-sm text-center py-6">Aucun cours payé pour l’instant. Transférez le message ci-dessus à vos familles.</p>
+          <p className="text-gray-400 text-sm text-center py-6">Aucun cours payé pour l’instant.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

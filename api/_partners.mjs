@@ -87,6 +87,17 @@ export function partnerAmounts({ partner, packMode, billedHours }) {
   return { discountCents: 0, commissionCents: 0 };
 }
 
+/** Chiffres d'un partenaire, pour son espace et l'admin. Des nombres, jamais d'identité. */
+export function resumePartenaire(partner, inscrits = 0) {
+  const conversions = Array.isArray(partner?.conversions) ? partner.conversions : [];
+  return {
+    clics: Number(partner?.clicks || 0),
+    inscrits: Number(inscrits || 0),
+    coursPayes: conversions.filter((c) => !(Number(c?.refunded_eur || 0) >= Number(c?.amount_eur || 0) && Number(c?.amount_eur || 0) > 0)).length,
+    familles: Number(partner?.familiesCount || 0),
+  };
+}
+
 export const normalizePartnerCode = (raw) => String(raw || '').trim().toUpperCase();
 
 /** Code lisible tiré du nom de la structure : « APE Lycée Melkior » → APELYCEEMELK42. */

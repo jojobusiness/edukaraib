@@ -416,6 +416,7 @@ export default function AdminDashboard() {
   // --- Partenaires (collection historique `influencers`) ---
   const [influencers, setInfluencers] = useState([]);
   const [influLoading, setInfluLoading] = useState(false);
+  const [statsPartenaires, setStatsPartenaires] = useState({}); // clics, inscrits (02/11/2026)
   const [influFilter, setInfluFilter] = useState("all"); // all | pending | inactive
   const [influSearch, setInfluSearch] = useState("");
   const [influToggleLoading, setInfluToggleLoading] = useState(null);
@@ -545,6 +546,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (tab !== 'influencers') return;
     setInfluLoading(true);
+    fetchWithAuth('/api/partner-stats').then((r) => setStatsPartenaires(r?.stats || {})).catch(() => {});
     getDocs(query(collection(db, 'influencers'), orderBy('created_at', 'desc')))
       .then((snap) => {
         setInfluencers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
@@ -1236,7 +1238,9 @@ export default function AdminDashboard() {
                     <tr>
                       <th className="p-3">Nom / Email</th>
                       <th className="p-3">Code</th>
-                      <th className="p-3 text-right">Utilisations</th>
+                      <th className="p-3 text-right">Clics</th>
+                      <th className="p-3 text-right">Inscrits</th>
+                      <th className="p-3 text-right">Cours payés</th>
                       <th className="p-3 text-right">Total gagné</th>
                       <th className="p-3 text-right">À reverser</th>
                       <th className="p-3 text-center">Statut</th>
@@ -1383,6 +1387,8 @@ export default function AdminDashboard() {
                             )}
                           </td>
 
+                          <td className="p-3 text-right text-gray-700">{statsPartenaires[influ.id]?.clics ?? '…'}</td>
+                          <td className="p-3 text-right text-gray-700">{statsPartenaires[influ.id]?.inscrits ?? '…'}</td>
                           <td className="p-3 text-right text-gray-700">{influ.usageCount || 0}</td>
                           <td className="p-3 text-right font-medium text-emerald-700">
                             {(influ.totalEarned || 0).toFixed(2)} €
