@@ -15,6 +15,7 @@ import fetchWithAuth from '../utils/fetchWithAuth';
 import { getCampaignSubject } from '../lib/bacCampaign';
 import { signInWithGoogle, consumeGoogleRedirect } from '../lib/googleAuth';
 import { navigateurIntegre } from '../lib/navigateur';
+import CodeCreateur from '../components/CodeCreateur';
 import { ensureUserDoc } from '../utils/ensureUserDoc';
 import { getAcquisitionRecord } from '../lib/acquisition';
 import { HEARD_FROM_OPTIONS } from '../../api/_acquisition.mjs';
@@ -1044,6 +1045,9 @@ export default function Register() {
                 />
               </div>
             )}
+
+            {/* Code créateur entendu dans une vidéo (familles seulement) */}
+            {form.role !== 'teacher' && <CodeCreateur />}
 
             {/* Comment avez-vous connu EduKaraib ? */}
             <div>

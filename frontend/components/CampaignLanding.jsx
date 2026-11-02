@@ -9,6 +9,7 @@ import { saveCampaign, getCampaignCode } from '../lib/bacCampaign';
 import { pixelTrack } from '../lib/metaPixel';
 import { subjectMatches } from '../lib/subjectMatch';
 import { nbCreneaux } from '../lib/offreProf';
+import CodeCreateur from './CodeCreateur';
 import { tarifsDuProf } from '../../api/_tarifs.mjs';
 import {
   GraduationCap, Clock, ShieldCheck, CreditCard, Video, BadgeCheck,
@@ -71,6 +72,7 @@ export default function CampaignLanding({ config }) {
   const hero = config.heroes[phase] ?? config.heroes.apres;
   const copy = config.copy;
   const [codeInconnu, setCodeInconnu] = useState(false);
+  const [, setCodeTape] = useState(0); // réaffiche la page quand un code vient d'être tapé
   const codeMemorise = getCampaignCode();
   const promoCode = codeInconnu ? null : codeMemorise;
   useEffect(() => {
@@ -300,6 +302,8 @@ export default function CampaignLanding({ config }) {
                 </button>
               )}
             </div>
+            {/* Déjà appliqué : le badge du haut le dit. Sinon, champ à ouvrir. */}
+            {!promoCode && <CodeCreateur sombre onApplique={() => { setCodeInconnu(false); setCodeTape((n) => n + 1); }} />}
             {hero.countdownTarget && (
               <Countdown target={hero.countdownTarget} label={hero.countdownLabel} />
             )}
