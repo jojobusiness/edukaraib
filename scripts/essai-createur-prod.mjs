@@ -54,9 +54,9 @@ try {
   ok(p.code === 200 && !!p.corps.url, `3. session de paiement créée, sans code saisi (${p.code}${p.corps.error ? ` ${p.corps.error}` : ''})`);
   const session = (await stripe.checkout.sessions.list({ limit: 5 })).data.find((x) => x.metadata?.payer_uid === FAM);
   sessionId = session?.id;
-  ok(session?.amount_total === 3800, `3. famille : ${session?.amount_total / 100} € (30 prof + 10 frais − 2 remise), malgré un cours trafiqué à 1 €/h`);
+  ok(session?.amount_total === 3700, `3. famille : ${session?.amount_total / 100} € (30 prof + 10 frais − 3 remise), malgré un cours trafiqué à 1 €/h`);
   ok(session?.metadata?.teacher_amount_cents === '3000', '3. le prof garde ses 30 €');
-  ok(session?.metadata?.partner_uid === CREA && session?.metadata?.partner_commission_cents === '200', '3. 2 € prévus pour le créateur');
+  ok(session?.metadata?.partner_uid === CREA && session?.metadata?.partner_commission_cents === '500', '3. 5 € prévus pour le créateur');
   ok(session?.metadata?.partner_link === '1', '3. la famille sera rattachée au créateur');
 
   const st = await api('/api/partner-stats', CREA);

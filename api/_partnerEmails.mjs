@@ -35,8 +35,10 @@ const codeBox = (code) => `<table width="100%" cellspacing="0" cellpadding="0" s
     <div style="font-size:28px;font-weight:800;letter-spacing:4px;color:#15803d;">${esc(code)}</div>
   </td></tr></table>`;
 
-const gridTable = () => {
-  const rows = [['Cours d’une heure', '−2 €', '+2 €'], ['Pack 5 h', '−10 €', '+10 €'], ['Pack 10 h', '−20 €', '+20 €']];
+const gridTable = (createur = false) => {
+  const rows = createur
+    ? [['Cours d’une heure', '−3 €', '+5 €'], ['Pack 5 h', '−10 €', '+10 €'], ['Pack 10 h', '−30 €', '+20 €']]
+    : [['Cours d’une heure', '−2 €', '+2 €'], ['Pack 5 h', '−10 €', '+10 €'], ['Pack 10 h', '−20 €', '+20 €']];
   return `<table width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e2e8f0;border-radius:10px;margin:14px 0;font-size:14px;">
   <tr style="background:#f8fafc;">
     <td style="padding:9px 12px;font-weight:700;color:#0f172a;">Achat de la famille</td>
@@ -77,8 +79,8 @@ export function sendPartnerWelcomeEmail({ to, structureName, contactName, code, 
       <p>Voici votre code, à partager avec votre communauté :</p>
       ${codeBox(code)}
       <p>Votre lien : <strong>edukaraib.com/p/${esc(code)}</strong></p>
-      <p>Chaque famille qui passe par ce lien ou ce code bénéficie de <strong>2 € de remise par heure de cours</strong>, et vous recevez <strong>2 € par heure</strong>, sur tous ses achats jusqu’au 31 juillet 2027.</p>
-      ${gridTable()}
+      <p>Chaque famille qui passe par ce lien ou ce code paie moins cher, et vous êtes payé à chacun de ses achats, pour tous ses enfants, jusqu’au 31 juillet 2027 :</p>
+      ${gridTable(true)}
       <p><strong>Pour être payé</strong>, connectez votre compte bancaire depuis votre espace (2 minutes, via Stripe, notre prestataire de paiement). Chaque cours payé vous est ensuite reversé automatiquement, 7 jours après le paiement.</p>
       <p>Votre espace contient aussi un texte prêt à poster, et vos clics, inscrits et cours payés en direct.</p>`,
       { url: `${appUrl()}/partenaire/espace`, label: 'Ouvrir mon espace' }),

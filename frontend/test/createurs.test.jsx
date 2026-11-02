@@ -68,7 +68,7 @@ describe('textes créateur', () => {
   it('/partenaire?type=createur parle au créateur', () => {
     onAuthStateChanged.mockImplementation((_a, cb) => { cb(null); return () => {}; });
     rendre(<PartnerHome />, { route: '/partenaire?type=createur' });
-    return screen.findByText('Vous gagnez 2 € par heure de cours.').then(() => {
+    return screen.findByText('Vous gagnez jusqu’à 20 € par vente.').then(() => {
       expect(screen.queryByText(/Votre structure/)).toBeNull();
       expect(screen.queryByText(/influenceu/i)).toBeNull();
     });

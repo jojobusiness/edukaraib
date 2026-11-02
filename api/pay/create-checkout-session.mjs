@@ -3,8 +3,9 @@ import { adminDb, verifyAuth } from '../_firebaseAdmin.mjs';
 import { captureError } from '../_sentry.mjs';
 import {
   PARTNERS_COLLECTION, PARTNER_USAGES_COLLECTION, isPartnerModel, needsUsageChecks,
-  normalizePartnerCode, PARTNER_CODE_REGEX, partnerAmounts, partnerRefusalReason,
+  normalizePartnerCode, PARTNER_CODE_REGEX, isCreateur, partnerAmounts, partnerRefusalReason,
 } from '../_partners.mjs';
+import { fraisStripeEstimes } from '../_marge.mjs';
 import { tarifsDuProf, montantProfCents, maxCoursDuPack } from '../_tarifs.mjs';
 
 // -- helpers lecture corps & num
@@ -244,6 +245,7 @@ export default async function handler(req, res) {
   const couponIgnored = []; // codes partenaires refusés mais non bloquants
   let partnerUid = null;
   let partnerCommissionCents = 0;
+  let partnerCreateur = false;
   let partnerLink = false; // rattacher la famille au partenaire après paiement
   let clientIp =
     req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
@@ -283,6 +285,7 @@ export default async function handler(req, res) {
 
     const { discountCents, commissionCents } = partnerAmounts({ partner, packMode, billedHours });
     partnerUid = partnerId;
+    partnerCreateur = isCreateur(partner);
     partnerCommissionCents = commissionCents;
     couponDiscountCents += discountCents;
     couponDocIds.push(partnerId);
@@ -376,6 +379,13 @@ export default async function handler(req, res) {
   if (couponDiscountCents > 0) {
     // Plafond : la remise totale ne peut JAMAIS dépasser la commission plateforme
     // (cours = 10 €, pack 5 h = 50 €, pack 10 h = 100 €) : le prof n'est jamais touché.
+    // 02/11/2026 — Créateur : son barème est une promesse. S'il y a cumul avec un
+    // coupon (bienvenue −5 €…), c'est la remise qui s'arrête, jamais sa part, et il
+    // reste de quoi couvrir les frais Stripe : on ne paie jamais pour vendre.
+    if (partnerCreateur) {
+      const reserve = fraisStripeEstimes(teacherAmountCents + siteFeeCents);
+      couponDiscountCents = Math.max(0, Math.min(couponDiscountCents, siteFeeCents - partnerCommissionCents - reserve));
+    }
     couponDiscountCents = Math.min(couponDiscountCents, siteFeeCents);
     // …et remise + reversement partenaire non plus : EduKaraib ne paie jamais pour vendre.
     partnerCommissionCents = Math.min(partnerCommissionCents, siteFeeCents - couponDiscountCents);

@@ -13,6 +13,13 @@ export const partnerShareLink = (code) => `${SITE}/p/${encodeURIComponent(code |
 
 /** Grille affichée au partenaire, selon son modèle. */
 export function partnerGridRows(partner) {
+  if (isPartnerModel(partner) && partner?.kind === 'createur') {
+    return [
+      { type: 'Cours d’une heure', famille: '−3 €', partenaire: '+5 €' },
+      { type: 'Pack 5 h', famille: '−10 €', partenaire: '+10 €' },
+      { type: 'Pack 10 h', famille: '−30 €', partenaire: '+20 €' },
+    ];
+  }
   if (isPartnerModel(partner)) {
     return [
       { type: 'Cours d’une heure', famille: '−2 €', partenaire: '+2 €' },
@@ -35,7 +42,7 @@ export function partnerShareMessage({ code, structureName, kind }) {
       '',
       'Sur EduKaraib, tu trouves des profs de Guyane et des Antilles, en visio ou près de chez toi.',
       '',
-      `Avec mon code ${code}, c’est 2 € de moins par heure de cours.`,
+      `Avec mon code ${code} : 3 € de moins sur un cours, et jusqu’à 30 € de moins sur un pack.`,
       `👉 edukaraib.com/p/${code}`,
     ].join('\n');
   }

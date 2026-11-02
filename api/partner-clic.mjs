@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     if (!PARTNER_CODE_REGEX.test(code)) return res.status(200).json({ valide: false });
     const snap = await adminDb.collection(PARTNERS_COLLECTION)
       .where('code', '==', code).where('active', '==', true).limit(1).get();
-    return res.status(200).json({ valide: !snap.empty });
+    return res.status(200).json({ valide: !snap.empty, createur: !snap.empty && snap.docs[0].data().kind === 'createur' });
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
   let b = req.body;

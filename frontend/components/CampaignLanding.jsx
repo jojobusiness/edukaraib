@@ -33,6 +33,9 @@ const ICONES = { GraduationCap, Video, CreditCard, ShieldCheck };
 
 export { nbCreneaux };
 
+// Barème créateur (api/_partners.mjs) : à la place de la remise association
+const REMISE_CREATEUR = { 0: '-3 €', 5: '-10 €', 10: '-30 €' };
+
 function Countdown({ target, label }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -72,6 +75,7 @@ export default function CampaignLanding({ config }) {
   const hero = config.heroes[phase] ?? config.heroes.apres;
   const copy = config.copy;
   const [codeInconnu, setCodeInconnu] = useState(false);
+  const [codeCreateur, setCodeCreateur] = useState(false);
   const [, setCodeTape] = useState(0); // réaffiche la page quand un code vient d'être tapé
   const codeMemorise = getCampaignCode();
   const promoCode = codeInconnu ? null : codeMemorise;
@@ -80,7 +84,11 @@ export default function CampaignLanding({ config }) {
     let vivant = true;
     fetch(`/api/partner-clic?code=${encodeURIComponent(codeMemorise)}`)
       .then((r) => r.json())
-      .then((r) => { if (vivant && r?.valide === false) setCodeInconnu(true); })
+      .then((r) => {
+        if (!vivant) return;
+        if (r?.valide === false) setCodeInconnu(true);
+        setCodeCreateur(r?.createur === true);
+      })
       .catch(() => {});
     return () => { vivant = false; };
   }, [codeMemorise]);
@@ -386,7 +394,7 @@ export default function CampaignLanding({ config }) {
                 </ul>
                 {promoCode && (
                   <div className="mt-3 text-xs font-semibold text-green-600 bg-green-50 border border-green-200 rounded-lg px-2 py-1.5 text-center">
-                    🎟️ {p.discount.replace(/(ton|votre) code promo/, promoCode)}
+                    🎟️ {(codeCreateur ? p.discount.replace(/^-\d+ €/, REMISE_CREATEUR[p.pack] || '$&') : p.discount).replace(/(ton|votre) code promo/, promoCode)}
                   </div>
                 )}
                 <button

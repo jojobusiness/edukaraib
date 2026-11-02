@@ -21,6 +21,18 @@ export const PARTNER_MODEL = 'partenaire';
 /** Remise famille ET reversement partenaire, par heure facturée. */
 export const PARTNER_CENTS_PER_HOUR = 200;
 
+/**
+ * Barème des CRÉATEURS (Joseph, 02/11/2026) : le barème influenceurs d'origine
+ * +5/+10/+20 €, avec la remise du cours à l'unité ramenée de 5 € à 3 € : à 5 €,
+ * chaque cours nous coûtait les frais Stripe. Associations : 2 €/h, inchangé.
+ */
+export const BAREME_CREATEUR = {
+  coursCentsParHeure: { remise: 300, reversement: 500 },
+  5: { remise: 1000, reversement: 1000 },
+  10: { remise: 3000, reversement: 2000 },
+};
+export const isCreateur = (partner) => partner?.kind === 'createur';
+
 export const PARTNER_KINDS = {
   association: 'Association de parents',
   etablissement: 'Établissement scolaire',
@@ -78,6 +90,13 @@ export function partnerRefusalReason({
 /** Remise famille et reversement partenaire, en centimes. */
 export function partnerAmounts({ partner, packMode, billedHours }) {
   const hours = Math.max(1, Number(billedHours) || 1);
+  if (isPartnerModel(partner) && isCreateur(partner)) {
+    const pack = packMode ? BAREME_CREATEUR[hours] : null;
+    const c = BAREME_CREATEUR.coursCentsParHeure;
+    return pack
+      ? { discountCents: pack.remise, commissionCents: pack.reversement }
+      : { discountCents: c.remise * hours, commissionCents: c.reversement * hours };
+  }
   if (isPartnerModel(partner)) {
     return { discountCents: PARTNER_CENTS_PER_HOUR * hours, commissionCents: PARTNER_CENTS_PER_HOUR * hours };
   }

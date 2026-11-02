@@ -320,3 +320,37 @@ describe('checkout — code gardé sur le compte', () => {
     expect(amount()).toBe(3500);
   });
 });
+
+// 02/11/2026 — Barème des créateurs : −3/+5, −10/+10, −30/+20.
+describe('barème créateur', () => {
+  const createur = (extra = {}) => asso({ kind: 'createur', code: 'MARIE973', ...extra });
+  it('cours, pack 5 h, pack 10 h', () => {
+    const p = createur();
+    expect(partnerAmounts({ partner: p, packMode: false, billedHours: 1 })).toEqual({ discountCents: 300, commissionCents: 500 });
+    expect(partnerAmounts({ partner: p, packMode: true, billedHours: 5 })).toEqual({ discountCents: 1000, commissionCents: 1000 });
+    expect(partnerAmounts({ partner: p, packMode: true, billedHours: 10 })).toEqual({ discountCents: 3000, commissionCents: 2000 });
+  });
+  it('les associations restent à 2 €/h', () => {
+    expect(partnerAmounts({ partner: asso(), packMode: false, billedHours: 1 })).toEqual({ discountCents: 200, commissionCents: 200 });
+    expect(partnerAmounts({ partner: asso(), packMode: true, billedHours: 10 })).toEqual({ discountCents: 2000, commissionCents: 2000 });
+  });
+  it('au paiement : prof intact, 5 € au créateur, il nous reste de quoi payer Stripe', async () => {
+    seed({ partners: { c1: createur() } });
+    await pay('MARIE973');
+    expect(amount()).toBe(3200);
+    expect(session().metadata.teacher_amount_cents).toBe('2500');
+    expect(session().metadata.partner_commission_cents).toBe('500');
+  });
+  it('cumul avec un coupon de 5 € : le créateur garde ses 5 €, la remise s’arrête avant de nous faire perdre', async () => {
+    seed({ partners: { c1: createur() } });
+    h.state.store.coupons.b1 = { code: 'BIENVENUE-X', user_uid: 'parent1', used: false, discount_eur: 5, expires_at: new Date(Date.now() + 864e5) };
+    const req = { method: 'POST', body: { lessonId: 'L1', forStudent: 'child1', couponCodes: ['MARIE973', 'BIENVENUE-X'] }, headers: { 'x-forwarded-for': IP, origin: 'https://edukaraib.com' }, socket: {} };
+    const res = { statusCode: 200, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
+    await handler(req, res);
+    expect(session().metadata.partner_commission_cents).toBe('500');
+    expect(session().metadata.teacher_amount_cents).toBe('2500');
+    const totalPaye = amount();
+    const frais = Math.round(totalPaye * 0.015) + 25;
+    expect(totalPaye - 2500 - 500 - frais).toBeGreaterThanOrEqual(0);
+  });
+});

@@ -49,7 +49,7 @@ const AVANTAGES = [
 
 const AVANTAGES_CREATEUR = [
   { icon: '🔗', title: 'Un lien et un code à vous', desc: 'edukaraib.com/p/VOTRECODE : assez court pour votre bio ou pour le dire en vidéo.' },
-  { icon: '🔁', title: 'Toute l’année', desc: 'La famille reste rattachée à votre code : vous touchez 2 € par heure sur tous ses achats, sans rien refaire.' },
+  { icon: '🔁', title: 'Toute l’année', desc: 'La famille reste rattachée à votre code jusqu’au 31 juillet 2027 : vous êtes payé à chaque achat, pour tous ses enfants, sans rien refaire.' },
   { icon: '📊', title: 'Vos chiffres en direct', desc: 'Clics, inscrits, cours payés et sommes à recevoir, dans votre espace.' },
   { icon: '🏦', title: 'Paiement automatique', desc: 'Connectez votre compte bancaire : chaque cours payé vous est reversé 7 jours après le paiement.' },
 ];
@@ -145,7 +145,7 @@ export default function PartnerHome() {
     );
   }
 
-  const grid = partnerGridRows({ model: PARTNER_MODEL });
+  const grid = partnerGridRows({ model: PARTNER_MODEL, kind: form.kind });
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -167,11 +167,11 @@ export default function PartnerHome() {
           <div>
             <h1 className="text-4xl md:text-5xl font-extrabold text-gray-900 leading-tight tracking-tight">
               {createur ? 'Votre communauté paie moins cher.' : 'Vos familles paient moins cher.'}
-              <span className="block text-primary">{createur ? 'Vous gagnez 2 € par heure de cours.' : 'Votre structure reçoit 2 € par heure.'}</span>
+              <span className="block text-primary">{createur ? 'Vous gagnez jusqu’à 20 € par vente.' : 'Votre structure reçoit 2 € par heure.'}</span>
             </h1>
             <p className="mt-4 text-gray-500 text-lg leading-relaxed max-w-md">
               {createur
-                ? 'Votre code : 2 € de remise par heure de cours avec des professeurs de Guyane et des Antilles, et 2 € par heure pour vous, sur tous les achats de la famille pendant l’année scolaire. Aucun frais, aucune obligation.'
+                ? 'Avec votre code, la famille paie moins cher ses cours avec des professeurs de Guyane et des Antilles, et vous êtes payé à chacun de ses achats, jusqu’au 31 juillet 2027. Aucun frais, aucune obligation.'
                 : 'Un code pour vos familles : 2 € de remise par heure de cours avec des professeurs de Guyane et des Antilles, et 2 € par heure reversés à votre structure, sur tous leurs achats de l’année scolaire.'}
             </p>
           </div>
