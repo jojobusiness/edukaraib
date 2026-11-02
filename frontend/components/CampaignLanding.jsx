@@ -70,7 +70,18 @@ export default function CampaignLanding({ config }) {
   const phase = useMemo(() => config.getPhase(), [config]);
   const hero = config.heroes[phase] ?? config.heroes.apres;
   const copy = config.copy;
-  const promoCode = getCampaignCode();
+  const [codeInconnu, setCodeInconnu] = useState(false);
+  const codeMemorise = getCampaignCode();
+  const promoCode = codeInconnu ? null : codeMemorise;
+  useEffect(() => {
+    if (!codeMemorise) return undefined;
+    let vivant = true;
+    fetch(`/api/partner-clic?code=${encodeURIComponent(codeMemorise)}`)
+      .then((r) => r.json())
+      .then((r) => { if (vivant && r?.valide === false) setCodeInconnu(true); })
+      .catch(() => {});
+    return () => { vivant = false; };
+  }, [codeMemorise]);
 
   useSEO(config.seo);
 

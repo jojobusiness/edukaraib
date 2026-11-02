@@ -27,5 +27,7 @@ Remise et reversement plafonnés à la commission, prof jamais touché, rattache
 - Prod : créateur de test créé par la vraie API, lien court, clic, famille inscrite, session Stripe réelle créée puis expirée, sans paiement.
 - ⚠️ Non prouvé sans vrai paiement : le crédit du reversement par le webhook puis le transfert du cron (couverts seulement par des tests unitaires).
 
-## 5. Résultat (à remplir)
-- RÉSULTAT : …
+## 5. Résultat (02/11/2026)
+- ✅ Livré (commit edc6ebd3 et suivant). `scripts/essai-createur-prod.mjs` en prod : tout passe jusqu'à la session Stripe (38 € = 30 prof + 10 frais − 2 remise, 2 € prévus pour le créateur, code retrouvé sur le compte seul).
+- Vérifié dans Chrome en mode TikTok : lien court, code gardé, Google masqué ; `/createurs` sans mot « structure ».
+- ⚠️ Toujours non prouvé sans vrai paiement : crédit par le webhook, puis transfert par le cron.
