@@ -54,6 +54,10 @@ const SECTIONS = [
         en cas de harcèlement, de menace ou d'arnaque ; c'est aussi pourquoi « masquer » une discussion la
         retire de votre liste sans l'effacer pour votre correspondant.
         <br /><br />
+        Nous enregistrons si nos e-mails vous sont bien remis et si vous cliquez sur leurs liens, pour vérifier
+        qu'ils vous parviennent. Nous ne mesurons pas leur ouverture. Les visites du site sont comptées de façon
+        anonyme, sans cookie ni identifiant.
+        <br /><br />
         Quand vous ouvrez une conversation, votre interlocuteur voit que son message a été lu (« Vu »).
         Cette information reste dans la conversation : EduKaraib n'en tire aucune statistique.
         <br /><br />

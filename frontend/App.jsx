@@ -17,6 +17,7 @@ import PrivateRoute from './components/PrivateRoute';
 import StudentRoute from './components/StudentRoute';
 import RequireRole from './routes/RequireRole';
 import RedirectionPartenaire from './components/RedirectionPartenaire';
+import { envoyerVisite } from './lib/visites';
 
 // Tout le reste en lazy : chaque page n'est telechargee qu'a la navigation.
 // Avant : 1 bundle monolithique de 2,48 Mo charge par tous les visiteurs.
@@ -108,6 +109,8 @@ function PageViewTracker() {
  */
 function RemonteEnHaut() {
   const { pathname, hash } = useLocation();
+  // Une page vue, anonyme (03/11/2026, lib/visites.js)
+  useEffect(() => { envoyerVisite(pathname); }, [pathname]);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try { window.history.scrollRestoration = 'manual'; } catch {}

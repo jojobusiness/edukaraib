@@ -43,6 +43,7 @@ async function notifyEmailUser(uid, { title, message, ctaUrl, ctaText = "Ouvrir"
     message,
     ctaUrl: ctaUrl || `${window.location.origin}/smart-dashboard`,
     ctaText: ctaText || "Ouvrir la conversation",
+    typeMail: "notif-message",
   });
 }
 // --- /EMAIL HELPERS ---

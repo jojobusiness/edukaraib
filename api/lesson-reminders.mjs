@@ -1,5 +1,6 @@
 import { adminDb } from './_firebaseAdmin.mjs';
 import { Resend } from 'resend';
+import { tagType } from './_suiviEmails.mjs';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
@@ -67,7 +68,7 @@ export default async function handler(req, res) {
         const subject = Array.isArray(lesson.subject_id) ? lesson.subject_id.join(', ') : (lesson.subject_id || 'votre cours');
         const mode = lesson.mode === 'visio' ? 'en visio' : 'en présentiel';
 
-        await resend.emails.send({
+        await resend.emails.send({ tags: tagType('rappel-cours'),
           from: 'EduKaraib <noreply@edukaraib.com>',
           to: email,
           subject: `Rappel : votre cours commence dans 30 minutes`,
@@ -145,7 +146,7 @@ export default async function handler(req, res) {
       return { subject, dateStr, timeStr };
     };
     const sendTpl = async (to, subjectLine, title, message, ctaUrl, ctaText) => {
-      await resend.emails.send({
+      await resend.emails.send({ tags: tagType('rappel-cours'),
         from: 'EduKaraib <notifications@edukaraib.com>',
         to,
         subject: subjectLine,

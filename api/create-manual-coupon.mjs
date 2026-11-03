@@ -1,5 +1,6 @@
 import { adminDb } from './_firebaseAdmin.mjs';
 import { Resend } from 'resend';
+import { tagType } from './_suiviEmails.mjs';
 
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
 const ADMIN_SECRET  = process.env.ADMIN_COUPON_SECRET ;
@@ -86,7 +87,7 @@ export default async function handler(req, res) {
     // 6) Envoie le mail
     const firstName = (user.firstName || user.fullName || '').split(' ')[0] || 'là';
     const resendClient = new Resend(process.env.RESEND_API_KEY);
-    const mailResult = await resendClient.emails.send({
+    const mailResult = await resendClient.emails.send({ tags: tagType('coupon'),
       from: 'EduKaraib <notifications@edukaraib.com>',
       to: [userEmail.trim()],
       subject: `Bienvenue sur EduKaraib, ${firstName} ! 🎉 Voici ton code -5€`,

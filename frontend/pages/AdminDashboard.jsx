@@ -30,6 +30,7 @@ import { toast } from 'sonner';
 import { confirmer, demanderTexte } from '../components/ui/Dialogues';
 import { libelleDerniereVenue, trierParVenue, filtrerParVenue } from '../lib/derniereVenue';
 import FicheCompte from '../components/admin/FicheCompte';
+import { libelleDernierMail } from '../../api/_suiviEmails.mjs';
 
 /* ===========================
    Utils
@@ -373,6 +374,20 @@ function RefundRequestsSection() {
 /* ===========================
    AdminDashboard (sans layout)
 =========================== */
+// Bilan agrégé des derniers mails (03/11/2026) : des nombres, aucun nom
+function bilanMails(users, maintenant = Date.now()) {
+  const r = { envoyes: 0, recus: 0, cliques: 0, rejetes: 0 };
+  (users || []).forEach((u) => {
+    const m = u?.dernierMail;
+    if (!m || maintenant - Date.parse(m.creeLe || m.envoyeLe || 0) > 7 * 864e5) return;
+    r.envoyes += 1;
+    if (m.statut === 'livre' || m.statut === 'clique') r.recus += 1;
+    if (m.statut === 'clique') r.cliques += 1;
+    if (m.statut === 'rejete') r.rejetes += 1;
+  });
+  return r;
+}
+
 export default function AdminDashboard() {
   const [tab, setTab] = useState('stats'); // stats | accounts | payments | messages | discussions | influencers | analytics
   const [meRole, setMeRole] = useState(null);
@@ -558,7 +573,9 @@ export default function AdminDashboard() {
   /* ----- Derived: account filters ----- */
   const filteredUsers = useMemo(() => {
     const t = (search || '').toLowerCase().trim();
-    const liste = filtrerParVenue(users, filtreVenue).filter((u) => {
+    const liste = (filtreVenue === 'mailRejete'
+      ? users.filter((u) => u.dernierMail?.statut === 'rejete')
+      : filtrerParVenue(users, filtreVenue)).filter((u) => {
       // ⛔️ masque les admins dans la liste
       if (u?.role === 'admin') return false;
 
@@ -822,6 +839,7 @@ export default function AdminDashboard() {
                 <option value="tous">Toutes les venues</option>
                 <option value="revenus7j">Revenus depuis 7 jours</option>
                 <option value="pasRevenus">Pas revenus depuis l'inscription</option>
+                <option value="mailRejete">Mail jamais reçu (rejeté)</option>
               </select>
               <select
                 className="border rounded-lg px-3 py-2"
@@ -846,6 +864,15 @@ export default function AdminDashboard() {
               </div>
             </div>
 
+            {(() => {
+              const b = bilanMails(users);
+              return (
+                <p className="text-sm text-gray-600">
+                  Mails des 7 derniers jours : <b>{b.envoyes}</b> envoyés · <b>{b.recus}</b> reçus · <b className="text-green-700">{b.cliques}</b> cliqués · <b className="text-red-600">{b.rejetes}</b> rejetés
+                  <span className="text-gray-400"> (dernier mail de chaque compte)</span>
+                </p>
+              );
+            })()}
             <div className="bg-white border rounded-xl overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50">
@@ -858,18 +885,19 @@ export default function AdminDashboard() {
                     <th className="p-2 text-left">État</th>
                     <th className="p-2 text-left">Créé le</th>
                     <th className="p-2 text-left">Dernière venue</th>
+                    <th className="p-2 text-left">Dernier mail</th>
                     <th className="p-2 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {usersLoading && (
                     <tr>
-                      <td colSpan={9} className="p-4 text-center text-gray-500">Chargement…</td>
+                      <td colSpan={10} className="p-4 text-center text-gray-500">Chargement…</td>
                     </tr>
                   )}
                   {!usersLoading && filteredUsers.length === 0 && (
                     <tr>
-                      <td colSpan={9} className="p-4 text-center text-gray-400">Aucun compte</td>
+                      <td colSpan={10} className="p-4 text-center text-gray-400">Aucun compte</td>
                     </tr>
                   )}
                   {filteredUsers.map((u) => (
@@ -923,6 +951,13 @@ export default function AdminDashboard() {
                           const v = libelleDerniereVenue(u.createdAt, u.lastSeenAt);
                           const couleur = v.ton === 'orange' ? 'text-orange-600 font-medium' : v.ton === 'gris' ? 'text-gray-400' : 'text-gray-700';
                           return <span className={couleur} title={v.titre}>{v.texte}</span>;
+                        })()}
+                      </td>
+                      <td className="p-2">
+                        {(() => {
+                          const m = libelleDernierMail(u.dernierMail);
+                          const couleur = m.ton === 'rouge' ? 'text-red-600 font-medium' : m.ton === 'vert' ? 'text-green-700 font-medium' : m.ton === 'gris' ? 'text-gray-400' : 'text-gray-700';
+                          return <span className={couleur} title={u.dernierMail ? `${u.dernierMail.type || ''} · ${u.dernierMail.sujet || ''}` : ''}>{m.texte}</span>;
                         })()}
                       </td>
                       <td className="p-2 text-right">

@@ -1,5 +1,7 @@
 # PLAN — Landing /bac : retirer les matières orphelines + préparer la campagne associations · 14/09/2026
 
+> ✏️ **Mise à jour 03/11/2026** : ticket 2 obsolète (les partenaires s'inscrivent seuls sur `/partenaire`, virements par Stripe Connect, plus d'IBAN). Seuil du ticket 3 faussé : le compteur de profs « réservables » comptait les semaines passées jusqu'au 02/11 (2 réservables au 02/11, pas 6).
+
 > Déclencheur : `node scripts/diag-offre-profs.mjs` du 14/09 → **4 boutons orphelins** sur la campagne `bac` (le parent clique et ne peut réserver personne).
 > Contexte business : campagne associations de parents (plan de gestion : `EduKarib/01_MARKETING/campagnes/PLAN_ASSOCIATIONS_PARENTS_14-09-2026.md`, hors repo).
 

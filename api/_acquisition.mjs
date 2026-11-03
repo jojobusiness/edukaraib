@@ -85,8 +85,8 @@ export function touchFromArrival({ search = '', referrer = '', pathname = '/', n
     medium: token(p.get('utm_medium')) || (host ? 'referral' : ''),
     campaign: token(p.get('utm_campaign')) || (parMethode ? 'methode' : ''),
     content: token(p.get('utm_content')),
-    // Origine + chemin seulement : `users` est en lecture publique, on ne garde
-    // pas la query string du référent (jetons de suivi, recherches…).
+    // Origine + chemin seulement : on ne garde pas la query string du référent
+    // (jetons de suivi, recherches…). `users` est privé depuis le 23/10/2026.
     referrer: host ? clip(safeOriginPath(referrer), 200) : '',
     landing: clip(pathname, 120) || '/',
     // Code partenaire ou de campagne transporté dans l'URL (/bac?code=LHATIEN81)

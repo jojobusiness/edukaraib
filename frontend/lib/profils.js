@@ -79,12 +79,12 @@ export async function nomDeQuelquun(id) {
  * Envoie un mail EduKaraib à des comptes ou à des enfants (le serveur prévient
  * alors le parent). On ne manipule jamais l'adresse de quelqu'un d'autre.
  */
-export async function envoyerMail(uids, { title, message, ctaUrl, ctaText = 'Ouvrir' }) {
+export async function envoyerMail(uids, { title, message, ctaUrl, ctaText = 'Ouvrir', typeMail }) {
   const toUids = [...new Set((uids || []).filter(Boolean).map(String))];
   if (!toUids.length) return;
   await fetchWithAuth('/api/notify-email', {
     method: 'POST',
-    body: JSON.stringify({ toUids, title, message, ctaUrl, ctaText }),
+    body: JSON.stringify({ toUids, title, message, ctaUrl, ctaText, typeMail }),
   }).catch(() => {});
 }
 

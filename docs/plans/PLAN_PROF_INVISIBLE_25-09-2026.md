@@ -1,5 +1,7 @@
 # PLAN — « Le prof ne sait pas qu'il est invisible »
 
+> ✏️ **Mise à jour 03/11/2026** : `nbCreneaux` comptait les semaines passées jusqu'au 02/11 : un prof à créneaux périmés passait pour réservable. Corrigé dans `lib/offreProf.js`.
+
 **Créé le 25/09/2026.** Demandé par Joseph le 25/09.
 **Une seule livraison : un bandeau d'état dans l'espace prof.** Pas de refonte, pas de blocage, pas de migration.
 

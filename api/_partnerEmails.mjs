@@ -2,6 +2,7 @@
 // Mise en page en tables + styles inline : Gmail supprime flex et gap.
 
 const FROM = 'EduKaraib <notifications@edukaraib.com>';
+import { tagType } from './_suiviEmails.mjs';
 const appUrl = () => process.env.APP_BASE_URL || 'https://www.edukaraib.com';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
@@ -58,7 +59,7 @@ async function send({ to, subject, html }) {
   try {
     const { Resend } = await import('resend');
     // Resend v6 renvoie { data, error } au lieu de lever une exception.
-    const { error } = await new Resend(process.env.RESEND_API_KEY).emails.send({ from: FROM, to: [to], subject, html });
+    const { error } = await new Resend(process.env.RESEND_API_KEY).emails.send({ from: FROM, to: [to], subject, html, tags: tagType('partenaire') });
     if (error) { console.warn('[partner-email]', subject, error.message || error); return false; }
     return true;
   } catch (e) {

@@ -1,5 +1,7 @@
 # PLAN — Refonte `/bac` : profs d'abord, prix après
 
+> ✏️ **Mise à jour 03/11/2026** : `/rentree` n'affiche plus de profs depuis le 02/11 (choix de Joseph). `/bac` les garde.
+
 **Date : 18/06/2026**
 **Fichier cible : `frontend/pages/Bac.jsx`** (+ réutilisation de la logique de `frontend/pages/Search.jsx`)
 **Objectif business : débloquer le clic-through vers `/search` et récolter des inscrits/data même en basse saison bac.**

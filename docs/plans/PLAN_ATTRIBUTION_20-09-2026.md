@@ -1,5 +1,7 @@
 # 📊 PLAN — savoir d'où vient chaque inscrit (préparé le 19/09/2026, à exécuter le 20/09)
 
+> ✏️ **Mise à jour 03/11/2026** : `users` n'est plus en lecture publique depuis le 23/10 (seuls le compte lui-même et l'admin le lisent). Les passages qui le disent sont périmés. Le code partenaire est désormais gardé même si une autre source est connue (02/11).
+
 > ✅ **EXÉCUTÉ LE 21/09/2026** — T1, T2 et T4 codés et testés (14 tests dans `frontend/test/acquisition.test.js`), T3 fait pour les mails Zoho ; les liens des réseaux sociaux restent à poser par Joseph (liste en bas).
 > - **T1** : `api/_acquisition.mjs` (règles pures, partagées front/API) + `frontend/lib/acquisition.js` (capture dans `main.jsx`, 90 jours). Écrit `users/{uid}.acquisition` sur les **trois** chemins de création de compte : inscription email (`Register.jsx`), Google (`utils/ensureUserDoc.js`, donc aussi `Login.jsx`), partenaire (`api/partner-signup.mjs`, re-nettoyé côté serveur). Capte aussi `fbclid`/`ttclid`/`gclid` (Facebook reconnu même quand le navigateur in-app perd le référent) et le `?code=` partenaire.
 > - Écart assumé avec le plan : la 1re source gagne **sauf** si c'était « direct » (visite dont l'origine est perdue) — une vraie source trouvée ensuite la remplace. Le référent est stocké sans sa query string (`users` est en lecture publique).

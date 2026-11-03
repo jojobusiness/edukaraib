@@ -1,4 +1,5 @@
 import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
+import { tagType } from './_suiviEmails.mjs';
 
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
 
@@ -87,7 +88,7 @@ export default async function handler(req, res) {
     const resendClient = new Resend(process.env.RESEND_API_KEY);
     const firstName = (fullName || '').split(' ')[0] || 'là';
 
-    const mailResult = await resendClient.emails.send({
+    const mailResult = await resendClient.emails.send({ tags: tagType('bienvenue'),
       from: 'EduKaraib <notifications@edukaraib.com>',
       to: [email],
       subject: `Bienvenue sur EduKaraib, ${firstName} ! 🎉`,

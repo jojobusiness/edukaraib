@@ -1,5 +1,7 @@
 # PLAN — Landing RENTRÉE (variante de `/bac`)
 
+> ✏️ **Mise à jour 03/11/2026** : phases, prix « ≈ 30 €/h » et section profs remplacés le 02/11 par la « rentrée de novembre » épurée, avec les prix réels des profils.
+
 ---
 
 ## ✅ EXÉCUTÉ ET MIS EN LIGNE LE 20/08/2026 — commit `16db14c2`

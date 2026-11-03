@@ -247,6 +247,8 @@ describe('phase 5 — champs serveur, avis, notifications, prix', () => {
     await assertFails(updateDoc(doc(e, 'users', ELEVE), { trialUsedWith: [] }));
     await assertFails(updateDoc(doc(e, 'users', ELEVE), { promo: { first_review: { code: 'X' } } }));
     await assertFails(updateDoc(doc(e, 'users', ELEVE), { email_verified: true }));
+    await assertFails(updateDoc(doc(e, 'users', ELEVE), { dernierMail: { statut: 'clique' } }));
+    await assertFails(getDoc(doc(e, 'emailsBloques', 'x@y.fr')));
     await assertSucceeds(updateDoc(doc(e, 'users', ELEVE), { city: 'Cayenne', trialUsedWith: [PROF, 'autre'] }));
   });
   it('un prof ne se déclare pas « Stripe prêt » ni ne change de code parrain ; son formulaire passe', async () => {

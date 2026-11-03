@@ -1,5 +1,7 @@
 # PLAN — « Savoir qui revient »
 
+> ✏️ **Mise à jour 03/11/2026** : `users` est privé depuis le 23/10, et le délai d'écriture est passé de 24 h à 1 h le 23/10 (PLAN_DERNIERE_CONNEXION).
+
 **Créé le 02/10/2026.** Demandé par Joseph après la mesure à J+7 du bandeau prof.
 **Une seule livraison : une date de dernière venue sur le site, par utilisateur.** Pas de tableau de bord, pas de notification, pas d'analytics.
 

@@ -4,6 +4,7 @@ import { Resend } from 'resend';
 import { captureError } from './_sentry.mjs';
 import { coursTermine } from './_coursHoraire.mjs';
 import { compteProfPret } from './_compteProf.mjs';
+import { tagType } from './_suiviEmails.mjs';
 
 const GOOGLE_REVIEW_URL = 'https://www.google.com/search?q=EduKaraib+cours+particuliers+Antilles&hl=fr';
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
@@ -39,7 +40,7 @@ async function sendGoogleReviewEmail(payerUid, lessonId) {
     if (!payer.email) return;
     const prenom = payer.firstName || payer.displayName?.split(' ')[0] || 'là';
     const resend = new Resend(process.env.RESEND_API_KEY);
-    await resend.emails.send({
+    await resend.emails.send({ tags: tagType('versement'),
       from: 'EduKaraib <notifications@edukaraib.com>',
       to: [payer.email],
       subject: '⭐ Comment s\'est passée votre expérience EduKaraib ?',
@@ -392,7 +393,7 @@ async function sendStripeConnectReminderEmail(teacherUid, amountEur) {
     if (!teacher.email) return;
     const prenom = teacher.firstName || teacher.displayName?.split(' ')[0] || 'là';
     const resend = new Resend(process.env.RESEND_API_KEY);
-    await resend.emails.send({
+    await resend.emails.send({ tags: tagType('versement'),
       from: 'EduKaraib <notifications@edukaraib.com>',
       to: [teacher.email],
       subject: `💳 ${amountEur.toFixed(2)} € vous attendent — finalisez votre compte Stripe`,

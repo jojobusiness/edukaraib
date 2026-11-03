@@ -1,5 +1,7 @@
 # PLAN — Réparer le tunnel de conversion (post-campagne L'Haïtien)
 
+> ✏️ **Mise à jour 03/11/2026** : le bouton Google est masqué dans les navigateurs intégrés (TikTok, Instagram, Facebook) depuis le 02/11 : Google y refuse la connexion.
+
 > Créé le 13/06/2026 après la 1re campagne influ (@lhaitien_off).
 > Objectif : augmenter le taux visiteur → inscrit → paiement. À coder par Joseph.
 

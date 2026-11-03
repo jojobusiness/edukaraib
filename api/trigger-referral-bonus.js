@@ -10,6 +10,7 @@
 
 import { adminDb } from './_firebaseAdmin.mjs';
 import { Resend } from 'resend';
+import { tagType } from './_suiviEmails.mjs';
 
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
 
@@ -110,7 +111,7 @@ export default async function handler(req, res) {
       const filleulName = filleulData.firstName || filleulData.fullName || 'Votre filleul';
 
       if (parrainEmail) {
-        await resendClient.emails.send({
+        await resendClient.emails.send({ tags: tagType('parrainage'),
           from: 'EduKaraib <notifications@edukaraib.com>',
           to: [parrainEmail],
           subject: `🎉 Votre filleul vient de donner son 1er cours — +${PRIME_PARRAIN} € !`,
@@ -198,7 +199,7 @@ export default async function handler(req, res) {
       const filleulFirstName = filleulData.firstName || filleulData.fullName?.split(' ')[0] || '';
 
       if (filleulEmail) {
-        await resendClient.emails.send({
+        await resendClient.emails.send({ tags: tagType('parrainage'),
           from: 'EduKaraib <notifications@edukaraib.com>',
           to: [filleulEmail],
           subject: `🎁 Votre prime de bienvenue parrainage — +${PRIME_FILLEUL} € !`,

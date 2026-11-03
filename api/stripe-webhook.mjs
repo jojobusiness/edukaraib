@@ -4,6 +4,7 @@ import { Resend } from 'resend';
 import { captureError } from './_sentry.mjs';
 import { sendCapiEvent } from './_metaCapi.mjs';
 import { PARTNERS_COLLECTION, PARTNER_USAGES_COLLECTION, linkFamilyToPartner } from './_partners.mjs';
+import { tagType } from './_suiviEmails.mjs';
 
 export const config = { api: { bodyParser: false } };
 
@@ -411,7 +412,7 @@ async function triggerStudentReferralReward(payerUid) {
     const prenom = p.firstName || p.displayName?.split(' ')[0] || 'là';
     const filleulName = user.firstName || user.displayName?.split(' ')[0] || 'Votre filleul';
     const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
-    await resend.emails.send({
+    await resend.emails.send({ tags: tagType('paiement'),
       from: 'EduKaraib <notifications@edukaraib.com>',
       to: [p.email],
       subject: '🎉 Votre filleul a effectué son premier paiement — voici votre bon de -10 €',
@@ -556,7 +557,7 @@ async function sendPaymentConfirmationEmail(md, amountTotalCents, sessionId = nu
 </div>`;
 
   const resend = new Resend(process.env.RESEND_API_KEY);
-  await resend.emails.send({
+  await resend.emails.send({ tags: tagType('paiement'),
     from: 'EduKaraib <notifications@edukaraib.com>',
     to: [email],
     subject: `✅ Paiement confirmé — ${typeLabel} avec ${teacherName}`,
@@ -711,7 +712,7 @@ async function sendPartnerConversionEmail(partnerUid, data) {
   const resend = new Resend(process.env.RESEND_API_KEY);
 
   // Resend v6 renvoie { data, error } au lieu de lever une exception
-  const { error } = await resend.emails.send({
+  const { error } = await resend.emails.send({ tags: tagType('paiement'),
     from: 'EduKaraib <notifications@edukaraib.com>',
     to: [email],
     subject: `Une famille vient de payer un ${data.type} : +${commissionEur} € pour ${who}`,

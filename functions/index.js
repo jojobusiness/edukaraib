@@ -70,6 +70,8 @@ async function sendEmailResend(m) {
           subject: m.subject,
           html: m.html,
           text: m.text,
+          // 03/11/2026 : suivi des e-mails (api/webhook-resend.mjs)
+          tags: [{name: "type", value: String(m.type || "notification").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 40) || "notification"}],
         }),
       });
       const data = await resp.json().catch(() => ({}));
@@ -238,7 +240,7 @@ exports.onNotificationCreated = functions
       }
       const mail = buildEmail({...contenu, createdAt});
 
-      const ok = await sendEmailResend({to, ...mail});
+      const ok = await sendEmailResend({to, ...mail, type: data.type});
       if (ok) {
         await markSent(notifId);
       } else {
@@ -390,6 +392,7 @@ exports.onMessageCreated = functions
             const lienProf = `https://edukaraib.com/profils/${receiverUid}`;
             // ⛔ Aucun extrait du message : on annonce l'événement, pas son contenu.
             const okLead = await sendEmailResend({
+              type: "alerte-lead",
               to: ADMIN_INBOX_EMAIL.value(),
               subject: `🔥 Nouveau lead : ${prenom} → ${profNom}` +
                 `${matiere ? ` (${matiere})` : ""} — via ${acq.source || "source inconnue"}`,
@@ -460,6 +463,7 @@ Profil du prof : ${lienProf}
         }</p>` :
         "";
       const ok = await sendEmailResend({
+        type: "alerte-admin",
         to: ADMIN_INBOX_EMAIL.value(),
         subject: `💬 Nouveau message de ${senderName}`,
         text:
@@ -514,6 +518,7 @@ exports.onSignalementCreated = functions
       }
 
       const ok = await sendEmailResend({
+        type: "signalement",
         to: ADMIN_INBOX_EMAIL.value(),
         subject: `🚩 Message signalé par ${auteur}`,
         text:

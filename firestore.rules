@@ -60,6 +60,7 @@ service cloud.firestore {
         && intactOuVide('studentReferredAt')
         && intactOuVide('referralFilleuls') && intactOuVide('studentReferralFilleuls')
         && intactOuVide('promo') && intactOuVide('partner_uid') && intactOuVide('partner_linked_at')
+        && intactOuVide('dernierMail')
         // codes parrain : posés une fois, jamais changés
         && (!('referralCode' in resource.data) || intactOuVide('referralCode'))
         && (!('studentReferralCode' in resource.data) || intactOuVide('studentReferralCode'))
@@ -76,6 +77,7 @@ service cloud.firestore {
         && videALaCreation('referredBy') && videALaCreation('studentReferredBy')
         && videALaCreation('referralFilleuls') && videALaCreation('studentReferralFilleuls')
         && videALaCreation('promo') && videALaCreation('trialUsedWith')
+        && videALaCreation('dernierMail')
         && (request.resource.data.get('email_verified', false) == false
             || request.resource.data.get('email_verified', false) == request.auth.token.email_verified);
     }
@@ -449,6 +451,9 @@ service cloud.firestore {
 
     // Analytics (onglet admin) — ecrits par l'API drain (Admin SDK)
     match /analytics_top/{id}   { allow read: if isAdmin(); allow write: if false; }
+    // Suivi des e-mails (03/11/2026) : serveur seulement
+    match /emailEvents/{id}    { allow read, write: if false; }
+    match /emailsBloques/{id}  { allow read: if isAdmin(); allow write: if false; }
     match /analytics_daily/{id} { allow read: if isAdmin(); allow write: if false; }
 
     // ── Tout le reste : interdit ───────────────────────────────────────────

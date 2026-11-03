@@ -10,6 +10,7 @@ import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
 import { PARTNERS_COLLECTION } from './_partners.mjs';
 import { captureError } from './_sentry.mjs';
 import { Resend } from 'resend';
+import { tagType } from './_suiviEmails.mjs';
 
 function readBody(req) {
   try {
@@ -280,7 +281,7 @@ async function finalizeRefundSideEffects({ requestId, pay, adminUid, refundAmoun
     if (!email) return;
     const prenom = payerSnap.data()?.firstName || payerSnap.data()?.displayName?.split(' ')[0] || 'là';
     const resend = new Resend(process.env.RESEND_API_KEY);
-    await resend.emails.send({
+    await resend.emails.send({ tags: tagType('remboursement'),
       from: 'EduKaraib <notifications@edukaraib.com>',
       to: [email],
       subject: `✅ Votre remboursement de ${Number(refundAmountEur || 0).toFixed(2)} € est validé`,

@@ -1,5 +1,7 @@
 # PLAN — Alerte lead et relevé des messages : se mettre en règle avec le secret des correspondances · 15/10/2026
 
+> ✏️ **Mise à jour 03/11/2026** : ✅ livré le 15/10 (commit `cf8e0e3a` : alerte sans extrait, onglet Leads, bouton Signaler).
+
 > **Origine** : Joseph, le 15/10 : *« normalement je ne suis pas censé lire ça »*, puis il a demandé une analyse juridique. L'analyse lui donne raison.
 > **Correctif de** `5d33301f` (alerte « 🔥 Nouveau lead » + `diag-messages` + CGU 7.2 bis), en ligne depuis le 15/10 à 10 h 34.
 > ⚖️ Analyse faite par Claude à partir des textes. **Ce n'est pas l'avis d'un avocat inscrit.** Pour un avis opposable : avocat en droit du numérique, ou la permanence juridique du Pépite.

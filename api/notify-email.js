@@ -2,6 +2,7 @@
 import { Resend } from "resend";
 import { adminDb, verifyAuth } from "./_firebaseAdmin.mjs";
 import { adressesDe, ctaSur, lienDuSite, MAX_DESTINATAIRES } from "./_destinataires.mjs";
+import { tagType } from "./_suiviEmails.mjs";
 
 const APP_BASE_URL = process.env.APP_BASE_URL || "https://edukaraib.com";
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -117,7 +118,7 @@ export default async function handler(req, res) {
       try { data = JSON.parse(req.body || "{}"); } catch { data = {}; }
     }
 
-    const { to, toUid, toUids, title, message, ctaText } = data || {};
+    const { to, toUid, toUids, title, message, ctaText, typeMail } = data || {};
     let { ctaUrl } = data || {};
 
     // Formulaire de contact public : autorisé sans auth UNIQUEMENT vers notre propre boîte
@@ -179,11 +180,16 @@ export default async function handler(req, res) {
     const html = htmlTpl({ title, message, ctaUrl, ctaText });
     const ids = [];
     let derniereErreur = null;
+    // 03/11/2026 : on n'écrit plus à une adresse rejetée ou qui nous a classés en spam
+    const bloquees = await Promise.all(destinataires.map((a) => adminDb.collection("emailsBloques").doc(String(a).toLowerCase()).get()));
+    destinataires = destinataires.filter((_, i) => !bloquees[i].exists);
+    if (!destinataires.length) return res.json({ ok: true, skipped: "adresse_rejetee" });
+    const tags = tagType(typeMail || "notification");
     for (const dest of destinataires) {
-      const pro = await resend.emails.send({ from: FROM_PRO, to: [dest], subject, html });
+      const pro = await resend.emails.send({ from: FROM_PRO, to: [dest], subject, html, tags });
       if (pro?.data?.id) { ids.push(pro.data.id); continue; }
       // Fallback uniquement si l'envoi pro a échoué
-      const fallback = await resend.emails.send({ from: FROM_TEST, to: [dest], subject, html });
+      const fallback = await resend.emails.send({ from: FROM_TEST, to: [dest], subject, html, tags });
       if (fallback?.data?.id) { ids.push(fallback.data.id); continue; }
       derniereErreur = pro?.error?.message || fallback?.error?.message || "send_failed";
     }

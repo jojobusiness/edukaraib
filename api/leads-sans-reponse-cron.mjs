@@ -12,6 +12,7 @@
 // Joseph — ce cron lui dit quand décrocher.
 import { adminDb } from './_firebaseAdmin.mjs';
 import { captureError } from './_sentry.mjs';
+import { tagType } from './_suiviEmails.mjs';
 
 const DELAI_MS = 4 * 60 * 60 * 1000;
 const HEURE_DEBUT = 8;
@@ -28,7 +29,7 @@ async function envoyer({ to, subject, html }) {
   try {
     const { Resend } = await import('resend');
     // Resend v6 renvoie { data, error } au lieu de lever une exception.
-    const { error } = await new Resend(process.env.RESEND_API_KEY).emails.send({ from: FROM, to: [to], subject, html });
+    const { error } = await new Resend(process.env.RESEND_API_KEY).emails.send({ tags: tagType('relance-lead'), from: FROM, to: [to], subject, html });
     if (error) { console.warn('[lead-relance]', error.message || error); return false; }
     return true;
   } catch (e) {

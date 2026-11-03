@@ -9,6 +9,7 @@
 import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
 import { Resend } from 'resend';
 import { captureError } from './_sentry.mjs';
+import { tagType } from './_suiviEmails.mjs';
 
 const ADMIN_EMAIL = 'edukaraib@gmail.com';
 
@@ -69,7 +70,7 @@ export default async function handler(req, res) {
     // Prevenir l'admin (non bloquant pour la reponse, mais await — Vercel gele apres res)
     if (process.env.RESEND_API_KEY) {
       const resend = new Resend(process.env.RESEND_API_KEY);
-      await resend.emails.send({
+      await resend.emails.send({ tags: tagType('remboursement'),
         from: 'EduKaraib <notifications@edukaraib.com>',
         to: [ADMIN_EMAIL],
         subject: `🔔 Demande de remboursement — ${Number(pay.gross_eur || 0).toFixed(2)} €`,

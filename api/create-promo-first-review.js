@@ -1,5 +1,6 @@
 import { adminDb, verifyAuth } from "./_firebaseAdmin.mjs";
 import { Resend } from "resend";
+import { tagType } from './_suiviEmails.mjs';
 
 const APP_BASE_URL = process.env.APP_BASE_URL || "https://edukaraib.com";
 
@@ -92,7 +93,7 @@ export default async function handler(req, res) {
     const firstName = (userSnap.data()?.firstName || userSnap.data()?.fullName || "").split(" ")[0] || "";
 
     const resendClient = new Resend(process.env.RESEND_API_KEY);
-    const mailResult = await resendClient.emails.send({
+    const mailResult = await resendClient.emails.send({ tags: tagType('coupon-avis'),
       from: "EduKaraib <notifications@edukaraib.com>",
       to: [email],
       subject: `Merci pour ton avis${firstName ? `, ${firstName}` : ""} ! 🎟️ -5€ offerts`,

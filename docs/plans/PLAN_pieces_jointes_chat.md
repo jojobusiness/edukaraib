@@ -1,5 +1,7 @@
 # Pièces jointes dans la messagerie — photos, vidéos, messages vocaux
 
+> ✏️ **Mise à jour 03/11/2026** : le « point à vérifier » sur les règles Storage est réglé : `storage.rules` est versionné et déployé depuis le 23/10, `chat/` réservé aux deux correspondants.
+
 **Statut : ✅ LIVRÉ le 29/08/2026** (lint 0 erreur, 107 tests verts, build OK).
 
 Disponible pour **tous les rôles** — élève, parent, prof, influenceur **et admin**

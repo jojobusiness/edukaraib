@@ -1,5 +1,7 @@
 # Plan — Réparer le pipeline `analytics-drain` (option B)
 
+> ✏️ **Mise à jour 03/11/2026** : ⛔ REMPLACÉ par un compteur maison (`api/visite.mjs`), plus simple et plus fiable qu'un log drain qui ne transporte pas les visites. Il alimente les mêmes compteurs que l'écran admin.
+
 > **Statut : EN ATTENTE — priorité basse.** Le focus business immédiat est l'acquisition + la conversion (0 inscrit / 0 paiement au 17/06/2026). Ce doc existe pour que n'importe qui sur le projet puisse reprendre proprement. Ne pas y passer de temps tant que la conversion n'est pas réglée.
 
 ## Contexte
