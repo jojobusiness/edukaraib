@@ -60,7 +60,7 @@ service cloud.firestore {
         && intactOuVide('studentReferredAt')
         && intactOuVide('referralFilleuls') && intactOuVide('studentReferralFilleuls')
         && intactOuVide('promo') && intactOuVide('partner_uid') && intactOuVide('partner_linked_at')
-        && intactOuVide('dernierMail')
+        && intactOuVide('dernierMail') && intactOuVide('compteTest')
         // codes parrain : posés une fois, jamais changés
         && (!('referralCode' in resource.data) || intactOuVide('referralCode'))
         && (!('studentReferralCode' in resource.data) || intactOuVide('studentReferralCode'))
@@ -77,7 +77,7 @@ service cloud.firestore {
         && videALaCreation('referredBy') && videALaCreation('studentReferredBy')
         && videALaCreation('referralFilleuls') && videALaCreation('studentReferralFilleuls')
         && videALaCreation('promo') && videALaCreation('trialUsedWith')
-        && videALaCreation('dernierMail')
+        && videALaCreation('dernierMail') && videALaCreation('compteTest')
         && (request.resource.data.get('email_verified', false) == false
             || request.resource.data.get('email_verified', false) == request.auth.token.email_verified);
     }

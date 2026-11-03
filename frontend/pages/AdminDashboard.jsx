@@ -29,6 +29,7 @@ import AnalyticsTab from '../components/admin/AnalyticsTab';
 import { toast } from 'sonner';
 import { confirmer, demanderTexte } from '../components/ui/Dialogues';
 import { libelleDerniereVenue, trierParVenue, filtrerParVenue } from '../lib/derniereVenue';
+import { neplusCompterCeNavigateur } from '../lib/visites';
 import FicheCompte from '../components/admin/FicheCompte';
 import { libelleDernierMail } from '../../api/_suiviEmails.mjs';
 
@@ -375,6 +376,10 @@ function RefundRequestsSection() {
    AdminDashboard (sans layout)
 =========================== */
 // Bilan agrégé des derniers mails (03/11/2026) : des nombres, aucun nom
+// Comptes de test (03/11/2026) : marqués depuis l'onglet Comptes, exclus des
+// stats, du bilan des mails et des envois groupés. Seul l'admin pose le marqueur.
+const estCompteTest = (u) => u?.compteTest === true;
+
 function bilanMails(users, maintenant = Date.now()) {
   const r = { envoyes: 0, recus: 0, cliques: 0, rejetes: 0 };
   (users || []).forEach((u) => {
@@ -455,6 +460,10 @@ export default function AdminDashboard() {
       }
     })();
   }, []);
+
+  // Le navigateur de l'admin ne compte plus ses propres visites, même déconnecté
+  // ou sur un compte test (03/11/2026).
+  useEffect(() => { neplusCompterCeNavigateur(); }, []);
 
   /* ----- Accounts: live users ----- */
   useEffect(() => {
@@ -573,9 +582,12 @@ export default function AdminDashboard() {
   /* ----- Derived: account filters ----- */
   const filteredUsers = useMemo(() => {
     const t = (search || '').toLowerCase().trim();
-    const liste = (filtreVenue === 'mailRejete'
-      ? users.filter((u) => u.dernierMail?.statut === 'rejete')
-      : filtrerParVenue(users, filtreVenue)).filter((u) => {
+    const reels = users.filter((u) => !estCompteTest(u));
+    const liste = (filtreVenue === 'comptesTest'
+      ? users.filter(estCompteTest)
+      : filtreVenue === 'mailRejete'
+      ? reels.filter((u) => u.dernierMail?.statut === 'rejete')
+      : filtrerParVenue(reels, filtreVenue)).filter((u) => {
       // ⛔️ masque les admins dans la liste
       if (u?.role === 'admin') return false;
 
@@ -618,6 +630,17 @@ export default function AdminDashboard() {
     } catch (e) {
       console.error(e);
       toast.error('Impossible de modifier le rôle.');
+    }
+  };
+
+  const basculerCompteTest = async (u) => {
+    const next = !estCompteTest(u);
+    try {
+      await updateDoc(doc(db, 'users', u.id), { compteTest: next });
+      toast.success(next ? 'Compte mis à part (test).' : 'Compte remis dans les stats.');
+    } catch (e) {
+      console.error(e);
+      toast.error('Impossible de modifier le compte.');
     }
   };
 
@@ -840,6 +863,7 @@ export default function AdminDashboard() {
                 <option value="revenus7j">Revenus depuis 7 jours</option>
                 <option value="pasRevenus">Pas revenus depuis l'inscription</option>
                 <option value="mailRejete">Mail jamais reçu (rejeté)</option>
+                <option value="comptesTest">Comptes test ({users.filter(estCompteTest).length})</option>
               </select>
               <select
                 className="border rounded-lg px-3 py-2"
@@ -865,7 +889,7 @@ export default function AdminDashboard() {
             </div>
 
             {(() => {
-              const b = bilanMails(users);
+              const b = bilanMails(users.filter((u) => !estCompteTest(u)));
               return (
                 <p className="text-sm text-gray-600">
                   Mails des 7 derniers jours : <b>{b.envoyes}</b> envoyés · <b>{b.recus}</b> reçus · <b className="text-green-700">{b.cliques}</b> cliqués · <b className="text-red-600">{b.rejetes}</b> rejetés
@@ -976,6 +1000,13 @@ export default function AdminDashboard() {
                             Reset MDP
                           </button>
                           <button
+                            className="px-2 py-1 text-xs rounded bg-slate-100 hover:bg-slate-200"
+                            onClick={() => basculerCompteTest(u)}
+                            title="Un compte test est exclu des statistiques"
+                          >
+                            {estCompteTest(u) ? 'Pas un test' : 'Compte test'}
+                          </button>
+                          <button
                             className="px-2 py-1 text-xs rounded bg-gray-100 hover:bg-gray-200"
                             onClick={() => toggleDisabled(u)}
                           >
@@ -1016,9 +1047,9 @@ export default function AdminDashboard() {
         {/* === STATS TAB === */}
         {tab === 'stats' && (
           <StatsTab
-            users={users}
-            payments={payments}
-            lessons={lessons}
+            users={users.filter((u) => !estCompteTest(u))}
+            payments={payments.filter((p) => ![p.teacher_uid, p.teacher_id, p.payer_uid].some((id) => estCompteTest(teacherMap.get(id))))}
+            lessons={lessons.filter((l) => ![l.teacher_id, l.student_id].some((id) => estCompteTest(teacherMap.get(id))))}
             lessonsLoading={lessonsLoading || payLoading || usersLoading}
           />
         )}
@@ -1089,7 +1120,7 @@ export default function AdminDashboard() {
                   onClick={async () => {
                     try {
                       setMessageSending(true);
-                      const nonAdmins = users.filter(u => u.role !== 'admin');
+                      const nonAdmins = users.filter(u => u.role !== 'admin' && !estCompteTest(u));
                       const fails = await broadcastToUids(nonAdmins.map((u) => u.id), messageTitle.trim(), messageBody.trim(), "https://edukaraib.com/dashboard");
                       toast(fails ? `Message envoyé, mais ${fails} email(s) en échec (notification in-app OK).` : 'Message envoyé à tous (hors admins).');
                       setMessageTitle('');
@@ -1099,7 +1130,7 @@ export default function AdminDashboard() {
                     }
                   }}
                 >
-                  Envoyer à tous ({users.filter(u=>u.role!=='admin').length})
+                  Envoyer à tous ({users.filter(u=>u.role!=='admin' && !estCompteTest(u)).length})
                 </button>
               </div>
               <p className="text-xs text-gray-500 mt-2">

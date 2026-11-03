@@ -39,7 +39,7 @@ const db = getFirestore(app);
 await connecterAdmin(app);
 
 const snap = await getDocs(query(collection(db, 'users'), where('role', '==', 'teacher')));
-const profs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+const profs = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((t) => t.compteTest !== true);
 
 // Notes : mêmes chunks de 10 que les landings (limite du `in` Firestore).
 const stats = {};

@@ -44,7 +44,7 @@ function semaine(d) {
 const jjmm = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
 
 const snap = await getDocs(collection(db, 'users'));
-const users = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((u) => u.role !== 'admin');
+const users = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((u) => u.role !== 'admin' && u.compteTest !== true);
 
 const debut = semaine(new Date(Date.now() - (SEMAINES - 1) * 7 * 24 * 3600 * 1000));
 const recents = users
