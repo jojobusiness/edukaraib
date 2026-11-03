@@ -23,11 +23,11 @@
 | PLAN_DERNIERE_CONNEXION (23/10) | Colonne admin + « Vu » | commit `fe9eb1db` |
 | PLAN_CREATEURS (02/11) | Code créateur, barème, lien court | `essai-createur-prod.mjs` ; ⚠️ crédit et virement non prouvés sans vrai paiement |
 
-## 🔨 À faire (code)
+## 🔨 Code — appliqués le 03/11
 | Plan | État |
 |---|---|
-| PLAN_SUIVI_EMAILS (27/10) | Jamais commencé (le fichier n'était même pas versionné). Corrigé le 03/11, puis appliqué. |
-| PLAN_ANALYTICS_DRAIN_FIX | **Remplacé** le 03/11 par un compteur maison (voir ce plan) : l'écran « visites » de l'admin est vide depuis le début. |
+| PLAN_SUIVI_EMAILS (27/10) | ✅ Appliqué le 03/11 (commit 29a22e21) : « reçu » prouvé en prod ; « cliqué » à voir au premier clic réel. |
+| PLAN_ANALYTICS_DRAIN_FIX | ✅ Remplacé le 03/11 par `api/visite.mjs` : prouvé avec une vraie visite de /rentree. |
 
 ## 🧑 À faire par Joseph (hors code)
 | Plan | Où |
