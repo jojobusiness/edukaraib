@@ -49,6 +49,7 @@ const ParentCalendar = lazy(() => import('./pages/ParentCalendar'));
 const Contact = lazy(() => import('./pages/Contact'));
 const CGU = lazy(() => import('./pages/CGU'));
 const Privacy = lazy(() => import('./pages/Privacy'));
+const MentionsLegales = lazy(() => import('./pages/MentionsLegales'));
 const ChildDetails = lazy(() => import('./pages/ChildDetails'));
 const TeacherProfile = lazy(() => import('./pages/TeacherProfile'));
 const PaySuccess = lazy(() => import('./pages/pay/Success.jsx'));
@@ -191,6 +192,7 @@ function App() {
             <Route path="/methode-revision" element={<Navigate to="/methode" replace />} />
             <Route path="/cgu" element={<CGU />} />
             <Route path="/privacy" element={<Privacy />} />
+            <Route path="/mentions-legales" element={<MentionsLegales />} />
             <Route path="/pay/success" element={<PaySuccess />} />
             <Route path="/pay/cancel" element={<PayCancel />} />
             <Route path="/facture/:paymentId" element={<PrivateRoute><Invoice /></PrivateRoute>} />

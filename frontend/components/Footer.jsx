@@ -39,6 +39,7 @@ export default function Footer() {
             <Link to="/methode" className="hover:underline">Méthode de révision</Link>
             <Link to="/cgu" className="hover:underline">Conditions</Link>
             <Link to="/privacy" className="hover:underline">Confidentialité</Link>
+            <Link to="/mentions-legales" className="hover:underline">Mentions légales</Link>
           </div>
         </div>
       </div>

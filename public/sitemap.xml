@@ -19,6 +19,7 @@
   <url><loc>https://edukaraib.com/contact</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
   <url><loc>https://edukaraib.com/cgu</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
   <url><loc>https://edukaraib.com/privacy</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
+  <url><loc>https://edukaraib.com/mentions-legales</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
   <url><loc>https://edukaraib.com/partenaire</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://edukaraib.com/about</loc><changefreq>yearly</changefreq><priority>0.5</priority></url>
   <url><loc>https://edukaraib.com/blog</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
