@@ -532,15 +532,6 @@ async function sendPaymentConfirmationEmail(md, amountTotalCents, sessionId = nu
       </td></tr>
     </table>
 
-    <!-- Crédit d'impôt -->
-    <table width="100%" cellspacing="0" cellpadding="0" style="background:#fffbeb;border-radius:10px;border:1px solid #fde68a;margin-bottom:24px;">
-      <tr><td style="padding:14px 16px;">
-        <p style="margin:0;font-size:13px;color:#92400e;line-height:1.6;">
-          💡 <strong>Crédit d'impôt :</strong> En France, les cours particuliers ouvrent droit à un crédit d'impôt de <strong>50 %</strong> des sommes versées (service à la personne — art. 199 sexdecies CGI). Conservez cet email comme justificatif.
-        </p>
-      </td></tr>
-    </table>
-
     <!-- CTA -->
     <div style="text-align:center;margin-bottom:28px;">
       ${sessionId ? `<a href="${APP_BASE_URL}/facture/${sessionId}" style="display:inline-block;background:#00804B;color:#ffffff;text-decoration:none;font-weight:700;padding:13px 28px;border-radius:12px;font-size:15px;margin:0 6px 10px;">📄 Télécharger ma facture</a>` : ''}

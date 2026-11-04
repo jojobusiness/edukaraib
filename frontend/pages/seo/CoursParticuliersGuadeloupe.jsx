@@ -15,7 +15,7 @@ export default function CoursParticuliersGuadeloupe() {
       faq={[
         {
           q: 'Combien coûtent les cours particuliers en Guadeloupe ?',
-          a: "Les tarifs varient selon la matière et le niveau, généralement entre 20€ et 50€/h + 10€ de frais de plateforme. Le crédit d'impôt de 50% permet aux foyers fiscaux français de récupérer la moitié de la dépense. Les packs 5h et 10h offrent une réduction supplémentaire.",
+          a: "Les tarifs varient selon la matière et le niveau, généralement entre 20€ et 50€/h + 10€ de frais de plateforme. Les packs 5h et 10h offrent une réduction supplémentaire.",
         },
         {
           q: 'Comment trouver un professeur particulier à Marie-Galante ou en Basse-Terre ?',

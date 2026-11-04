@@ -18,7 +18,7 @@ export default function CoursMaths() {
         },
         {
           q: 'Quel est le tarif moyen d\'un cours de maths particulier ?',
-          a: "Entre 20 EUR et 50 EUR de l'heure selon le niveau et le professeur, plus 10 EUR de frais de plateforme. Les packs 5h et 10h offrent une remise de 10%. 50% deductibles des impots pour les residents francais.",
+          a: "Entre 20 EUR et 50 EUR de l'heure selon le niveau et le professeur, plus 10 EUR de frais de plateforme. Les packs 5h et 10h offrent une remise de 10%.",
         },
         {
           q: 'Les cours de maths sont-ils adaptes au programme local ?',

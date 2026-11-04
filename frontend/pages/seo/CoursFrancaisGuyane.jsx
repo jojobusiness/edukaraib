@@ -15,7 +15,7 @@ export default function CoursFrancaisGuyane() {
       faq={[
         {
           q: 'Combien coûte un cours de français particulier en Guyane ?',
-          a: "Les tarifs varient selon le niveau et le professeur, généralement entre 20€ et 40€/h + 10€ de frais de plateforme. 50% des dépenses sont déductibles des impôts pour les résidents français. Les packs 5h et 10h réduisent le coût total.",
+          a: "Les tarifs varient selon le niveau et le professeur, généralement entre 20€ et 40€/h + 10€ de frais de plateforme. Les packs 5h et 10h réduisent le coût total.",
         },
         {
           q: 'Les cours sont-ils adaptés au programme de l\'Académie de Guyane ?',

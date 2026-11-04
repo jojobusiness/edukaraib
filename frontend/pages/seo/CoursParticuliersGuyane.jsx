@@ -14,7 +14,7 @@ export default function CoursParticuliersGuyane() {
       faq={[
         {
           q: 'Combien coute un cours particulier en Guyane ?',
-          a: "Le tarif varie selon la matiere et le niveau, generalement entre 20 EUR et 50 EUR de l'heure + 10 EUR de frais de plateforme EduKaraib. Les packs 5h et 10h offrent une remise de 10%. En tant que resident francais, 50% des frais de soutien scolaire sont deductibles de vos impots.",
+          a: "Le tarif varie selon la matiere et le niveau, generalement entre 20 EUR et 50 EUR de l'heure + 10 EUR de frais de plateforme EduKaraib. Les packs 5h et 10h offrent une remise de 10%.",
         },
         {
           q: 'Est-ce que EduKaraib couvre toute la Guyane ?',

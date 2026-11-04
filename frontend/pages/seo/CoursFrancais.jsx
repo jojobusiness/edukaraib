@@ -26,7 +26,7 @@ export default function CoursFrancais() {
         },
         {
           q: 'Quel est le tarif d\'un cours de francais particulier ?',
-          a: "Entre 20 EUR et 45 EUR de l'heure + 10 EUR de frais de plateforme. Les packs 5h et 10h offrent une remise de 10%. 50% deductibles des impots en France.",
+          a: "Entre 20 EUR et 45 EUR de l'heure + 10 EUR de frais de plateforme. Les packs 5h et 10h offrent une remise de 10%.",
         },
       ]}
     />

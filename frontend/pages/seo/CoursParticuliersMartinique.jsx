@@ -15,7 +15,7 @@ export default function CoursParticuliersMartinique() {
       faq={[
         {
           q: 'Combien coûtent les cours particuliers en Martinique ?',
-          a: "Les tarifs varient entre 20€ et 50€/h selon la matière et le niveau du professeur. La plateforme ajoute 10€/h de frais de service. Le crédit d'impôt français permet de récupérer 50% des frais payés — soit un coût réel divisé par deux pour les foyers imposables.",
+          a: "Les tarifs varient entre 20€ et 50€/h selon la matière et le niveau du professeur. La plateforme ajoute 10€/h de frais de service.",
         },
         {
           q: 'Peut-on trouver des cours particuliers pour le primaire en Martinique ?',

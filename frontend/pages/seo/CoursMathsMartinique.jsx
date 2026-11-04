@@ -15,7 +15,7 @@ export default function CoursMathsMartinique() {
       faq={[
         {
           q: 'Combien coûte un cours de maths particulier en Martinique ?',
-          a: "Le tarif varie selon le niveau et le professeur, généralement entre 20€ et 40€ de l'heure + 10€ de frais de plateforme. Les packs 5h et 10h permettent d'économiser jusqu'à 10% sur le tarif horaire. De plus, 50% des frais sont déductibles des impôts pour les familles françaises.",
+          a: "Le tarif varie selon le niveau et le professeur, généralement entre 20€ et 40€ de l'heure + 10€ de frais de plateforme. Les packs 5h et 10h permettent d'économiser jusqu'à 10% sur le tarif horaire.",
         },
         {
           q: 'Les cours de maths sont-ils adaptés au programme de Martinique ?',

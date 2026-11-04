@@ -228,15 +228,10 @@ export default function Invoice() {
               </div>
             </div>
 
-            {/* Note légale + crédit d'impôt */}
+            {/* Note légale */}
             <div style={{ marginTop: 24, padding: '14px 18px', background: '#fffbeb', borderRadius: 10, border: '1px solid #fde68a', fontSize: 13, color: '#92400e', lineHeight: 1.65 }}>
               <div>
                 <strong>¹ TVA non applicable</strong>, art. 293B du CGI.
-              </div>
-              <div style={{ marginTop: 8 }}>
-                <strong>💡 Crédit d'impôt :</strong> En France, les cours particuliers à domicile ou en ligne ouvrent droit à un{' '}
-                <strong>crédit d'impôt de 50 %</strong> des sommes versées (service à la personne — art. 199 sexdecies CGI).
-                Conservez cette facture comme justificatif fiscal.
               </div>
             </div>
 

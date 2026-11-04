@@ -22,7 +22,7 @@ export const blogPosts = [
       },
       {
         heading: 'Quels tarifs pour un cours particulier en Martinique ?',
-        content: `Les tarifs en Martinique varient entre 20 € et 50 € de l'heure selon la matière, le niveau et l'expérience du professeur. Les cours de terminale et les préparations aux concours sont généralement tarifés plus haut. Sur EduKaraib, les packs 5h et 10h permettent de réaliser une économie de 10 % par rapport aux cours à l'unité. Rappel important : 50 % des dépenses de cours particuliers sont déductibles des impôts pour les résidents français (crédit d'impôt pour l'emploi à domicile), ce qui réduit significativement le coût réel.`,
+        content: `Les tarifs en Martinique varient entre 20 € et 50 € de l'heure selon la matière, le niveau et l'expérience du professeur. Les cours de terminale et les préparations aux concours sont généralement tarifés plus haut. Sur EduKaraib, les packs 5h et 10h permettent de réaliser une économie de 10 % par rapport aux cours à l'unité.`,
       },
       {
         heading: 'Présentiel ou visio : que choisir en Martinique ?',
@@ -37,7 +37,7 @@ export const blogPosts = [
   {
     slug: 'prix-cours-particuliers-caraibes-2026',
     title: 'Prix des cours particuliers en Martinique, Guadeloupe et Guyane en 2026',
-    description: 'Combien coûte un cours particulier aux Caraïbes ? Tarifs moyens par matière et niveau, comparatif présentiel vs visio, et comment réduire la facture grâce aux déductions fiscales.',
+    description: 'Combien coûte un cours particulier aux Caraïbes ? Tarifs moyens par matière et niveau, comparatif présentiel vs visio, et comment réduire la facture avec les packs et la visio.',
     date: '2026-04-05',
     subject: 'Tarifs',
     island: 'Caraïbes',
@@ -60,8 +60,8 @@ export const blogPosts = [
         content: `Sur EduKaraib, les packs d'heures permettent de réduire le coût unitaire. Un pack 5h offre 10 % de réduction par rapport aux cours à l'unité, et un pack 10h permet jusqu'à 10 % d'économie également. Ces packs sont particulièrement adaptés aux préparations d'examens ou aux suivis sur la durée. En cas d'annulation ou de cours non effectués, un remboursement automatique au prorata est appliqué.`,
       },
       {
-        heading: "Déduction fiscale : jusqu'à 50 % remboursés",
-        content: `Un avantage souvent méconnu : en France (y compris les DOM), les dépenses de cours particuliers à domicile ouvrent droit à un crédit d'impôt de 50 %. Concrètement, si vous dépensez 200 € en cours particuliers sur l'année, vous récupérez 100 € lors de votre déclaration d'impôts. Ce mécanisme s'applique aux cours réalisés en présentiel au domicile de l'élève. EduKaraib fournit des factures téléchargeables pour faciliter votre déclaration.`,
+        heading: "La visio : le même cours, sans déplacement",
+        content: `En visio, le professeur n'a pas de trajet : certains proposent un tarif visio différent de leur tarif à domicile, affiché sur leur profil. La visio est intégrée au site, sans logiciel à installer. Après chaque paiement, la facture est téléchargeable depuis votre tableau de bord.`,
       },
       {
         heading: 'Paiement en 3x sans frais',
@@ -166,7 +166,7 @@ export const blogPosts = [
       },
       {
         heading: 'Tarifs des cours particuliers en Guyane',
-        content: `Les tarifs en Guyane sont comparables à ceux pratiqués en Martinique et Guadeloupe. Comptez entre 22 et 45 euros de l'heure selon le niveau et la matière. Pour le primaire et le collège, les tarifs se situent généralement entre 22 et 32 euros par heure. Pour le lycée et les niveaux supérieurs, les cours peuvent atteindre 45 à 55 euros de l'heure. Les packs 5h et 10h disponibles sur EduKaraib permettent de réaliser jusqu'à 10 % d'économie. Rappel : les cours particuliers à domicile ouvrent droit à un crédit d'impôt de 50 % pour les résidents français, y compris en Guyane.`,
+        content: `Les tarifs en Guyane sont comparables à ceux pratiqués en Martinique et Guadeloupe. Comptez entre 22 et 45 euros de l'heure selon le niveau et la matière. Pour le primaire et le collège, les tarifs se situent généralement entre 22 et 32 euros par heure. Pour le lycée et les niveaux supérieurs, les cours peuvent atteindre 45 à 55 euros de l'heure. Les packs 5h et 10h disponibles sur EduKaraib permettent de réaliser jusqu'à 10 % d'économie.`,
       },
       {
         heading: 'Comment réserver sur EduKaraib depuis la Guyane',
@@ -240,7 +240,7 @@ export const blogPosts = [
       },
       {
         heading: 'Trouver un professeur d\'anglais aux Caraïbes sur EduKaraib',
-        content: `Sur EduKaraib, filtrez par "Anglais" dans la barre de recherche pour voir les professeurs disponibles en Martinique, Guadeloupe, Guyane et en ligne. Vérifiez les niveaux enseignés (primaire, collège, lycée, supérieur), le mode de cours (présentiel ou visio) et les avis laissés par d'autres familles. Certains profils proposent un essai gratuit d'une heure pour tester la méthode avant de s'engager sur un pack. Le paiement est sécurisé et les factures sont téléchargeables pour la déclaration d'impôts.`,
+        content: `Sur EduKaraib, filtrez par "Anglais" dans la barre de recherche pour voir les professeurs disponibles en Martinique, Guadeloupe, Guyane et en ligne. Vérifiez les niveaux enseignés (primaire, collège, lycée, supérieur), le mode de cours (présentiel ou visio) et les avis laissés par d'autres familles. Certains profils proposent un essai gratuit d'une heure pour tester la méthode avant de s'engager sur un pack. Le paiement est sécurisé et les factures sont téléchargeables.`,
       },
     ],
   },
@@ -275,7 +275,7 @@ export const blogPosts = [
       },
       {
         heading: 'Tarifs et modalités de réservation',
-        content: `Pour le primaire et le collège, les tarifs sur EduKaraib se situent généralement entre 20 et 35 euros de l'heure. Les packs 5h et 10h permettent de réduire le coût unitaire jusqu'à 10 %. Le paiement est sécurisé par carte bancaire, Klarna en 3 fois ou Apple Pay. Les familles recoivent une confirmation par email après chaque réservation et un rappel 30 minutes avant le cours. Les factures sont téléchargeables directement depuis le tableau de bord, utiles pour la déclaration de crédit d'impôt (50 % pour les cours à domicile).`,
+        content: `Pour le primaire et le collège, les tarifs sur EduKaraib se situent généralement entre 20 et 35 euros de l'heure. Les packs 5h et 10h permettent de réduire le coût unitaire jusqu'à 10 %. Le paiement est sécurisé par carte bancaire, Klarna en 3 fois ou Apple Pay. Les familles recoivent une confirmation par email après chaque réservation et un rappel 30 minutes avant le cours. Les factures sont téléchargeables directement depuis le tableau de bord.`,
       },
     ],
   },
@@ -302,7 +302,7 @@ export const blogPosts = [
       },
       {
         heading: 'Quels tarifs pour un cours particulier en Guadeloupe ?',
-        content: `Les tarifs en Guadeloupe varient entre 20 et 50 euros de l'heure selon la matière, le niveau et l'expérience du professeur. Les cours de terminale et les préparations aux concours sont tarifés plus haut que les cours de primaire ou de collège. Sur EduKaraib, les packs 5h et 10h permettent de réaliser jusqu'à 10 % d'économie. Important : 50 % des dépenses de cours particuliers sont déductibles des impôts pour les résidents français (crédit d'impôt pour l'emploi à domicile), ce qui réduit significativement le coût réel pour les familles guadeloupéennes.`,
+        content: `Les tarifs en Guadeloupe varient entre 20 et 50 euros de l'heure selon la matière, le niveau et l'expérience du professeur. Les cours de terminale et les préparations aux concours sont tarifés plus haut que les cours de primaire ou de collège. Sur EduKaraib, les packs 5h et 10h permettent de réaliser jusqu'à 10 % d'économie.`,
       },
       {
         heading: 'Présentiel ou visio en Guadeloupe : que choisir ?',
@@ -310,7 +310,7 @@ export const blogPosts = [
       },
       {
         heading: 'Comment réserver sur EduKaraib depuis la Guadeloupe ?',
-        content: `La démarche est entièrement en ligne. Créez un compte gratuit sur EduKaraib, recherchez un professeur en filtrant par matière et par ville, consultez les profils et les avis, puis réservez en quelques clics. Le paiement est sécurisé par carte bancaire, Klarna en 3 fois sans frais ou Apple Pay. Le professeur est prévenu automatiquement, vous recevez une confirmation par email et un rappel 30 minutes avant chaque cours. Les factures sont téléchargeables depuis votre tableau de bord pour faciliter la déclaration du crédit d'impôt.`,
+        content: `La démarche est entièrement en ligne. Créez un compte gratuit sur EduKaraib, recherchez un professeur en filtrant par matière et par ville, consultez les profils et les avis, puis réservez en quelques clics. Le paiement est sécurisé par carte bancaire, Klarna en 3 fois sans frais ou Apple Pay. Le professeur est prévenu automatiquement, vous recevez une confirmation par email et un rappel 30 minutes avant chaque cours. Les factures sont téléchargeables depuis votre tableau de bord.`,
       },
     ],
   },
@@ -380,7 +380,7 @@ export const blogPosts = [
       },
       {
         heading: 'Tarifs et options de paiement',
-        content: `Les tarifs pour les cours particuliers de physique-chimie se situent entre 25 et 50 euros de l'heure selon le niveau et l'expérience du professeur. Pour la Terminale spécialité et les niveaux supérieurs, les tarifs peuvent atteindre 55 euros. Les packs 5h et 10h disponibles sur EduKaraib permettent de réduire le coût unitaire jusqu'à 10 %. Le paiement est possible par carte bancaire, Klarna en 3 fois sans frais ou Apple Pay. Les factures téléchargeables depuis votre tableau de bord vous permettent de bénéficier du crédit d'impôt de 50 % sur les cours à domicile.`,
+        content: `Les tarifs pour les cours particuliers de physique-chimie se situent entre 25 et 50 euros de l'heure selon le niveau et l'expérience du professeur. Pour la Terminale spécialité et les niveaux supérieurs, les tarifs peuvent atteindre 55 euros. Les packs 5h et 10h disponibles sur EduKaraib permettent de réduire le coût unitaire jusqu'à 10 %. Le paiement est possible par carte bancaire, Klarna en 3 fois sans frais ou Apple Pay. Les factures sont téléchargeables depuis votre tableau de bord.`,
       },
     ],
   },

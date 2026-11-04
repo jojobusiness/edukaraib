@@ -14,7 +14,7 @@ export default function CoursMathsGuadeloupe() {
       faq={[
         {
           q: 'Combien coute un cours de maths particulier en Guadeloupe ?',
-          a: "Le tarif varie selon le niveau et le professeur, generalement entre 20 EUR et 40 EUR de l'heure + 10 EUR de frais de plateforme. Les packs 5h et 10h permettent d'economiser jusqu'a 10% sur le tarif horaire. 50% des frais sont deductibles des impots pour les familles francaises.",
+          a: "Le tarif varie selon le niveau et le professeur, generalement entre 20 EUR et 40 EUR de l'heure + 10 EUR de frais de plateforme. Les packs 5h et 10h permettent d'economiser jusqu'a 10% sur le tarif horaire.",
         },
         {
           q: 'Les cours de maths sont-ils adaptes au programme de Guadeloupe ?',

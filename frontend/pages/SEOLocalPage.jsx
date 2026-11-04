@@ -176,8 +176,7 @@ export default function SEOLocalPage({
                 'Cours en visioconférence depuis chez vous, zéro déplacement',
                 'Professeurs diplômés avec avis vérifiés par de vraies familles',
                 "Programmes adaptés à l'Académie de Martinique / Guadeloupe / Guyane",
-                'Réduction fiscale de 50% pour les familles françaises (crédit d\'impôt)',
-                'Facture téléchargeable pour votre déclaration fiscale',
+                'Facture téléchargeable après chaque paiement',
                 'Packs 5h et 10h pour économiser sur les cours réguliers',
                 'Support disponible 7j/7 par email',
               ].map((benefit) => (

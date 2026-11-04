@@ -15,7 +15,7 @@ export default function CoursAnglaisGuadeloupe() {
       faq={[
         {
           q: "Combien coûte un cours d'anglais particulier en Guadeloupe ?",
-          a: "Les tarifs varient entre 20€ et 40€ de l'heure selon le professeur + 10€ de frais de plateforme. Les packs 5h et 10h offrent une réduction. 50% des frais sont déductibles des impôts pour les résidents français.",
+          a: "Les tarifs varient entre 20€ et 40€ de l'heure selon le professeur + 10€ de frais de plateforme. Les packs 5h et 10h offrent une réduction.",
         },
         {
           q: "Les cours d'anglais sont-ils adaptés au programme de Guadeloupe ?",
