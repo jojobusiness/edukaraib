@@ -2,6 +2,7 @@ import { db } from '../lib/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import fetchWithAuth from './fetchWithAuth';
 import { getAcquisitionRecord } from '../lib/acquisition';
+import { detecterPays } from '../lib/pays';
 
 const REF_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function randomSuffix(n = 6) {
@@ -33,6 +34,8 @@ export async function ensureUserDoc(user, { defaultRole = 'student', heardFrom =
     city: 'En ligne',
     createdAt: serverTimestamp(),
     acquisition: getAcquisitionRecord(heardFrom),
+    // D'où vient l'inscrit (09/11/2026) ; detecterPays ne lève jamais
+    pays_inscription: await detecterPays(),
   };
 
   // Code de parrainage étudiant (comme à l'inscription email)

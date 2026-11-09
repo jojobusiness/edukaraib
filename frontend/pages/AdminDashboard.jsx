@@ -985,7 +985,7 @@ export default function AdminDashboard() {
                         })()}
                       </td>
                       <td className="p-2 text-right">
-                        <div className="flex gap-2 justify-end">
+                        <div className="flex flex-wrap gap-1 justify-end min-w-[180px] max-w-[240px] ml-auto">
                           <Link
                             to={`/chat/${u.id}?from=admin`}
                             className="px-2 py-1 text-xs rounded bg-primary text-white hover:bg-primary-dark"

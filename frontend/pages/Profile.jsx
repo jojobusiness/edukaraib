@@ -19,6 +19,7 @@ import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
 import { toast } from 'sonner';
 import { confirmer, demanderTexte } from '../components/ui/Dialogues';
+import { corrigerIndicatif } from '../../api/_telephone.mjs';
 
 /* ====== Contrôles & listes (alignés avec Register) ====== */
 // Villes des Caraïbes et au-delà (pour profs en visio du monde entier)
@@ -491,7 +492,7 @@ export default function Profile() {
         firstName: (profile.firstName || '').trim(),
         lastName: (profile.lastName || '').trim(),
         city: (profile.city || '').trim(),
-        phone: (profile.phone || '').trim(),
+        phone: corrigerIndicatif((profile.phone || '').trim()),
 
         // modes
         presentiel_enabled: !!profile.presentiel_enabled,

@@ -21,6 +21,8 @@ import { getAcquisitionRecord } from '../lib/acquisition';
 import { HEARD_FROM_OPTIONS } from '../../api/_acquisition.mjs';
 import { pixelTrack } from '../lib/metaPixel';
 import { toast } from 'sonner';
+import { corrigerIndicatif, paysDepuisTelephone, PAYS_TELEPHONE, PAYS_PAR_DEFAUT } from '../../api/_telephone.mjs';
+import { detecterPays } from '../lib/pays';
 
 // ————————————————————————————————
 // Villes des Caraïbes et au-delà (pour profs en visio du monde entier)
@@ -201,6 +203,11 @@ export default function Register() {
     return navigate('/dashboard-eleve');
   };
 
+  // Pays de connexion : indicatif par défaut du téléphone + origine de l'inscrit (09/11/2026)
+  const [paysDetecte, setPaysDetecte] = useState('');
+  useEffect(() => { detecterPays().then(setPaysDetecte); }, []);
+  const paysTelephone = PAYS_TELEPHONE.has(paysDetecte) ? paysDetecte : PAYS_PAR_DEFAUT;
+
   // Retour d'un fallback redirect mobile : on récupère l'utilisateur au montage
   useEffect(() => {
     consumeGoogleRedirect().then((u) => { if (u) finishGoogle(u); });
@@ -357,8 +364,10 @@ export default function Register() {
         firstName: form.firstName,
         lastName: form.lastName,
         fullName,
-        phone: form.phone || '',
+        phone: corrigerIndicatif(form.phone || ''),
         city: form.city || (isExpress ? 'En ligne' : ''),
+        // D'où vient l'inscrit : pays de connexion, sinon déduit du téléphone
+        pays_inscription: paysDetecte || paysDepuisTelephone(form.phone || ''),
         avatarUrl,
         createdAt: serverTimestamp(),
         // Source d'arrivée + réponse déclarée ; ne lève jamais (valeur 'inconnu')
@@ -741,10 +750,12 @@ export default function Register() {
                 </label>
 
                 <PhoneInput
+                  key={paysTelephone}
                   international
-                  defaultCountry="GF"
+                  defaultCountry={paysTelephone}
                   value={form.phone}
                   onChange={(value) => setForm((f) => ({ ...f, phone: value || '' }))}
+                  onBlur={() => setForm((f) => ({ ...f, phone: corrigerIndicatif(f.phone) }))}
                 />
 
                 <p className="text-xs text-gray-500 mt-1">
