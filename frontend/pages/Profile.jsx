@@ -365,8 +365,10 @@ export default function Profile() {
     }
   }
 
+  // Renvoie true seulement si le profil est bien enregistré (la fenêtre des
+  // disponibilités ne se ferme qu'à cette condition, 09/11/2026).
   const handleSave = async (e) => {
-    e.preventDefault();
+    e?.preventDefault?.();
     if (!profile.uid) return;
 
     // Validations de base
@@ -538,6 +540,7 @@ export default function Profile() {
       setProfile((p) => ({ ...p, avatarUrl, fullName }));
       setCertFiles([]);
       toast.success('Profil mis à jour !');
+      return true;
     } catch (err) {
       console.error(err);
       toast.error("Erreur pendant l'enregistrement.");
@@ -1215,12 +1218,15 @@ export default function Profile() {
                   />
                 </div>
                 <div className="flex justify-between items-center gap-2 border-t bg-gray-50 p-4 sticky bottom-0">
-                  <p className="text-xs text-gray-500">Clique <b>Enregistrer</b> (en bas du profil) pour valider.</p>
+                  <p className="text-xs text-gray-500">« Enregistrer » sauvegarde vos créneaux tout de suite.</p>
                   <div className="flex gap-2">
                     <button type="button" onClick={() => setShowAvailDrawer(false)}
                       className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 text-sm font-semibold">Fermer</button>
-                    <button type="submit" className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold shadow hover:bg-primary/90"
-                      onClick={() => setShowAvailDrawer(false)}>Enregistrer</button>
+                    <button type="button" disabled={saving}
+                      className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold shadow hover:bg-primary/90 disabled:opacity-60"
+                      onClick={async () => { if ((await handleSave()) === true) setShowAvailDrawer(false); }}>
+                      {saving ? 'Enregistrement…' : 'Enregistrer'}
+                    </button>
                   </div>
                 </div>
               </div>
