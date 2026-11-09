@@ -44,6 +44,18 @@ export default async function handler(req, res) {
     return res.status(401).json({ ok: false, error: 'Invalid token' });
   }
 
+  // 09/11/2026 — L'admin supprime le compte d'un autre (doublon, compte test) :
+  // même nettoyage complet, connexion comprise. Avant, le bouton admin n'effaçait
+  // que la fiche users : le compte de connexion restait actif.
+  const cible = typeof req.body?.uid === 'string' ? req.body.uid.trim() : '';
+  if (cible && cible !== uid) {
+    const appelant = await db.collection('users').doc(uid).get();
+    if (appelant.data()?.role !== 'admin') return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+    const visee = await db.collection('users').doc(cible).get();
+    if (visee.data()?.role === 'admin') return res.status(403).json({ ok: false, error: 'ADMIN_PROTEGE' });
+    uid = cible;
+  }
+
   try {
     const userRef = db.collection('users').doc(uid);
     const userSnap = await userRef.get();
@@ -122,7 +134,7 @@ export default async function handler(req, res) {
 
     if (userSnap.exists) await userRef.delete();
 
-    await authAdmin.deleteUser(uid);
+    await authAdmin.deleteUser(uid).catch((e) => { if (e?.code !== 'auth/user-not-found') throw e; });
 
     return res.status(200).json({ ok: true, stripeDeleted });
   } catch (e) {

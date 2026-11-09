@@ -7,7 +7,6 @@ import { auth, db } from '../lib/firebase';
 import {
   addDoc,
   collection,
-  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -670,11 +669,12 @@ export default function AdminDashboard() {
   const removeUser = async (u) => {
     if (!(await confirmer({ titre: 'Supprimer définitivement ce compte ?', message: `${nameOf(u)} — cette action est irréversible.`, libelleConfirmer: 'Supprimer', danger: true }))) return;
     try {
-      await deleteDoc(doc(db, 'users', u.id));
-      toast.success('Utilisateur supprimé.');
+      // Suppression complète côté serveur : fiche, connexion, cours, enfants, fichiers (09/11/2026)
+      await fetchWithAuth('/api/delete-account', { method: 'POST', body: JSON.stringify({ uid: u.id }) });
+      toast.success('Compte supprimé (fiche et connexion).');
     } catch (e) {
       console.error(e);
-      toast.error('Suppression impossible côté Firestore (le compte Auth restera actif si non effacé côté Auth).');
+      toast.error(e?.message?.includes('PAIEMENTS_EN_COURS') || e?.message?.includes('paiement') ? 'Un paiement est en cours sur ce compte : à régler avant suppression.' : 'Suppression impossible.');
     }
   };
 
