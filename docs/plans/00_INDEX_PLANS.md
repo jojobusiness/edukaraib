@@ -18,6 +18,7 @@
 | PLAN_PROF_INVISIBLE (25/09) | Bandeau d'état du prof | `EtatProfilProf.jsx` |
 | PLAN_SAVOIR_QUI_REVIENT (02/10) | Dernière venue | `lib/derniereVenue.js` |
 | PLAN_PAGE_METHODE (15/10) | `/methode` + alerte lead | route `/methode` |
+| PLAN_PAGES_CHATGPT (11/11) | 12 guides prérendus, /llms.txt, pages locales lisibles sans JS | commit `83502489`, vérifié en prod ; mesure ChatGPT 18/11 et 25/11 |
 | PLAN_MESSAGES_SECRET_CORRESPONDANCES (15/10) | Alerte sans extrait, onglet Leads | commit `cf8e0e3a` |
 | PLAN_VERROU_DONNEES, PLAN_VERROU_COURS, PLAN_SECURITE_COMPLETE (23/10) | Sécurité | scripts `diag-regles-*`, `essai-reservation-prod` |
 | PLAN_DERNIERE_CONNEXION (23/10) | Colonne admin + « Vu » | commit `fe9eb1db` |
