@@ -33,6 +33,7 @@ export default function Footer() {
           <p>© {new Date().getFullYear()} EduKaraib — Tous droits réservés</p>
           <div className="mt-2 flex justify-center gap-4">
             <Link to="/blog" className="hover:underline">Blog</Link>
+            <Link to="/guides" className="hover:underline">Guides</Link>
             <Link to="/about" className="hover:underline">À propos</Link>
             <Link to="/contact" className="hover:underline">Contact</Link>
             <Link to="/faq" className="hover:underline">FAQ</Link>

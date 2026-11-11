@@ -3,6 +3,10 @@ import { Link } from 'react-router-dom';
 import { useSEO } from '../hooks/useSEO';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
+import { GUIDES, guidesDuTerritoire } from '../lib/guides';
+
+// Maillage vers les guides du territoire (11/11/2026, PLAN_PAGES_CHATGPT)
+const CLE_ILE = { Guadeloupe: 'guadeloupe', Martinique: 'martinique', Guyane: 'guyane', 'La Réunion': 'reunion' };
 
 const SUBJECTS = [
   'Mathématiques', 'Français', 'Anglais', 'Histoire-Géographie',
@@ -205,13 +209,23 @@ export default function SEOLocalPage({
             </section>
           )}
 
+          {/* Guides du territoire */}
+          <section className="mb-10">
+            <h2 className="text-xl font-bold text-gray-900 mb-3">Guides pour les familles</h2>
+            <ul className="space-y-2">
+              {(guidesDuTerritoire(CLE_ILE[island]).length ? guidesDuTerritoire(CLE_ILE[island]) : GUIDES).slice(0, 5).map((g) => (
+                <li key={g.slug}><Link to={`/guides/${g.slug}`} className="text-primary hover:underline">{g.titre}</Link></li>
+              ))}
+            </ul>
+          </section>
+
           {/* CTA final */}
           <section className="bg-gradient-to-br from-primary to-secondary rounded-xl p-8 text-white text-center">
             <h2 className="text-2xl font-bold mb-3">
               Prêt à commencer ?
             </h2>
             <p className="opacity-90 mb-6">
-              Rejoignez des centaines de familles en {island} qui font confiance à EduKaraib.
+              Tarif affiché avant de réserver, paiement en ligne, cours à domicile ou en visio.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Link

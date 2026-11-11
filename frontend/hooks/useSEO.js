@@ -13,7 +13,8 @@
 
 import { useEffect } from 'react';
 
-const BASE_URL = 'https://edukaraib.com';
+// www : edukaraib.com redirige (307) vers www.edukaraib.com (11/11/2026)
+const BASE_URL = 'https://www.edukaraib.com';
 const DEFAULT_IMAGE = `${BASE_URL}/og-image.png`;
 const SITE_NAME = 'EduKaraib';
 

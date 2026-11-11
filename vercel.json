@@ -17,6 +17,7 @@
     },
     { "src": "/sitemap.xml", "dest": "/api/sitemap.mjs" },
     { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "handle": "filesystem" },
     { "src": "/((?!api|.*\\..*).*)", "dest": "/index.html" }
   ],
   "crons": [

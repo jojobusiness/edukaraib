@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
+import { prerendreGuides } from './scripts/prerendu-guides.mjs';
 
 /* La version du site = le commit déployé par Vercel (17/10/2026). Publiée dans
    /version.json pour que les onglets déjà ouverts sachent qu'un nouveau build
@@ -43,6 +44,7 @@ export default defineConfig({
   plugins: [
     react(),
     publierVersion(),
+    prerendreGuides(),
     sentryVitePlugin({
       org: process.env.SENTRY_ORG,
       project: process.env.SENTRY_PROJECT,

@@ -11,4 +11,4 @@ Disallow: /messages
 Disallow: /chat/
 
 # Ton sitemap (voir étape 2)
-Sitemap: https://edukaraib.com/api/sitemap.xml
+Sitemap: https://www.edukaraib.com/sitemap.xml
