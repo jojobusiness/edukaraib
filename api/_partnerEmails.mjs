@@ -3,6 +3,7 @@
 
 const FROM = 'EduKaraib <notifications@edukaraib.com>';
 import { tagType } from './_suiviEmails.mjs';
+import { ADMIN_INBOX } from './_adminInbox.mjs';
 const appUrl = () => process.env.APP_BASE_URL || 'https://www.edukaraib.com';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => (
@@ -122,7 +123,7 @@ export function sendPartnerPayoutEmail({ to, structureName, amountEur, reference
 /** Information admin : une structure vient de s'inscrire (aucune action requise). */
 export function sendAdminNewPartnerEmail({ structureName, kind, email, code }) {
   return send({
-    to: process.env.ADMIN_INBOX || 'contact@edukaraib.com',
+    to: ADMIN_INBOX,
     subject: `Nouveau partenaire inscrit : ${structureName}`,
     html: layout('Nouveau partenaire inscrit', `
       <p><strong>${esc(structureName)}</strong> (${esc(kind)}) — ${esc(email)}</p>

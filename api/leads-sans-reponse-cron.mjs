@@ -13,6 +13,7 @@
 import { adminDb } from './_firebaseAdmin.mjs';
 import { captureError } from './_sentry.mjs';
 import { tagType } from './_suiviEmails.mjs';
+import { ADMIN_INBOX, rappelAdminDu } from './_adminInbox.mjs';
 
 const DELAI_MS = 4 * 60 * 60 * 1000;
 const HEURE_DEBUT = 8;
@@ -24,18 +25,48 @@ const heureParis = (d = new Date()) =>
 
 const toDate = (v) => (v?.toDate ? v.toDate() : v ? new Date(v) : null);
 
-async function envoyer({ to, subject, html }) {
+async function envoyer({ to, subject, html, type = 'relance-lead' }) {
   if (!process.env.RESEND_API_KEY || !to) return false;
   try {
     const { Resend } = await import('resend');
     // Resend v6 renvoie { data, error } au lieu de lever une exception.
-    const { error } = await new Resend(process.env.RESEND_API_KEY).emails.send({ tags: tagType('relance-lead'), from: FROM, to: [to], subject, html });
+    const { error } = await new Resend(process.env.RESEND_API_KEY).emails.send({ tags: tagType(type), from: FROM, to: [to], subject, html });
     if (error) { console.warn('[lead-relance]', error.message || error); return false; }
     return true;
   } catch (e) {
     console.warn('[lead-relance]', e?.message);
     return false;
   }
+}
+
+async function rappelsMessagesAdmin(maintenant) {
+  const r = { en_attente: 0, rappels: 0 };
+  const snap = await adminDb.collection('suivi_messages_admin').where('repondu_at', '==', null).limit(200).get();
+  for (const docSnap of snap.docs) {
+    const s = docSnap.data();
+    r.en_attente += 1;
+    if (!rappelAdminDu(s, maintenant)) continue;
+    const heures = Math.floor((maintenant - toDate(s.premier_sans_reponse_at)) / 3600000);
+    const nom = s.expediteur_nom || 'Un utilisateur';
+    const role = { teacher: 'professeur', student: 'élève', parent: 'parent', influencer: 'partenaire' }[s.expediteur_role] || s.expediteur_role || '';
+    const lien = `https://www.edukaraib.com/chat/${s.expediteur_uid}?from=admin`;
+    const ok = await envoyer({
+      type: 'rappel-admin',
+      to: ADMIN_INBOX,
+      subject: `⏰ ${nom} attend ta réponse depuis ${heures} h`,
+      html: `<div style="font-family:Arial,Helvetica,sans-serif;line-height:1.55;color:#222">
+  <h2 style="margin:0 0 12px">⏰ Un message à l'admin attend depuis ${heures} h</h2>
+  <p><strong>${nom}</strong>${role ? ` (${role})` : ''} t'a écrit sur EduKaraib et n'a pas encore de réponse dans le chat.</p>
+  <p style="margin:16px 0"><a href="${lien}" style="display:inline-block;background:#2563EB;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none">Répondre dans le chat</a></p>
+  <p style="font-size:13px;color:#666">Un seul rappel par message. Si tu as répondu par téléphone, ignore ce mail.</p>
+</div>`,
+    });
+    if (ok) {
+      await docSnap.ref.set({ rappel_at: new Date() }, { merge: true });
+      r.rappels += 1;
+    }
+  }
+  return r;
 }
 
 export default async function handler(req, res) {
@@ -75,7 +106,7 @@ export default async function handler(req, res) {
         const profNom = prof.fullName || d.prof_nom || 'un professeur';
         const tel = prof.phone ? ` · ☎️ ${prof.phone}` : ' (aucun téléphone en base)';
         await envoyer({
-          to: process.env.ADMIN_INBOX || 'edukaraib@gmail.com',
+          to: ADMIN_INBOX,
           subject: `⏰ ${prenom} attend ${profNom} depuis ${heures} h`,
           html: `<div style="font-family:Arial,Helvetica,sans-serif;line-height:1.55;color:#222">
   <h2 style="margin:0 0 12px">⏰ Une demande attend une réponse</h2>
@@ -96,6 +127,14 @@ export default async function handler(req, res) {
     captureError(e, { where: 'leads-sans-reponse-cron' });
     return res.status(500).json({ error: 'CRON_FAILED', message: e?.message });
   }
+
+  // Messages à l'admin restés sans réponse (16/11/2026, PLAN_ALERTES_ADMIN).
+  // Le 16/11, une prof a signalé un bug à 10 h 52 et personne ne l'a vu.
+  // Écrit par functions/index.js (onMessageCreated) ; on n'y lit aucun contenu.
+  rapport.admin_rappels = await rappelsMessagesAdmin(maintenant).catch((e) => {
+    captureError(e, { where: 'leads-sans-reponse-cron/admin' });
+    return { error: e?.message };
+  });
 
   return res.status(200).json(rapport);
 }

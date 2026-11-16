@@ -10,8 +10,9 @@ import { adminDb, verifyAuth } from './_firebaseAdmin.mjs';
 import { Resend } from 'resend';
 import { captureError } from './_sentry.mjs';
 import { tagType } from './_suiviEmails.mjs';
+import { ADMIN_INBOX } from './_adminInbox.mjs';
 
-const ADMIN_EMAIL = 'edukaraib@gmail.com';
+const ADMIN_EMAIL = ADMIN_INBOX;
 
 function readBody(req) {
   try {

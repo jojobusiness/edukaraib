@@ -47,7 +47,7 @@ const FAQS = [
   },
   {
     q: "Comment contacter le support ?",
-    a: "Utilisez le formulaire de contact sur la page /contact ou ecrivez directement a edukaraib@gmail.com. Nous repondons generalement sous 24h.",
+    a: "Utilisez le formulaire de contact sur la page /contact ou ecrivez directement a contact@edukaraib.com. Nous repondons generalement sous 24h.",
   },
   {
     q: "Les paiements sont-ils securises ?",

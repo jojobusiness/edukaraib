@@ -17,12 +17,13 @@ const FROM_EMAIL = defineString("MAIL_FROM", {
 });
 const FROM_NAME = defineString("MAIL_FROM_NAME", {default: "EduKaraib"});
 // Adresse qui reçoit une copie de TOUT message envoyé à l'admin
+// 16/11/2026 : contact@ (Zoho), décision de Joseph — Gmail n'est plus lu.
 const ADMIN_INBOX_EMAIL = defineString("ADMIN_INBOX", {
-  default: "edukaraib@gmail.com",
+  default: "contact@edukaraib.com",
 });
 
 // Repli sur le sender de test Resend si le domaine pro n'est pas vérifié
-// (livre au moins vers l'email du compte Resend, ex: edukaraib@gmail.com).
+// (livre au moins vers l'adresse du compte Resend).
 const FROM_TEST = "EduKaraib <onboarding@resend.dev>";
 
 // -----------------------------------------------------------------------------
@@ -434,6 +435,36 @@ Profil du prof : ${lienProf}
           const demandeRef = db.collection("demandes_contact").doc(`${receiverUid}_${senderUid}`);
           await demandeRef.set({prof_repondu_at: new Date()}, {merge: true})
               .catch((e) => console.error("prof_repondu_at:", e?.message || e));
+        }
+
+        // c) Messages à l'admin : qui attend une réponse depuis quand (16/11/2026).
+        //    Le cron api/leads-sans-reponse-cron.mjs envoie un rappel à 2 h.
+        //    Aucun contenu : l'heure du 1er message resté sans réponse, c'est tout.
+        if (destinataire?.role === "admin" && expediteur && expediteur.role !== "admin") {
+          const suiviRef = db.collection("suivi_messages_admin").doc(senderUid);
+          await db.runTransaction(async (tx) => {
+            const s = await tx.get(suiviRef);
+            const enAttente = s.exists && s.data().premier_sans_reponse_at && !s.data().repondu_at;
+            if (enAttente) {
+              tx.set(suiviRef, {dernier_message_at: new Date()}, {merge: true});
+            } else {
+              tx.set(suiviRef, {
+                expediteur_uid: senderUid,
+                expediteur_nom: expediteur.fullName || expediteur.firstName || null,
+                expediteur_role: expediteur.role || null,
+                admin_uid: receiverUid,
+                premier_sans_reponse_at: new Date(),
+                dernier_message_at: new Date(),
+                repondu_at: null,
+                rappel_at: null,
+              });
+            }
+          }).catch((e) => console.error("suivi_messages_admin:", e?.message || e));
+        }
+        if (expediteur?.role === "admin" && receiverUid) {
+          await db.collection("suivi_messages_admin").doc(receiverUid)
+              .update({repondu_at: new Date()})
+              .catch(() => null); // pas de suivi ouvert = rien à clore
         }
       }
 
