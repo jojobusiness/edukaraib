@@ -34,4 +34,13 @@ Déclencheur : une prof inscrite le 16/11 écrit à l'admin à 10 h 52 (heure de
 - Supprimer ensuite le compte de test (bouton Supprimer de l'admin).
 
 ## RÉSULTAT
-- Adresse choisie : `contact@edukaraib.com` (Joseph, 16/11) · déployé le : __ · test reçu sur Zoho : __
+- Adresse choisie : `contact@edukaraib.com` (Joseph, 16/11) · **déployé le 16/11/2026** (Functions + commit `c6eab328`)
+- **Fait** :
+  - `ADMIN_INBOX=contact@edukaraib.com` dans `functions/.env`, valeur par défaut dans `functions/index.js`, variable posée sur Vercel (Production) ;
+  - `api/_adminInbox.mjs` est la source unique côté API : cron, demandes de remboursement, partenaires ;
+  - FAQ corrigée (elle affichait le Gmail) ; un test interdit tout retour de `edukaraib@gmail.com` dans `api/`, `functions/index.js` et la FAQ ;
+  - compte admin passé sur `contact@edukaraib.com` (Firebase Auth + `users`), connexion par mot de passe inchangée. `isAdminUser` lit le rôle, pas l'adresse ;
+  - filet de sécurité : `onMessageCreated` tient `suivi_messages_admin/{expéditeur}` (heure du 1er message sans réponse, aucun contenu), et le cron horaire envoie **un** rappel à 2 h. Une réponse de l'admin dans le chat clôt le suivi.
+- **Resend** : `contact@` n'est pas bloquée (livrée les 02/11 et 16/11).
+- **Test en prod (16/11, 11 h 55)** : un élève de test écrit à l'admin. Statut Resend des 3 mails vers `contact@` : alerte `delivered`, avis destinataire `delivered`, rappel 2 h (heure simulée) `delivered`. `repondu_at` est bien posé après la réponse de l'admin, puis le compte de test est supprimé par `/api/delete-account`.
+- **Reste à Joseph** : vérifier que les 3 mails « Test Alerte Admin » sont dans la boîte Zoho et pas dans les indésirables. Le transfert Gmail du § 2.4 devient inutile.

@@ -43,7 +43,7 @@ for (const d of snap.docs) {
     created_at: FieldValue.serverTimestamp(),
     type: 'dispos_modele',
     title: 'Vos horaires habituels sont en place',
-    message: `On a gardé vos horaires du ${jjmm(m.semaine)} comme horaires habituels : ils valent désormais chaque semaine, vous n'avez plus à revenir les cocher. Modifiez-les si besoin dans votre profil, rubrique « Disponibilités ».`,
+    message: `On a gardé vos horaires du ${jjmm(m.semaine)} comme horaires habituels : ils valent désormais chaque semaine, vous n'avez plus à revenir les cocher. Modifiez-les si besoin dans votre profil, rubrique « Disponibilités ». Vérifiez aussi « Votre fuseau horaire » dans votre profil : les familles voient vos créneaux à l'heure de chez elles.`,
   });
   console.log(`  ✔ ${u.fullName || d.id} : ${nbCreneaux(suivant)} créneaux sur 4 semaines`);
 }

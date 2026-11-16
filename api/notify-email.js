@@ -146,12 +146,21 @@ export default async function handler(req, res) {
       }
       const uids = [...(Array.isArray(toUids) ? toUids : []), toUid].filter(Boolean);
       if (uids.length > MAX_DESTINATAIRES) return res.status(400).json({ ok: false, error: "trop_de_destinataires" });
-      if (uids.length) {
+      // 16/11/2026 : un message à l'admin déclenche déjà l'alerte détaillée
+      // (Cloud Function onMessageCreated → contact@). L'avis générique « Nouveau
+      // message sur EduKaraib » faisait doublon dans la même boîte : on le saute.
+      let cibles = uids;
+      if (typeMail === "notif-message" && uids.length) {
+        const fiches = await Promise.all(uids.map((id) => adminDb.collection("users").doc(String(id)).get()));
+        cibles = uids.filter((_, i) => fiches[i].data()?.role !== "admin");
+        if (!cibles.length && !destinataires.length) return res.json({ ok: true, skipped: "admin_deja_alerte" });
+      }
+      if (cibles.length) {
         const lire = async (col, id) => {
           const s = await adminDb.collection(col).doc(id).get();
           return s.exists ? s.data() : null;
         };
-        destinataires = [...new Set([...destinataires, ...(await adressesDe(uids, lire))])];
+        destinataires = [...new Set([...destinataires, ...(await adressesDe(cibles, lire))])];
       }
     }
 
