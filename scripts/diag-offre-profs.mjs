@@ -25,6 +25,15 @@ import { connecterAdmin } from './_sessionAdmin.mjs';
 import { getFirestore, collection, getDocs, query, where } from 'firebase/firestore';
 // Règle partagée avec le produit (bandeau d'état du prof) : une seule source.
 import { nbCreneaux } from '../frontend/lib/offreProf.js';
+import { heuresLe, fuseauDispos, aujourdhui } from '../api/_dispos.mjs';
+import { ajouterJours, lundiDe } from '../api/_fuseaux.mjs';
+
+// 16/11/2026 : heures proposées dans la semaine EN COURS (de lundi à dimanche, chez le prof).
+// Le 16/11, 0 prof en avait : les dispos expiraient chaque semaine.
+const heuresCetteSemaine = (avail) => {
+  const lundi = lundiDe(aujourdhui(Date.now(), fuseauDispos(avail)));
+  return Array.from({ length: 7 }, (_, i) => heuresLe(avail || {}, ajouterJours(lundi, i)).length).reduce((a, b) => a + b, 0);
+};
 
 const app = initializeApp({
   apiKey: 'AIzaSyDoPTDEtgcROB-PkLehddqr3Lpy_nM5P4A',
@@ -65,6 +74,7 @@ const matieres = {};
 let passentFiltre = 0;
 let avecCreneaux = 0;
 let reservables = 0;
+let reservablesCetteSemaine = 0;
 
 console.log(`\n=== OFFRE PROFS — ${new Date().toLocaleDateString('fr-FR')} — ${profs.length} inscrits ===\n`);
 
@@ -79,6 +89,8 @@ for (const t of profs) {
   if (visible) passentFiltre += 1;
   if (creneaux > 0) avecCreneaux += 1;
   if (visible && creneaux > 0) reservables += 1;
+  const semaine = heuresCetteSemaine(t.availability);
+  if (visible && semaine > 0) reservablesCetteSemaine += 1;
 
   const subs = Array.isArray(t.subjects)
     ? t.subjects
@@ -89,7 +101,7 @@ for (const t of profs) {
     `${visible ? '✅' : '❌'} ${(t.fullName || '(sans nom)').padEnd(28)}`
     + ` | photo:${photo ? 'oui' : 'NON'}`
     + ` | avis:${nbAvis}${moyenne ? ` (${moyenne.toFixed(1)})` : ''}`
-    + ` | créneaux:${creneaux}`
+    + ` | créneaux:${creneaux} (semaine:${semaine})`
     + ` | ${t.city || t.location || '?'}`
     + ` | ${subs.join(', ') || '(aucune matière)'}`,
   );
@@ -100,6 +112,8 @@ console.log(`\n--- Passent le filtre qualité (photo OU ≥1 avis) : ${passentFi
 console.log(`--- Ont au moins un créneau coché               : ${avecCreneaux}/${profs.length}`);
 console.log(`--- RÉELLEMENT RÉSERVABLES (filtre + créneaux)  : ${reservables}`
   + `  ${reservables >= 8 ? '' : '→ ⚠️ relancer les profs AVANT de payer du trafic'}`);
+console.log(`--- RÉSERVABLES CETTE SEMAINE                  : ${reservablesCetteSemaine}`
+  + `  ${reservablesCetteSemaine >= 10 ? '' : '→ ⚠️ objectif ≥ 10 (horaires habituels, PLAN_DISPOS_PROFS)'}`);
 
 console.log('\n=== MATIÈRES DÉCLARÉES (libellés exacts saisis par les profs) ===\n');
 Object.entries(matieres)

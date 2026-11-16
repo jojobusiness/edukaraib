@@ -1,6 +1,8 @@
 import { adminDb } from './_firebaseAdmin.mjs';
 import { Resend } from 'resend';
 import { tagType } from './_suiviEmails.mjs';
+import { dateHeureLongue } from './_fuseaux.mjs';
+import { debutDuCours } from './_coursHoraire.mjs';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://edukaraib.com';
@@ -61,9 +63,9 @@ export default async function handler(req, res) {
 
         if (!email) continue;
 
-        const startAt = lesson.startAt?.toDate ? lesson.startAt.toDate() : new Date(lesson.startAt);
-        const timeStr = startAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-        const dateStr = startAt.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+        const startAt = debutDuCours(lesson) || new Date(lesson.startAt?.toDate ? lesson.startAt.toDate() : lesson.startAt);
+        // Fuseau du destinataire (16/11/2026) : « lundi 23 novembre à 17 h, heure de Martinique »
+        const quand = dateHeureLongue(startAt, userSnap.data()?.timezone);
 
         const subject = Array.isArray(lesson.subject_id) ? lesson.subject_id.join(', ') : (lesson.subject_id || 'votre cours');
         const mode = lesson.mode === 'visio' ? 'en visio' : 'en présentiel';
@@ -76,7 +78,7 @@ export default async function handler(req, res) {
             <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:24px">
               <h2 style="color:#4f46e5">Rappel de cours ⏰</h2>
               <p>Bonjour ${name},</p>
-              <p>Votre cours de <strong>${subject}</strong> ${mode} commence à <strong>${timeStr}</strong> (${dateStr}).</p>
+              <p>Votre cours de <strong>${subject}</strong> ${mode} commence dans 30 minutes : <strong>${quand}</strong>.</p>
               ${lesson.mode === 'visio' ? `
                 <p style="margin-top:16px">
                   <a href="${APP_BASE_URL}/visio/${lessonId}"
@@ -125,11 +127,14 @@ export default async function handler(req, res) {
       l.is_paid === true || l.is_free_hour === true || (ownerOf(l) && entPaid(l, ownerOf(l)));
     const isAcceptedSt = (st) => st === 'accepted' || st === 'confirmed';
 
+    const fuseaux = new Map(); // email → fuseau du compte (16/11/2026)
     const emailOf = async (uid) => {
       if (!uid) return null;
       try {
         const s = await db.collection('users').doc(String(uid)).get();
-        return s.exists ? (s.data().email || null) : null;
+        const email = s.exists ? (s.data().email || null) : null;
+        if (email) fuseaux.set(email, s.data().timezone || null);
+        return email;
       } catch { return null; }
     };
     // email du participant, sinon de son parent (enfants geres par un parent)
@@ -138,12 +143,11 @@ export default async function handler(req, res) {
       if (direct) return direct;
       return emailOf(entOf(l, sid).parent_id);
     };
+    // « le lundi 23 novembre à 17 h, heure de Martinique » dans le fuseau du destinataire
+    const quandPour = (l, email) => dateHeureLongue(debutDuCours(l) || new Date(l.startAt?.toDate ? l.startAt.toDate() : l.startAt), fuseaux.get(email));
     const lessonLabel = (l) => {
       const subject = Array.isArray(l.subject_id) ? l.subject_id.join(', ') : (l.subject_id || 'votre cours');
-      const d = l.startAt?.toDate ? l.startAt.toDate() : new Date(l.startAt);
-      const dateStr = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-      const timeStr = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-      return { subject, dateStr, timeStr };
+      return { subject };
     };
     const sendTpl = async (to, subjectLine, title, message, ctaUrl, ctaText) => {
       await resend.emails.send({ tags: tagType('rappel-cours'),
@@ -170,7 +174,7 @@ export default async function handler(req, res) {
       const pm = l.participantsMap || {};
       const ids = Array.isArray(l.participant_ids) && l.participant_ids.length
         ? l.participant_ids : Object.keys(pm);
-      const { subject, dateStr, timeStr } = lessonLabel(l);
+      const { subject } = lessonLabel(l);
 
       try {
         // C) Fin + 60 min, paye -> completed
@@ -200,7 +204,7 @@ export default async function handler(req, res) {
                 await sendTpl(to,
                   'Cours annulé — paiement non reçu',
                   'Cours annulé ❌',
-                  `Votre cours de <strong>${subject}</strong> du ${dateStr} à ${timeStr} a été automatiquement annulé car le paiement n'a pas été reçu à temps. Vous pouvez refaire une demande ou choisir un autre professeur.`,
+                  `Votre cours de <strong>${subject}</strong> du ${quandPour(l, to)} a été automatiquement annulé car le paiement n'a pas été reçu à temps. Vous pouvez refaire une demande ou choisir un autre professeur.`,
                   `${APP_BASE_URL}/smart-dashboard`, 'Voir mes cours');
               }
             }
@@ -223,7 +227,7 @@ export default async function handler(req, res) {
                   await sendTpl(to,
                     'Participation annulée — paiement non reçu',
                     'Participation annulée ❌',
-                    `Votre participation au cours de <strong>${subject}</strong> du ${dateStr} à ${timeStr} a été automatiquement annulée car le paiement n'a pas été reçu à temps.`,
+                    `Votre participation au cours de <strong>${subject}</strong> du ${quandPour(l, to)} a été automatiquement annulée car le paiement n'a pas été reçu à temps.`,
                     `${APP_BASE_URL}/smart-dashboard`, 'Voir mes cours');
                 }
               }
@@ -245,7 +249,7 @@ export default async function handler(req, res) {
                 await sendTpl(to,
                   `⏳ Pensez à régler votre cours de ${subject}`,
                   'Votre cours n’est pas encore payé ⏳',
-                  `Votre cours de <strong>${subject}</strong> est prévu le <strong>${dateStr} à ${timeStr}</strong> mais n'a pas encore été réglé.<br/><br/><strong>Important :</strong> sans paiement avant le début du cours, il sera automatiquement annulé et le créneau libéré.`,
+                  `Votre cours de <strong>${subject}</strong> est prévu le <strong>${quandPour(l, to)}</strong> mais n'a pas encore été réglé.<br/><br/><strong>Important :</strong> sans paiement avant le début du cours, il sera automatiquement annulé et le créneau libéré.`,
                   `${APP_BASE_URL}/smart-dashboard`, 'Payer mon cours');
                 stats.payment_reminders++;
               }

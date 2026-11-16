@@ -1,581 +1,308 @@
 import React from 'react';
+import {
+  JOURS, grilleSemaine, exceptionDe, modeleDe, heuresDuJour, nbHeures, aujourdhui,
+} from '../../api/_dispos.mjs';
+import { ajouterJours, lundiDe, nomFuseau, libelleUtc, partiesLocales, fuseauValide } from '../../api/_fuseaux.mjs';
 
-const jours = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-// Créneaux d'1h : 6 → 23
-const heures = Array.from({ length: 18 }, (_, i) => i + 6); // 6..23
+// Éditeur des disponibilités (refonte du 16/11/2026, PLAN_DISPOS_PROFS).
+//
+// Avant : un calendrier du mois qui ne servait qu'à choisir la semaine (une
+// prof a cru que « les clics ne marchaient pas »), et des heures à recocher
+// CHAQUE semaine — personne ne le faisait. Maintenant :
+//   · « Mes horaires habituels » (ouvert par défaut) : valables chaque semaine ;
+//   · « Une semaine particulière » : une exception qui remplace l'habituel.
+// Une ligne par jour, les heures en pastilles qui passent à la ligne : lisible
+// sur un téléphone, sans tableau de 18 colonnes.
+// Les règles (modèle / exception) vivent dans api/_dispos.mjs.
 
-export default function TeacherAvailabilityEditor({ value = {}, onChange }) {
-  // =============== Dates & utilitaires (mois/semaines) ===============
-  const startOfWeekMon = (d) => {
-    const x = new Date(d);
-    const day = (x.getDay() + 6) % 7; // 0=Mon..6=Sun
-    x.setDate(x.getDate() - day);
-    x.setHours(0, 0, 0, 0);
-    return x;
+const HEURES = Array.from({ length: 18 }, (_, i) => i + 6); // 6 h → 23 h
+const NOMS_JOURS = { Lun: 'Lundi', Mar: 'Mardi', Mer: 'Mercredi', Jeu: 'Jeudi', Ven: 'Vendredi', Sam: 'Samedi', Dim: 'Dimanche' };
+const plage = (a, b) => Array.from({ length: Math.max(0, b - a) }, (_, i) => a + i);
+const trier = (arr) => [...new Set(arr)].sort((a, b) => a - b);
+const PRESETS = {
+  bureau: (i) => (i <= 4 ? [...plage(8, 12), ...plage(14, 18)] : []),
+  continu: (i) => (i <= 5 ? plage(9, 19) : []),
+  soirs: (i) => (i <= 4 ? plage(17, 21) : plage(9, 12)),
+};
+const jjmm = (date) => `${date.slice(8, 10)}/${date.slice(5, 7)}`;
+
+export default function TeacherAvailabilityEditor({ value = {}, onChange, fuseau = null }) {
+  const tz = fuseauValide(fuseau) ? fuseau : null;
+  const avail = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const aVide = nbHeures(modeleDe(avail) || {}) === 0;
+
+  const [onglet, setOnglet] = React.useState('habituels');
+  const auj = aujourdhui(Date.now(), tz);
+  const heureMaintenant = tz ? partiesLocales(new Date(), tz).heure : new Date().getHours();
+  const lundiActuel = lundiDe(auj);
+  const [lundi, setLundi] = React.useState(lundiActuel);
+  const [moisCurseur, setMoisCurseur] = React.useState(() => `${auj.slice(0, 7)}-01`);
+  const [annonce, setAnnonce] = React.useState('');
+  const grilleRef = React.useRef(null);
+  const [copie, setCopie] = React.useState(null); // { de: 'Lun', vers: [] }
+
+  const enSemaine = onglet === 'semaine';
+  const exception = enSemaine ? exceptionDe(avail, lundi) : null;
+  const grille = enSemaine ? grilleSemaine(avail, lundi) : (modeleDe(avail) || {});
+  const datesSemaine = JOURS.map((_, i) => ajouterJours(lundi, i));
+
+  const verrou = (i, h) => {
+    if (!enSemaine) return false;
+    const d = datesSemaine[i];
+    if (d < auj) return true;
+    return d === auj && h <= heureMaintenant;
   };
 
-  const formatLocalDate = (d) => {
-    if (!d) return null;
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  };
-
-  const weekKeyOf = (d) => {
-    const monday = startOfWeekMon(d);
-    return formatLocalDate(monday); // "YYYY-MM-DD" du lundi de la semaine
-  };
-
-  const startOfMonth = (d) => { const x = new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x; };
-  const addMonths = (d, n) => { const x = new Date(d); x.setMonth(x.getMonth() + n); return x; };
-  const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-
-  // Vue mensuelle — curseur sur le mois affiché
-  const [monthCursor, setMonthCursor] = React.useState(() => {
-    const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d;
-  });
-
-  // Semaine active (celle qu’on édite)
-  const [weekAnchor, setWeekAnchor] = React.useState(() => startOfWeekMon(new Date()));
-
-  // Construit 6 semaines x 7 jours pour le mois courant (début lundi)
-  const buildMonthMatrix = (cursor) => {
-    const first = startOfMonth(cursor);
-    const gridStart = startOfWeekMon(first);
-    const weeks = [];
-    for (let w = 0; w < 6; w++) {
-      const row = [];
-      for (let d = 0; d < 7; d++) {
-        const cell = new Date(gridStart); cell.setDate(gridStart.getDate() + w * 7 + d);
-        row.push(cell);
-      }
-      weeks.push(row);
+  // Écrit une grille complète (7 jours) au bon endroit : modèle ou semaine.
+  const ecrire = (nouvelle) => {
+    const propre = Object.fromEntries(JOURS.map((j) => [j, trier(nouvelle[j] || [])]));
+    const suivant = { ...avail, ...(tz ? { fuseau: tz } : {}) };
+    if (enSemaine) {
+      suivant[lundi] = propre;
+    } else {
+      // L'ancien format ({ Lun: [...] } à la racine) devient un vrai modèle.
+      JOURS.forEach((j) => { delete suivant[j]; });
+      suivant.modele = propre;
     }
-    return weeks;
+    onChange(suivant);
   };
 
-  const isoWeek = (date) => {
-    const tmp = new Date(date.getTime());
-    tmp.setHours(0,0,0,0);
-    tmp.setDate(tmp.getDate() + 3 - ((tmp.getDay() + 6) % 7));
-    const week1 = new Date(tmp.getFullYear(), 0, 4);
-    return 1 + Math.round(((tmp - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
+  // Les heures verrouillées (passées) d'une semaine particulière ne bougent pas.
+  const modifierJour = (i, fn) => {
+    const jour = JOURS[i];
+    const actuelles = heuresDuJour(grille, jour);
+    const gardees = actuelles.filter((h) => verrou(i, h));
+    const voulues = fn(actuelles).filter((h) => !verrou(i, h));
+    const base = Object.fromEntries(JOURS.map((j) => [j, heuresDuJour(grille, j)]));
+    ecrire({ ...base, [jour]: [...gardees, ...voulues] });
   };
 
-  const goToWeekOf = (date) => setWeekAnchor(startOfWeekMon(date));
-
-  // Jours de la semaine active (lundi→dimanche, objets Date réels)
-  const activeWeekDays = React.useMemo(() => {
-    const out = [];
-    const start = startOfWeekMon(weekAnchor);
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(start); d.setDate(start.getDate() + i);
-      out.push(d);
-    }
-    return out;
-  }, [weekAnchor]);
-
-  // =============== Verrous temporels (NOW + 1h) ===============
-  const now = new Date();
-  const nowHour = now.getHours(); // 0..23
-  const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
-
-  // Bloque si:
-  // - date du créneau < aujourd’hui
-  // - date = aujourd’hui ET h <= nowHour (on autorise dès now+1h ; si nowHour>=23 → tout aujourd’hui verrouillé)
-  const isSlotLockedByDate = (dayDate, hour) => {
-    const d = new Date(dayDate); d.setHours(0,0,0,0);
-
-    if (d.getTime() < todayMidnight.getTime()) return true; // passé
-    if (d.getTime() === todayMidnight.getTime()) {
-      if (nowHour >= 23) return true; // fin de journée → tout verrouillé
-      return hour <= nowHour;
-    }
-    return false; // futur
+  const basculer = (i, h) => {
+    if (verrou(i, h)) return;
+    modifierJour(i, (hs) => (hs.includes(h) ? hs.filter((x) => x !== h) : [...hs, h]));
   };
 
-  // =============== Accès/écriture (NOUVEAU : par semaine) ===============
-  // Nouveau format :
-  // value = {
-  //   "YYYY-MM-DD" (lundi de la semaine) : { 'Lun': [9,10], 'Mar': [14], ... },
-  //   ...
-  // }
-  const dayLabelForIndex = (i) => ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'][i];
-  const uniqueSorted = (arr) => Array.from(new Set(arr)).sort((a, b) => a - b);
-
-  const currentWeekKey = () => weekKeyOf(weekAnchor);
-
-  const getWeekMap = (wk) => {
-    const raw = value && typeof value[wk] === 'object' && !Array.isArray(value[wk])
-      ? value[wk]
-      : {};
-    return raw || {};
-  };
-
-  const readDay = (label) => {
-    const wk = currentWeekKey();
-    const weekMap = getWeekMap(wk);
-    return weekMap[label] || [];
-  };
-
-  const writeDay = (label, hoursArr, dayDate) => {
-    const wk = currentWeekKey();
-    const weekMap = getWeekMap(wk);
-    const safe = (hoursArr || []).filter((h) => !isSlotLockedByDate(dayDate, h));
-
-    const nextWeekMap = {
-      ...weekMap,
-      [label]: uniqueSorted(safe),
-    };
-
-    onChange({
-      ...(value || {}),
-      [wk]: nextWeekMap,
+  const appliquerPreset = (nom) => {
+    const base = {};
+    JOURS.forEach((j, i) => {
+      const gardees = heuresDuJour(grille, j).filter((h) => verrou(i, h));
+      const voulues = nom === 'vider' ? [] : PRESETS[nom](i).filter((h) => !verrou(i, h));
+      base[j] = [...gardees, ...voulues];
     });
+    ecrire(base);
   };
 
-  const addHours = (label, addArr, dayDate) => {
-    const current = readDay(label);
-    const safeToAdd = (addArr || []).filter((h) => !isSlotLockedByDate(dayDate, h));
-    writeDay(label, uniqueSorted([...current, ...safeToAdd]), dayDate);
-  };
-
-  const clearDay = (label, dayDate) => {
-    const current = readDay(label);
-    const remaining = current.filter((h) => isSlotLockedByDate(dayDate, h));
-    const wk = currentWeekKey();
-    const weekMap = getWeekMap(wk);
-
-    const nextWeekMap = {
-      ...weekMap,
-      [label]: uniqueSorted(remaining),
-    };
-
-    onChange({
-      ...(value || {}),
-      [wk]: nextWeekMap,
+  const copierVers = () => {
+    if (!copie?.vers?.length) return setCopie(null);
+    const src = heuresDuJour(grille, copie.de);
+    const base = Object.fromEntries(JOURS.map((j) => [j, heuresDuJour(grille, j)]));
+    copie.vers.forEach((j) => {
+      const i = JOURS.indexOf(j);
+      base[j] = [...heuresDuJour(grille, j).filter((h) => verrou(i, h)), ...src.filter((h) => !verrou(i, h))];
     });
+    ecrire(base);
+    setCopie(null);
   };
 
-  const selectAllDay = (label, dayDate) => {
-    writeDay(label, heures.filter((h) => !isSlotLockedByDate(dayDate, h)), dayDate);
+  const revenirAuxHabituels = () => {
+    const suivant = { ...avail };
+    delete suivant[lundi];
+    onChange(suivant);
   };
 
-  // Plage [start, end[
-  const rangeHours = (start, end) => {
-    const s = Number(start);
-    const e = Number(end);
-    if (Number.isNaN(s) || Number.isNaN(e) || e <= s) return [];
-    const out = [];
-    for (let h = s; h < e; h++) out.push(h);
-    return out;
+  const choisirDate = (date) => {
+    const l = lundiDe(date);
+    setLundi(l);
+    setAnnonce(`Semaine du ${jjmm(l)} au ${jjmm(ajouterJours(l, 6))} : cochez vos heures ci-dessous.`);
+    // La grille est sous le calendrier : on y descend, sinon le clic « ne fait rien ».
+    window.requestAnimationFrame?.(() => grilleRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }));
   };
 
-  const toggle = (label, hour, dayDate) => {
-    if (isSlotLockedByDate(dayDate, hour)) return; // 🔒
-    const current = readDay(label);
-    const next = current.includes(hour) ? current.filter(h => h !== hour) : [...current, hour];
-    writeDay(label, next, dayDate);
+  // Calendrier du mois (6 semaines, début lundi)
+  const premierLundi = lundiDe(moisCurseur);
+  const semainesMois = Array.from({ length: 6 }, (_, w) => Array.from({ length: 7 }, (_, d) => ajouterJours(premierLundi, w * 7 + d)));
+  const changerMois = (n) => {
+    const [y, m] = moisCurseur.split('-').map(Number);
+    const d = new Date(Date.UTC(y, m - 1 + n, 1));
+    setMoisCurseur(d.toISOString().slice(0, 10));
   };
+  const nomMois = new Date(`${moisCurseur}T12:00:00Z`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
-  // ---- UI state pour plage perso + copie ----
-  const initialRanges = Object.fromEntries(jours.map(j => [j, { start: 8, end: 12 }]));
-  const [ranges, setRanges] = React.useState(initialRanges);
-  const updateRange = (label, key, val) => setRanges((r) => ({ ...r, [label]: { ...r[label], [key]: Number(val) } }));
-  const applyRange = (label, dayDate) => {
-    const { start, end } = ranges[label] || {};
-    const hrs = rangeHours(start, end);
-    if (hrs.length === 0) return;
-    addHours(label, hrs, dayDate);
-  };
+  const total = nbHeures(grille);
+  const ongletClasse = (actif) => `flex-1 px-3 py-2 text-sm font-semibold rounded-lg transition ${actif ? 'bg-white text-primary shadow' : 'text-gray-600 hover:text-gray-800'}`;
 
-  const [copyPanel, setCopyPanel] = React.useState({ openDay: null, targets: [] });
-  const toggleCopyTarget = (targetLabel) => {
-    setCopyPanel((cp) => {
-      const has = cp.targets.includes(targetLabel);
-      return { ...cp, targets: has ? cp.targets.filter(d => d !== targetLabel) : [...cp.targets, targetLabel] };
-    });
-  };
-  const openCopyFor = (label) => setCopyPanel({ openDay: label, targets: [] });
-  const closeCopy = () => setCopyPanel({ openDay: null, targets: [] });
-  const doCopy = () => {
-    const from = copyPanel.openDay;
-    if (!from || copyPanel.targets.length === 0) return;
-
-    const wk = currentWeekKey();
-    const weekMap = getWeekMap(wk);
-
-    const fromIdx = jours.indexOf(from);
-    const fromDate = activeWeekDays[fromIdx];
-    const fromHours = readDay(from).filter((h) => !isSlotLockedByDate(fromDate, h));
-
-    const nextWeekMap = { ...weekMap };
-
-    copyPanel.targets.forEach((to) => {
-      if (to === from) return;
-      const toIdx = jours.indexOf(to);
-      const toDate = activeWeekDays[toIdx];
-      nextWeekMap[to] = uniqueSorted(
-        fromHours.filter((h) => !isSlotLockedByDate(toDate, h))
-      );
-    });
-
-    onChange({
-      ...(value || {}),
-      [wk]: nextWeekMap,
-    });
-    closeCopy();
-  };
-
-  // Presets (respectent les verrous selon la semaine active)
-  const applyPreset = (preset) => {
-    const wk = currentWeekKey();
-    const currentWeekMap = getWeekMap(wk);
-    const nextWeekMap = {};
-
-    if (preset === 'empty') {
-      jours.forEach((label, idx) => {
-        const d = activeWeekDays[idx];
-        nextWeekMap[label] = (readDay(label) || []).filter((h) => isSlotLockedByDate(d, h));
-      });
-    } else if (preset === 'office') {
-      jours.forEach((label, idx) => {
-        const d = activeWeekDays[idx];
-        const base = idx <= 4 ? [...rangeHours(8, 12), ...rangeHours(14, 18)] : [];
-        const safe = base.filter((h) => !isSlotLockedByDate(d, h));
-        const lockedKeep = (readDay(label) || []).filter((h) => isSlotLockedByDate(d, h));
-        nextWeekMap[label] = uniqueSorted([...lockedKeep, ...safe]);
-      });
-    } else if (preset === 'continuous') {
-      jours.forEach((label, idx) => {
-        const d = activeWeekDays[idx];
-        const base = idx <= 5 ? rangeHours(9, 19) : [];
-        const safe = base.filter((h) => !isSlotLockedByDate(d, h));
-        const lockedKeep = (readDay(label) || []).filter((h) => isSlotLockedByDate(d, h));
-        nextWeekMap[label] = uniqueSorted([...lockedKeep, ...safe]);
-      });
-    }
-
-    onChange({
-      ...(value || {}),
-      [wk]: {
-        ...currentWeekMap,
-        ...nextWeekMap,
-      },
-    });
-  };
-
-  // Styles de bouton selon verrous/état
-  const btnClass = (locked, selected) => {
-    if (locked) return "w-7 h-7 rounded-md bg-gray-50 text-gray-300 ring-1 ring-gray-200 cursor-not-allowed";
-    return selected
-      ? "w-7 h-7 rounded-md shadow-sm bg-green-600 text-white ring-1 ring-green-700/30"
-      : "w-7 h-7 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-600 ring-1 ring-gray-200";
-  };
-
-  const isPastDay = (d) => {
-    const a = new Date(d); a.setHours(0,0,0,0);
-    return a.getTime() < todayMidnight.getTime();
-  };
-
-  // ====================== RENDER ======================
   return (
-    <div className="mt-6 mb-3">
-      {/* --- Vue mensuelle (navigation + sélection de semaine) --- */}
-      <div className="mb-3 bg-white rounded-xl border shadow-sm p-3">
-        <div className="flex items-center justify-between mb-2">
-          <button
-            type="button"
-            onClick={() => setMonthCursor((d) => addMonths(d, -1))}
-            className="px-2 py-1 text-sm rounded border hover:bg-gray-50"
-          >‹</button>
-
-          <div className="font-semibold">
-            {monthCursor.toLocaleString('fr-FR', { month: 'long', year: 'numeric' })}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setMonthCursor((d) => addMonths(d, 1))}
-            className="px-2 py-1 text-sm rounded border hover:bg-gray-50"
-          >›</button>
-        </div>
-
-        <div className="grid grid-cols-8 gap-1 text-[11px]">
-          <div className="text-gray-500 px-1"></div>
-          {['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].map(h=>(
-            <div key={h} className="text-center text-gray-500">{h}</div>
-          ))}
-
-          {buildMonthMatrix(monthCursor).map((week, i)=>(
-            <React.Fragment key={i}>
-              <div className="text-center text-gray-500 font-mono px-1">S{isoWeek(week[0])}</div>
-              {week.map((day,j)=>{
-                const isCurMonth = day.getMonth()===monthCursor.getMonth();
-                const isActiveWeek = startOfWeekMon(day).getTime() === startOfWeekMon(weekAnchor).getTime();
-                const disabled = isPastDay(day);
-                return (
-                  <button
-                    key={j}
-                    type="button"
-                    disabled={disabled}
-                    onClick={()=>{ goToWeekOf(day); }}
-                    className={[
-                      "py-1 rounded border text-center",
-                      disabled ? "text-gray-300 bg-gray-50 cursor-not-allowed"
-                               : (isActiveWeek ? "bg-primary/10 border-primary/30 text-primary"
-                                               : (isCurMonth ? "bg-white hover:bg-gray-50" : "bg-gray-50 text-gray-400"))
-                    ].join(' ')}
-                    title={disabled ? "Jour passé" : "Éditer la semaine de ce jour"}
-                  >
-                    {day.getDate()}
-                  </button>
-                );
-              })}
-            </React.Fragment>
-          ))}
-        </div>
+    <div className="space-y-4" data-testid="editeur-dispos">
+      <div className="flex gap-1 p-1 bg-gray-100 rounded-xl" role="tablist">
+        <button type="button" role="tab" aria-selected={!enSemaine} className={ongletClasse(!enSemaine)} onClick={() => { setOnglet('habituels'); setAnnonce(''); }}>
+          Mes horaires habituels
+        </button>
+        <button type="button" role="tab" aria-selected={enSemaine} className={ongletClasse(enSemaine)} onClick={() => setOnglet('semaine')}>
+          Une semaine particulière
+        </button>
       </div>
 
-      {/* --- Entête & presets hebdo --- */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-        <label className="font-bold text-primary block">
-          Calendrier hebdo (créneaux d’1h) :
-        </label>
-
-        <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-            <button
-              type="button"
-              onClick={() => applyPreset('empty')}
-              className="px-3 py-1.5 text-xs hover:bg-gray-50"
-              title="Vider la semaine (respecte les verrous)"
-            >
-              🧹 Vider
-            </button>
-            <div className="w-px bg-gray-200" />
-            <button
-              type="button"
-              onClick={() => applyPreset('office')}
-              className="px-3 py-1.5 text-xs hover:bg-gray-50"
-              title="Lun–Ven : 8–12 & 14–18 (respecte les verrous)"
-            >
-              🗓️ Bureau
-            </button>
-            <div className="w-px bg-gray-200" />
-            <button
-              type="button"
-              onClick={() => applyPreset('continuous')}
-              className="px-3 py-1.5 text-xs hover:bg-gray-50"
-              title="Lun–Sam : 9–19 (respecte les verrous)"
-            >
-              ⏱️ Continu
-            </button>
-          </div>
-
-          <span className="text-[11px] text-gray-500 hidden sm:inline">
-            Modifiable à partir de <b>{nowHour >= 23 ? 'demain 00h' : `${String(nowHour + 1).padStart(2,'0')}:00`}</b>. Jours passés verrouillés.
+      <p className="text-sm text-gray-700">
+        {enSemaine
+          ? 'Vacances, absence, horaires différents : choisissez la semaine, puis modifiez ses heures. Les autres semaines gardent vos horaires habituels.'
+          : 'Cochez les heures où vous pouvez donner cours. Elles valent pour toutes les semaines : les familles peuvent réserver sans que vous ayez à revenir.'}
+        {tz && (
+          <span className="block text-xs text-gray-500 mt-1">
+            Vos horaires, heure de {nomFuseau(tz)} ({libelleUtc(tz)}). Les familles les voient à l'heure de chez elles.
           </span>
+        )}
+      </p>
+
+      {!enSemaine && aVide && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Vous n'avez pas encore d'horaires habituels. Le plus rapide : un raccourci ci-dessous, puis ajustez.
         </div>
-      </div>
+      )}
 
-      {/* --- Grille hebdo (édition de la semaine active) --- */}
-      <div className="overflow-x-auto p-2 sm:p-4 bg-white rounded-xl shadow-inner">
-        <table className="table-auto border text-xs w-full">
-          <thead>
-            <tr>
-              <th className="px-1"></th>
-              {heures.map(h => <th key={h} className="px-2 whitespace-nowrap">{h}h</th>)}
-              <th className="px-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {jours.map((label, idx) => {
-              const dayDate = activeWeekDays[idx];
-              const current = readDay(label);
+      {enSemaine && (
+        <div className="bg-white rounded-xl border shadow-sm p-3">
+          <div className="flex items-center justify-between mb-2">
+            <button type="button" onClick={() => changerMois(-1)} className="px-2 py-1 text-sm rounded border hover:bg-gray-50" aria-label="Mois précédent">‹</button>
+            <div className="font-semibold capitalize">{nomMois}</div>
+            <button type="button" onClick={() => changerMois(1)} className="px-2 py-1 text-sm rounded border hover:bg-gray-50" aria-label="Mois suivant">›</button>
+          </div>
+          <div className="grid grid-cols-7 gap-1 text-[11px]">
+            {JOURS.map((j) => <div key={j} className="text-center text-gray-500">{j}</div>)}
+            {semainesMois.flat().map((d) => {
+              const passe = lundiDe(d) < lundiActuel;
+              const active = lundiDe(d) === lundi;
+              const horsMois = d.slice(0, 7) !== moisCurseur.slice(0, 7);
+              const aException = !!exceptionDe(avail, lundiDe(d));
               return (
-                <tr key={label} className="align-top">
-                  <td className="font-bold text-gray-600 pr-2">
-                    {label}
-                    <span className="ml-1 text-[10px] text-gray-400">
-                      ({dayDate.getDate()}/{String(dayDate.getMonth()+1).padStart(2,'0')})
-                    </span>
-                  </td>
-
-                  {/* Grille 1h */}
-                  {heures.map(h => {
-                    const locked = isSlotLockedByDate(dayDate, h);
-                    const selected = current.includes(h) && !locked;
-                    return (
-                      <td key={h} className="text-center">
-                        <button
-                          type="button"
-                          onClick={() => toggle(label, h, dayDate)}
-                          className={btnClass(locked, selected)}
-                          disabled={locked}
-                          title={
-                            locked
-                              ? 'Créneau verrouillé (passé ou avant +1h)'
-                              : (selected ? `${h}h–${h+1}h (sélectionné)` : `${h}h–${h+1}h`)
-                          }
-                        >
-                          {selected ? '✓' : ''}
-                        </button>
-                      </td>
-                    );
-                  })}
-
-                  {/* Actions rapides par jour */}
-                  <td className="min-w-[300px] align-top">
-                    <div className="flex flex-col gap-2">
-                      <div className="flex items-center flex-wrap gap-1.5">
-                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
-                          {current.filter(h => !isSlotLockedByDate(dayDate, h)).length} sélection(s)
-                        </span>
-
-                        <div className="inline-flex rounded-lg border border-gray-300 bg-white shadow-sm overflow-hidden">
-                          <button
-                            type="button"
-                            onClick={() => selectAllDay(label, dayDate)}
-                            className="px-2.5 py-1.5 text-[11px] hover:bg-gray-50"
-                            title="Tout sélectionner (futur uniquement)"
-                          >
-                            Tout
-                          </button>
-                          <div className="w-px bg-gray-200" />
-                          <button
-                            type="button"
-                            onClick={() => clearDay(label, dayDate)}
-                            className="px-2.5 py-1.5 text-[11px] hover:bg-gray-50"
-                            title="Vider (ne touche pas aux créneaux verrouillés)"
-                          >
-                            Vider
-                          </button>
-                          <div className="w-px bg-gray-200" />
-                          <button
-                            type="button"
-                            onClick={() => openCopyFor(label)}
-                            className="px-2.5 py-1.5 text-[11px] hover:bg-gray-50"
-                            title="Copier ce jour vers d'autres (verrous respectés)"
-                          >
-                            Copier →
-                          </button>
-                        </div>
-
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => addHours(label, rangeHours(8, 12), dayDate)}
-                            className="text-[11px] px-2 py-1 rounded-full bg-gray-100 hover:bg-gray-200 border border-gray-200"
-                            title="Ajouter 8→12 (futur uniquement)"
-                          >
-                            8–12
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => addHours(label, rangeHours(14, 18), dayDate)}
-                            className="text-[11px] px-2 py-1 rounded-full bg-gray-100 hover:bg-gray-200 border border-gray-200"
-                            title="Ajouter 14–18 (futur uniquement)"
-                          >
-                            14–18
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => addHours(label, rangeHours(18, 21), dayDate)}
-                            className="text-[11px] px-2 py-1 rounded-full bg-gray-100 hover:bg-gray-200 border border-gray-200"
-                            title="Ajouter 18–21 (futur uniquement)"
-                          >
-                            Soir
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Plage perso */}
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] text-gray-500">Plage perso</span>
-                        <div className="flex items-center gap-1">
-                          <select
-                            className="text-[11px] border rounded-md px-2 py-1 bg-white"
-                            value={ranges[label]?.start ?? 8}
-                            onChange={(e) => updateRange(label, 'start', e.target.value)}
-                          >
-                            {heures.map(h => <option key={h} value={h}>{h}h</option>)}
-                          </select>
-                          <span className="text-[11px]">→</span>
-                          <select
-                            className="text-[11px] border rounded-md px-2 py-1 bg-white"
-                            value={ranges[label]?.end ?? 12}
-                            onChange={(e) => updateRange(label, 'end', e.target.value)}
-                          >
-                            {heures.map(h => <option key={h} value={h}>{h}h</option>)}
-                            <option value={24}>24h</option>
-                          </select>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => applyRange(label, dayDate)}
-                          className="text-[11px] px-3 py-1.5 rounded-lg bg-primary text-white hover:bg-primary/90 shadow-sm"
-                          title="Ajouter la plage (futur uniquement)"
-                        >
-                          Ajouter
-                        </button>
-                      </div>
-
-                      {/* Panneau copier vers… */}
-                      {copyPanel.openDay === label && (
-                        <div className="mt-1 p-2.5 border rounded-xl bg-gray-50">
-                          <div className="text-[11px] mb-1 text-gray-600">Copier vers :</div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {jours.map((j2, j2idx) => (
-                              <label key={j2} className={`text-[11px] px-2.5 py-1 rounded-full border cursor-pointer ${
-                                copyPanel.targets.includes(j2) ? 'bg-primary text-white border-primary' : 'bg-white'
-                              } ${j2 === label ? 'opacity-40 cursor-not-allowed' : ''}`}>
-                                <input
-                                  type="checkbox"
-                                  className="hidden"
-                                  disabled={j2 === label}
-                                  checked={copyPanel.targets.includes(j2)}
-                                  onChange={() => toggleCopyTarget(j2)}
-                                />
-                                {j2}
-                                <span className="ml-1 text-[10px] text-gray-400">
-                                  ({activeWeekDays[j2idx].getDate()}/{String(activeWeekDays[j2idx].getMonth()+1).padStart(2,'0')})
-                                </span>
-                              </label>
-                            ))}
-                          </div>
-                          <div className="mt-2 flex gap-2">
-                            <button
-                              type="button"
-                              onClick={doCopy}
-                              className="text-[11px] px-3 py-1.5 rounded-lg bg-primary text-white hover:bg-primary/90"
-                            >
-                              Copier
-                            </button>
-                            <button
-                              type="button"
-                              onClick={closeCopy}
-                              className="text-[11px] px-3 py-1.5 rounded-lg border hover:bg-gray-50"
-                            >
-                              Fermer
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                </tr>
+                <button
+                  key={d}
+                  type="button"
+                  disabled={passe}
+                  onClick={() => choisirDate(d)}
+                  className={[
+                    'py-1.5 rounded border text-center relative',
+                    passe ? 'text-gray-300 bg-gray-50 cursor-not-allowed'
+                      : active ? 'bg-primary text-white border-primary'
+                        : horsMois ? 'bg-gray-50 text-gray-400 hover:bg-gray-100' : 'bg-white hover:bg-gray-50',
+                  ].join(' ')}
+                  title={passe ? 'Semaine passée' : 'Modifier cette semaine'}
+                >
+                  {Number(d.slice(8, 10))}
+                  {aException && !passe && <span className={`absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full ${active ? 'bg-white' : 'bg-amber-500'}`} />}
+                </button>
               );
             })}
-          </tbody>
-        </table>
-      </div>
+          </div>
+          <p className="mt-2 text-[11px] text-gray-500">Un point orange = semaine avec des horaires particuliers.</p>
+        </div>
+      )}
 
-      <p className="text-[11px] text-gray-500 mt-2">
-        Modifiable à partir de <b>{nowHour >= 23 ? 'demain 00h' : `${String(nowHour + 1).padStart(2,'0')}:00`}</b>.
-        Les jours passés sont verrouillés. Sélectionne une semaine depuis le calendrier du haut pour l’éditer.
-      </p>
+      <div ref={grilleRef} className="scroll-mt-4 space-y-3">
+        {enSemaine && (
+          <div className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-gray-800" aria-live="polite">
+            <b>{annonce || `Semaine du ${jjmm(lundi)} au ${jjmm(ajouterJours(lundi, 6))} : cochez vos heures ci-dessous.`}</b>
+            <span className="block text-xs text-gray-600 mt-0.5">
+              {exception
+                ? (nbHeures(exception) === 0 ? 'Cette semaine : pas disponible.' : 'Cette semaine a ses propres horaires.')
+                : 'Cette semaine suit vos horaires habituels. Toute modification ici ne vaut que pour elle.'}
+            </span>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {exception && (
+                <button type="button" onClick={revenirAuxHabituels} className="text-xs px-3 py-1.5 rounded-lg border bg-white hover:bg-gray-50">
+                  Revenir à mes horaires habituels
+                </button>
+              )}
+              <button type="button" onClick={() => appliquerPreset('vider')} className="text-xs px-3 py-1.5 rounded-lg border bg-white hover:bg-gray-50">
+                Pas disponible cette semaine
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-gray-500">Raccourcis :</span>
+          <button type="button" onClick={() => appliquerPreset('bureau')} className="text-xs px-3 py-1.5 rounded-full border bg-white hover:bg-gray-50" title="Lundi → vendredi, 8 h–12 h et 14 h–18 h">🗓️ Bureau</button>
+          <button type="button" onClick={() => appliquerPreset('continu')} className="text-xs px-3 py-1.5 rounded-full border bg-white hover:bg-gray-50" title="Lundi → samedi, 9 h–19 h">⏱️ Continu</button>
+          <button type="button" onClick={() => appliquerPreset('soirs')} className="text-xs px-3 py-1.5 rounded-full border bg-white hover:bg-gray-50" title="Soirs de semaine 17 h–21 h, week-end 9 h–12 h">🌙 Soirs et week-end</button>
+          <button type="button" onClick={() => appliquerPreset('vider')} className="text-xs px-3 py-1.5 rounded-full border bg-white hover:bg-gray-50">🧹 Tout vider</button>
+          <span className="ml-auto text-xs font-semibold text-primary">{total} h {enSemaine ? 'cette semaine' : 'par semaine'}</span>
+        </div>
+
+        <ul className="space-y-2">
+          {JOURS.map((jour, i) => {
+            const heures = heuresDuJour(grille, jour);
+            const date = enSemaine ? datesSemaine[i] : null;
+            const jourPasse = enSemaine && date < auj;
+            return (
+              <li key={jour} className={`rounded-xl border p-3 ${jourPasse ? 'bg-gray-50' : 'bg-white'}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <div className="font-semibold text-gray-800 text-sm">
+                    {NOMS_JOURS[jour]}
+                    {date && <span className="ml-1 text-xs font-normal text-gray-500">{jjmm(date)}</span>}
+                    <span className="ml-2 text-xs font-normal text-gray-500">{heures.length ? `${heures.length} h` : 'pas dispo'}</span>
+                  </div>
+                  {!jourPasse && (
+                    <div className="flex flex-wrap gap-1">
+                      <button type="button" onClick={() => modifierJour(i, (hs) => trier([...hs, ...plage(8, 12)]))} className="text-[11px] px-2 py-1 rounded-full bg-gray-100 hover:bg-gray-200 border">8–12</button>
+                      <button type="button" onClick={() => modifierJour(i, (hs) => trier([...hs, ...plage(14, 18)]))} className="text-[11px] px-2 py-1 rounded-full bg-gray-100 hover:bg-gray-200 border">14–18</button>
+                      <button type="button" onClick={() => modifierJour(i, (hs) => trier([...hs, ...plage(18, 21)]))} className="text-[11px] px-2 py-1 rounded-full bg-gray-100 hover:bg-gray-200 border">Soir</button>
+                      <button type="button" onClick={() => modifierJour(i, () => HEURES)} className="text-[11px] px-2 py-1 rounded-full bg-gray-100 hover:bg-gray-200 border">Tout</button>
+                      <button type="button" onClick={() => modifierJour(i, () => [])} className="text-[11px] px-2 py-1 rounded-full bg-gray-100 hover:bg-gray-200 border">Vider</button>
+                      <button type="button" onClick={() => setCopie({ de: jour, vers: [] })} className="text-[11px] px-2 py-1 rounded-full bg-gray-100 hover:bg-gray-200 border">Copier vers…</button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                  {HEURES.map((h) => {
+                    const bloque = verrou(i, h);
+                    const coche = heures.includes(h) && !bloque;
+                    return (
+                      <button
+                        key={h}
+                        type="button"
+                        disabled={bloque}
+                        onClick={() => basculer(i, h)}
+                        aria-pressed={coche}
+                        className={[
+                          'min-w-[3.25rem] px-2 py-1.5 rounded-lg text-xs font-medium border transition',
+                          bloque ? 'bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed'
+                            : coche ? 'bg-green-600 text-white border-green-700' : 'bg-white text-gray-700 border-gray-300 hover:border-green-500',
+                        ].join(' ')}
+                        title={bloque ? 'Heure passée' : `${h} h – ${h + 1} h`}
+                      >
+                        {h} h
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {copie?.de === jour && (
+                  <div className="mt-2 p-2.5 border rounded-xl bg-gray-50">
+                    <div className="text-xs mb-1 text-gray-600">Copier les heures du {NOMS_JOURS[jour].toLowerCase()} vers :</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {JOURS.filter((j) => j !== jour).map((j) => {
+                        const pris = copie.vers.includes(j);
+                        return (
+                          <button key={j} type="button"
+                            onClick={() => setCopie((c) => ({ ...c, vers: pris ? c.vers.filter((x) => x !== j) : [...c.vers, j] }))}
+                            className={`text-xs px-2.5 py-1 rounded-full border ${pris ? 'bg-primary text-white border-primary' : 'bg-white'}`}>
+                            {NOMS_JOURS[j]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-2 flex gap-2">
+                      <button type="button" onClick={copierVers} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-white">Copier</button>
+                      <button type="button" onClick={() => setCopie(null)} className="text-xs px-3 py-1.5 rounded-lg border bg-white">Annuler</button>
+                    </div>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </div>
   );
 }

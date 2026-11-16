@@ -5,17 +5,23 @@
 // famille payait un cours qui n'était pas encore donné. On ne verse plus
 // rien avant la fin prévue du cours (début + 1 h). Module pur.
 
+import { instantLocal, fuseauValide } from './_fuseaux.mjs';
+
 const UNE_HEURE = 60 * 60 * 1000;
 
 /** Date de début du cours, ou null si on ne la connaît pas. */
 export function debutDuCours(l) {
   if (!l) return null;
-  for (const v of [l.startAt, l.start_datetime]) {
+  // 16/11/2026 : start_utc (ISO) est l'instant exact posé à la réservation.
+  for (const v of [l.start_utc, l.startAt, l.start_datetime]) {
     if (!v) continue;
     if (typeof v.toDate === 'function') return v.toDate();
     if (typeof v.seconds === 'number') return new Date(v.seconds * 1000);
     const d = v instanceof Date ? v : new Date(v);
     if (!Number.isNaN(d.getTime())) return d;
+  }
+  if (l.date && typeof l.slot_hour === 'number' && fuseauValide(l.fuseau_prof)) {
+    return instantLocal(String(l.date).slice(0, 10), l.slot_hour, l.fuseau_prof);
   }
   if (l.date && typeof l.slot_hour === 'number') {
     const d = new Date(`${String(l.date).slice(0, 10)}T${String(l.slot_hour).padStart(2, '0')}:00:00`);

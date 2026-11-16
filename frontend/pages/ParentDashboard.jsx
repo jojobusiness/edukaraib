@@ -18,6 +18,10 @@ import { instantaneEleve } from '../lib/profils';
 import { toast } from 'sonner';
 import { confirmer } from '../components/ui/Dialogues';
 import { requeteMesCours, concerneUnDe } from '../lib/mesCours';
+import { debutDuCours } from '../../api/_coursHoraire.mjs';
+// 16/11/2026 : la date réelle du cours (instant exact) ; l’estimation jour + heure
+// ne sert plus qu’aux très vieux cours sans date.
+const prochainDebut = (l, now) => debutDuCours(l) || nextOccurrence(l.slot_day, l.slot_hour, now);
 
 const FR_DAY_CODES = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const codeIndex = (c) => Math.max(0, FR_DAY_CODES.indexOf(c));
@@ -197,7 +201,7 @@ export default function ParentDashboard() {
       const now = new Date();
       const enriched = lessons
         .filter(l => l.slot_day && (l.slot_hour !== undefined))
-        .map(l => ({ ...l, startAt: nextOccurrence(l.slot_day, l.slot_hour, now) }))
+        .map(l => ({ ...l, startAt: prochainDebut(l, now) }))
         .filter(l => l.startAt);
       setCourses(enriched);
 

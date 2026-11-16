@@ -6,12 +6,12 @@ import {
   serverTimestamp, arrayUnion, onSnapshot, deleteField, runTransaction, increment
 } from 'firebase/firestore';
 import BookingModal from '../components/BookingModal';
+import { creneauxRecurrents } from '../../api/_dispos.mjs';
 import { useSEO } from '../hooks/useSEO';
 import { getCampaignPack, getCampaignSubject, setChatDraft } from '../lib/bacCampaign';
 import { instantaneEleve } from '../lib/profils';
 import { toast } from 'sonner';
 import fetchWithAuth from '../utils/fetchWithAuth';
-import { nbCreneaux } from '../lib/offreProf';
 
 const DAYS_ORDER = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
@@ -58,6 +58,10 @@ const mondayOf = (d) => {
   return x;
 };
 const weekKeyOf = (d) => mondayOf(d).toISOString().slice(0, 10);
+// 16/11/2026 : messages à la famille dans SON heure (heure du prof en plus si elle diffère)
+const libelleSlot = (s) => (s?.vue && s.fuseau_famille && s.fuseau_prof && s.fuseau_famille !== s.fuseau_prof
+  ? `${s.vue.date.slice(8, 10)}/${s.vue.date.slice(5, 7)} à ${s.vue.hour}h (${s.hour}h pour le prof)`
+  : `${s?.day} ${s?.hour}h`);
 
 const formatLocalDate = (d) => {
   if (!d) return null;
@@ -180,6 +184,7 @@ export default function TeacherProfile() {
   const [confirmationMsg, setConfirmationMsg] = useState('');
 
   const [currentRole, setCurrentRole] = useState(null);
+  const [monFuseau, setMonFuseau] = useState(null); // 16/11/2026 : heures affichées chez la famille
   const [children, setChildren] = useState([]);
   const [selectedStudentId, setSelectedStudentId] = useState('');
 
@@ -597,6 +602,7 @@ export default function TeacherProfile() {
         if (!cancelled) setCurrentRole(role || null);
         computedRole = meSnap.exists() ? meSnap.data()?.role : null;
         if (!cancelled) setCurrentRole(computedRole || null);
+        if (!cancelled) setMonFuseau(meSnap.exists() ? (meSnap.data()?.timezone || null) : null);
         const usedWith = meSnap.exists() ? (meSnap.data()?.trialUsedWith || []) : [];
         if (!cancelled) setTrialUsed(usedWith.includes(teacherId));
       } catch { if (!cancelled) setCurrentRole(null); }
@@ -819,32 +825,8 @@ export default function TeacherProfile() {
   // peuvent cohabiter dans le meme objet — on route chaque entree selon sa forme
   // 02/11/2026 : seulement les créneaux à venir. Avec des semaines passées, le
   // bouton Réserver ouvrait un calendrier vide (dernière semaine de Fawzi : mars).
-  const availableSlots = useMemo(() => {
-    const brut = teacher?.availability || {};
-    const parSemaine = Object.keys(brut).some((k) => /^\d{4}-\d{2}-\d{2}$/.test(k));
-    const avail = Object.fromEntries(Object.entries(brut).filter(([k]) => !parSemaine
-      || (/^\d{4}-\d{2}-\d{2}$/.test(k) && nbCreneaux({ [k]: brut[k] }) > 0)));
-    const slots = [];
-    const seen = new Set();
-    const addSlot = (day, h) => {
-      const key = `${day}:${h}`;
-      if (!seen.has(key)) { seen.add(key); slots.push({ day, hour: h }); }
-    };
-    Object.entries(avail).forEach(([key, value]) => {
-      if (Array.isArray(value)) {
-        value.forEach(h => addSlot(key, h));
-      } else if (value && typeof value === 'object') {
-        Object.entries(value).forEach(([day, hours]) => {
-          if (Array.isArray(hours)) hours.forEach(h => addSlot(day, h));
-        });
-      }
-    });
-    const dayOrder = { Lun: 0, Mar: 1, Mer: 2, Jeu: 3, Ven: 4, Sam: 5, Dim: 6 };
-    return slots.sort((a, b) => {
-      if ((dayOrder[a.day] ?? 9) !== (dayOrder[b.day] ?? 9)) return (dayOrder[a.day] ?? 9) - (dayOrder[b.day] ?? 9);
-      return a.hour - b.hour;
-    });
-  }, [teacher]);
+  // 16/11/2026 : horaires habituels + semaines particulières à venir (api/_dispos.mjs)
+  const availableSlots = useMemo(() => creneauxRecurrents(teacher?.availability || {}), [teacher]);
 
   const handleSubscribe = async () => {
     if (!auth.currentUser) return navigate('/login');
@@ -1029,7 +1011,7 @@ export default function TeacherProfile() {
 
             // S'il est encore actif (pas rejeté/supprimé) ⇒ c'est bien un doublon
             if (!['rejected', 'removed', 'deleted'].includes(partSt)) {
-              results.push({ slot, status: 'duplicate', message: `Déjà inscrit(e) sur ${slot.day} ${slot.hour}h.` });
+              results.push({ slot, status: 'duplicate', message: `Déjà inscrit(e) sur ${libelleSlot(slot)}.` });
               continue;
             }
 
@@ -1040,6 +1022,7 @@ export default function TeacherProfile() {
               date: slot.date,
               week: slot.week,
               startAt: new Date(slot.startAt),
+              ...(slot.start_utc ? { start_utc: slot.start_utc, fuseau_prof: slot.fuseau_prof || null } : {}),
               // sécurité : enlever tout vieux champ pack posé par le passé AU NIVEAU LEÇON
               is_pack: deleteField(),
               pack_hours: deleteField(),
@@ -1082,7 +1065,7 @@ export default function TeacherProfile() {
               message: `Relance de demande (individuel) ${slot.day} ${slot.hour}h.`,
             });
 
-            results.push({ slot, status: 'revived_individual', message: `Demande réactivée (individuel) ${slot.day} ${slot.hour}h.` });
+            results.push({ slot, status: 'revived_individual', message: `Demande réactivée (individuel) ${libelleSlot(slot)}.` });
             continue;
           }
 
@@ -1106,7 +1089,7 @@ export default function TeacherProfile() {
           }
 
           if (alreadyActiveInGroup) {
-            results.push({ slot, status: "duplicate", message: `Déjà inscrit(e) sur ${slot.day} ${slot.hour}h.` });
+            results.push({ slot, status: "duplicate", message: `Déjà inscrit(e) sur ${libelleSlot(slot)}.` });
             continue;
           }
 
@@ -1144,7 +1127,7 @@ export default function TeacherProfile() {
               message: `Relance de demande (groupe) ${slot.day} ${slot.hour}h.`,
             });
 
-            results.push({ slot, status: "revived_group", message: `Demande réactivée (groupe) ${slot.day} ${slot.hour}h.` });
+            results.push({ slot, status: "revived_group", message: `Demande réactivée (groupe) ${libelleSlot(slot)}.` });
             continue;
           }
 
@@ -1164,11 +1147,11 @@ export default function TeacherProfile() {
               }),
             });
             if (r?.status === 'duplicate') {
-              results.push({ slot, status: "duplicate", message: `Déjà inscrit(e) sur ${slot.day} ${slot.hour}h.` });
+              results.push({ slot, status: "duplicate", message: `Déjà inscrit(e) sur ${libelleSlot(slot)}.` });
               continue;
             }
             if (r?.status === 'joined_group') {
-              results.push({ slot, status: "joined_group", message: `Ajout au groupe demandé pour ${slot.day} ${slot.hour}h.` });
+              results.push({ slot, status: "joined_group", message: `Ajout au groupe demandé pour ${libelleSlot(slot)}.` });
               continue;
             }
           }
@@ -1191,6 +1174,8 @@ export default function TeacherProfile() {
             date: slot.date,
             week: slot.week,
             startAt: slot.startAt,
+            // 16/11/2026 : instant exact (UTC) + fuseau du prof — chacun voit son heure
+            ...(slot.start_utc ? { start_utc: slot.start_utc, fuseau_prof: slot.fuseau_prof || null } : {}),
             is_group: createAsGroup,
             capacity: createAsGroup ? defaultCap : 1,
             student_id: createAsGroup ? null : targetStudentId,
@@ -2232,6 +2217,7 @@ export default function TeacherProfile() {
       {(!isTeacherUser && !isOwnProfile) && showBooking && (
         <BookingModal
           availability={teacher.availability || {}}
+          fuseauFamille={monFuseau}
           bookedSlots={bookedSlots}
           remainingBySlot={remainingBySlot}
           onBook={handleBooking}

@@ -1,64 +1,25 @@
 import React, { useMemo, useState } from 'react';
+import { heuresLe, fuseauDispos, aujourdhui } from '../../api/_dispos.mjs';
+import {
+  JOURS, instantLocal, partiesLocales, lundiDe, ajouterJours, fuseauValide, fuseauNavigateur,
+  nomFuseau, formatHeure,
+} from '../../api/_fuseaux.mjs';
 
-// Jours + heures affichées
-const DEFAULT_DAYS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+// Calendrier de réservation côté famille (refonte du 16/11/2026, PLAN_DISPOS_PROFS).
+//
+// Chaque case est un INSTANT : « lundi 17 h chez la famille ». On le traduit
+// dans le fuseau du prof (lundi 18 h en Guyane) pour savoir s'il est libre :
+// horaires habituels ou semaine particulière (api/_dispos.mjs). Les créneaux
+// envoyés à la réservation restent exprimés chez le prof (slot_day, slot_hour,
+// date, week : compatibilité avec tous les cours existants) et portent
+// l'instant (startAt, start_utc) + fuseau_prof.
+// Prof sans fuseau connu (vieux comptes) : ses heures sont lues dans le fuseau
+// de la famille, comme avant le 16/11 — aucune régression.
 
-// ---- utils "mois/semaines" repris de TeacherAvailabilityEditor ----
-const startOfWeekMon = (d) => {
-  const x = new Date(d);
-  const day = (x.getDay() + 6) % 7; // 0=Mon..6=Sun
-  x.setDate(x.getDate() - day);
-  x.setHours(0, 0, 0, 0);
-  return x;
-};
-const startOfMonth = (d) => { const x = new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x; };
-const addMonths    = (d, n) => { const x = new Date(d); x.setMonth(x.getMonth() + n); return x; };
-const isoWeek = (date) => {
-  const tmp = new Date(date.getTime());
-  tmp.setHours(0,0,0,0);
-  tmp.setDate(tmp.getDate() + 3 - ((tmp.getDay() + 6) % 7));
-  const week1 = new Date(tmp.getFullYear(), 0, 4);
-  return 1 + Math.round(((tmp - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
-};
-const buildMonthMatrix = (cursor) => {
-  const first = startOfMonth(cursor);
-  const gridStart = startOfWeekMon(first);
-  const weeks = [];
-  for (let w = 0; w < 6; w++) {
-    const row = [];
-    for (let d = 0; d < 7; d++) {
-      const cell = new Date(gridStart); cell.setDate(gridStart.getDate() + w * 7 + d);
-      row.push(cell);
-    }
-    weeks.push(row);
-  }
-  return weeks;
-};
-
-// map 'Lun'..'Dim' -> index 0..6
-const DAY_INDEX = { 'Lun':0, 'Mar':1, 'Mer':2, 'Jeu':3, 'Ven':4, 'Sam':5, 'Dim':6 };
-
-// Formate une date en "YYYY-MM-DD" en restant en heure locale
-const formatLocalDate = (d) => {
-  if (!d) return null;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-};
-
-// Construit un Date à partir d'une date "YYYY-MM-DD" + une heure (nombre)
-const startAtFromDate = (dateStr, hour) => {
-  if (!dateStr) return null;
-  try {
-    const d = new Date(`${dateStr}T00:00:00`);
-    if (Number.isNaN(d.getTime())) return null;
-    d.setHours(Number(hour) || 0, 0, 0, 0);
-    return d;
-  } catch {
-    return null;
-  }
-};
+const DEFAULT_DAYS = JOURS;
+const DAY_INDEX = Object.fromEntries(JOURS.map((j, i) => [j, i]));
+const jjmm = (date) => `${date.slice(8, 10)}/${date.slice(5, 7)}`;
+const HORIZON_JOURS = 84; // ouverture sur la 1re semaine qui a des créneaux, 12 semaines max
 
 export default function BookingModal({
   availability = {},
@@ -82,52 +43,34 @@ export default function BookingModal({
   showFreeLegend = true,
   promoFreeCount = 0,   // ✅ AJOUT
 
+  fuseauFamille = null, // users/{uid}.timezone de celui qui réserve (16/11/2026)
 }) {
   const [selected, setSelected] = useState([]);
 
   const [giftFlash, setGiftFlash] = useState(null);
   const [promoFlash, setPromoFlash] = useState(null);
 
-  // Tri stable : date puis heure
+  // Fuseaux : celui de la famille (affichage), celui du prof (saisie des heures)
+  const tzVue = fuseauValide(fuseauFamille) ? fuseauFamille : (fuseauNavigateur() || 'America/Cayenne');
+  const tzProf = fuseauDispos(availability) || tzVue;
+  const conversion = tzProf !== tzVue;
+
+  // Tri stable : instant
   const sortedSelected = useMemo(() => {
-    return [...selected].sort((a, b) => {
-      const ad = a.date || '';
-      const bd = b.date || '';
-      if (ad !== bd) return ad.localeCompare(bd);
-      return (a.hour || 0) - (b.hour || 0);
-    });
+    return [...selected].sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
   }, [selected]);
 
   const requiredN = requiredCount ? Number(requiredCount) : null;
 
-  // Clé unique d’un créneau (pour le comparer)
+  // Clé unique d’un créneau, dans les termes du prof
   const slotKey = (s) => `${s.day}:${s.hour}:${s.date || ''}`;
 
-  // Les créneaux offerts = les N premiers de la sélection (dans l’ordre)
-  // total heures gratuites (pack + promo)
   const totalFreeN = Math.max(0, Number(freeCount) || 0);
-
-  // heures gratuites "promo" (max = total)
   const promoFreeN = Math.min(totalFreeN, Math.max(0, Number(promoFreeCount) || 0));
-
-  // heures gratuites "pack" = le reste
   const packFreeN = Math.max(0, totalFreeN - promoFreeN);
 
-  // 🎁 (pack) = les packFreeN premiers (par ordre trié)
-  // 🎟️ (promo) = les promoFreeN suivants
-  const packFreeKeys = useMemo(() => {
-    return new Set(sortedSelected.slice(0, packFreeN).map(slotKey));
-  }, [sortedSelected, packFreeN]);
-
-  const promoFreeKeys = useMemo(() => {
-    return new Set(sortedSelected.slice(packFreeN, packFreeN + promoFreeN).map(slotKey));
-  }, [sortedSelected, packFreeN, promoFreeN]);
-
-  // ➕ détecter si availability est "par semaine" (clés = YYYY-MM-DD)
-  const isPerWeekAvailability = useMemo(() => {
-    const avail = availability || {};
-    return Object.keys(avail).some((k) => /^\d{4}-\d{2}-\d{2}$/.test(k));
-  }, [availability]);
+  const packFreeKeys = useMemo(() => new Set(sortedSelected.slice(0, packFreeN).map(slotKey)), [sortedSelected, packFreeN]);
+  const promoFreeKeys = useMemo(() => new Set(sortedSelected.slice(packFreeN, packFreeN + promoFreeN).map(slotKey)), [sortedSelected, packFreeN, promoFreeN]);
 
   // Fermer avec Esc
   React.useEffect(() => {
@@ -136,311 +79,145 @@ export default function BookingModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // ------- Navigation mois + semaine active -------
-  const [monthCursor, setMonthCursor] = useState(() => { const d = new Date(); d.setDate(1); d.setHours(0,0,0,0); return d; });
-  // 02/11/2026 : s'ouvre sur la première semaine qui a des créneaux, pas sur une
-  // semaine vide (Marie-Christine n'en a qu'à partir du 14/12).
-  const [weekAnchor, setWeekAnchor]   = useState(() => {
-    const debut = startOfWeekMon(new Date());
-    const prochaine = Object.keys(availability || {})
-      .filter((k) => /^\d{4}-\d{2}-\d{2}$/.test(k) && Object.values(availability[k] || {}).flat().length > 0)
-      .map((k) => new Date(`${k}T00:00:00`))
-      .filter((d) => d >= debut)
-      .sort((a, b) => a - b)[0];
-    return prochaine || debut;
-  });
-
-  const activeWeekDays = useMemo(() => {
-    const out = [];
-    const start = startOfWeekMon(weekAnchor);
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(start); d.setDate(start.getDate() + i);
-      out.push(d);
-    }
-    return out;
-  }, [weekAnchor]);
-
-  // -------- Verrous temporels (+1h) --------
-  // On recalcule chaque minute pour que les créneaux se verrouillent dynamiquement
+  // Horloge : les créneaux se verrouillent d'eux-mêmes chaque minute
   const [nowTick, setNowTick] = React.useState(() => Date.now());
   React.useEffect(() => {
     const id = setInterval(() => setNowTick(Date.now()), 60_000);
     return () => clearInterval(id);
   }, []);
-  const now = new Date(nowTick);
-  const nowHour = now.getHours();
-  const todayMidnight = new Date(nowTick); todayMidnight.setHours(0,0,0,0);
-  const isSlotLockedByDate = (dayDate, hour) => {
-    const d = new Date(dayDate); d.setHours(0,0,0,0);
-    if (d.getTime() < todayMidnight.getTime()) return true;
-    if (d.getTime() === todayMidnight.getTime()) {
-      if (nowHour >= 23) return true;
-      return hour <= nowHour; // autorise à partir de now+1h
+  const aujVue = aujourdhui(nowTick, tzVue);
+
+  // ------- Semaine affichée (lundi, chez la famille) -------
+  const [lundiVue, setLundiVue] = useState(() => {
+    // 02/11/2026 : s'ouvre sur la première semaine qui a des créneaux.
+    const maintenant = Date.now();
+    const aujProf = aujourdhui(maintenant, tzProf);
+    for (let n = 0; n < HORIZON_JOURS; n += 1) {
+      const d = ajouterJours(aujProf, n);
+      const h = heuresLe(availability, d).find((x) => instantLocal(d, x, tzProf).getTime() > maintenant);
+      if (h != null) return lundiDe(partiesLocales(instantLocal(d, h, tzProf), tzVue).date);
     }
-    return false;
-  };
+    return lundiDe(aujourdhui(maintenant, tzVue));
+  });
+  const [moisCurseur, setMoisCurseur] = useState(() => `${lundiVue.slice(0, 7)}-01`);
+  const datesVue = useMemo(() => JOURS.map((_, i) => ajouterJours(lundiVue, i)), [lundiVue]);
 
-  // -------- Helpers dépendants de la semaine active (⚠ ordre important) --------
+  // Case (jour i, heure h chez la famille) → créneau chez le prof
+  const cellules = useMemo(() => {
+    const m = new Map();
+    datesVue.forEach((date, i) => {
+      for (let h = 0; h < 24; h += 1) {
+        const instant = instantLocal(date, h, tzVue);
+        const p = partiesLocales(instant, tzProf);
+        const dispo = p.minute === 0 && heuresLe(availability, p.date).includes(p.heure);
+        m.set(`${i}:${h}`, {
+          instant,
+          dispo,
+          slot: { day: p.jour, hour: p.heure, date: p.date, week: lundiDe(p.date) },
+          heureProf: formatHeure(p.heure, p.minute),
+          jourProfDifferent: p.date !== date,
+        });
+      }
+    });
+    return m;
+  }, [datesVue, tzVue, tzProf, availability]);
+  const cellule = (i, h) => cellules.get(`${i}:${h}`);
 
-  // Date réelle (objet Date) d’un label 'Lun'..'Dim' pour la semaine active
-  const dateForLabel = (label) => {
-    const idx = DAY_INDEX[label] ?? 0;
-    return activeWeekDays[idx];
-  };
-
-  // YYYY-MM-DD du jour (dans la semaine active) pour un label 'Lun'..'Dim'
-  const dayDateKey = (label) => {
-    const d = dateForLabel(label);
-    return formatLocalDate(d);
-  };
-
-  // Clé "YYYY-MM-DD" du lundi de la semaine active
-  const activeWeekKey = React.useMemo(() => {
-    const d = startOfWeekMon(weekAnchor);
-    return formatLocalDate(d);
-  }, [weekAnchor]);
-
-  // bookedMap sensible à la semaine (avec fallback jour:heure)
+  // bookedMap : clés dans les termes du prof (comme les cours en base)
   const bookedMap = useMemo(() => {
-    // Map key -> { any: boolean, mine: Set<studentId> }
     const m = new Map();
     const add = (key, studentIds = []) => {
       if (!key) return;
       const prev = m.get(key) || { any: false, mine: new Set() };
       prev.any = true;
-      // Marque mes enfants spécifiquement
       if (Array.isArray(myStudentIds) && myStudentIds.length && Array.isArray(studentIds)) {
-        studentIds.forEach(sid => { if (myStudentIds.includes(sid)) prev.mine.add(sid); });
+        studentIds.forEach((sid) => { if (myStudentIds.includes(sid)) prev.mine.add(sid); });
       }
       m.set(key, prev);
     };
     (bookedSlots || []).forEach((it) => {
       const { day, hour } = it || {};
       if (!day || typeof hour !== 'number') return;
-      // On récupère tous les IDs possiblement concernés par la résa
       const groupIds = Array.isArray(it.participant_ids) ? it.participant_ids : [];
-      const studentsForThis = [
-        ...(it.student_id ? [it.student_id] : []),
-        ...groupIds,
-      ];
-      // 1) clé par date exacte si fournie
-      if (it.date) add(`${day}:${hour}:${String(it.date).slice(0,10)}`, studentsForThis);
-      // 2) clé par date dérivée de startAt si présent
+      const studentsForThis = [...(it.student_id ? [it.student_id] : []), ...groupIds];
+      if (it.date) add(`${day}:${hour}:${String(it.date).slice(0, 10)}`, studentsForThis);
       if (it.startAt) {
-        const d = new Date(it.startAt);
-        if (!isNaN(d)) add(`${day}:${hour}:${d.toISOString().slice(0,10)}`, studentsForThis);
+        const d = new Date(it.startAt?.toDate ? it.startAt.toDate() : it.startAt);
+        if (!Number.isNaN(d.getTime())) add(`${day}:${hour}:${partiesLocales(d, tzProf).date}`, studentsForThis);
       }
-      // 3) clé par semaine si fournie
       if (it.week) add(`${day}:${hour}:${it.week}`, studentsForThis);
     });
     return m;
-  }, [bookedSlots, myStudentIds]);
+  }, [bookedSlots, myStudentIds, tzProf]);
 
-  // places restantes : d’abord par date précise, puis semaine, puis clé simple jour:heure
-  const remainingFor = (day, hour) => {
-    const dkey   = dayDateKey(day);                     // ex: "2025-12-01"
-    const dateK  = dkey ? `${day}:${hour}:${dkey}` : null;
-    const weekK  = `${day}:${hour}:${activeWeekKey}`;
-    const plainK = `${day}:${hour}`;
-
-    if (dateK && typeof remainingBySlot?.[dateK] === 'number') {
-      return remainingBySlot[dateK];
-    }
-    if (typeof remainingBySlot?.[weekK] === 'number') {
-      return remainingBySlot[weekK];
-    }
-    if (typeof remainingBySlot?.[plainK] === 'number') {
-      return remainingBySlot[plainK];
+  const remainingFor = ({ day, hour, date, week }) => {
+    for (const k of [`${day}:${hour}:${date}`, `${day}:${hour}:${week}`, `${day}:${hour}`]) {
+      if (typeof remainingBySlot?.[k] === 'number') return remainingBySlot[k];
     }
     return null;
   };
-
-  // ✅ Y a-t-il une résa ? (utilise la structure {any, mine})
-  const isBooked = (day, hour) => {
-    const dkey = dayDateKey(day);
-    if (dkey && bookedMap.get(`${day}:${hour}:${dkey}`)?.any) return true;
-    if (bookedMap.get(`${day}:${hour}:${activeWeekKey}`)?.any) return true;
-    return false;
+  const entreeReservee = ({ day, hour, date, week }) => {
+    const parDate = bookedMap.get(`${day}:${hour}:${date}`);
+    const parSemaine = bookedMap.get(`${day}:${hour}:${week}`);
+    return { any: !!(parDate?.any || parSemaine?.any), mine: parDate?.mine?.size ? parDate.mine : parSemaine?.mine };
   };
+  const isBooked = (slot) => entreeReservee(slot).any;
+  const myBookedCount = (slot) => entreeReservee(slot).mine?.size || 0;
+  const myBookedNames = (slot) => Array.from(entreeReservee(slot).mine || []).map((sid) => idToName[sid] || sid);
 
-  // ✅ Combien de MES enfants ont une résa sur ce créneau ?
-  const myBookedCount = (day, hour) => {
-    const dkey = dayDateKey(day);
-    const byDate = dkey ? bookedMap.get(`${day}:${hour}:${dkey}`) : null;
-    const byWeek = bookedMap.get(`${day}:${hour}:${activeWeekKey}`);
-    const set = byDate?.mine?.size ? byDate.mine : byWeek?.mine;
-    return set ? set.size : 0;
-  };
+  const estVerrouille = (c) => c.instant.getTime() <= nowTick;
+  const isSelected = (slot) => selected.some((s) => slotKey(s) === slotKey(slot));
 
-  // ✅ Noms des enfants pour le tooltip
-  const myBookedNames = (day, hour) => {
-    const dkey = dayDateKey(day);
-    const byDate = dkey ? bookedMap.get(`${day}:${hour}:${dkey}`) : null;
-    const byWeek = bookedMap.get(`${day}:${hour}:${activeWeekKey}`);
-    const set = byDate?.mine?.size ? byDate.mine : byWeek?.mine;
-    if (!set || set.size === 0) return [];
-    return Array.from(set).map(sid => idToName[sid] || sid);
-  };
-
-  // Dispo effective pour la semaine active
-  const weekAvailability = useMemo(() => {
-    if (!isPerWeekAvailability) {
-      // ancien format : { 'Lun': [9,10], ... }
-      return availability || {};
-    }
-    // nouveau format : { 'YYYY-MM-DD' (lundi): { 'Lun': [9,10], ... }, ... }
-    const wk = activeWeekKey; // "YYYY-MM-DD" calculé plus haut
-    const raw = availability && availability[wk];
-    if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
-    return {}; // semaine non configurée => vide
-  }, [availability, isPerWeekAvailability, activeWeekKey]);
-
-  const isAvailable = (day, hour) =>
-    Array.isArray(weekAvailability[day]) && weekAvailability[day].includes(hour);
-
-  // un créneau sélectionné = jour + heure + date de la semaine concernée
-  const isSelected = (day, hour) => {
-    const dateKey = dayDateKey(day); // "2025-12-01" par ex
-    return selected.some(s =>
-      s.day === day &&
-      s.hour === hour &&
-      (!dateKey || s.date === dateKey)   // on distingue bien les semaines
-    );
-  };
-
-  
   // Quand les dispos changent, on enlève seulement les créneaux qui n'existent plus
   React.useEffect(() => {
-    setSelected((prev) => {
-      if (!Array.isArray(prev) || prev.length === 0) return prev;
+    setSelected((prev) => (prev.length
+      ? prev.filter((s) => heuresLe(availability, s.date).includes(s.hour))
+      : prev));
+  }, [availability]);
 
-      // Ancien format : { Lun: [9,10], ... }
-      if (!isPerWeekAvailability) {
-        return prev.filter(({ day, hour }) => {
-          return Array.isArray(availability?.[day]) && availability[day].includes(hour);
-        });
-      }
-
-      // Nouveau format par semaine : { "YYYY-MM-DD": { Lun: [..], ... } }
-      return prev.filter(({ day, hour }) => {
-        const arr = weekAvailability?.[day];
-        return Array.isArray(arr) && arr.includes(hour);
-      });
-    });
-  }, [availability, weekAvailability, isPerWeekAvailability]);
-
-  // Heures à afficher (robuste, même si certaines valeurs ne sont pas des tableaux)
+  // Heures (chez la famille) à afficher pour la semaine
   const hours = useMemo(() => {
-    const availSource = isPerWeekAvailability ? weekAvailability : (availability || {});
-
-    const all = [];
-    Object.values(availSource || {}).forEach((v) => {
-      if (Array.isArray(v)) {
-        v.forEach((h) => {
-          if (Number.isInteger(h)) all.push(h);
-        });
-      } else if (v && typeof v === 'object') {
-        // Cas nouveau format éventuel : { Lun: [9,10], ... } imbriqué
-        Object.values(v).forEach((sub) => {
-          if (Array.isArray(sub)) {
-            sub.forEach((h) => {
-              if (Number.isInteger(h)) all.push(h);
-            });
-          }
-        });
-      }
-    });
-
-    if (all.length === 0) {
-      // défaut 8h → 19h si aucune dispo trouvée
-      return Array.from({ length: 12 }, (_, i) => i + 8);
-    }
-
-    const min = Math.max(0, Math.min(...all));
-    const max = Math.min(23, Math.max(...all));
-
-    return Array.from({ length: (max - min + 1) }, (_, i) => min + i);
-  }, [availability, weekAvailability, isPerWeekAvailability]);
+    const toutes = [];
+    for (let i = 0; i < 7; i += 1) for (let h = 0; h < 24; h += 1) if (cellule(i, h)?.dispo) toutes.push(h);
+    if (!toutes.length) return Array.from({ length: 12 }, (_, i) => i + 8);
+    const min = Math.min(...toutes);
+    const max = Math.max(...toutes);
+    return Array.from({ length: max - min + 1 }, (_, i) => min + i);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cellules]);
 
   // -------- Actions UI --------
-  const toggleSelect = (day, hour) => {
+  const toggleSelect = (i, h) => {
     if (!canBook) return;
+    const c = cellule(i, h);
+    if (!c || !c.dispo || isBooked(c.slot) || estVerrouille(c)) return;
+    const k = slotKey(c.slot);
+    const entree = {
+      ...c.slot,
+      startAt: c.instant,
+      start_utc: c.instant.toISOString(),
+      fuseau_prof: tzProf,
+      fuseau_famille: tzVue,
+      vue: { date: datesVue[i], hour: h },
+    };
 
-    const dayDate = dateForLabel(day); // Date réelle de ce jour dans la semaine affichée
-    if (!dayDate) return;
+    if (!multiSelect) { setSelected([entree]); return; }
 
-    if (!isAvailable(day, hour) || isBooked(day, hour)) return;
-    if (isSlotLockedByDate(dayDate, hour)) return;
+    setSelected((prev) => {
+      if (prev.some((s) => slotKey(s) === k)) return prev.filter((s) => slotKey(s) !== k);
+      if (requiredN && prev.length >= requiredN) return prev;
+      const next = [...prev, entree];
 
-    // Date locale de ce créneau
-    const dateKey = formatLocalDate(dayDate);   // "2025-12-01"
-    const weekKey = activeWeekKey;              // lundi "YYYY-MM-DD" de la semaine
-    const startAt  = startAtFromDate(dateKey, hour); // Date complète locale
-
-    if (multiSelect) {
-      setSelected((prev) => {
-        // Vérifie s'il existe déjà CE créneau pour CETTE date
-        const exists = prev.some(
-          (s) => s.day === day && s.hour === hour && s.date === dateKey
-        );
-
-        // Si déjà sélectionné → on enlève uniquement cette occurrence
-        if (exists) {
-          return prev.filter(
-            (s) => !(s.day === day && s.hour === hour && s.date === dateKey)
-          );
+      // 🎁/🎟️ animation si ce créneau devient "gratuit"
+      if (totalFreeN > 0) {
+        const idx = [...next].sort((a, b) => new Date(a.startAt) - new Date(b.startAt)).findIndex((s) => slotKey(s) === k);
+        if (idx !== -1 && idx < totalFreeN) {
+          if (idx < packFreeN) { setGiftFlash(k); window.setTimeout(() => setGiftFlash(null), 650); }
+          else { setPromoFlash(k); window.setTimeout(() => setPromoFlash(null), 850); }
         }
-
-        // Limite de pack
-        if (requiredN && prev.length >= requiredN) return prev;
-
-        const next = [
-          ...prev,
-          { day, hour, date: dateKey, week: weekKey, startAt },
-        ];
-
-        // 🎁/🎟️ animation si ce créneau devient "gratuit"
-        const totalN = Math.max(0, Number(freeCount) || 0);
-        const promoN = Math.min(totalN, Math.max(0, Number(promoFreeCount) || 0));
-        const packN = Math.max(0, totalN - promoN);
-
-        if (totalN > 0) {
-          const k = `${day}:${hour}:${dateKey}`;
-
-          // on calcule la position triée du créneau ajouté (pour coller aux badges)
-          const sortedNext = [...next].sort((a, b) => {
-            const ad = a.date || '';
-            const bd = b.date || '';
-            if (ad !== bd) return ad.localeCompare(bd);
-            return (a.hour || 0) - (b.hour || 0);
-          });
-          const idx = sortedNext.findIndex((s) => `${s.day}:${s.hour}:${s.date || ''}` === k);
-
-          if (idx !== -1 && idx < totalN) {
-            if (idx < packN) {
-              setGiftFlash(k);
-              window.setTimeout(() => setGiftFlash(null), 650);
-            } else {
-              setPromoFlash(k);
-              window.setTimeout(() => setPromoFlash(null), 850);
-            }
-          }
-        }
-
-        return next;
-      });
-    } else {
-      // Mode 1 seul créneau
-      setSelected([
-        {
-          day,
-          hour,
-          date: dateKey,
-          week: weekKey,
-          startAt,
-        },
-      ]);
-    }
+      }
+      return next;
+    });
   };
 
   const handleSubmit = () => {
@@ -451,6 +228,22 @@ export default function BookingModal({
   };
 
   const need = requiredN ? (requiredN - selected.length) : null;
+
+  // Calendrier du mois (chez la famille)
+  const premierLundi = lundiDe(moisCurseur);
+  const semainesMois = Array.from({ length: 6 }, (_, w) => Array.from({ length: 7 }, (_, d) => ajouterJours(premierLundi, w * 7 + d)));
+  const changerMois = (n) => {
+    const [y, m] = moisCurseur.split('-').map(Number);
+    setMoisCurseur(new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 10));
+  };
+  const nomMois = new Date(`${moisCurseur}T12:00:00Z`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const libelleCreneau = (s) => {
+    const v = s.vue || { date: s.date, hour: s.hour };
+    const jour = new Date(`${v.date}T12:00:00Z`).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+    return conversion
+      ? `${jour} · ${formatHeure(v.hour)} chez vous · ${formatHeure(s.hour)} pour le prof`
+      : `${jour} · ${formatHeure(v.hour)}`;
+  };
 
   // -------- RENDER --------
   return (
@@ -530,65 +323,45 @@ export default function BookingModal({
           )}
         </div>
 
-        {/* Mini-calendrier mensuel + sélection de la semaine */}
+        {conversion && (
+          <div className="mb-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+            Horaires affichés à <b>l'heure de chez vous ({nomFuseau(tzVue)})</b>. Le professeur est à l'heure de {nomFuseau(tzProf)} : son heure est indiquée sous chaque créneau choisi.
+          </div>
+        )}
+
+        {/* Mini-calendrier mensuel + sélection de la semaine (chez la famille) */}
         <div className="mb-3 bg-white rounded-xl border shadow-sm p-3">
           <div className="flex items-center justify-between mb-2">
-            <button
-              type="button"
-              onClick={() => setMonthCursor((d) => addMonths(d, -1))}
-              className="px-2 py-1 text-sm rounded border hover:bg-gray-50"
-            >‹</button>
-
-            <div className="font-semibold">
-              {monthCursor.toLocaleString('fr-FR', { month: 'long', year: 'numeric' })}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setMonthCursor((d) => addMonths(d, 1))}
-              className="px-2 py-1 text-sm rounded border hover:bg-gray-50"
-            >›</button>
+            <button type="button" onClick={() => changerMois(-1)} className="px-2 py-1 text-sm rounded border hover:bg-gray-50" aria-label="Mois précédent">‹</button>
+            <div className="font-semibold capitalize">{nomMois}</div>
+            <button type="button" onClick={() => changerMois(1)} className="px-2 py-1 text-sm rounded border hover:bg-gray-50" aria-label="Mois suivant">›</button>
           </div>
-
-          <div className="grid grid-cols-8 gap-1 text-[11px]">
-            <div className="text-gray-500 px-1"></div>
-            {['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'].map(h=>(
-              <div key={h} className="text-center text-gray-500">{h}</div>
-            ))}
-
-            {buildMonthMatrix(monthCursor).map((week, i)=>(
-              <React.Fragment key={i}>
-                <div className="text-center text-gray-500 font-mono px-1">S{isoWeek(week[0])}</div>
-                {week.map((day,j)=>{
-                  const isPast = (() => {
-                    const a = new Date(day); a.setHours(0,0,0,0);
-                    return a.getTime() < todayMidnight.getTime();
-                  })();
-                  const isActiveWeek = startOfWeekMon(day).getTime() === startOfWeekMon(weekAnchor).getTime();
-                  return (
-                    <button
-                      key={j}
-                      type="button"
-                      disabled={isPast}
-                      onClick={()=> setWeekAnchor(startOfWeekMon(day))}
-                      className={[
-                        "py-1 rounded border text-center",
-                        isPast ? "text-gray-300 bg-gray-50 cursor-not-allowed"
-                               : (isActiveWeek ? "bg-primary/10 border-primary/30 text-primary"
-                                               : "bg-white hover:bg-gray-50")
-                      ].join(' ')}
-                      title={isPast ? "Jour passé" : "Éditer cette semaine"}
-                    >
-                      {day.getDate()}
-                    </button>
-                  );
-                })}
-              </React.Fragment>
-            ))}
+          <div className="grid grid-cols-7 gap-1 text-[11px]">
+            {JOURS.map((h) => <div key={h} className="text-center text-gray-500">{h}</div>)}
+            {semainesMois.flat().map((d) => {
+              const isPast = d < aujVue;
+              const isActiveWeek = lundiDe(d) === lundiVue;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  disabled={isPast}
+                  onClick={() => setLundiVue(lundiDe(d))}
+                  className={[
+                    'py-1 rounded border text-center',
+                    isPast ? 'text-gray-300 bg-gray-50 cursor-not-allowed'
+                      : (isActiveWeek ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-white hover:bg-gray-50'),
+                  ].join(' ')}
+                  title={isPast ? 'Jour passé' : 'Voir cette semaine'}
+                >
+                  {Number(d.slice(8, 10))}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Grille des créneaux (SEMAINE ACTIVE) */}
+        {/* Grille des créneaux (SEMAINE ACTIVE, heures de la famille) */}
         <div className="overflow-x-auto">
           <table className="table-auto border text-xs mb-3">
             <thead>
@@ -600,54 +373,43 @@ export default function BookingModal({
               </tr>
             </thead>
             <tbody>
-              {orderDays.map((dayLabel, idx) => {
-                const dayDate = activeWeekDays[idx]; // date réelle
+              {orderDays.map((dayLabel) => {
+                const i = DAY_INDEX[dayLabel] ?? 0;
                 return (
                   <tr key={dayLabel}>
                     <td className="font-semibold px-2 py-2 text-slate-900">
                       {dayLabel}
-                      <span className="ml-1 text-[10px] text-gray-400">
-                        ({dayDate.getDate()}/{String(dayDate.getMonth()+1).padStart(2,'0')})
-                      </span>
+                      <span className="ml-1 text-[10px] text-gray-400">({jjmm(datesVue[i])})</span>
                     </td>
                     {hours.map((h) => {
-                      const booked = isBooked(dayLabel, h);
-                      const dispo = isAvailable(dayLabel, h);
-                      const locked = isSlotLockedByDate(dayDate, h);
-                      const sel = !locked && isSelected(dayLabel, h);
-                      const remaining = remainingFor(dayLabel, h);
+                      const c = cellule(i, h);
+                      const slot = c.slot;
+                      const booked = isBooked(slot);
+                      const dispo = c.dispo;
+                      const locked = estVerrouille(c);
+                      const sel = !locked && isSelected(slot);
+                      const remaining = remainingFor(slot);
+                      const mesResa = myBookedCount(slot);
 
                       let classes = 'relative w-9 h-9 rounded-lg shadow flex items-center justify-center select-none transition ';
-                      if (!canBook) {
-                        classes += 'bg-gray-100 text-gray-300 cursor-not-allowed';
-                      } else if (booked) {
-                        classes += 'bg-red-500 text-white cursor-not-allowed';
-                      } else if (locked) {
-                        classes += 'bg-gray-300 text-white cursor-not-allowed'; // 🔒
-                      } else if (sel) {
-                        classes += 'bg-secondary text-white';
-                      } else if (dispo) {
-                        classes += 'bg-green-500 text-white hover:opacity-90';
-                      } else {
-                        classes += 'bg-gray-100 text-gray-400 cursor-not-allowed';
-                      }
+                      if (!canBook) classes += 'bg-gray-100 text-gray-300 cursor-not-allowed';
+                      else if (booked) classes += 'bg-red-500 text-white cursor-not-allowed';
+                      else if (locked) classes += 'bg-gray-300 text-white cursor-not-allowed'; // 🔒
+                      else if (sel) classes += 'bg-secondary text-white';
+                      else if (dispo) classes += 'bg-green-500 text-white hover:opacity-90';
+                      else classes += 'bg-gray-100 text-gray-400 cursor-not-allowed';
 
-                      const baseTitle = booked
-                        ? 'Créneau déjà réservé'
-                        : locked
-                        ? 'Verrouillé (passé ou avant +1h)'
-                        : dispo
-                        ? (sel ? 'Sélectionné' : 'Disponible')
-                        : 'Indisponible';
+                      const heureProf = conversion ? ` · ${c.heureProf}${c.jourProfDifferent ? ` le ${jjmm(slot.date)}` : ''} pour le prof` : '';
+                      const baseTitle = booked ? 'Créneau déjà réservé'
+                        : locked ? 'Verrouillé (passé)'
+                          : dispo ? `${sel ? 'Sélectionné' : 'Disponible'} : ${h} h chez vous${heureProf}`
+                            : 'Indisponible';
                       const title = !canBook ? 'Réservation désactivée pour les professeurs' : baseTitle;
 
-                      const disabledByPack =
-                        canBook && dispo && !booked && !locked && !sel && requiredCount && selected.length >= requiredCount;
-                      const dateKey = dayDateKey(dayLabel);
-                      const thisKey = `${dayLabel}:${h}:${dateKey || ''}`;
+                      const disabledByPack = canBook && dispo && !booked && !locked && !sel && requiredCount && selected.length >= requiredCount;
+                      const thisKey = slotKey(slot);
                       const isPackFree = sel && packFreeKeys.has(thisKey);
                       const isPromoFree = sel && promoFreeKeys.has(thisKey);
-
                       const isGiftAnimating = giftFlash === thisKey;
                       const isPromoAnimating = promoFlash === thisKey;
 
@@ -656,7 +418,7 @@ export default function BookingModal({
                           <button
                             type="button"
                             disabled={!canBook || !dispo || booked || locked || disabledByPack}
-                            onClick={() => toggleSelect(dayLabel, h)}
+                            onClick={() => toggleSelect(i, h)}
                             className={classes + (disabledByPack ? ' opacity-60' : '')}
                             title={title}
                             aria-label={remaining !== null ? `${title}. Places restantes : ${remaining}` : title}
@@ -665,11 +427,7 @@ export default function BookingModal({
 
                             {isPackFree && (
                               <span
-                                className={[
-                                  "absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center",
-                                  "bg-amber-50 border border-amber-200 text-base",
-                                  isGiftAnimating ? "animate-bounce" : ""
-                                ].join(" ")}
+                                className={['absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center', 'bg-amber-50 border border-amber-200 text-base', isGiftAnimating ? 'animate-bounce' : ''].join(' ')}
                                 title="Heure offerte (pack)"
                               >
                                 🎁
@@ -678,15 +436,9 @@ export default function BookingModal({
 
                             {isPromoFree && (
                               <span className="absolute -bottom-1 -right-1 w-6 h-6">
-                                {isPromoAnimating && (
-                                  <span className="absolute inset-0 rounded-full bg-emerald-300/40 animate-ping" />
-                                )}
+                                {isPromoAnimating && <span className="absolute inset-0 rounded-full bg-emerald-300/40 animate-ping" />}
                                 <span
-                                  className={[
-                                    "relative w-6 h-6 rounded-full flex items-center justify-center",
-                                    "bg-emerald-50 border border-emerald-200 text-base",
-                                    isPromoAnimating ? "animate-pulse" : ""
-                                  ].join(" ")}
+                                  className={['relative w-6 h-6 rounded-full flex items-center justify-center', 'bg-emerald-50 border border-emerald-200 text-base', isPromoAnimating ? 'animate-pulse' : ''].join(' ')}
                                   title="Heure bonus (code promo)"
                                 >
                                   🎟️
@@ -694,7 +446,6 @@ export default function BookingModal({
                               </span>
                             )}
 
-                            {/* 🔵 remets CE bloc */}
                             {remaining !== null && dispo && !booked && !locked && canBook && (
                               <span
                                 className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] leading-[18px] text-center pointer-events-none"
@@ -702,14 +453,14 @@ export default function BookingModal({
                               >
                                 {remaining}
                               </span>
-                            )}                  
+                            )}
 
-                            {myBookedCount(dayLabel, h) > 0 && (
+                            {mesResa > 0 && (
                               <span
                                 className="absolute -bottom-1 -left-1 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[10px] leading-[18px] text-center"
-                                title={`Réservé pour : ${myBookedNames(dayLabel, h).join(', ')}`}
+                                title={`Réservé pour : ${myBookedNames(slot).join(', ')}`}
                               >
-                                {myBookedCount(dayLabel, h)}
+                                {mesResa}
                               </span>
                             )}
                           </button>
@@ -722,6 +473,17 @@ export default function BookingModal({
             </tbody>
           </table>
         </div>
+
+        {sortedSelected.length > 0 && (
+          <ul className="mb-2 space-y-1 text-xs text-slate-700" data-testid="creneaux-choisis">
+            {sortedSelected.map((s) => (
+              <li key={slotKey(s)} className="flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-secondary" />
+                {libelleCreneau(s)}
+              </li>
+            ))}
+          </ul>
+        )}
 
         <button
           className="w-full bg-primary text-white py-3 rounded-xl font-semibold shadow mt-2 disabled:opacity-60 hover:bg-primary/90"
@@ -741,7 +503,7 @@ export default function BookingModal({
         </button>
 
         <p className="mt-2 text-[11px] text-gray-500">
-          Les créneaux d’aujourd’hui ne sont disponibles qu’à partir de <b>{nowHour >= 23 ? 'demain 00h' : `${String(nowHour + 1).padStart(2,'0')}:00`}</b>. Les jours passés sont verrouillés.
+          Un créneau se réserve jusqu'à l'heure de son début. Les jours passés sont verrouillés.
         </p>
       </div>
     </div>

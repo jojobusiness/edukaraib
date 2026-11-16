@@ -5,6 +5,8 @@ import { captureError } from './_sentry.mjs';
 import { sendCapiEvent } from './_metaCapi.mjs';
 import { PARTNERS_COLLECTION, PARTNER_USAGES_COLLECTION, linkFamilyToPartner } from './_partners.mjs';
 import { tagType } from './_suiviEmails.mjs';
+import { dateHeureLongue } from './_fuseaux.mjs';
+import { debutDuCours } from './_coursHoraire.mjs';
 
 export const config = { api: { bodyParser: false } };
 
@@ -479,7 +481,11 @@ async function sendPaymentConfirmationEmail(md, amountTotalCents, sessionId = nu
     const l = lessonSnap.data();
     if (l.subject_id) subjectLabel = `Cours de ${l.subject_id}`;
     const raw = l.scheduled_at || l.date || l.start_time || null;
-    if (raw) {
+    const debut = debutDuCours(l);
+    if (debut) {
+      // 16/11/2026 : jour ET heure, dans le fuseau du payeur
+      lessonDateStr = dateHeureLongue(debut, payer.timezone);
+    } else if (raw) {
       const d = raw?.toDate ? raw.toDate() : new Date(raw);
       lessonDateStr = d.toLocaleDateString('fr-FR', {
         weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',

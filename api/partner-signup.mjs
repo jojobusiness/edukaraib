@@ -12,6 +12,7 @@ import {
 } from './_partners.mjs';
 import { sendPartnerWelcomeEmail, sendAdminNewPartnerEmail } from './_partnerEmails.mjs';
 import { acquisitionRecord } from './_acquisition.mjs';
+import { fuseauProbable } from './_fuseaux.mjs';
 
 async function codeIsFree(code) {
   const snap = await adminDb.collection(PARTNERS_COLLECTION).where('code', '==', code).limit(1).get();
@@ -74,6 +75,9 @@ export default async function handler(req, res) {
     partner_structure: structureName,
     createdAt: new Date(),
     acquisition: acquisitionRecord(body.acquisition),
+    // Fuseau du compte (16/11/2026) ; un nom inconnu d'Intl est ignoré
+    ...(fuseauProbable({ navigateur: typeof body.timezone === 'string' ? body.timezone.slice(0, 64) : null })
+      ? { timezone: fuseauProbable({ navigateur: body.timezone.slice(0, 64) }) } : {}),
   }, { merge: true });
 
   await partnerRef.set({

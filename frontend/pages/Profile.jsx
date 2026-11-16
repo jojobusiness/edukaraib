@@ -20,6 +20,7 @@ import 'react-phone-number-input/style.css';
 import { toast } from 'sonner';
 import { confirmer, demanderTexte } from '../components/ui/Dialogues';
 import { corrigerIndicatif } from '../../api/_telephone.mjs';
+import { FUSEAUX, fuseauProbable, fuseauNavigateur, fuseauValide, nomFuseau } from '../../api/_fuseaux.mjs';
 
 /* ====== Contrôles & listes (alignés avec Register) ====== */
 // Villes des Caraïbes et au-delà (pour profs en visio du monde entier)
@@ -219,6 +220,9 @@ export default function Profile() {
             lastName: loadedLast,
             group_enabled: typeof data.group_enabled === 'boolean' ? data.group_enabled : false,
             group_capacity: typeof data.group_capacity === 'number' ? data.group_capacity : 1,
+            // 16/11/2026 : fuseau du compte (PLAN_DISPOS_PROFS § 4.4)
+            timezone: fuseauValide(data.timezone) ? data.timezone
+              : (fuseauProbable({ navigateur: fuseauNavigateur(), pays: data.pays_inscription }) || ''),
 
             teaching_levels: data.teaching_levels ?? [],
             // valeurs par défaut si absentes
@@ -527,6 +531,10 @@ export default function Profile() {
         trial_enabled: !!profile.trial_enabled,
         certificatesUrls: [...(profile.certificatesUrls || []), ...newCertUrls],
         subscription_enabled: !!profile.subscription_enabled,
+        ...(fuseauValide(profile.timezone) ? { timezone: profile.timezone } : {}),
+        ...(profile.role === 'teacher' && fuseauValide(profile.timezone)
+          ? { availability: { ...(profile.availability || {}), fuseau: profile.timezone } }
+          : {}),
         subscription_rate: profile.subscription_enabled && profile.subscription_rate !== ''
           ? Number(profile.subscription_rate)
           : '',
@@ -744,6 +752,24 @@ export default function Profile() {
               <option value="">Sélectionner…</option>
               {CARAIBES_VILLES.map((c) => (<option key={c} value={c}>{c}</option>))}
             </select>
+          </div>
+
+          {/* Fuseau horaire (16/11/2026) : chacun voit les cours à l'heure de chez lui */}
+          <div>
+            <label className="block mb-1 text-sm font-medium text-gray-700">Votre fuseau horaire</label>
+            <select name="timezone" className="w-full border border-gray-300 rounded-lg px-3 py-2"
+              value={profile.timezone || ''} onChange={handleChange}>
+              <option value="">Sélectionner…</option>
+              {FUSEAUX.map((f) => (<option key={f.id} value={f.id}>{f.label}</option>))}
+              {profile.timezone && !FUSEAUX.some((f) => f.id === profile.timezone) && (
+                <option value={profile.timezone}>Autre : {nomFuseau(profile.timezone)}</option>
+              )}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              {profile.role === 'teacher'
+                ? 'Vos disponibilités sont saisies à cette heure-là ; chaque famille les voit à l’heure de chez elle.'
+                : 'Les horaires des cours vous sont affichés à cette heure-là.'}
+            </p>
           </div>
 
           {/* Étudiant */}
@@ -1178,8 +1204,8 @@ export default function Profile() {
             <div className="rounded-xl border border-gray-200 p-4 bg-gray-50">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-md font-bold text-gray-800">Disponibilités hebdomadaires</h3>
-                  <p className="text-xs text-gray-500">Chaque case = 1h.</p>
+                  <h3 className="text-md font-bold text-gray-800">Disponibilités</h3>
+                  <p className="text-xs text-gray-500">Vos horaires habituels valent chaque semaine. Une semaine différente ? Modifiez-la à part.</p>
                 </div>
                 <button
                   type="button"
@@ -1214,6 +1240,7 @@ export default function Profile() {
                 <div className="flex-1 overflow-y-auto p-6 bg-white">
                   <TeacherAvailabilityEditor
                     value={profile.availability || {}}
+                    fuseau={profile.timezone || null}
                     onChange={(avail) => setProfile((p) => ({ ...p, availability: avail }))}
                   />
                 </div>

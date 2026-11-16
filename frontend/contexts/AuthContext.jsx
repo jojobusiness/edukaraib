@@ -1,12 +1,26 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { auth, db } from '../lib/firebase';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { fuseauProbable, fuseauNavigateur, fuseauValide } from '../../api/_fuseaux.mjs';
 import { marquerVenue } from '../lib/derniereVenue';
 import { onAuthStateChanged, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { toast } from 'sonner';
 import { codeARattacher, noterCodeRattache } from '../lib/bacCampaign';
 
 const AuthCtx = createContext({ user: null, authReady: false });
+
+function completerFuseau(u) {
+  if (!u?.uid) return;
+  const cle = `edk_fuseau_${u.uid}`;
+  try { if (sessionStorage.getItem(cle)) return; sessionStorage.setItem(cle, '1'); } catch { /* navigation privée */ }
+  const ref = doc(db, 'users', u.uid);
+  getDoc(ref).then((snap) => {
+    const d = snap.exists() ? snap.data() : null;
+    if (!d || fuseauValide(d.timezone)) return null;
+    const tz = fuseauProbable({ navigateur: fuseauNavigateur(), pays: d.pays_inscription });
+    return tz ? updateDoc(ref, { timezone: tz }) : null;
+  }).catch(() => {});
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -34,6 +48,9 @@ export function AuthProvider({ children }) {
         // revenu ». Volontairement non attendue et silencieuse : une statistique
         // ne doit jamais retarder ni bloquer une connexion.
         marquerVenue(u, (uid) => updateDoc(doc(db, 'users', uid), { lastSeenAt: serverTimestamp() }));
+        // Fuseau du compte (16/11/2026) : rempli à la connexion s'il manque.
+        // Une fois par session, silencieux : ne bloque jamais une connexion.
+        completerFuseau(u);
         // Déjà inscrit et arrivé par le lien d'un partenaire : le code suit le compte,
         // même s'il paie plus tard sur un autre navigateur (TikTok puis Safari).
         const code = codeARattacher(u?.uid);

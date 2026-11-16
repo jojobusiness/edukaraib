@@ -101,7 +101,8 @@ describe('créneaux : les semaines passées ne comptent plus', () => {
     expect(nbCreneaux({ '2026-11-02': { Lun: [9] }, '2026-12-14': { Mar: [10, 11] } }, NOW)).toBe(3);
   });
   it('ancien format récurrent : toujours compté, sauf si des semaines existent', () => {
-    expect(nbCreneaux({ Lun: [9, 10] }, NOW)).toBe(2);
+    // 16/11/2026 : un format récurrent compte sur les 4 semaines à venir (2 h × 4)
+    expect(nbCreneaux({ Lun: [9, 10] }, NOW)).toBe(8);
     expect(nbCreneaux({ Lun: [9, 10], '2026-03-09': { Lun: [9] } }, NOW)).toBe(0);
   });
 });

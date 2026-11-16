@@ -11,6 +11,7 @@ import fetchWithAuth from '../utils/fetchWithAuth';
 import { PARTNER_KINDS, partnerGridRows } from '../lib/partner';
 import { PARTNER_ROLE, PARTNER_MODEL } from '../../api/_partners.mjs';
 import { getAcquisitionRecord } from '../lib/acquisition';
+import { fuseauNavigateur } from '../../api/_fuseaux.mjs';
 
 const ERRORS = {
   'auth/user-not-found': 'Adresse email introuvable.',
@@ -126,6 +127,7 @@ export default function PartnerHome() {
           phone: form.phone.trim(),
           code: form.code.trim(),
           acquisition: getAcquisitionRecord(),
+          timezone: fuseauNavigateur(),
         }),
       });
       navigate('/partenaire/espace', { replace: true });

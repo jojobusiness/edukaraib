@@ -23,6 +23,7 @@ import { pixelTrack } from '../lib/metaPixel';
 import { toast } from 'sonner';
 import { corrigerIndicatif, paysDepuisTelephone, PAYS_TELEPHONE, PAYS_PAR_DEFAUT } from '../../api/_telephone.mjs';
 import { detecterPays } from '../lib/pays';
+import { fuseauProbable, fuseauNavigateur } from '../../api/_fuseaux.mjs';
 
 // ————————————————————————————————
 // Villes des Caraïbes et au-delà (pour profs en visio du monde entier)
@@ -368,6 +369,8 @@ export default function Register() {
         city: form.city || (isExpress ? 'En ligne' : ''),
         // D'où vient l'inscrit : pays de connexion, sinon déduit du téléphone
         pays_inscription: paysDetecte || paysDepuisTelephone(form.phone || ''),
+        // Fuseau du compte (16/11/2026) : chacun voit les cours à l'heure de chez lui
+        timezone: fuseauProbable({ navigateur: fuseauNavigateur(), pays: paysDetecte || paysDepuisTelephone(form.phone || '') }),
         avatarUrl,
         createdAt: serverTimestamp(),
         // Source d'arrivée + réponse déclarée ; ne lève jamais (valeur 'inconnu')
