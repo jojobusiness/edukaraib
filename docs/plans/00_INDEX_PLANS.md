@@ -19,6 +19,8 @@
 | PLAN_SAVOIR_QUI_REVIENT (02/10) | Dernière venue | `lib/derniereVenue.js` |
 | PLAN_PAGE_METHODE (15/10) | `/methode` + alerte lead | route `/methode` |
 | PLAN_PAGES_CHATGPT (11/11) | 12 guides prérendus, /llms.txt, pages locales lisibles sans JS | commit `83502489`, vérifié en prod ; mesure ChatGPT 18/11 et 25/11 |
+| PLAN_ALERTES_ADMIN (16/11) | Alertes admin vers contact@ (Zoho), compte admin sur contact@, rappel à 2 h, plus de doublon | commits `c6eab328` + `469d68c4`, prouvé en prod (Resend delivered, reçu dans Zoho) |
+| PLAN_DISPOS_PROFS (16/11) | Horaires habituels récurrents, éditeur 2 onglets mobile, fuseaux (users.timezone, start_utc), mails à l'heure du destinataire | commit `d262ce0d`, migration 9 profs : réservables cette semaine 0 → 9 |
 | PLAN_MESSAGES_SECRET_CORRESPONDANCES (15/10) | Alerte sans extrait, onglet Leads | commit `cf8e0e3a` |
 | PLAN_VERROU_DONNEES, PLAN_VERROU_COURS, PLAN_SECURITE_COMPLETE (23/10) | Sécurité | scripts `diag-regles-*`, `essai-reservation-prod` |
 | PLAN_DERNIERE_CONNEXION (23/10) | Colonne admin + « Vu » | commit `fe9eb1db` |

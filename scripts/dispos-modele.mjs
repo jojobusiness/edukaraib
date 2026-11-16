@@ -7,8 +7,10 @@
    son modèle (availability.modele), si cette semaine date d'après le seuil.
    Avant le seuil, le prof est probablement inactif : on ne prolonge pas ses
    heures, on le liste seulement. Rien n'est effacé : les semaines datées restent.
-   Chaque prof migré reçoit une notification (et donc un mail, Cloud Function
-   onNotificationCreated) qui le lui dit. Règles : api/_dispos.mjs. */
+   Chaque prof migré reçoit une notification dans le site. ⚠️ Elle ne part PAS
+   par mail : onNotificationCreated n'envoie que les types de sa liste blanche
+   (anti-relais de hameçonnage). Le 16/11, les 9 mails ont été envoyés à part
+   par Resend, côté serveur. Règles : api/_dispos.mjs. */
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../api/_firebaseAdmin.mjs';
 import { modeleDepuisDerniereSemaine, nbHeures, nbCreneaux } from '../api/_dispos.mjs';

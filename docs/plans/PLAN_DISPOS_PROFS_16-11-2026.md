@@ -90,4 +90,24 @@ Ce n'est donc pas un cas rare : c'est le cœur de l'offre (un prof de Guyane pou
 
 ## RÉSULTAT
 - Décision de Joseph sur la migration (§ 4.1) : ✅ oui, profs actifs depuis le 31/08 seulement (16/11)
-- Livré le : __ · commit : __ · profs réservables cette semaine : avant 0 → après __
+- Fuseaux des comptes existants : **chaque prof choisit le sien** (Joseph, 16/11). `scripts/fuseaux-profs.mjs` n'a rien écrit.
+- **Livré le 16/11/2026** · commits `d262ce0d` (fonctionnalité) et `469d68c4` (script, doublon de mail admin).
+- **Profs réservables cette semaine : avant 0 → après 9.** Réservables tout court : 1 → 9 (`diag-offre-profs.mjs` en prod, après migration).
+- **Migration** (`dispos-modele.mjs --depuis=2026-08-31 --ecrire`) :
+  - 9 profs migrés : Janvier, Stéphane Adam, Durock, Joseph, Aurélie Arcon, Farahdja, Marie-Christine, Dominique, Cheikh Sow ;
+  - 4 profs non prolongés (dernière semaine en mars) : Aristide, Dramane, Lionidas, Fawzi ;
+  - 10 profs n'ont jamais coché d'heure ;
+  - les 9 fiches publiques (`profils`) contiennent le modèle ;
+  - 9 notifications dans le site et 9 mails envoyés à part : `onNotificationCreated` n'envoie que les types de sa liste blanche (anti-hameçonnage).
+- **Objectif ≥ 10 non atteint (9)** : il manque un prof parmi les 10 qui n'ont jamais rien coché. C'est une relance humaine, pas du code.
+- **Tests** : suite complète au vert, build vert.
+  - `dispos-fuseaux.test.js` : les cas du plan, l'heure d'été 2027, le jour du changement d'heure, la migration.
+  - `editeur-dispos.test.jsx` : les onglets, le clic sur une heure, le raccourci « Bureau », la semaine particulière.
+  - `reservation-fuseaux.test.jsx` : Guyane 18 h → Martinique 17 h, `start_utc` à 21 h UTC.
+- **Correction du plan** : « prof à La Réunion, 7 h lundi → dimanche 0 h en Guyane » est faux. L'écart est de 7 h, donc c'est lundi 0 h. Le dimanche (23 h), c'est pour 6 h. Les deux cas sont testés.
+- **Trouvé en route** :
+  - Les rappels de cours écrivaient l'heure UTC du serveur : 18 h Guyane était annoncé « 21:00 ». Corrigé, l'heure est maintenant celle du destinataire.
+  - 3 tableaux de bord recalculaient la date d'un cours à partir du jour et de l'heure, en ignorant la vraie date. Corrigé.
+  - 6 profs ont « Cayenne » comme ville mais un numéro du Burkina. Le menu « Votre fuseau » propose maintenant l'Afrique.
+- **Captures 390 px / ordinateur : non faites** (pas de navigateur piloté dans cette session). L'éditeur est vérifié par des tests de rendu, pas à l'œil. → Joseph : ouvrir `/prof/profile` → Disponibilités sur son téléphone.
+- **Non fait** : les tableaux de bord affichent l'heure dans le fuseau du navigateur, pas encore dans `users.timezone`. Le résultat est le même, sauf avec un VPN.
